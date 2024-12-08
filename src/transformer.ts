@@ -12,20 +12,73 @@ export class StyleTransformer implements StyleTransformer {
     this.stylePrompt = stylePrompt
   }
 
+  private extractVariables(css: string, prefix: string): Record<string, string> {
+    const regex = new RegExp(`${prefix}[^:]+:\\s*([^;]+)`, 'g')
+    const matches = [...css.matchAll(regex)]
+    return Object.fromEntries(
+      matches.map(match => [
+        match[0].slice(prefix.length, -1),
+        match[1].trim()
+      ])
+    )
+  }
+
+  private extractDarkVariables(css: string, prefix: string): Record<string, string> {
+    const darkThemeRegex = /\.dark\s*{([^}]+)}/g
+    const darkThemeMatches = [...css.matchAll(darkThemeRegex)]
+    const darkCss = darkThemeMatches.map(match => match[1]).join('\n')
+    return this.extractVariables(darkCss, prefix)
+  }
+
   private analyzeCss(css: string) {
     return {
-      variables: {
-        colors: css.match(/--vp-c-[^:]+:/g)?.map(v => v.slice(0, -1)),
-        layout: css.match(/--vp-[^:]+:/g)?.filter(v => !v.startsWith('--vp-c-')).map(v => v.slice(0, -1))
+      colors: {
+        brand: {
+          light: this.extractVariables(css, '--vp-c-brand-'),
+          dark: this.extractDarkVariables(css, '--vp-c-brand-')
+        },
+        background: {
+          light: this.extractVariables(css, '--vp-c-bg'),
+          dark: this.extractDarkVariables(css, '--vp-c-bg')
+        },
+        text: {
+          light: this.extractVariables(css, '--vp-c-text-'),
+          dark: this.extractDarkVariables(css, '--vp-c-text-')
+        },
+        functional: {
+          tip: this.extractVariables(css, '--vp-c-tip-'),
+          warning: this.extractVariables(css, '--vp-c-warning-'),
+          danger: this.extractVariables(css, '--vp-c-danger-'),
+          success: this.extractVariables(css, '--vp-c-success-')
+        }
+      },
+      typography: {
+        fonts: this.extractVariables(css, '--vp-font-family-'),
+        code: {
+          fontSize: this.extractVariables(css, '--vp-code-font-size'),
+          lineHeight: this.extractVariables(css, '--vp-code-line-height')
+        }
+      },
+      layout: {
+        maxWidth: this.extractVariables(css, '--vp-layout-max-width'),
+        nav: {
+          height: this.extractVariables(css, '--vp-nav-height'),
+          bgColor: this.extractVariables(css, '--vp-nav-bg-color')
+        },
+        sidebar: {
+          width: this.extractVariables(css, '--vp-sidebar-width')
+        }
       },
       components: {
-        nav: css.includes('.VPNav'),
-        sidebar: css.includes('.VPSidebar'),
-        content: css.includes('.VPContent'),
-        doc: css.includes('.vp-doc')
+        button: this.extractVariables(css, '--vp-button-'),
+        customBlock: this.extractVariables(css, '--vp-custom-block-'),
+        code: this.extractVariables(css, '--vp-code-'),
+        badge: this.extractVariables(css, '--vp-badge-')
       },
-      mediaQueries: css.match(/@media[^{]+\{/g),
-      animations: css.match(/@keyframes[^{]+\{/g)
+      effects: {
+        shadows: this.extractVariables(css, '--vp-shadow-'),
+        zIndexes: this.extractVariables(css, '--vp-z-index-')
+      }
     }
   }
 
@@ -57,38 +110,75 @@ export class StyleTransformer implements StyleTransformer {
       messages: [
         {
           role: "system",
-          content: `You are a CSS expert specializing in overriding and enhancing VitePress default styles.
+          content: `You are a CSS expert specializing in VitePress theming.
+Your task is to generate comprehensive custom styles while maintaining VitePress's variable system.
+
+Key areas to customize:
+1. Color system (brand, backgrounds, text)
+2. Typography (sizes, weights, line heights)
+3. Component styles (nav, sidebar, content, buttons)
+4. Layout and spacing
+5. Animations and transitions
+6. Interactive states (hover, active, focus)
+
 Output ONLY valid CSS code that will override or enhance existing VitePress styles.
 Focus on using VitePress's CSS variable system and component classes.
-DO NOT include any explanations or comments.`
+DO NOT include any explanations or comments.
+`
         },
         {
           role: "user",
-          content: `Override and enhance VitePress styles with these requirements:
-${this.stylePrompt}
+          content: `Style guide: ${this.stylePrompt}
 
-Output format MUST be:
+Current theme analysis:
+${JSON.stringify(analysis).slice(0, 1000)}
+
+Return extensive CSS including:
+1. Root variables (colors, typography, spacing)
+2. Dark theme overrides
+3. Component enhancements
+4. Custom animations
+5. Interactive states
+6. Layout adjustments
+
+Example format (but add more customizations):
 :root {
-  --vp-c-brand-1: #newcolor;
-  /* override other variables */
+  /* Brand colors */
+  --vp-c-brand-1: #color;
+  --vp-c-brand-2: #color;
+  
+  /* Background colors */
+  --vp-c-bg: #color;
+  
+  /* Typography */
+  --vp-font-family-base: font-stack;
+  
+  /* Custom variables */
+  --custom-transition: 0.3s ease;
 }
 
 .dark {
-  /* dark theme overrides */
+  /* Dark theme colors */
 }
 
-/* enhance existing components */
+/* Navigation */
 .VPNav {
-  /* override nav styles */
+  /* Nav styles */
 }
 
-.vp-doc h1 {
-  /* override heading styles */
+/* Sidebar */
+.VPSidebar {
+  /* Sidebar styles */
 }
 
-/* add animations if needed */
-@keyframes customAnim {
-  /* animation definition */
+/* Content */
+.vp-doc {
+  /* Content styles */
+}
+
+/* Interactive states */
+.VPButton:hover {
+  /* Hover states */
 }`
         }
       ]
