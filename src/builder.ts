@@ -1,7 +1,7 @@
-import { glob } from 'glob'
-import fs from 'fs-extra'
 import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { glob } from 'glob'
+import fs from 'fs-extra'
 
 import { build, type UserConfig, type DefaultTheme } from 'vitepress'
 import { type StyleTransformer } from './transformer'
@@ -55,9 +55,9 @@ export default defineConfig({
   async build() {
     try {
       await build(this.root)
-      console.log('build completed successfully!')
+      console.log('Build completed successfully!')
     } catch (error) {
-      console.error('build failed:', error)
+      console.error('Build failed:', error)
       throw error
     }
   }
@@ -75,22 +75,30 @@ export class Builder extends VitePressBuilder {
     this.transformer = transformer
   }
 
-  async transformBuiltFiles() {
-    const htmlFiles = await glob(`${this.outDir}/**/*.html`)
+  async transformStyles() {
+    console.log('Starting style transformation...')
     
-    for (const file of htmlFiles) {
-      const html = await fs.readFile(file, 'utf-8')
-      const transformedHtml = await this.transformer.transform(html)
-      await fs.writeFile(file, transformedHtml)
+    const cssFiles = await glob(`${this.outDir}/assets/style.*.css`)
+    if (cssFiles.length === 0) {
+      throw new Error('Main style file not found')
     }
+
+    const mainStyleFile = cssFiles[0]
+    console.log(`Found main style file: ${mainStyleFile}`)
+
+    const originalCss = await fs.readFile(mainStyleFile, 'utf-8')
+    const transformedCss = await this.transformer.transform(originalCss)
+    
+    await fs.writeFile(mainStyleFile, transformedCss)
+    console.log('Style transformation completed')
   }
+
 
   async build() {
     try {
       await super.build()
 
-      console.log('start transformation of built files...')
-      await this.transformBuiltFiles()
+      await this.transformStyles()
       
       console.log('build and style transformation completed successfully!')
     } catch (error) {

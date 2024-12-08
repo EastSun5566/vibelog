@@ -1,5 +1,5 @@
 import { Ollama } from 'ollama';
-import * as cheerio from 'cheerio'
+// import * as cheerio from 'cheerio'
 
 export class StyleTransformer implements StyleTransformer {
   private ai: Ollama
@@ -12,100 +12,90 @@ export class StyleTransformer implements StyleTransformer {
     this.stylePrompt = stylePrompt
   }
 
-  private analyzePageStructure($: cheerio.CheerioAPI) {
+  private analyzeCss(css: string) {
     return {
-      layout: {
-        hasNav: $('.VPNav').length > 0,
-        hasSidebar: $('.VPSidebar').length > 0,
-        hasFooter: $('.VPFooter').length > 0
+      variables: {
+        colors: css.match(/--vp-c-[^:]+:/g)?.map(v => v.slice(0, -1)),
+        layout: css.match(/--vp-[^:]+:/g)?.filter(v => !v.startsWith('--vp-c-')).map(v => v.slice(0, -1))
       },
-      content: {
-        headings: $('h1, h2, h3').length,
-        paragraphs: $('p').length,
-        links: $('a').length
+      components: {
+        nav: css.includes('.VPNav'),
+        sidebar: css.includes('.VPSidebar'),
+        content: css.includes('.VPContent'),
+        doc: css.includes('.vp-doc')
       },
-      styles: {
-        cssFiles: $('link[rel="stylesheet"]').map((_, el) => $(el).attr('href')).get(),
-        inlineStyles: $('style').map((_, el) => $(el).html()).get()
-      },
-      theme: {
-        isDark: $('html').hasClass('dark'),
-        currentBrandColor: $(':root').css('--vp-c-brand-1')
-      }
+      mediaQueries: css.match(/@media[^{]+\{/g),
+      animations: css.match(/@keyframes[^{]+\{/g)
     }
   }
 
-  async transform(html: string): Promise<string> {
-    const $ = cheerio.load(html)
-    const analysis = this.analyzePageStructure($)
+  private validateCSS(css: string): string {
+    css = css
+      .replace(/```css/g, '')
+      .replace(/```/g, '')
+      .trim()
+  
+    if (!css.startsWith('/*') && !css.startsWith('.') && !css.startsWith(':')) {
+      css = '/* Vide custom styles */\n' + css
+    }
+  
+    const openBraces = (css.match(/{/g) || []).length
+    const closeBraces = (css.match(/}/g) || []).length
+    if (openBraces !== closeBraces) {
+      console.warn('CSS syntax might be invalid: unmatched braces')
+    }
+  
+    return css
+  }
+  
+
+  async transform(originalCss: string): Promise<string> {
+    const analysis = this.analyzeCss(originalCss)
 
     const response = await this.ai.chat({
       model: this.model,
       messages: [
         {
           role: "system",
-          content: `You are a web styling expert. Create CSS that enhances VitePress's default theme.
-Focus on these aspects:
-1. Use CSS variables for colors to maintain dark mode compatibility
-2. Respect the existing layout structure
-3. Enhance typography and spacing
-4. Add subtle animations where appropriate
-5. Ensure responsive design
-
-IMPORTANT: Return only pure CSS code without any markdown code blocks or other formatting.
-Do not include \`\`\`css or \`\`\` markers in your response.`
+          content: `You are a CSS expert specializing in overriding and enhancing VitePress default styles.
+Output ONLY valid CSS code that will override or enhance existing VitePress styles.
+Focus on using VitePress's CSS variable system and component classes.
+DO NOT include any explanations or comments.`
         },
         {
           role: "user",
-          content: `Style guide: ${this.stylePrompt}
+          content: `Override and enhance VitePress styles with these requirements:
+${this.stylePrompt}
 
-Page analysis:
-${JSON.stringify(analysis, null, 2)}
-
-Return format:
-/* Theme customization */
+Output format MUST be:
 :root {
-  --vp-c-brand-1: #color;
-  --vp-c-brand-2: #color;
-  --vp-c-bg: #color;
-  /* other variables */
+  --vp-c-brand-1: #newcolor;
+  /* override other variables */
 }
 
-/* Dark theme overrides */
 .dark {
-  --vp-c-bg: #color;
-  /* dark theme variables */
+  /* dark theme overrides */
 }
 
-/* Component styles */
+/* enhance existing components */
 .VPNav {
-  /* navigation styles */
+  /* override nav styles */
 }
 
 .vp-doc h1 {
-  /* heading styles */
+  /* override heading styles */
 }
 
-/* Add any necessary animations */
-@keyframes fadeIn {
+/* add animations if needed */
+@keyframes customAnim {
   /* animation definition */
-}
-`
+}`
         }
       ]
     })
 
-    const css = response.message.content
-      .replace(/```css/g, '')
-      .replace(/```/g, '')
-      .trim()
-    $('head').append(`
-      <style id="vide-custom-styles">
-        /* Vide custom styles */
-        ${css}
-      </style>
-    `)
+    const css = this.validateCSS(response.message.content)
     
-    return $.html()
+    return `${originalCss}\n\n${css}`
   }
 }
