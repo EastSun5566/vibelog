@@ -5,7 +5,7 @@ export interface StyleTransformer {
   transform(html: string): Promise<string>
 }
 
-export class LLMStyleTransformer implements StyleTransformer {
+export class StyleTransformer implements StyleTransformer {
   private ai: Ollama
   private stylePrompt: string
   private model: string

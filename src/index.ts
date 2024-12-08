@@ -1,41 +1,5 @@
-import fs from 'fs-extra'
-import { glob } from 'glob';
-
-import { type BuilderOptions, VitePressBuilder } from './builder';
-import { LLMStyleTransformer, type StyleTransformer } from './transformer';
-
-class Builder extends VitePressBuilder {
-  private transformer: StyleTransformer
-
-  constructor(options: BuilderOptions, transformer: StyleTransformer) {
-    super(options)
-    this.transformer = transformer
-  }
-
-  async transformBuiltFiles() {
-    const htmlFiles = await glob(`${this.outDir}/**/*.html`)
-    
-    for (const file of htmlFiles) {
-      const html = await fs.readFile(file, 'utf-8')
-      const transformedHtml = await this.transformer.transform(html)
-      await fs.writeFile(file, transformedHtml)
-    }
-  }
-
-  async build() {
-    try {
-      await super.build()
-
-      console.log('start transformation of built files...')
-      await this.transformBuiltFiles()
-      
-      console.log('build and style transformation completed successfully!')
-    } catch (error) {
-      console.error('Build or transformation failed:', error)
-      throw error
-    }
-  }
-}
+import { Builder } from './builder';
+import { StyleTransformer } from './transformer';
 
 
 async function main() {
@@ -44,7 +8,7 @@ async function main() {
       - chill dark blue, relaxing green, and calming white colors
   `
 
-  const transformer = new LLMStyleTransformer(
+  const transformer = new StyleTransformer(
     stylePrompt,
     'qwen2.5-coder:3b'
   )
@@ -53,7 +17,6 @@ async function main() {
     {
       tempDir: '.temp',
       outDir: '../dist',
-      base: '/'
     },
     transformer
   )
