@@ -1,60 +1,28 @@
-import { Builder } from './builder'
-import { StyleTransformer } from './transformer'
+import { SiteBuilder, StyleTransformer } from './core'
+import { FilesystemProvider } from './adapters/content'
+import { OllamaProvider } from './adapters/ai'
 
 async function main() {
-  const stylePrompt = `
-    Create a modern, minimalist design with:
-      - chill dark blue, relaxing green, and calming white colors
-  `
-
+  const contentProvider = new FilesystemProvider('./content')
+  const aiProvider = new OllamaProvider('qwen2.5-coder:3b')
+  
   const transformer = new StyleTransformer(
-    stylePrompt,
-    'qwen2.5-coder:3b'
+    `Create a modern, minimalist design with:
+      - chill dark blue, relaxing green, and calming white colors`,
+    aiProvider
   )
 
-  const builder = new Builder(
+  const builder = new SiteBuilder(
     {
       tempDir: '.temp',
-      outDir: '../dist',
+      outDir: './dist',
     },
+    contentProvider,
     transformer
   )
 
   try {
     await builder.prepare()
-
-    await builder.writeConfig({
-      site: 'https://example.com',
-      title: 'My Blog',
-      description: 'A blog with AI-enhanced styling'
-    })
-
-    await builder.writeContent([
-      {
-        path: 'welcome.md',
-        content: `---
-title: Welcome to my blog
-date: 2024-02-22
-tags: ['intro']
----
-# Welcome
-
-This is my first blog post with AI-enhanced styling.
-`
-      },
-      {
-        path: 'about.md',
-        content: `---
-title: About
-date: 2024-02-22
----
-# About
-
-This is my blog built with Astro and styled with AI.
-`
-      }
-    ])
-
     await builder.build()
   } catch (error) {
     console.error('Failed:', error)
