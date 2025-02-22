@@ -1,16 +1,16 @@
-import { SiteBuilder, StyleTransformer } from './core'
-import { FilesystemProvider } from './adapters/content'
-import { OllamaProvider } from './adapters/ai'
+import { SiteBuilder, StyleTransformer } from './core';
+import { FilesystemProvider } from './adapters/content';
+import { OllamaProvider } from './adapters/ai';
 
 async function main() {
-  const contentProvider = new FilesystemProvider('./content')
-  const aiProvider = new OllamaProvider('qwen2.5-coder:3b')
-  
+  const contentProvider = new FilesystemProvider('./content');
+  const aiProvider = new OllamaProvider('qwen2.5-coder:3b');
+
   const transformer = new StyleTransformer(
     `Create a modern, minimalist design with:
       - chill dark blue, relaxing green, and calming white colors`,
-    aiProvider
-  )
+    aiProvider,
+  );
 
   const builder = new SiteBuilder(
     {
@@ -18,17 +18,17 @@ async function main() {
       outDir: './dist',
     },
     contentProvider,
-    transformer
-  )
+    transformer,
+  );
 
   try {
-    await builder.prepare()
-    await builder.build()
+    await builder.prepare();
+    await builder.build();
   } catch (error) {
-    console.error('Failed:', error)
+    console.error('Failed:', error);
   } finally {
-    await builder.cleanup()
+    await builder.cleanup();
   }
 }
 
-main().catch(console.error)
+main().catch(console.error);

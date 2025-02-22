@@ -1,18 +1,18 @@
-import { Ollama } from 'ollama'
+import { Ollama } from 'ollama';
 
-import type { AiProvider } from '../../types'
+import type { AiProvider } from '../../types';
 
 export class OllamaProvider implements AiProvider {
-  private ai: Ollama
-  
+  private ai: Ollama;
+
   constructor(
     private model: string,
     private options?: {
       temperature?: number
       maxTokens?: number
-    }
+    },
   ) {
-    this.ai = new Ollama()
+    this.ai = new Ollama();
   }
 
   async generate(prompt: string): Promise<string> {
@@ -21,21 +21,21 @@ export class OllamaProvider implements AiProvider {
         model: this.model,
         messages: [
           {
-            role: "system",
-            content: "You are a CSS expert. Generate clean, valid CSS code only. No explanations or comments."
+            role: 'system',
+            content: 'You are a CSS expert. Generate clean, valid CSS code only. No explanations or comments.',
           },
           {
-            role: "user",
-            content: prompt
-          }
+            role: 'user',
+            content: prompt,
+          },
         ],
-        ...this.options
-      })
+        ...this.options,
+      });
 
-      return response.message.content
+      return response.message.content;
     } catch (error) {
-      console.error('AI generation failed:', error)
-      throw error
+      console.error('AI generation failed:', error);
+      throw error;
     }
   }
 }

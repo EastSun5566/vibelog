@@ -1,16 +1,16 @@
-import type { AiProvider } from '../types'
+import type { AiProvider } from '../types';
 
 export class StyleTransformer {
   constructor(
     private stylePrompt: string,
-    private provider: AiProvider
+    private provider: AiProvider,
   ) {}
 
   private cleanOutput(css: string): string {
     return css
       .replace(/```css/g, '')
       .replace(/```/g, '')
-      .trim()
+      .trim();
   }
 
   async transform(originalCss: string): Promise<string> {
@@ -29,13 +29,13 @@ Rules:
 4. Add subtle animations
 5. Enhance interactive states
 
-Return only valid CSS code.`
+Return only valid CSS code.`;
 
-      const generatedCss = await this.provider.generate(prompt)
-      return this.cleanOutput(generatedCss)
+      const generatedCss = await this.provider.generate(prompt);
+      return this.cleanOutput(generatedCss);
     } catch (error) {
-      console.error('Style transformation failed:', error)
-      return originalCss
+      console.error('Style transformation failed:', error);
+      return originalCss;
     }
   }
 }
