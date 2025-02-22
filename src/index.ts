@@ -1,6 +1,5 @@
-import { Builder } from './builder';
-import { StyleTransformer } from './transformer';
-
+import { Builder } from './builder'
+import { StyleTransformer } from './transformer'
 
 async function main() {
   const stylePrompt = `
@@ -25,49 +24,33 @@ async function main() {
     await builder.prepare()
 
     await builder.writeConfig({
-      title: 'Vide Blog',
-      description: 'A blog with AI-enhanced styling',
-      themeConfig: {
-        search: {
-          provider: 'local'
-        },
-        nav: [
-          { text: 'Home', link: '/' },
-          { text: 'About', link: '/about' }
-        ],
-        sidebar: [
-          { text: 'Home', link: '/' },
-          { text: 'About', link: '/about' }
-        ],
-        socialLinks: [
-          { icon: 'github', link: '' },
-        ],
-        footer: {
-          message: 'Powered by VitePress and AI',
-          copyright: ''
-        }
-      }
+      site: 'https://example.com',
+      title: 'My Blog',
+      description: 'A blog with AI-enhanced styling'
     })
 
     await builder.writeContent([
       {
-        path: 'index.md',
+        path: 'welcome.md',
         content: `---
-title: Welcome to Vide
+title: Welcome to my blog
+date: 2024-02-22
+tags: ['intro']
 ---
-# Welcome to my AI-styled blog
+# Welcome
 
-This blog's style is enhanced by AI while maintaining its original content.
+This is my first blog post with AI-enhanced styling.
 `
       },
       {
         path: 'about.md',
         content: `---
-title: About Vide
+title: About
+date: 2024-02-22
 ---
-# About Vide
+# About
 
-This blog is built with VitePress and styled with AI.
+This is my blog built with Astro and styled with AI.
 `
       }
     ])
