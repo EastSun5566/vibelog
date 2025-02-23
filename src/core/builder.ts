@@ -55,14 +55,19 @@ export class SiteBuilder {
       console.log('Writing content files...');
       for (const content of contents) {
         const title = content.title || 'Untitled';
+        const excerpt = content.content
+          .split('\n')
+          .find(p => p.trim().length > 0) ?? '';
         const slug = content.slug || slugify(content.title) || generateSlug();
 
-        const filePath = join(this.root, 'src/content/blog', `${slug}.md`);
         const fileContent = matter.stringify(content.content, {
           title,
+          description: excerpt.slice(0, 100),
           date: content.date || new Date().toISOString(),
           slug,
         });
+
+        const filePath = join(this.root, 'src/content/blog', `${slug}.md`);
         await fs.writeFile(filePath, fileContent);
       }
 
