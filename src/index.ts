@@ -3,7 +3,7 @@ import { FilesystemProvider } from './adapters/content';
 import { OllamaProvider } from './adapters/ai';
 
 async function main() {
-  const contentProvider = new FilesystemProvider('./content');
+  const contentProvider = new FilesystemProvider('./.content');
   const aiProvider = new OllamaProvider('qwen2.5-coder:3b');
 
   const transformer = new StyleTransformer(
