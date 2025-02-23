@@ -14,12 +14,16 @@ interface HackMdNote {
 }
 
 interface HackMdResponse {
-  user: {
+  user?: {
     name: string;
     userpath: string;
     biography: string;
     photo: string;
   };
+  team?: {
+    name: string;
+    description: string;
+  }
   notes: HackMdNote[];
 }
 
@@ -33,8 +37,8 @@ export class HackMdProvider implements ContentProvider {
         throw new Error(`Failed to fetch HackMD content: ${response.statusText}`);
       }
 
-      const data = await response.json() as HackMdResponse;
-      const posts = data.notes
+      const { notes, user, team } = await response.json() as HackMdResponse;
+      const posts = notes
         .filter(note => note.publishType === 'view' && note.publishedAt)
         .map(note => ({
           id: note.id,
@@ -44,12 +48,14 @@ export class HackMdProvider implements ContentProvider {
           date: new Date(note.publishedAt).toISOString(),
         }));
 
+      const author = {
+        name: user?.name ?? team?.name ?? '',
+        bio: user?.biography ?? team?.description ?? '',
+      };
+
       return {
         posts,
-        author: {
-          name: data.user.name,
-          bio: data.user.biography,
-        },
+        author,
       };
     } catch (error) {
       console.error('Error fetching HackMD content:', error);
