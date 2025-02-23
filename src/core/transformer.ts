@@ -1,3 +1,4 @@
+import { AI_PROMPTS } from '../constants';
 import type { AiProvider } from '../types';
 
 export class StyleTransformer {
@@ -13,7 +14,18 @@ export class StyleTransformer {
       .trim();
   }
 
+  private logStyleDiff(original: string, transformed: string) {
+    console.log('\nStyle Transformation Diff:');
+    console.log('------------------------');
+    console.log('Original length:', original.length);
+    console.log('Transformed length:', transformed.length);
+    console.log('------------------------\n');
+  }
+
   async transform(originalCss: string): Promise<string> {
+    console.log('Starting style transformation...');
+    console.log('Style prompt:', this.stylePrompt);
+
     try {
       const prompt = `
 Original CSS:
@@ -22,17 +34,18 @@ ${originalCss}
 Style Requirements:
 ${this.stylePrompt}
 
-Rules:
-1. Keep existing CSS structure
-2. Use --theme- prefix for all new variables
-3. Add dark theme support
-4. Add subtle animations
-5. Enhance interactive states
+${AI_PROMPTS.STYLE_RULES}}
+`;
 
-Return only valid CSS code.`;
-
+      console.log('Generating styles with AI...');
       const generatedCss = await this.provider.generate(prompt);
-      return this.cleanOutput(generatedCss);
+      console.log('AI generation completed');
+
+      const cleanedCss = this.cleanOutput(generatedCss);
+      this.logStyleDiff(originalCss, cleanedCss);
+
+      console.log('Style transformation completed');
+      return cleanedCss;
     } catch (error) {
       console.error('Style transformation failed:', error);
       return originalCss;

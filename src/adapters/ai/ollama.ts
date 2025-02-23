@@ -1,5 +1,6 @@
 import { Ollama } from 'ollama';
 
+import { AI_PROMPTS } from '../../constants';
 import type { AiProvider } from '../../types';
 
 export class OllamaProvider implements AiProvider {
@@ -16,13 +17,15 @@ export class OllamaProvider implements AiProvider {
   }
 
   async generate(prompt: string): Promise<string> {
+    console.log('Generating with model:', this.model);
+
     try {
       const response = await this.ai.chat({
         model: this.model,
         messages: [
           {
             role: 'system',
-            content: 'You are a CSS expert. Generate clean, valid CSS code only. No explanations or comments.',
+            content: AI_PROMPTS.CSS_EXPERT,
           },
           {
             role: 'user',

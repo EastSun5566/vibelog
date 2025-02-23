@@ -27,16 +27,24 @@ export class SiteBuilder {
   }
 
   async prepare() {
+    console.log('Starting build preparation...');
+    console.log(`Creating directory structure in ${this.root}`);
+
     await fs.ensureDir(this.root);
     await fs.ensureDir(join(this.root, 'src/content/blog'));
     await fs.ensureDir(join(this.root, 'src/pages'));
     await fs.ensureDir(join(this.root, 'src/styles'));
     await fs.ensureDir(join(this.root, 'src/layouts'));
+    console.log('Directory structure created');
 
     await this.writeConfig();
+    console.log('Content config written');
+
     await this.copyTemplates();
+    console.log('Templates copied');
 
     await this.transformStyles();
+    console.log('Styles transformed');
   }
 
   private async writeConfig() {
@@ -62,20 +70,22 @@ export const collections = {
 
   private async copyTemplates() {
     const templatesDir = resolve(__dirname, '../templates');
+    console.log('Copying templates from:', templatesDir);
 
-    await fs.copyFile(
-      join(templatesDir, 'global.css'),
-      join(this.root, 'src/styles/global.css'),
-    );
-    await fs.copyFile(
-      join(templatesDir, 'base.astro'),
-      join(this.root, 'src/layouts/base.astro'),
-    );
-    await fs.copyFile(
-      join(templatesDir, 'index.astro'),
-      join(this.root, 'src/pages/index.astro'),
-    );
+    const files = {
+      'global.css': 'src/styles/global.css',
+      'base.astro': 'src/layouts/base.astro',
+      'index.astro': 'src/pages/index.astro',
+    };
+
+    for (const [src, dest] of Object.entries(files)) {
+      await fs.copyFile(
+        join(templatesDir, src),
+        join(this.root, dest),
+      );
+    }
   }
+
 
   private async transformStyles() {
     const cssPath = join(this.root, 'src/styles/global.css');
@@ -85,13 +95,20 @@ export const collections = {
   }
 
   async build() {
+    console.log('Starting build process...');
+
     try {
+      console.log('Fetching content...');
       const contents = await this.contentProvider.getContents();
+      console.log(`Found ${String(contents.length)} content items`);
+
+      console.log('Writing content files...');
       for (const content of contents) {
         const filePath = join(this.root, 'src/content/blog', `${content.slug}.md`);
         await fs.writeFile(filePath, content.content);
       }
 
+      console.log('Starting Astro build...');
       await build({
         root: this.root,
         outDir: this.outDir,
@@ -105,6 +122,8 @@ export const collections = {
   }
 
   async cleanup() {
+    console.log('Starting cleanup...');
     await fs.remove(this.root);
+    console.log('Cleanup completed');
   }
 }
