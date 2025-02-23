@@ -23,7 +23,6 @@ export class StyleTransformer {
   }
 
   async transform(originalCss: string): Promise<string> {
-    console.log('Starting style transformation...');
     console.log('Style prompt:', this.stylePrompt);
 
     try {
