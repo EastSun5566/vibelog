@@ -69,8 +69,8 @@ export const collections = {
   }
 
   private async copyTemplates() {
-    const templatesDir = resolve(__dirname, '../templates');
-    console.log('Copying templates from:', templatesDir);
+    const templatesDir = resolve(process.cwd(), 'template');
+    console.log('Copying template from:', templatesDir);
 
     const files = {
       'global.css': 'src/styles/global.css',
