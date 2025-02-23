@@ -40,17 +40,7 @@ export class SiteBuilder {
   }
 
   private async writeConfig() {
-    const configFile = join(this.root, 'astro.config.mjs');
-    const configContent = `
-import { defineConfig } from 'astro/config'
-
-export default defineConfig({
-  outDir: '${this.outDir}',
-})
-`;
-    await fs.writeFile(configFile, configContent);
-
-    const contentConfigFile = join(this.root, 'src/content/config.ts');
+    const contentConfigFile = join(this.root, 'src/content.config.ts');
     const contentConfigContent = `
 import { defineCollection, z } from 'astro:content';
 
