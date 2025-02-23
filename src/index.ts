@@ -28,8 +28,6 @@ async function main() {
   try {
     await builder.prepare();
     await builder.build();
-  } catch (error) {
-    console.error('Failed:', error);
   } finally {
     await builder.cleanup();
   }

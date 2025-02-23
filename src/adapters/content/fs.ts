@@ -2,17 +2,17 @@ import matter from 'gray-matter';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { Content, ContentProvider } from '../../types';
+import type { ContentProvider } from '../../types';
 
 export class FsProvider implements ContentProvider {
   constructor(private contentDir: string) {}
 
-  async getContents(): Promise<Content[]> {
+  async getContents() {
     try {
       const files = await readdir(this.contentDir);
       const mdFiles = files.filter(file => file.endsWith('.md'));
 
-      const contents = mdFiles.map(file => {
+      const posts = mdFiles.map(file => {
         const fullPath = join(this.contentDir, file);
         const { data, content } = matter.read(fullPath) as {
           data: Record<string, string>;
@@ -28,7 +28,13 @@ export class FsProvider implements ContentProvider {
         };
       });
 
-      return contents;
+      return {
+        posts,
+        author: {
+          name: 'Vibe Man',
+          bio: 'This is a sample author bio',
+        },
+      };
     } catch (error) {
       console.error('Error reading content:', error);
       throw error;

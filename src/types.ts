@@ -1,13 +1,20 @@
-export interface Content {
+export interface Post {
   id: string
   title: string
   content: string
   slug: string
   date: string
 }
+export interface ContentResponse {
+  posts: Post[];
+  author: {
+    name: string;
+    bio: string;
+  };
+}
 
 export interface ContentProvider {
-  getContents(): Promise<Content[]>
+  getContents(): Promise<ContentResponse>
 }
 
 export interface AiProvider {

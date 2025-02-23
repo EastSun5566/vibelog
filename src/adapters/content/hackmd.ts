@@ -1,4 +1,4 @@
-import type { Content, ContentProvider } from '../../types';
+import type { ContentProvider } from '../../types';
 
 interface HackMdNote {
   id: string;
@@ -17,6 +17,8 @@ interface HackMdResponse {
   user: {
     name: string;
     userpath: string;
+    biography: string;
+    photo: string;
   };
   notes: HackMdNote[];
 }
@@ -24,7 +26,7 @@ interface HackMdResponse {
 export class HackMdProvider implements ContentProvider {
   constructor(private username: string) {}
 
-  async getContents(): Promise<Content[]> {
+  async getContents() {
     try {
       const response = await fetch(`https://hackmd.io/api/@${this.username}/overview`);
       if (!response.ok) {
@@ -32,7 +34,7 @@ export class HackMdProvider implements ContentProvider {
       }
 
       const data = await response.json() as HackMdResponse;
-      const contents = data.notes
+      const posts = data.notes
         .filter(note => note.publishType === 'view' && note.publishedAt)
         .map(note => ({
           id: note.id,
@@ -42,7 +44,13 @@ export class HackMdProvider implements ContentProvider {
           date: new Date(note.publishedAt).toISOString(),
         }));
 
-      return contents;
+      return {
+        posts,
+        author: {
+          name: data.user.name,
+          bio: data.user.biography,
+        },
+      };
     } catch (error) {
       console.error('Error fetching HackMD content:', error);
       throw error;

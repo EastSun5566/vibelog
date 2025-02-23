@@ -49,27 +49,34 @@ export class SiteBuilder {
 
     try {
       console.log('Fetching content...');
-      const contents = await this.contentProvider.getContents();
-      console.log(`Found ${String(contents.length)} content items`);
+      const { posts, author } = await this.contentProvider.getContents();
+      console.log(`Found ${String(posts.length)} content items`);
 
-      console.log('Writing content files...');
-      for (const content of contents) {
-        const title = content.title || 'Untitled';
-        const excerpt = content.content
+      console.log('Writing blog posts...');
+      for (const post of posts) {
+        const title = post.title || 'Untitled';
+        const excerpt = post.content
           .split('\n')
           .find(p => p.trim().length > 0) ?? '';
-        const slug = content.slug || slugify(content.title) || generateSlug();
+        const slug = post.slug || slugify(post.title) || generateSlug();
 
-        const fileContent = matter.stringify(content.content, {
+        const fileContent = matter.stringify(post.content, {
           title,
           description: excerpt.slice(0, 100),
-          date: content.date || new Date().toISOString(),
+          date: post.date || new Date().toISOString(),
           slug,
         });
 
         const filePath = join(this.root, 'src/content/blog', `${slug}.md`);
         await fs.writeFile(filePath, fileContent);
       }
+
+      console.log('Writing author profile...');
+      const authorContent = matter.stringify(author.bio, {
+        name: author.name,
+      });
+      const authorPath = join(this.root, 'src/content', 'author.md');
+      await fs.writeFile(authorPath, authorContent);
 
       // console.log('Starting style transformation...');
       // await this.transformStyles();
