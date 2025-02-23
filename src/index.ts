@@ -1,9 +1,13 @@
 import { SiteBuilder, StyleTransformer } from './core';
-import { FilesystemProvider } from './adapters/content';
+import {
+  // FsProvider,
+  HackMdProvider,
+} from './adapters/content';
 import { OllamaProvider } from './adapters/ai';
 
 async function main() {
-  const contentProvider = new FilesystemProvider('./.content');
+  // const contentProvider = new FsProvider('./.content');
+  const contentProvider = new HackMdProvider('DailyOops');
   const aiProvider = new OllamaProvider('qwen2.5-coder:3b');
 
   const transformer = new StyleTransformer(

@@ -7,6 +7,7 @@ import matter from 'gray-matter';
 
 import type { ContentProvider } from '../types';
 import type { StyleTransformer } from './transformer';
+import { generateSlug, slugify } from './utils';
 
 export interface SiteBuilderOptions {
   tempDir: string
@@ -53,11 +54,14 @@ export class SiteBuilder {
 
       console.log('Writing content files...');
       for (const content of contents) {
-        const filePath = join(this.root, 'src/content/blog', `${content.slug}.md`);
+        const title = content.title || 'Untitled';
+        const slug = content.slug || slugify(content.title) || generateSlug();
+
+        const filePath = join(this.root, 'src/content/blog', `${slug}.md`);
         const fileContent = matter.stringify(content.content, {
-          title: content.title,
-          date: content.date,
-          slug: content.slug,
+          title,
+          date: content.date || new Date().toISOString(),
+          slug,
         });
         await fs.writeFile(filePath, fileContent);
       }

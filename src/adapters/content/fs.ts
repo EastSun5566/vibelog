@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import type { Content, ContentProvider } from '../../types';
 
-export class FilesystemProvider implements ContentProvider {
+export class FsProvider implements ContentProvider {
   constructor(private contentDir: string) {}
 
   async getContents(): Promise<Content[]> {
@@ -21,7 +21,7 @@ export class FilesystemProvider implements ContentProvider {
 
         return {
           id: file.replace('.md', ''),
-          title: data.title || 'Untitled',
+          title: data.title,
           content: content,
           slug: data.slug || file.replace('.md', ''),
           date: data.date ? new Date(data.date).toISOString() : new Date().toISOString(),
