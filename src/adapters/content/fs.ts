@@ -1,5 +1,5 @@
 import matter from 'gray-matter';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Content, ContentProvider } from '../../types';
@@ -12,22 +12,21 @@ export class FilesystemProvider implements ContentProvider {
       const files = await readdir(this.contentDir);
       const mdFiles = files.filter(file => file.endsWith('.md'));
 
-      const contents = await Promise.all(
-        mdFiles.map(async file => {
-          const fullPath = join(this.contentDir, file);
-          const rawContent = await readFile(fullPath, 'utf-8');
+      const contents = mdFiles.map(file => {
+        const fullPath = join(this.contentDir, file);
+        const { data, content } = matter.read(fullPath) as {
+          data: Record<string, string>;
+          content: string;
+        };
 
-          const { data, content } = matter(rawContent);
-
-          return {
-            id: file.replace('.md', ''),
-            title: data.title || 'Untitled',
-            content: content,
-            slug: data.slug || file.replace('.md', ''),
-            date: data.date ? new Date(data.date).toISOString() : new Date().toISOString(),
-          };
-        }),
-      );
+        return {
+          id: file.replace('.md', ''),
+          title: data.title || 'Untitled',
+          content: content,
+          slug: data.slug || file.replace('.md', ''),
+          date: data.date ? new Date(data.date).toISOString() : new Date().toISOString(),
+        };
+      });
 
       return contents;
     } catch (error) {

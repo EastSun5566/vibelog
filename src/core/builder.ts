@@ -3,6 +3,7 @@ import { build } from 'astro';
 import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
 import fs from 'fs-extra';
+import matter from 'gray-matter';
 
 import type { ContentProvider } from '../types';
 import type { StyleTransformer } from './transformer';
@@ -30,7 +31,7 @@ export class SiteBuilder {
     console.log(`Creating directory structure in ${this.root}`);
 
     const templateDir = resolve(process.cwd(), 'template');
-    await fs.copy(templateDir, join(this.root, 'src'));
+    await fs.copy(templateDir, this.root);
     console.log('Template structure copied');
   }
 
@@ -53,13 +54,18 @@ export class SiteBuilder {
       console.log('Writing content files...');
       for (const content of contents) {
         const filePath = join(this.root, 'src/content/blog', `${content.slug}.md`);
-        await fs.writeFile(filePath, content.content);
+        const fileContent = matter.stringify(content.content, {
+          title: content.title,
+          date: content.date,
+          slug: content.slug,
+        });
+        await fs.writeFile(filePath, fileContent);
       }
 
-      console.log('Starting style transformation...');
-      await this.transformStyles();
+      // console.log('Starting style transformation...');
+      // await this.transformStyles();
 
-      console.log('Starting Astro build...');
+      console.log('Starting Blog build...');
       await build({
         root: this.root,
         outDir: this.outDir,
