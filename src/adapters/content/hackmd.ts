@@ -48,14 +48,22 @@ export class HackMdProvider implements ContentProvider {
       }
 
       const { notes } = await response.json() as NotesResponse;
-      const posts = notes
+      const posts = await Promise.all(notes
         .filter(note => note.publishType === 'view' && note.publishedAt)
-        .map(note => ({
-          id: note.id,
-          title: note.title,
-          content: note.content,
-          slug: note.permalink ?? note.title,
-          date: new Date(note.publishedAt).toISOString(),
+        .map(async note => {
+          const response = await fetch(`${BASE_URL}/${note.id}/download`);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch the content for note ${note.id}: ${response.statusText}`);
+          }
+          const content = await response.text();
+
+          return {
+            id: note.id,
+            title: note.title,
+            content,
+            slug: note.permalink ?? note.title,
+            date: new Date(note.publishedAt).toISOString(),
+          };
         }));
 
       return {
