@@ -15,6 +15,10 @@ export interface SiteBuilderOptions {
   outDir: string
 }
 
+interface BuildOptions {
+  skipStyleTransform?: boolean
+}
+
 export class SiteBuilder {
   private root: string;
   private outDir: string;
@@ -29,7 +33,6 @@ export class SiteBuilder {
   }
 
   async prepare() {
-    logger.info('Starting build preparation...');
     logger.info(`Creating directory structure in ${this.root}`);
 
     const templateDir = resolve(process.cwd(), 'template');
@@ -45,9 +48,13 @@ export class SiteBuilder {
     await fs.writeFile(cssPath, transformedCss);
   }
 
-  async build() {
-    logger.info('Starting build process...');
+  async build({
+    skipStyleTransform = false,
+  }: BuildOptions = {}) {
+    logger.info('Starting build preparation...');
+    await this.prepare();
 
+    logger.info('Starting build process...');
     try {
       logger.info('Fetching content...');
       const [{ posts }, { name, bio }] = await Promise.all([
@@ -82,8 +89,10 @@ export class SiteBuilder {
       const authorPath = join(this.root, 'src/content', 'author.md');
       await fs.writeFile(authorPath, authorContent);
 
-      // logger.info('Starting style transformation...');
-      // await this.transformStyles();
+      if (!skipStyleTransform) {
+        logger.info('Starting style transformation...');
+        await this.transformStyles();
+      }
 
       logger.info('Starting Blog build...');
       await build({
