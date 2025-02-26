@@ -1,4 +1,5 @@
 import type { ContentProvider } from '../../types';
+import { logger } from '../../core';
 
 interface HackMdNote {
   id: string;
@@ -28,7 +29,9 @@ interface HackMdResponse {
 }
 
 export class HackMdProvider implements ContentProvider {
-  constructor(private username: string) {}
+  constructor(private username: string) {
+    logger.info(`Content provider: HackMD (${username})`);
+  }
 
   async getContents() {
     try {

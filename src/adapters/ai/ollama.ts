@@ -2,6 +2,7 @@ import { Ollama } from 'ollama';
 
 import { AI_PROMPTS } from '../../consts';
 import type { AiProvider } from '../../types';
+import { logger } from '../../core';
 
 export class OllamaProvider implements AiProvider {
   private ai: Ollama;
@@ -13,6 +14,7 @@ export class OllamaProvider implements AiProvider {
       maxTokens?: number
     },
   ) {
+    logger.info(`AI provider: Ollama (${model})`);
     this.ai = new Ollama();
   }
 
