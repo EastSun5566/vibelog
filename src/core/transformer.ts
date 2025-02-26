@@ -16,7 +16,8 @@ export class StyleTransformer {
   }
 
   private logStyleDiff(original: string, transformed: string) {
-    logger.info('\nStyle Transformation Diff:');
+    logger.info('------------------------');
+    logger.info('Style Transformation Diff:');
     logger.info('------------------------');
     logger.info('Original length:', original.length);
     logger.info('Transformed length:', transformed.length);
