@@ -6,9 +6,11 @@ import { logger } from '../../core';
 import type { ContentProvider } from '../../types';
 
 export class FsProvider implements ContentProvider {
-  constructor(private contentDir: string) {}
+  constructor(private contentDir: string) {
+    logger.info(`Content provider: FS (${contentDir})`);
+  }
 
-  async getContents() {
+  async getPosts() {
     try {
       const files = await readdir(this.contentDir);
       const mdFiles = files.filter(file => file.endsWith('.md'));
@@ -31,14 +33,17 @@ export class FsProvider implements ContentProvider {
 
       return {
         posts,
-        author: {
-          name: 'Vibe Man',
-          bio: 'This is a sample author bio',
-        },
       };
     } catch (error) {
       logger.error('Error reading content:', error);
       throw error;
     }
+  }
+
+  getAuthor() {
+    return Promise.resolve({
+      name: 'My Name',
+      bio: 'My bio',
+    });
   }
 }

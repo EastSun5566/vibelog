@@ -5,16 +5,19 @@ export interface Post {
   slug: string
   date: string
 }
-export interface ContentResponse {
+export interface PostsResponse {
   posts: Post[];
-  author: {
-    name: string;
-    bio: string;
-  };
 }
 
+export interface Author {
+  name: string
+  bio: string
+}
+export type AuthorResponse = Author
+
 export interface ContentProvider {
-  getContents(): Promise<ContentResponse>
+  getPosts(): Promise<PostsResponse>
+  getAuthor(): Promise<AuthorResponse>
 }
 
 export interface AiProvider {

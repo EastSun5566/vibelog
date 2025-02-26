@@ -50,15 +50,18 @@ export class SiteBuilder {
 
     try {
       logger.info('Fetching content...');
-      const { posts, author } = await this.contentProvider.getContents();
-      logger.info(`Found ${String(posts.length)} content items`);
+      const [{ posts }, { name, bio }] = await Promise.all([
+        this.contentProvider.getPosts(),
+        this.contentProvider.getAuthor(),
+      ]);
+      logger.info(`Found ${String(posts.length)} posts of author ${name}`);
 
       logger.info('Writing blog posts...');
       for (const post of posts) {
         const title = post.title || 'Untitled';
         const excerpt = post.content
           .split('\n')
-          .find(p => p.trim().length > 0) ?? '';
+          .find(post => post.trim().length > 0) ?? '';
         const slug = post.slug || slugify(post.title) || generateSlug();
 
         const fileContent = matter.stringify(post.content, {
@@ -73,8 +76,8 @@ export class SiteBuilder {
       }
 
       logger.info('Writing author profile...');
-      const authorContent = matter.stringify(author.bio, {
-        name: author.name,
+      const authorContent = matter.stringify(bio, {
+        name,
       });
       const authorPath = join(this.root, 'src/content', 'author.md');
       await fs.writeFile(authorPath, authorContent);
@@ -86,7 +89,7 @@ export class SiteBuilder {
       await build({
         root: this.root,
         outDir: this.outDir,
-        site: 'https://example.com',
+        site: 'https://vibe.eastsun.me',
         integrations: [mdx(), sitemap()],
       });
 
