@@ -1,4 +1,4 @@
-import { SiteBuilder, StyleTransformer } from './core';
+import { SiteBuilder, StyleTransformer, logger } from './core';
 import {
   // FsProvider,
   HackMdProvider,
@@ -33,4 +33,5 @@ async function main() {
   }
 }
 
-main().catch(console.error);
+// eslint-disable-next-line @typescript-eslint/unbound-method
+main().catch(logger.error);

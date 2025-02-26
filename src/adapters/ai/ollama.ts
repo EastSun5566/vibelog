@@ -19,7 +19,7 @@ export class OllamaProvider implements AiProvider {
   }
 
   async generate(prompt: string): Promise<string> {
-    console.log('Generating with model:', this.model);
+    logger.info('Generating with model:', this.model);
 
     try {
       const response = await this.ai.chat({
@@ -39,7 +39,7 @@ export class OllamaProvider implements AiProvider {
 
       return response.message.content;
     } catch (error) {
-      console.error('AI generation failed:', error);
+      logger.error('AI generation failed:', error);
       throw error;
     }
   }

@@ -1,5 +1,6 @@
 import { AI_PROMPTS } from '../consts';
 import type { AiProvider } from '../types';
+import { logger } from './logger';
 
 export class StyleTransformer {
   constructor(
@@ -15,15 +16,15 @@ export class StyleTransformer {
   }
 
   private logStyleDiff(original: string, transformed: string) {
-    console.log('\nStyle Transformation Diff:');
-    console.log('------------------------');
-    console.log('Original length:', original.length);
-    console.log('Transformed length:', transformed.length);
-    console.log('------------------------\n');
+    logger.info('\nStyle Transformation Diff:');
+    logger.info('------------------------');
+    logger.info('Original length:', original.length);
+    logger.info('Transformed length:', transformed.length);
+    logger.info('------------------------\n');
   }
 
   async transform(originalCss: string): Promise<string> {
-    console.log('Style prompt:', this.stylePrompt);
+    logger.info('Style prompt:', this.stylePrompt);
 
     try {
       const prompt = `
@@ -36,17 +37,17 @@ ${this.stylePrompt}
 ${AI_PROMPTS.STYLE_RULES}}
 `;
 
-      console.log('Generating styles with AI...');
+      logger.info('Generating styles with AI...');
       const generatedCss = await this.provider.generate(prompt);
-      console.log('AI generation completed');
+      logger.info('AI generation completed');
 
       const cleanedCss = this.cleanOutput(generatedCss);
       this.logStyleDiff(originalCss, cleanedCss);
 
-      console.log('Style transformation completed');
+      logger.info('Style transformation completed');
       return cleanedCss;
     } catch (error) {
-      console.error('Style transformation failed:', error);
+      logger.error('Style transformation failed:', error);
       return originalCss;
     }
   }

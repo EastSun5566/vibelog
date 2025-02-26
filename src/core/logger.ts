@@ -8,13 +8,13 @@ export class Logger {
   info(...messages: unknown[]) {
     if (this.level === 'info') {
       const timestamp = new Date().toLocaleTimeString();
-      console.log(`${dim(timestamp)} ${blue('[INFO]')}`, ...messages);
+      console.log(`${dim(timestamp)} ${blue('[vibe] [INFO]')}`, ...messages);
     }
   }
 
   error(...messages: unknown[]) {
     const timestamp = new Date().toLocaleTimeString();
-    console.log(`${dim(timestamp)} ${red('[ERROR]')}`, ...messages);
+    console.log(`${dim(timestamp)} ${red('[vibe] [ERROR]')}`, ...messages);
   }
 
 }

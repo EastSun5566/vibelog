@@ -61,7 +61,7 @@ export class HackMdProvider implements ContentProvider {
         author,
       };
     } catch (error) {
-      console.error('Error fetching HackMD content:', error);
+      logger.error('Error fetching HackMD content:', error);
       throw error;
     }
   }

@@ -2,6 +2,7 @@ import matter from 'gray-matter';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { logger } from '../../core';
 import type { ContentProvider } from '../../types';
 
 export class FsProvider implements ContentProvider {
@@ -36,7 +37,7 @@ export class FsProvider implements ContentProvider {
         },
       };
     } catch (error) {
-      console.error('Error reading content:', error);
+      logger.error('Error reading content:', error);
       throw error;
     }
   }

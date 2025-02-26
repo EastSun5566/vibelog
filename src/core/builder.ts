@@ -5,9 +5,10 @@ import sitemap from '@astrojs/sitemap';
 import fs from 'fs-extra';
 import matter from 'gray-matter';
 
+import { generateSlug, slugify } from './utils';
+import { logger } from './logger';
 import type { ContentProvider } from '../types';
 import type { StyleTransformer } from './transformer';
-import { generateSlug, slugify } from './utils';
 
 export interface SiteBuilderOptions {
   tempDir: string
@@ -28,12 +29,12 @@ export class SiteBuilder {
   }
 
   async prepare() {
-    console.log('Starting build preparation...');
-    console.log(`Creating directory structure in ${this.root}`);
+    logger.info('Starting build preparation...');
+    logger.info(`Creating directory structure in ${this.root}`);
 
     const templateDir = resolve(process.cwd(), 'template');
     await fs.copy(templateDir, this.root);
-    console.log('Template structure copied');
+    logger.info('Template structure copied');
   }
 
 
@@ -45,14 +46,14 @@ export class SiteBuilder {
   }
 
   async build() {
-    console.log('Starting build process...');
+    logger.info('Starting build process...');
 
     try {
-      console.log('Fetching content...');
+      logger.info('Fetching content...');
       const { posts, author } = await this.contentProvider.getContents();
-      console.log(`Found ${String(posts.length)} content items`);
+      logger.info(`Found ${String(posts.length)} content items`);
 
-      console.log('Writing blog posts...');
+      logger.info('Writing blog posts...');
       for (const post of posts) {
         const title = post.title || 'Untitled';
         const excerpt = post.content
@@ -71,17 +72,17 @@ export class SiteBuilder {
         await fs.writeFile(filePath, fileContent);
       }
 
-      console.log('Writing author profile...');
+      logger.info('Writing author profile...');
       const authorContent = matter.stringify(author.bio, {
         name: author.name,
       });
       const authorPath = join(this.root, 'src/content', 'author.md');
       await fs.writeFile(authorPath, authorContent);
 
-      // console.log('Starting style transformation...');
+      // logger.info('Starting style transformation...');
       // await this.transformStyles();
 
-      console.log('Starting Blog build...');
+      logger.info('Starting Blog build...');
       await build({
         root: this.root,
         outDir: this.outDir,
@@ -89,16 +90,16 @@ export class SiteBuilder {
         integrations: [mdx(), sitemap()],
       });
 
-      console.log('Build completed successfully!');
+      logger.info('Build completed successfully!');
     } catch (error) {
-      console.error('Build failed:', error);
+      logger.error('Build failed:', error);
       throw error;
     }
   }
 
   async cleanup() {
-    console.log('Starting cleanup...');
+    logger.info('Starting cleanup...');
     await fs.remove(this.root);
-    console.log('Cleanup completed');
+    logger.info('Cleanup completed');
   }
 }
