@@ -1,4 +1,4 @@
-import { AI_PROMPTS } from '../constants';
+import { AI_PROMPTS } from '../consts';
 import type { AiProvider } from '../types';
 
 export class StyleTransformer {
