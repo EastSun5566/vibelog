@@ -1,22 +1,21 @@
 import { red, blue, dim } from 'kleur/colors';
 
-export type LoggerLevel = 'info' | 'error';
-
 export class Logger {
-  constructor(private level: LoggerLevel = 'info') {}
+  private getTime() {
+    return new Date().toLocaleTimeString();
+  }
 
   info(...messages: unknown[]) {
-    if (this.level === 'info') {
-      const timestamp = new Date().toLocaleTimeString();
-      console.log(`${dim(timestamp)} ${blue('[vibe] [INFO]')}`, ...messages);
-    }
+    console.log(`${dim(this.getTime())} ${blue('[vibe] [INFO]')}`, ...messages);
   }
 
   error(...messages: unknown[]) {
-    const timestamp = new Date().toLocaleTimeString();
-    console.log(`${dim(timestamp)} ${red('[vibe] [ERROR]')}`, ...messages);
+    console.log(`${dim(this.getTime())} ${red('[vibe] [ERROR]')}`, ...messages);
   }
 
+  warn(...messages: unknown[]) {
+    console.log(`${dim(this.getTime())} ${blue('[vibe] [WARN]')}`, ...messages);
+  }
 }
 
 export const logger = new Logger();
