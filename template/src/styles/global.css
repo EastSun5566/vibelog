@@ -1,5 +1,7 @@
-// The CSS is based off of Astro's default blog theme
-// https://github.com/withastro/astro/blob/8483502bb222858af96304a35f5d94b450d2e132/examples/blog/src/styles/global.css
+/**
+ * The CSS is based off of Astro's default blog theme
+ * https://github.com/withastro/astro/blob/8483502bb222858af96304a35f5d94b450d2e132/examples/blog/src/styles/global.css
+ */
 
 /**
  * CSS Variables
@@ -222,32 +224,27 @@ img {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 80px;
 }
 
 .site-nav-links {
   display: flex;
   gap: var(--vibe-spacing-2);
-  height: 100%;
-  align-items: center;
 }
 
-.site-nav-link {
-  display: flex;
-  align-items: center;
-  height: 100%;
-  padding: 0 var(--vibe-spacing-2);
+.site-nav-links a {
+  padding: var(--vibe-spacing-2) var(--vibe-spacing-1);
   color: rgb(var(--vibe-black-rgb));
   border-bottom: 4px solid transparent;
   text-decoration: none;
   transition: all var(--vibe-transition-timing);
 }
 
-.site-nav-link.active {
+.site-nav-links a.active {
   border-bottom-color: var(--vibe-accent);
+  text-decoration: none;
 }
 
-.site-nav-link:hover {
+.site-nav-links a:hover {
   color: var(--vibe-accent);
   border-bottom-color: var(--vibe-accent);
 }
@@ -296,25 +293,25 @@ img {
   width: 100%;
 }
 
-.blog-list-link {
+.blog-item-link {
   display: block;
   text-decoration: none;
   transition: all var(--vibe-transition-timing);
 }
 
-.blog-list-title {
+.blog-item-title {
   margin: 0;
   color: rgb(var(--vibe-black-rgb));
   line-height: 1;
 }
 
-.blog-list-date {
+.blog-item-date {
   margin: 0;
   color: rgb(var(--vibe-gray-rgb));
 }
 
-.blog-list-link:hover .blog-list-title,
-.blog-list-link:hover .blog-list-date {
+.blog-item-link:hover .blog-item-title,
+.blog-item-link:hover .blog-item-date {
   color: var(--vibe-accent);
 }
 
@@ -347,7 +344,6 @@ img {
 }
 
 .blog-post-header {
-  margin-bottom: 1em;
   padding: 1em 0;
   text-align: center;
   line-height: 1;

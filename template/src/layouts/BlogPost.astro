@@ -21,24 +21,24 @@ const [author] = await getCollection('author');
 		<Header />
 		<main>
 			<article class="blog-post">
-				<div class="hero-image">
+				<div class="blog-post-hero">
+					<!-- hero image here -->
 				</div>
-				<div class="prose">
-					<div class="title">
-						<div class="date">
+				<div class="blog-post-content">
+					<header class="blog-post-header">
+						<div class="blog-post-date">
 							<FormattedDate date={date} />
-							{
-								updatedDate && (
-									<div class="last-updated-on">
-										Last updated on <FormattedDate date={updatedDate} />
-									</div>
-								)
-							}
 						</div>
-						<h1>{title}</h1>
-						<hr />
+						<h1 class="blog-post-title">{title}</h1>
+						{updatedDate && (
+							<div class="blog-post-update">
+								Last updated on <FormattedDate date={updatedDate} />
+							</div>
+						)}
+					</header>
+					<div class="prose">
+						<slot />
 					</div>
-					<slot />
 				</div>
 			</article>
 		</main>
