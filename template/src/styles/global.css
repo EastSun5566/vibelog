@@ -80,6 +80,8 @@
    */
   --vibe-content-width: 720px;
   --vibe-content-max-width: calc(100% - 2em);
+
+  --vibe-transition-timing: 0.2s ease;
 }
 
 /**
