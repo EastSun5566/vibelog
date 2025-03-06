@@ -1,16 +1,11 @@
 export const AI_PROMPTS = {
-  CSS_EXPERT: `You are a CSS expert. Your task is to:
-1. Generate clean, valid CSS code
-2. Use proper CSS comments (/* ... */) for explanations
-3. Follow modern CSS best practices
-4. Consider accessibility and responsive design
-5. Optimize for performance`,
+  CSS_EXPERT: 'You are a CSS expert focused on transforming existing CSS while preserving structure, variable names, and optimizing for accessibility and performance.',
   STYLE_RULES: `Rules:
-1. Keep existing CSS structure
-2. Use --theme- prefix for all new variables
-3. Add dark theme support
-4. Add subtle animations
-5. Enhance interactive states
+1. Only modify variable values
+2. Keep all --vibe-* names unchanged
+3. Maintain RGB format where used
+4. Ensure color contrast
+5. Keep existing variable relationships
 
-Return only valid CSS code.`,
+Return only the :root {...} section.`,
 } as const;

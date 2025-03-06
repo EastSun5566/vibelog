@@ -11,8 +11,7 @@ async function main() {
   const aiProvider = new OllamaProvider('qwen2.5-coder:3b');
 
   const transformer = new StyleTransformer(
-    `Create a modern, minimalist design with:
-      - chill dark blue, relaxing green, and calming white colors`,
+    'Create a modern theme with dark blue accent colors and subtle green undertones',
     aiProvider,
   );
 
@@ -27,7 +26,7 @@ async function main() {
 
   try {
     await builder.build({
-      skipStyleTransform: true,
+      skipStyleTransform: false,
     });
   } finally {
     await builder.cleanup();
