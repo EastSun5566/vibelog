@@ -15,11 +15,11 @@ const vibeToolbarApp = {
   entrypoint: fileURLToPath(new URL('./toolbar.ts', import.meta.url)),
 };
 
-function vibe({
-  root,
-}: {
+interface VibeOptions {
   root: string;
-}): AstroIntegration {
+}
+
+function vibe({ root }: VibeOptions): AstroIntegration {
   return {
     name: 'vibe-dev',
     hooks: {
@@ -69,8 +69,7 @@ function vibe({
   };
 }
 
-interface DevServerOptions {
-  root: string;
+interface DevServerOptions extends VibeOptions {
   port?: number;
 }
 export async function createDevServer({
