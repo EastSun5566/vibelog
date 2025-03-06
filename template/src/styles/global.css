@@ -74,6 +74,7 @@
     0 8px 24px rgba(var(--vibe-gray-rgb), 33%),
     0 16px 32px rgba(var(--vibe-gray-rgb), 33%);
 
+  /* Using in main body background */
   --vibe-gradient: rgba(var(--vibe-gray-light-rgb), 50%), #fff;
 
   /**

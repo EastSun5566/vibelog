@@ -40,8 +40,45 @@ export class SiteBuilder {
     logger.info('Template structure copied');
   }
 
+  async fetchContent() {
+    logger.info('Fetching content...');
+
+    const [{ posts }, { name, bio }] = await Promise.all([
+      this.contentProvider.getPosts(),
+      this.contentProvider.getAuthor(),
+    ]);
+    logger.info(`Found ${String(posts.length)} posts of author ${name}`);
+
+    logger.info('Writing blog posts...');
+    for (const post of posts) {
+      const title = post.title || 'Untitled';
+      const excerpt = post.content
+        .split('\n')
+        .find(post => post.trim().length > 0) ?? '';
+      const slug = post.slug || slugify(post.title) || generateSlug();
+
+      const fileContent = matter.stringify(post.content, {
+        title,
+        description: excerpt.slice(0, 100),
+        date: post.date || new Date().toISOString(),
+        slug,
+      });
+
+      const filePath = join(this.root, 'src/content/blog', `${slug}.md`);
+      await fs.writeFile(filePath, fileContent);
+    }
+
+    logger.info('Writing author profile...');
+    const authorContent = matter.stringify(bio, {
+      name,
+    });
+    const authorPath = join(this.root, 'src/content', 'author.md');
+    await fs.writeFile(authorPath, authorContent);
+  }
 
   private async transformStyles() {
+    logger.info('Starting style transformation...');
+
     const cssPath = join(this.root, 'src/styles/global.css');
     const originalCss = await fs.readFile(cssPath, 'utf-8');
     const transformedCss = await this.transformer.transform(originalCss);
@@ -51,46 +88,13 @@ export class SiteBuilder {
   async build({
     skipStyleTransform = false,
   }: BuildOptions = {}) {
-    logger.info('Starting build preparation...');
+    logger.info('Starting build process...');
     await this.prepare();
 
-    logger.info('Starting build process...');
     try {
-      logger.info('Fetching content...');
-      const [{ posts }, { name, bio }] = await Promise.all([
-        this.contentProvider.getPosts(),
-        this.contentProvider.getAuthor(),
-      ]);
-      logger.info(`Found ${String(posts.length)} posts of author ${name}`);
-
-      logger.info('Writing blog posts...');
-      for (const post of posts) {
-        const title = post.title || 'Untitled';
-        const excerpt = post.content
-          .split('\n')
-          .find(post => post.trim().length > 0) ?? '';
-        const slug = post.slug || slugify(post.title) || generateSlug();
-
-        const fileContent = matter.stringify(post.content, {
-          title,
-          description: excerpt.slice(0, 100),
-          date: post.date || new Date().toISOString(),
-          slug,
-        });
-
-        const filePath = join(this.root, 'src/content/blog', `${slug}.md`);
-        await fs.writeFile(filePath, fileContent);
-      }
-
-      logger.info('Writing author profile...');
-      const authorContent = matter.stringify(bio, {
-        name,
-      });
-      const authorPath = join(this.root, 'src/content', 'author.md');
-      await fs.writeFile(authorPath, authorContent);
+      await this.fetchContent();
 
       if (!skipStyleTransform) {
-        logger.info('Starting style transformation...');
         await this.transformStyles();
       }
 

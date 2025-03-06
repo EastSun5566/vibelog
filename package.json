@@ -8,7 +8,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "rm -rf dist && node --import=tsx --env-file=.env src/index.ts",
+    "dev": "rm -rf dist && node --import=tsx --env-file=.env src/index.ts",
     "preview": "pnpx serve dist",
     "lint": "eslint --fix src"
   },
