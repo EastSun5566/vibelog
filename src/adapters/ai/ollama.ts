@@ -1,4 +1,4 @@
-import { Ollama } from 'ollama';
+import { Ollama, type Options } from 'ollama';
 
 import { AI_PROMPTS } from '../../consts';
 import type { AiProvider } from '../../types';
@@ -9,10 +9,7 @@ export class OllamaProvider implements AiProvider {
 
   constructor(
     private model: string,
-    private options?: {
-      temperature?: number
-      maxTokens?: number
-    },
+    private options?: Partial<Options>,
   ) {
     logger.info(`AI provider: Ollama (${model})`);
     this.ai = new Ollama();
@@ -34,7 +31,7 @@ export class OllamaProvider implements AiProvider {
             content: prompt,
           },
         ],
-        ...this.options,
+        options: this.options,
       });
 
       return response.message.content;

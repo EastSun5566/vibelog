@@ -6,84 +6,105 @@
 /**
  * CSS Variables
  * ------------
- * 1. Base Tokens: The most fundamental design tokens
- * 2. Semantic Tokens: Design tokens with semantic meaning
- * 3. Component Tokens: Component-level design tokens
+ * Design System Variables and Their Usage:
+ * 
+ * 1. Colors
+ *    --vibe-white: Header background, base colors
+ *    --vibe-black: Primary text, shadows
+ *    --vibe-gray-*: Text hierarchy, borders, UI elements
+ *    --vibe-accent-*: Links, buttons, interactive elements
+ *    RGB values: Used with opacity (shadows, overlays)
+ * 
+ * 2. Typography
+ *    --vibe-font-size-base: Body text (20px)
+ *    --vibe-font-size-h*: Heading scale (follows modular scale)
+ *    --vibe-line-height-*: Text block spacing
+ * 
+ * 3. Spacing
+ *    --vibe-spacing-*: Component gaps, layout rhythm
+ *    --vibe-content-width: Content container
+ * 
+ * 4. Effects
+ *    --vibe-gradient: Page background
+ *    --vibe-box-shadow: Card elevation
+ *    --vibe-transition-timing: Interactive feedback
  */
 
 :root {
   /**
    * Base Colors
-   * Matching original Astro blog theme colors
+   * Used for: Basic UI elements, text, backgrounds
    */
-  --vibe-white: #ffffff;
-  --vibe-black: #13151a;
+  --vibe-white: #ffffff; /* Header bg, card bg */
+  --vibe-black: #13151a; /* Primary text */
 
-  /* Original Astro gray values */
-  --vibe-gray-1: rgb(229, 233, 240);
-  --vibe-gray-2: rgb(96, 115, 159);
-  --vibe-gray-3: rgb(34, 41, 57);
+  /* Gray Scale: Text hierarchy, borders, UI elements */
+  --vibe-gray-1: rgb(229, 233, 240); /* Light bg, borders */
+  --vibe-gray-2: rgb(96, 115, 159); /* Secondary text */
+  --vibe-gray-3: rgb(34, 41, 57); /* Strong text */
 
-  /* Original Astro accent colors */
-  --vibe-accent-1: #2337ff;
-  --vibe-accent-2: #000d8a;
+  /* Accent Colors: Interactive elements, highlights */
+  --vibe-accent-1: #2337ff; /* Links, buttons */
+  --vibe-accent-2: #000d8a; /* Hover states */
 
   /**
    * Typography
-   * Base typographic units
+   * Maintains consistent text hierarchy
    */
   --vibe-font-family-base: "Atkinson", sans-serif;
   --vibe-font-family-mono: ui-monospace, monospace;
 
-  /* Original Astro font sizes */
-  --vibe-font-size-base: 20px;
-  --vibe-font-size-sm: 16px;
-  --vibe-font-size-h1: 3.052em;
-  --vibe-font-size-h2: 2.441em;
-  --vibe-font-size-h3: 1.953em;
-  --vibe-font-size-h4: 1.563em;
-  --vibe-font-size-h5: 1.25em;
+  /* Font Scale: Based on 1.25 ratio */
+  --vibe-font-size-base: 20px; /* Body text */
+  --vibe-font-size-sm: 16px; /* Small text */
+  --vibe-font-size-h1: 3.052em; /* Primary headlines */
+  --vibe-font-size-h2: 2.441em; /* Section headers */
+  --vibe-font-size-h3: 1.953em; /* Sub-sections */
+  --vibe-font-size-h4: 1.563em; /* Card titles */
+  --vibe-font-size-h5: 1.25em; /* Small titles */
 
-  --vibe-line-height-tight: 1.2;
-  --vibe-line-height-normal: 1.6;
-  --vibe-line-height-relaxed: 1.75;
+  /* Line Heights: Readability & vertical rhythm */
+  --vibe-line-height-tight: 1.2; /* Headings */
+  --vibe-line-height-normal: 1.6; /* Body text */
+  --vibe-line-height-relaxed: 1.75; /* Large text blocks */
 
   /**
    * Spacing
-   * Matching original Astro spacing
+   * Consistent layout rhythm
    */
-  --vibe-spacing-1: 0.5rem;
-  --vibe-spacing-2: 1rem;
-  --vibe-spacing-3: 2rem;
-  --vibe-spacing-4: 3em;
+  --vibe-spacing-1: 0.5rem; /* Small gaps */
+  --vibe-spacing-2: 1rem; /* Standard padding */
+  --vibe-spacing-3: 2rem; /* Section spacing */
+  --vibe-spacing-4: 3em; /* Large blocks */
 
   /**
    * Semantic Tokens
-   * Mapping to original Astro variables
+   * Component-specific variables
    */
-  /* Original variable mappings */
-  --vibe-accent: var(--vibe-accent-1);
-  --vibe-accent-dark: var(--vibe-accent-2);
+  --vibe-accent: var(--vibe-accent-1); /* Primary action */
+  --vibe-accent-dark: var(--vibe-accent-2); /* Secondary action */
 
+  /* Color values for opacity/alpha */
   --vibe-black-rgb: 15, 18, 25;
   --vibe-gray-rgb: 96, 115, 159;
   --vibe-gray-light-rgb: 229, 233, 240;
   --vibe-gray-dark-rgb: 34, 41, 57;
 
+  /* Effects & Animations */
   --vibe-box-shadow: 0 2px 6px rgba(var(--vibe-gray-rgb), 25%),
     0 8px 24px rgba(var(--vibe-gray-rgb), 33%),
     0 16px 32px rgba(var(--vibe-gray-rgb), 33%);
 
-  /* Using in main body background */
   --vibe-gradient: rgba(var(--vibe-gray-light-rgb), 50%), #fff;
 
   /**
-   * Component Tokens
-   * Component-specific design tokens
+   * Layout
+   * Page structure
    */
   --vibe-content-width: 720px;
   --vibe-content-max-width: calc(100% - 2em);
 
+  /* Transitions */
   --vibe-transition-timing: 0.2s ease;
 }
 
