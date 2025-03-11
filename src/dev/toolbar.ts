@@ -11,9 +11,8 @@ export default defineToolbarApp({
             class="vibe-prompt" 
             placeholder="Enter your style prompt..."
           />
-          <button type="submit" class="vibe-transform">Transform</button>
+          <button type="submit" class="vibe-button">Vibe</button>
         </form>
-        <div class="vibe-status"></div>
       </div>
 
       <style>
@@ -26,15 +25,14 @@ export default defineToolbarApp({
 
     const form = canvas.querySelector<HTMLFormElement>('.vibe-form')!;
     const input = canvas.querySelector<HTMLInputElement>('.vibe-prompt')!;
-    const button = canvas.querySelector<HTMLButtonElement>('.vibe-transform')!;
-    const status = canvas.querySelector<HTMLDivElement>('.vibe-status')!;
+    const button = canvas.querySelector<HTMLButtonElement>('.vibe-button')!;
 
     async function handleTransform() {
       const prompt = input.value.trim();
       if (!prompt) return;
 
       try {
-        status.textContent = 'Transforming...';
+        button.textContent = 'Vibing...';
         button.disabled = true;
 
         const response = await fetch('/_vibe/transform', {
@@ -46,10 +44,11 @@ export default defineToolbarApp({
           throw new Error('Transform failed');
         }
 
-        status.textContent = 'Transform successful!';
+        button.textContent = 'Vibe';
         input.value = '';
       } catch (error) {
-        status.textContent = 'Transform failed: ' + (error instanceof Error ? error.message : 'Unknown error');
+        console.error(error);
+        button.textContent = 'Error';
       } finally {
         button.disabled = false;
       }
