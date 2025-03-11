@@ -7,14 +7,6 @@ import type { AstroIntegration } from 'astro';
 import { StyleTransformer } from '../core/transformer';
 import { OllamaProvider } from '../adapters/ai';
 
-// Vibe Toolbar App
-const vibeToolbarApp = {
-  id: 'vibe-style-transformer',
-  name: 'Vibe',
-  icon: '🎨',
-  entrypoint: fileURLToPath(new URL('./toolbar.ts', import.meta.url)),
-};
-
 interface VibeOptions {
   root: string;
 }
@@ -23,8 +15,12 @@ function vibe({ root }: VibeOptions): AstroIntegration {
   return {
     name: 'vibe-dev',
     hooks: {
-      'astro:config:setup': ({ addDevToolbarApp }) => {
-        addDevToolbarApp(vibeToolbarApp);
+      'astro:config:setup': ({ injectScript }) => {
+        injectScript('page', `
+          import { VibeUI } from ${JSON.stringify(fileURLToPath(new URL('./toolbar.ts', import.meta.url)))};
+          customElements.define('vibe-toolbar', VibeUI);
+          document.body.appendChild(document.createElement('vibe-toolbar'));
+        `);
       },
       'astro:server:setup': ({ server }) => {
         server.middlewares.use((req, res, next) => {
@@ -82,6 +78,9 @@ export async function createDevServer({
     root,
     server: { port },
     site: 'http://localhost:5000',
+    devToolbar: {
+      enabled: false,
+    },
     integrations: [vibe({ root })],
   });
 

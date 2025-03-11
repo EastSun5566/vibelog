@@ -1,33 +1,68 @@
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
-import { defineToolbarApp } from 'astro/toolbar';
+export class VibeUI extends HTMLElement {
+  constructor() {
+    super();
+    const shadow = this.attachShadow({ mode: 'open' });
 
-export default defineToolbarApp({
-  init(canvas, app) {
-    canvas.innerHTML = `
+    shadow.innerHTML = `
       <div class="vibe-container">
         <form class="vibe-form">
           <input 
             type="text" 
             class="vibe-prompt" 
-            placeholder="Enter your style prompt..."
+            placeholder="style prompt..."
           />
           <button type="submit" class="vibe-button">Vibe</button>
         </form>
       </div>
 
       <style>
-      .vibe-container {
-        display: flex;
-        justify-content: center;
-      }
+        .vibe-container {
+          position: fixed;
+          bottom: 16px;
+          right: 16px;
+          z-index: 999999;
+          background: var(--vibe-black);
+          border-radius: 4px;
+          padding: 8px;
+          box-shadow: var(--vibe-box-shadow);
+        }
+
+        .vibe-form {
+          display: flex;
+          gap: 8px;
+        }
+
+        .vibe-prompt {
+          padding: 8px;
+          border: 1px solid var(--vibe-gray-2);
+          border-radius: 4px;
+          background: transparent;
+          color: white;
+        }
+
+        .vibe-button {
+          padding: 8px 16px;
+          border: none;
+          border-radius: 4px;
+          background: var(--vibe-accent-1);
+          color: var(--vibe-white);
+          cursor: pointer;
+        }
+
+        .vibe-button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
       </style>
     `;
 
-    const form = canvas.querySelector<HTMLFormElement>('.vibe-form')!;
-    const input = canvas.querySelector<HTMLInputElement>('.vibe-prompt')!;
-    const button = canvas.querySelector<HTMLButtonElement>('.vibe-button')!;
+    const form = shadow.querySelector<HTMLFormElement>('.vibe-form');
+    const input = shadow.querySelector<HTMLInputElement>('.vibe-prompt');
+    const button = shadow.querySelector<HTMLButtonElement>('.vibe-button');
 
     async function handleTransform() {
+      if (!form || !input || !button) return;
+
       const prompt = input.value.trim();
       if (!prompt) return;
 
@@ -40,6 +75,7 @@ export default defineToolbarApp({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt }),
         });
+
         if (!response.ok) {
           throw new Error('Transform failed');
         }
@@ -54,15 +90,9 @@ export default defineToolbarApp({
       }
     }
 
-    form.addEventListener('submit', (event) => {
+    form?.addEventListener('submit', (event) => {
       event.preventDefault();
       handleTransform().catch(console.error);
     });
-
-    app.onToggled(({ state }) => {
-      if (state) {
-        input.focus();
-      }
-    });
-  },
-});
+  }
+}
