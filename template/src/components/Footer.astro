@@ -2,15 +2,16 @@
 const today = new Date();
 
 interface Props {
-	name: string;
+  name: string;
 }
 
 const { name } = Astro.props;
 ---
 
 <footer class="site-footer">
-	&copy; {today.getFullYear()} {name}. All rights reserved.
-	<!-- <div class="social-links">
+  &copy; {today.getFullYear()}
+  {name}. All rights reserved.
+  <!-- <div class="social-links">
 		<a href="https://m.webtoo.ls/@astro" target="_blank">
 			<span class="sr-only">Follow Astro on Mastodon</span>
 			<svg
