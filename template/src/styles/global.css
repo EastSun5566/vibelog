@@ -51,7 +51,7 @@
    * Typography
    * Maintains consistent text hierarchy
    */
-  --vibe-font-family-base: "Atkinson", sans-serif;
+  --vibe-font-family-base: "Atkinson", ui-sans-serif, system-ui, sans-serif;
   --vibe-font-family-mono: ui-monospace, monospace;
 
   /* Font Scale: Based on 1.25 ratio */
