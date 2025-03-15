@@ -5,13 +5,13 @@ import fs from 'fs-extra';
 import type { AstroIntegration } from 'astro';
 
 import { StyleTransformer } from '../core/transformer';
-import { OllamaProvider } from '../adapters/ai';
 
 interface VibeOptions {
   root: string;
+  styleTransformer: StyleTransformer;
 }
 
-function vibe({ root }: VibeOptions): AstroIntegration {
+function vibe({ root, styleTransformer }: VibeOptions): AstroIntegration {
   return {
     name: 'vibe-dev',
     hooks: {
@@ -36,12 +36,7 @@ function vibe({ root }: VibeOptions): AstroIntegration {
                 const cssPath = join(root, 'src/styles/global.css');
                 const originalCss = await fs.readFile(cssPath, 'utf-8');
 
-                const transformer = new StyleTransformer(
-                  prompt,
-                  new OllamaProvider('qwen2.5-coder:3b'),
-                );
-
-                const transformedCss = await transformer.transform(originalCss);
+                const transformedCss = await styleTransformer.transform({ originalCss, stylePrompt: prompt });
                 await fs.writeFile(cssPath, transformedCss);
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -71,17 +66,18 @@ interface DevServerOptions extends VibeOptions {
 export async function createDevServer({
   root: _root,
   port = 5000,
+  styleTransformer,
 }: DevServerOptions) {
   const root = resolve(process.cwd(), _root);
 
   const server = await dev({
     root,
     server: { port },
-    site: 'http://localhost:5000',
+    site: `http://localhost:${port.toString()}`,
     devToolbar: {
       enabled: false,
     },
-    integrations: [vibe({ root })],
+    integrations: [vibe({ root, styleTransformer })],
   });
 
   return server;

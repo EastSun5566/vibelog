@@ -1,34 +1,32 @@
 import {
   logger,
-  SiteBuilder, StyleTransformer } from './core';
+  createBuilder,
+  createStyleTransformer,
+} from './core';
+import { createDevServer } from './dev';
 import {
   // FsProvider,
   HackMdProvider,
 } from './adapters/content';
 import { OllamaProvider } from './adapters/ai';
-import { createDevServer } from './dev';
 
 async function main() {
   // const contentProvider = new FsProvider('./.content');
-  const contentProvider = new HackMdProvider('EastSun5566');
-  const aiProvider = new OllamaProvider('qwen2.5-coder:3b');
-
-  const transformer = new StyleTransformer(
-    'Create a modern theme with dark blue accent colors and subtle green undertones',
-    aiProvider,
-  );
-
-  const builder = new SiteBuilder(
+  const contentProvider = new HackMdProvider('stanley2058');
+  const aiProvider = new OllamaProvider('gemma3:1b');
+  const styleTransformer = createStyleTransformer({ aiProvider });
+  const builder = createBuilder(
     {
       tempDir: '.temp',
       outDir: 'dist',
+      contentProvider,
+      styleTransformer,
     },
-    contentProvider,
-    transformer,
   );
 
   // try {
   //   await builder.build({
+  //     stylePrompt: 'Create a modern theme with dark blue accent colors and subtle green undertones',
   //     skipStyleTransform: false,
   //   });
   // } finally {
@@ -41,6 +39,7 @@ async function main() {
 
     const server = await createDevServer({
       root: '.temp',
+      styleTransformer,
     });
 
     const cleanup = () => {

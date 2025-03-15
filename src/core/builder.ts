@@ -10,26 +10,36 @@ import { logger } from './logger';
 import type { ContentProvider } from '../types';
 import type { StyleTransformer } from './transformer';
 
-export interface SiteBuilderOptions {
+export interface BuilderOptions {
   tempDir: string
   outDir: string
+  contentProvider: ContentProvider
+  styleTransformer: StyleTransformer
 }
 
 interface BuildOptions {
-  skipStyleTransform?: boolean
+  stylePrompt: string;
+  skipStyleTransform?: boolean;
 }
 
-export class SiteBuilder {
+export class Builder {
   private root: string;
   private outDir: string;
+  contentProvider: ContentProvider;
+  styleTransformer: StyleTransformer;
 
   constructor(
-    options: SiteBuilderOptions,
-    private contentProvider: ContentProvider,
-    private transformer: StyleTransformer,
+    {
+      tempDir,
+      outDir,
+      contentProvider,
+      styleTransformer,
+    }: BuilderOptions,
   ) {
-    this.root = resolve(process.cwd(), options.tempDir);
-    this.outDir = resolve(process.cwd(), options.outDir);
+    this.root = resolve(process.cwd(), tempDir);
+    this.outDir = resolve(process.cwd(), outDir);
+    this.contentProvider = contentProvider;
+    this.styleTransformer = styleTransformer;
   }
 
   async prepare() {
@@ -76,18 +86,22 @@ export class SiteBuilder {
     await fs.writeFile(authorPath, authorContent);
   }
 
-  private async transformStyles() {
+  private async transformStyles(stylePrompt: string) {
     logger.info('Starting style transformation...');
 
     const cssPath = join(this.root, 'src/styles/global.css');
     const originalCss = await fs.readFile(cssPath, 'utf-8');
-    const transformedCss = await this.transformer.transform(originalCss);
+    const transformedCss = await this.styleTransformer.transform({
+      originalCss,
+      stylePrompt,
+    });
     await fs.writeFile(cssPath, transformedCss);
   }
 
   async build({
+    stylePrompt,
     skipStyleTransform = false,
-  }: BuildOptions = {}) {
+  }: BuildOptions) {
     logger.info('Starting build process...');
     await this.prepare();
 
@@ -95,7 +109,7 @@ export class SiteBuilder {
       await this.fetchContent();
 
       if (!skipStyleTransform) {
-        await this.transformStyles();
+        await this.transformStyles(stylePrompt);
       }
 
       logger.info('Starting Blog build...');
@@ -118,4 +132,10 @@ export class SiteBuilder {
     await fs.remove(this.root);
     logger.info('Cleanup completed');
   }
+}
+
+export function createBuilder(
+  options: BuilderOptions,
+): Builder {
+  return new Builder(options);
 }

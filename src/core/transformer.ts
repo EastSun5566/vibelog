@@ -2,11 +2,18 @@ import { AI_PROMPTS } from '../consts';
 import type { AiProvider } from '../types';
 import { logger } from './logger';
 
+interface StyleTransformerOptions {
+  aiProvider: AiProvider
+}
+
 export class StyleTransformer {
-  constructor(
-    private stylePrompt: string,
-    private provider: AiProvider,
-  ) {}
+  private aiProvider: AiProvider;
+
+  constructor({
+    aiProvider,
+  }: StyleTransformerOptions) {
+    this.aiProvider = aiProvider;
+  }
 
   private cleanOutput(css: string): string {
     return css
@@ -15,21 +22,27 @@ export class StyleTransformer {
       .trim();
   }
 
-  private generatePrompt(rootCss: string): string {
+  private generatePrompt(rootCss: string, stylePrompt: string): string {
     return `
 Transform these CSS variables while keeping their names intact:
 
 ${rootCss}
 
 Style Requirements:
-${this.stylePrompt}
+${stylePrompt}
 
 ${AI_PROMPTS.STYLE_RULES}
 `;
   }
 
-  async transform(originalCss: string): Promise<string> {
-    logger.info('Style prompt:', this.stylePrompt);
+  async transform({
+    originalCss,
+    stylePrompt = AI_PROMPTS.CSS_EXPERT,
+  }: {
+    originalCss: string
+    stylePrompt?: string
+  }): Promise<string> {
+    logger.info('Style prompt:', stylePrompt);
 
     try {
       const rootMatch = /\/\*\*[\s\S]*?\*\/\s*:root\s*{[^}]+}/.exec(originalCss);
@@ -39,8 +52,8 @@ ${AI_PROMPTS.STYLE_RULES}
       }
 
       logger.info('Generating styles with AI...');
-      const prompt = this.generatePrompt(rootMatch[0]);
-      const generatedCss = await this.provider.generate(prompt);
+      const prompt = this.generatePrompt(rootMatch[0], stylePrompt);
+      const generatedCss = await this.aiProvider.generate(prompt);
       logger.info('AI generation completed');
 
       const cleanedCss = this.cleanOutput(generatedCss);
@@ -53,4 +66,10 @@ ${AI_PROMPTS.STYLE_RULES}
       return originalCss;
     }
   }
+}
+
+export function createStyleTransformer({
+  aiProvider,
+}: StyleTransformerOptions): StyleTransformer {
+  return new StyleTransformer({ aiProvider });
 }
