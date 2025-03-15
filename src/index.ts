@@ -15,14 +15,12 @@ async function main() {
   const contentProvider = new HackMdProvider('stanley2058');
   const aiProvider = new OllamaProvider('gemma3:1b');
   const styleTransformer = createStyleTransformer({ aiProvider });
-  const builder = createBuilder(
-    {
-      tempDir: '.temp',
-      outDir: 'dist',
-      contentProvider,
-      styleTransformer,
-    },
-  );
+  const builder = createBuilder({
+    tempDir: '.temp',
+    outDir: 'dist',
+    contentProvider,
+    styleTransformer,
+  });
 
   // try {
   //   await builder.build({

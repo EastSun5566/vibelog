@@ -1,5 +1,5 @@
 {
-  "name": "vibe",
+  "name": "vibelog",
   "version": "0.0.0",
   "description": "Bring your own content with some vibes",
   "main": "dist/index.js",
