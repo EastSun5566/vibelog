@@ -44,7 +44,7 @@ export class VibeUI extends HTMLElement {
           padding: 8px 16px;
           border: none;
           border-radius: 4px;
-          background: var(--vibe-accent-1);
+          background: var(--vibe-accent);
           color: var(--vibe-white);
           cursor: pointer;
         }

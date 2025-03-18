@@ -19,15 +19,6 @@
  *    --vibe-font-size-base: Body text (20px)
  *    --vibe-font-size-h*: Heading scale (follows modular scale)
  *    --vibe-line-height-*: Text block spacing
- * 
- * 3. Spacing
- *    --vibe-spacing-*: Component gaps, layout rhythm
- *    --vibe-content-width: Content container
- * 
- * 4. Effects
- *    --vibe-gradient: Page background
- *    --vibe-box-shadow: Card elevation
- *    --vibe-transition-timing: Interactive feedback
  */
 
 :root {
@@ -35,7 +26,7 @@
    * Base Colors
    * Used for: Basic UI elements, text, backgrounds
    */
-  --vibe-white: #ffffff; /* Header bg, card bg */
+  --vibe-white: #fafafa; /* Header bg, card bg */
   --vibe-black: #13151a; /* Primary text */
 
   /* Gray Scale: Text hierarchy, borders, UI elements */
@@ -44,45 +35,33 @@
   --vibe-gray-3: rgb(34, 41, 57); /* Strong text */
 
   /* Accent Colors: Interactive elements, highlights */
-  --vibe-accent-1: #2337ff; /* Links, buttons */
-  --vibe-accent-2: #000d8a; /* Hover states */
+  --vibe-accent: #2337ff; /* Links, buttons */
+  --vibe-accent: #000d8a; /* Hover states */
 
-  /**
-   * Typography
-   * Maintains consistent text hierarchy
-   */
+  /** Typography */
   --vibe-font-family-base: "Atkinson", ui-sans-serif, system-ui, sans-serif;
   --vibe-font-family-mono: ui-monospace, monospace;
 
   /* Font Scale: Based on 1.25 ratio */
-  --vibe-font-size-base: 20px; /* Body text */
-  --vibe-font-size-sm: 16px; /* Small text */
-  --vibe-font-size-h1: 3.052em; /* Primary headlines */
-  --vibe-font-size-h2: 2.441em; /* Section headers */
-  --vibe-font-size-h3: 1.953em; /* Sub-sections */
-  --vibe-font-size-h4: 1.563em; /* Card titles */
-  --vibe-font-size-h5: 1.25em; /* Small titles */
+  --vibe-font-size-base: 1.25rem; /* Body text */
+  --vibe-font-size-sm: 1rem; /* Small text */
+  --vibe-font-size-h1: 3.052rem; /* Primary headlines */
+  --vibe-font-size-h2: 2.441rem; /* Section headers */
+  --vibe-font-size-h3: 1.953rem; /* Sub-sections */
+  --vibe-font-size-h4: 1.563rem; /* Card titles */
+  --vibe-font-size-h5: 1.25rem; /* Small titles */
 
   /* Line Heights: Readability & vertical rhythm */
   --vibe-line-height-tight: 1.2; /* Headings */
   --vibe-line-height-normal: 1.6; /* Body text */
   --vibe-line-height-relaxed: 1.75; /* Large text blocks */
 
-  /**
-   * Spacing
-   * Consistent layout rhythm
-   */
+  /** Spacing */
   --vibe-spacing-1: 0.5rem; /* Small gaps */
   --vibe-spacing-2: 1rem; /* Standard padding */
   --vibe-spacing-3: 2rem; /* Section spacing */
-  --vibe-spacing-4: 3em; /* Large blocks */
-
-  /**
-   * Semantic Tokens
-   * Component-specific variables
-   */
-  --vibe-accent: var(--vibe-accent-1); /* Primary action */
-  --vibe-accent-dark: var(--vibe-accent-2); /* Secondary action */
+  --vibe-spacing-4: 3rem; /* Large blocks */
+  --vibe-spacing-5: 6rem; /* Extra large gaps */
 
   /* Color values for opacity/alpha */
   --vibe-black-rgb: 15, 18, 25;
@@ -94,18 +73,50 @@
   --vibe-box-shadow: 0 2px 6px rgba(var(--vibe-gray-rgb), 25%),
     0 8px 24px rgba(var(--vibe-gray-rgb), 33%),
     0 16px 32px rgba(var(--vibe-gray-rgb), 33%);
+  --vibe-transition-timing: 0.2s ease;
 
-  --vibe-gradient: rgba(var(--vibe-gray-light-rgb), 50%), #fff;
-
-  /**
-   * Layout
-   * Page structure
-   */
+  /** Component related */
   --vibe-content-width: 720px;
   --vibe-content-max-width: calc(100% - 2em);
 
-  /* Transitions */
-  --vibe-transition-timing: 0.2s ease;
+  --vibe-body-bg: var(--vibe-white);
+  --vibe-header-bg: var(--vibe-white);
+  --vibe-footer-bg: var(--vibe-white);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --vibe-white: #13181f;
+    --vibe-black: #f8fafc;
+
+    --vibe-gray-1: rgb(34, 41, 57);
+    --vibe-gray-2: rgb(159, 178, 221);
+    --vibe-gray-3: rgb(220, 224, 231);
+
+    --vibe-accent: #60a5fa;
+    --vibe-accent: #93c5fd;
+
+    --vibe-black-rgb: 248, 250, 252;
+    --vibe-gray-rgb: 159, 178, 221;
+    --vibe-gray-light-rgb: 34, 41, 57;
+    --vibe-gray-dark-rgb: 220, 224, 231;
+  }
+
+  pre {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  blockquote {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  img:not([src*=".svg"]) {
+    filter: grayscale(50%);
+  }
+
+  img[src*=".svg"] {
+    filter: invert(100%);
+  }
 }
 
 /**
@@ -131,18 +142,27 @@
  * Base Styles
  * -----------
  */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
 body {
   font-family: var(--vibe-font-family-base);
-  margin: 0;
   padding: 0;
-  text-align: left;
-  background: linear-gradient(var(--vibe-gradient)) no-repeat;
-  background-size: 100% 600px;
-  word-wrap: break-word;
+  background-color: var(--vibe-body-bg);
   overflow-wrap: break-word;
   color: rgb(var(--vibe-gray-dark-rgb));
   font-size: var(--vibe-font-size-base);
   line-height: var(--vibe-line-height-normal);
+  transition: background-color var(--vibe-transition-timing),
+    color var(--vibe-transition-timing);
+  -webkit-font-smoothing: antialiased;
 }
 
 main {
@@ -162,9 +182,9 @@ h3,
 h4,
 h5,
 h6 {
-  margin: 0 0 0.5rem 0;
   color: rgb(var(--vibe-black-rgb));
   line-height: var(--vibe-line-height-tight);
+  margin-bottom: var(--vibe-spacing-1);
 }
 
 h1 {
@@ -198,16 +218,16 @@ a:hover {
 }
 
 p {
-  margin-bottom: 1em;
+  margin-bottom: var(--vibe-spacing-2);
 }
 
 textarea {
   width: 100%;
-  font-size: 16px;
+  font-size: inherit;
 }
 
 input {
-  font-size: 16px;
+  font-size: inherit;
 }
 
 table {
@@ -218,6 +238,56 @@ img {
   max-width: 100%;
   height: auto;
   border-radius: 8px;
+  box-shadow: var(--vibe-box-shadow);
+}
+
+svg {
+  stroke: currentColor;
+}
+
+code {
+  font-family: var(--vibe-font-family-mono);
+  padding: 0.25rem 0.5rem;
+  background-color: rgb(var(--vibe-gray-light-rgb));
+  border-radius: 2px;
+}
+
+pre {
+  background-color: rgba(var(--vibe-gray-light-rgb), 0.05);
+  padding: 1.5rem;
+  border-radius: 8px;
+
+  & > code {
+    all: unset;
+  }
+}
+
+blockquote {
+  background-color: rgba(var(--vibe-gray-light-rgb), 0.05);
+  border-left: 4px solid var(--vibe-accent);
+  padding: 0 0 0 1em;
+  font-size: var(--vibe-font-size-h5);
+  font-style: italic;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid rgb(var(--vibe-gray-light-rgb));
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background-color: rgba(var(--vibe-gray-light-rgb), 0.05);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--vibe-accent);
+  border-radius: 4px;
 }
 
 /**
@@ -226,16 +296,11 @@ img {
  */
 .site-header {
   padding-inline: 1em;
-  background: var(--vibe-white);
+  background-color: var(--vibe-header-bg);
   box-shadow: 0 2px 8px rgb(from var(--vibe-black) a(5%));
 
   & h2 {
     font-size: var(--vibe-font-size-base);
-
-    & a,
-    & a.active {
-      text-decoration: none;
-    }
   }
 
   & nav {
@@ -253,12 +318,10 @@ img {
     padding: var(--vibe-spacing-2) var(--vibe-spacing-1);
     color: rgb(var(--vibe-black-rgb));
     border-bottom: 4px solid transparent;
-    text-decoration: none;
     transition: all var(--vibe-transition-timing);
 
     &.active {
       border-bottom-color: var(--vibe-accent);
-      text-decoration: none;
     }
 
     &:hover {
@@ -270,11 +333,12 @@ img {
 
 /**
  * Footer Component
- * ---------------
+ * ----------------
  */
-.site-footer {
-  padding: 2em 1em 6em 1em;
-  background: linear-gradient(var(--vibe-gradient)) no-repeat;
+footer {
+  padding: var(--vibe-spacing-2) var(--vibe-spacing-1) var(--vibe-spacing-5)
+    var(--vibe-spacing-1);
+  background-color: var(--vibe-footer-bg);
   color: rgb(var(--vibe-gray-rgb));
   text-align: center;
 }
@@ -282,8 +346,8 @@ img {
 .social-links {
   display: flex;
   justify-content: center;
-  gap: 1em;
-  margin-top: 1em;
+  gap: var(--vibe-spacing-2);
+  margin-top: var(--vibe-spacing-2);
 
   & a {
     color: rgb(var(--vibe-gray-rgb));
@@ -304,7 +368,6 @@ img {
   flex-direction: column;
   gap: var(--vibe-spacing-3);
   list-style-type: none;
-  margin: 0;
   padding: 0;
 }
 
@@ -326,13 +389,11 @@ img {
 }
 
 .blog-item-title {
-  margin: 0;
   color: rgb(var(--vibe-black-rgb));
   line-height: 1;
 }
 
 .blog-item-date {
-  margin: 0;
   color: rgb(var(--vibe-gray-rgb));
 }
 
@@ -365,17 +426,17 @@ img {
 }
 
 .blog-post-header {
-  padding: 1em 0;
+  padding: var(--vibe-spacing-2) 0;
   text-align: center;
   line-height: 1;
 }
 
 .blog-post-title {
-  margin: 0 0 0.5em 0;
+  margin-bottom: var(--vibe-spacing-1);
 }
 
 .blog-post-date {
-  margin-bottom: 0.5em;
+  margin-bottom: var(--vibe-spacing-1);
   color: rgb(var(--vibe-gray-rgb));
 }
 
@@ -389,35 +450,7 @@ img {
  * ---------------
  */
 .prose p {
-  margin-bottom: 2em;
-}
-
-code {
-  font-family: var(--vibe-font-family-mono);
-  padding: 2px 5px;
-  background-color: rgb(var(--vibe-gray-light-rgb));
-  border-radius: 2px;
-}
-
-pre {
-  padding: 1.5em;
-  border-radius: 8px;
-
-  & > code {
-    all: unset;
-  }
-}
-
-blockquote {
-  border-left: 4px solid var(--vibe-accent);
-  padding: 0 0 0 20px;
-  margin: 0;
-  font-size: 1.333em;
-}
-
-hr {
-  border: none;
-  border-top: 1px solid rgb(var(--vibe-gray-light-rgb));
+  margin-bottom: var(--vibe-spacing-3);
 }
 
 /**

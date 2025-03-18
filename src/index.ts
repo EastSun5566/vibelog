@@ -12,7 +12,7 @@ import { OllamaProvider } from './adapters/ai';
 
 async function main() {
   // const contentProvider = new FsProvider('./.content');
-  const contentProvider = new HackMdProvider('stanley2058');
+  const contentProvider = new HackMdProvider('EastSun5566');
   const aiProvider = new OllamaProvider('gemma3:1b');
   const styleTransformer = createStyleTransformer({ aiProvider });
   const builder = createBuilder({
