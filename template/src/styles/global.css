@@ -36,7 +36,6 @@
 
   /* Accent Colors: Interactive elements, highlights */
   --vibe-accent: #2337ff; /* Links, buttons */
-  --vibe-accent: #000d8a; /* Hover states */
 
   /** Typography */
   --vibe-font-family-base: "Atkinson", ui-sans-serif, system-ui, sans-serif;
@@ -94,7 +93,6 @@
     --vibe-gray-3: rgb(220, 224, 231);
 
     --vibe-accent: #60a5fa;
-    --vibe-accent: #93c5fd;
 
     --vibe-black-rgb: 248, 250, 252;
     --vibe-gray-rgb: 159, 178, 221;
