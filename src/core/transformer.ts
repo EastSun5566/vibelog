@@ -45,7 +45,7 @@ ${AI_PROMPTS.STYLE_RULES}
     logger.info('Style prompt:', stylePrompt);
 
     try {
-      const rootMatch = /\/\*\*[\s\S]*?\*\/\s*:root\s*{[^}]+}/.exec(originalCss);
+      const rootMatch = /:root\s*\{[^}]+\}/.exec(originalCss);
       if (!rootMatch) {
         logger.error('No :root section found in original CSS');
         return originalCss;
