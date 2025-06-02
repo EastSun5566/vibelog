@@ -15,8 +15,8 @@ export class OllamaProvider implements AiProvider {
     this.ai = new Ollama();
   }
 
-  async generate(prompt: string): Promise<string> {
-    logger.info('Generating with model:', this.model);
+  async generate<T>(prompt: string, schema: object): Promise<T> {
+    logger.info('Generating structured output with model:', this.model);
 
     try {
       const response = await this.ai.chat({
@@ -24,20 +24,22 @@ export class OllamaProvider implements AiProvider {
         messages: [
           {
             role: 'system',
-            content: AI_PROMPTS.CSS_EXPERT,
+            content: AI_PROMPTS.CSS_EXPERT + '\n\nRespond with valid JSON only.',
           },
           {
             role: 'user',
             content: prompt,
           },
         ],
+        format: schema,
         options: this.options,
       });
 
-      return response.message.content;
+      return JSON.parse(response.message.content) as T;
     } catch (error) {
       logger.error('AI generation failed:', error);
       throw error;
     }
   }
+
 }

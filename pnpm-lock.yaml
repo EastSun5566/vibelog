@@ -32,6 +32,9 @@ importers:
       ollama:
         specifier: ^0.5.16
         version: 0.5.16
+      postcss:
+        specifier: ^8.5.4
+        version: 8.5.4
     devDependencies:
       '@eslint/js':
         specifier: ^9.28.0

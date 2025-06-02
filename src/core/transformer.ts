@@ -1,6 +1,12 @@
-import { AI_PROMPTS } from '../consts';
+import { AI_PROMPTS, CSS_TRANSFORM_SCHEMA } from '../consts';
 import type { AiProvider } from '../types';
+import { CssParser, type CssVariable } from './parser';
 import { logger } from './logger';
+
+export interface CssTransformResult {
+  variables: CssVariable[];
+  themeDescription: string;
+}
 
 interface StyleTransformerOptions {
   aiProvider: AiProvider
@@ -8,30 +14,30 @@ interface StyleTransformerOptions {
 
 export class StyleTransformer {
   private aiProvider: AiProvider;
+  private cssParser: CssParser;
 
   constructor({
     aiProvider,
   }: StyleTransformerOptions) {
     this.aiProvider = aiProvider;
+    this.cssParser = new CssParser();
   }
 
-  private cleanOutput(css: string): string {
-    return css
-      .replace(/```css/g, '')
-      .replace(/```/g, '')
-      .trim();
-  }
+  private generatePrompt(variables: CssVariable[], stylePrompt: string): string {
+    const variablesList = variables
+      .map(({ name, value }) => `${name}: ${value}`)
+      .join('\n');
 
-  private generatePrompt(rootCss: string, stylePrompt: string): string {
     return `
 Transform these CSS variables while keeping their names intact:
 
-${rootCss}
+${variablesList}
 
-Style Requirements:
-${stylePrompt}
+Style Requirements: ${stylePrompt}
 
 ${AI_PROMPTS.STYLE_RULES}
+
+Return JSON with updated variables and theme description.
 `;
   }
 
@@ -45,19 +51,27 @@ ${AI_PROMPTS.STYLE_RULES}
     logger.info('Style prompt:', stylePrompt);
 
     try {
-      const rootMatch = /:root\s*\{[^}]+\}/.exec(originalCss);
-      if (!rootMatch) {
-        logger.error('No :root section found in original CSS');
+      const variables = this.cssParser.extractVariables(originalCss);
+      if (variables.length === 0) {
+        logger.error('No CSS variables found in :root');
         return originalCss;
       }
 
       logger.info('Generating styles with AI...');
-      const prompt = this.generatePrompt(rootMatch[0], stylePrompt);
-      const generatedCss = await this.aiProvider.generate(prompt);
-      logger.info('AI generation completed');
+      const prompt = this.generatePrompt(variables, stylePrompt);
+      const result = await this.aiProvider.generate<CssTransformResult>(
+        prompt,
+        CSS_TRANSFORM_SCHEMA,
+      );
 
-      const cleanedCss = this.cleanOutput(generatedCss);
-      const transformedCss = originalCss.replace(rootMatch[0], cleanedCss);
+      logger.info('AI generation completed');
+      logger.info('Theme description:', result.themeDescription);
+
+      const updatedVariables: CssVariable[] = result.variables.map(({ name, value }) => ({
+        name,
+        value,
+      }));
+      const transformedCss = this.cssParser.updateVariables(originalCss, updatedVariables);
 
       logger.info('Style transformation completed');
       return transformedCss;

@@ -21,5 +21,5 @@ export interface ContentProvider {
 }
 
 export interface AiProvider {
-  generate(prompt: string): Promise<string>
+  generate<T>(prompt: string, schema: object): Promise<T>
 }

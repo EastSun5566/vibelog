@@ -9,3 +9,22 @@ export const AI_PROMPTS = {
 
 Return only the :root {...} section.`,
 } as const;
+
+export const CSS_TRANSFORM_SCHEMA = {
+  type: 'object',
+  properties: {
+    variables: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          value: { type: 'string' },
+        },
+        required: ['name', 'value'],
+      },
+    },
+    themeDescription: { type: 'string' },
+  },
+  required: ['variables', 'themeDescription'],
+} as const;
