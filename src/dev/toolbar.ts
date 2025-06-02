@@ -37,7 +37,6 @@ export class VibeUI extends HTMLElement {
           border: 1px solid var(--vibe-gray-2);
           border-radius: 4px;
           background: transparent;
-          color: white;
         }
 
         .vibe-button {
