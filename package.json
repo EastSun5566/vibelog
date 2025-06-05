@@ -12,8 +12,14 @@
     "preview": "pnpx serve dist",
     "lint": "eslint --fix src"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "content",
+    "markdown",
+    "blog",
+    "vibe",
+    "ai"
+  ],
+  "author": "Michael Wang <michael19920327@gmail.com>",
   "license": "MIT",
   "packageManager": "pnpm@9.12.3",
   "devDependencies": {
