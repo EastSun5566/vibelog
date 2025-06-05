@@ -1,4 +1,4 @@
-import postcss from 'postcss';
+import { parse } from 'postcss';
 import { logger } from './logger';
 
 export interface CssVariable {
@@ -11,7 +11,7 @@ export class CssParser {
     const variables: CssVariable[] = [];
 
     try {
-      const root = postcss.parse(css);
+      const root = parse(css);
 
       root.walkRules(':root', (rule) => {
         rule.walkDecls((declaration) => {
@@ -34,7 +34,7 @@ export class CssParser {
 
   updateVariables(css: string, updates: CssVariable[]): string {
     try {
-      const root = postcss.parse(css);
+      const root = parse(css);
 
       root.walkRules(':root', (rule) => {
         rule.walkDecls((declaration) => {
