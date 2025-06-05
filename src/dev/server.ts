@@ -4,14 +4,16 @@ import { dev } from 'astro';
 import fs from 'fs-extra';
 import type { AstroIntegration } from 'astro';
 
-import { StyleTransformer } from '../core/transformer';
+import { StyleTransformer, type StateManager } from '../core';
+
 
 interface VibeOptions {
   root: string;
   styleTransformer: StyleTransformer;
+  stateManager: StateManager;
 }
 
-function vibe({ root, styleTransformer }: VibeOptions): AstroIntegration {
+function vibe({ root, styleTransformer, stateManager }: VibeOptions): AstroIntegration {
   return {
     name: 'vibe-dev',
     hooks: {
@@ -36,8 +38,12 @@ function vibe({ root, styleTransformer }: VibeOptions): AstroIntegration {
                 const cssPath = join(root, 'src/styles/global.css');
                 const originalCss = await fs.readFile(cssPath, 'utf-8');
 
+                // transform the CSS
                 const transformedCss = await styleTransformer.transform({ originalCss, stylePrompt: prompt });
                 await fs.writeFile(cssPath, transformedCss);
+
+                // save the new CSS state
+                await stateManager.saveCss(transformedCss);
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: true }));
@@ -67,6 +73,7 @@ export async function createDevServer({
   root: _root,
   port = 5000,
   styleTransformer,
+  stateManager,
 }: DevServerOptions) {
   const root = resolve(process.cwd(), _root);
 
@@ -77,7 +84,7 @@ export async function createDevServer({
     devToolbar: {
       enabled: false,
     },
-    integrations: [vibe({ root, styleTransformer })],
+    integrations: [vibe({ root, styleTransformer, stateManager })],
   });
 
   return server;
