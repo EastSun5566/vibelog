@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "vibelog": "./dist/cli/index.js"
+    "vibelog": "./dist/index.js"
   },
   "files": [
     "dist",
@@ -16,7 +16,8 @@
   },
   "scripts": {
     "dev": "tsx src/cli",
-    "build": "rm -rf dist && tsc",
+    "typecheck": "tsc",
+    "build": "rm -rf dist && tsdown",
     "lint": "eslint --fix src",
     "prepublishOnly": "pnpm run build"
   },
@@ -25,7 +26,8 @@
     "markdown",
     "blog",
     "vibe",
-    "ai"
+    "ai",
+    "cli"
   ],
   "author": "Michael Wang <michael19920327@gmail.com>",
   "license": "MIT",
@@ -36,6 +38,7 @@
     "@types/minimist": "^1.2.5",
     "@types/node": "^22.15.30",
     "eslint": "^9.28.0",
+    "tsdown": "^0.12.7",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.33.1"

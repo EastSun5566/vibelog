@@ -12,10 +12,10 @@ import type { ContentProvider } from '../types';
 import type { StyleTransformer } from './transformer';
 import type { StateManager, VibeState } from './state';
 
-function findTemplateDir(): string {
+function findTemplateDir(path: string) {
   const templateDir = resolve(
     dirname(fileURLToPath(import.meta.url)),
-    '../../template',
+    path,
   );
   if (!fs.existsSync(templateDir)) {
     throw new Error(`Template directory not found: ${templateDir}`);
@@ -66,7 +66,7 @@ export class DevBuilder {
     // clear old temp directory
     await fs.remove(this.root);
 
-    const templateDir = findTemplateDir();
+    const templateDir = findTemplateDir('../../template');
     await fs.copy(templateDir, this.root);
     logger.info('Template structure copied');
 
@@ -179,7 +179,7 @@ export class ProdBuilder {
     await fs.remove(this.tempDir);
     await fs.remove(this.outDir);
 
-    const templateDir = findTemplateDir();
+    const templateDir = findTemplateDir('../template');
     await fs.copy(templateDir, this.tempDir);
 
     logger.info('Build environment prepared');

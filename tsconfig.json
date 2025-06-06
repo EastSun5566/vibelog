@@ -1,16 +1,12 @@
 {
   "extends": "astro/tsconfigs/strict",
   "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
+    "target": "esnext",
+    "module": "esnext",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "strictNullChecks": true,
-    "allowImportingTsExtensions": false,
-    "noEmit": false,
-    "outDir": "dist",
-    "rootDir": "src"
+    "strictNullChecks": true
   },
-  "include": ["src"]
+  "include": ["src", "tsdown.config.ts"]
 }
