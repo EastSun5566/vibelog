@@ -1,4 +1,4 @@
-import { resolve, join, dirname } from 'node:path';
+import { resolve, join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'astro';
 import mdx from '@astrojs/mdx';
@@ -12,10 +12,12 @@ import type { ContentProvider } from '../types';
 import type { StyleTransformer } from './transformer';
 import type { StateManager, VibeState } from './state';
 
-function findTemplateDir(path: string) {
+function findTemplateDir() {
+  const currentDir = dirname(fileURLToPath(import.meta.url));
   const templateDir = resolve(
-    dirname(fileURLToPath(import.meta.url)),
-    path,
+    currentDir,
+    basename(currentDir) === 'dist' ? '../' : '../..',
+    'template',
   );
   if (!fs.existsSync(templateDir)) {
     throw new Error(`Template directory not found: ${templateDir}`);
@@ -66,7 +68,7 @@ export class DevBuilder {
     // clear old temp directory
     await fs.remove(this.root);
 
-    const templateDir = findTemplateDir('../../template');
+    const templateDir = findTemplateDir();
     await fs.copy(templateDir, this.root);
     logger.info('Template structure copied');
 
@@ -179,7 +181,7 @@ export class ProdBuilder {
     await fs.remove(this.tempDir);
     await fs.remove(this.outDir);
 
-    const templateDir = findTemplateDir('../template');
+    const templateDir = findTemplateDir();
     await fs.copy(templateDir, this.tempDir);
 
     logger.info('Build environment prepared');
