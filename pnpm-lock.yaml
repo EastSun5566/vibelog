@@ -38,6 +38,12 @@ importers:
       postcss:
         specifier: ^8.5.4
         version: 8.5.4
+      zod:
+        specifier: ^3.25.55
+        version: 3.25.55
+      zod-to-json-schema:
+        specifier: ^3.24.5
+        version: 3.24.5(zod@3.25.55)
     devDependencies:
       '@eslint/js':
         specifier: ^9.28.0

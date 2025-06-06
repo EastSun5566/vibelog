@@ -32,7 +32,10 @@ export class OllamaProvider implements AiProvider {
           },
         ],
         format: schema,
-        options: this.options,
+        options: {
+          temperature: 0.1,
+          ...this.options,
+        },
       });
 
       return JSON.parse(response.message.content) as T;

@@ -1,4 +1,7 @@
-import { AI_PROMPTS, CSS_TRANSFORM_SCHEMA } from '../consts';
+import { z } from 'zod';
+import { zodToJsonSchema } from 'zod-to-json-schema';
+
+import { AI_PROMPTS } from '../consts';
 import type { AiProvider } from '../types';
 import { CssParser, type CssVariable } from './parser';
 import { logger } from './logger';
@@ -23,7 +26,7 @@ export class StyleTransformer {
     this.cssParser = new CssParser();
   }
 
-  private generatePrompt(variables: CssVariable[], stylePrompt: string): string {
+  private createPrompt(variables: CssVariable[], stylePrompt: string): string {
     const variablesList = variables
       .map(({ name, value }) => `${name}: ${value}`)
       .join('\n');
@@ -39,6 +42,18 @@ ${AI_PROMPTS.STYLE_RULES}
 
 Return JSON with updated variables and theme description.
 `;
+  }
+
+  private getSchema() {
+    const CssTransform = z.object({
+      variables: z.array(z.object({
+        name: z.string(),
+        value: z.string(),
+      })),
+      themeDescription: z.string(),
+    });
+
+    return zodToJsonSchema(CssTransform);
   }
 
   async transform({
@@ -58,10 +73,11 @@ Return JSON with updated variables and theme description.
       }
 
       logger.info('Generating styles with AI...');
-      const prompt = this.generatePrompt(variables, stylePrompt);
+      const prompt = this.createPrompt(variables, stylePrompt);
+      const schema = this.getSchema();
       const result = await this.aiProvider.generate<CssTransformResult>(
         prompt,
-        CSS_TRANSFORM_SCHEMA,
+        schema,
       );
 
       logger.info('AI generation completed');

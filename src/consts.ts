@@ -7,24 +7,10 @@ export const AI_PROMPTS = {
 4. Ensure color contrast
 5. Keep existing variable relationships
 
-Return only the :root {...} section.`,
-} as const;
-
-export const CSS_TRANSFORM_SCHEMA = {
-  type: 'object',
-  properties: {
-    variables: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' },
-          value: { type: 'string' },
-        },
-        required: ['name', 'value'],
-      },
-    },
-    themeDescription: { type: 'string' },
-  },
-  required: ['variables', 'themeDescription'],
+IMPORTANT: Return ONLY a valid JSON object.
+The JSON must have exactly this structure:
+{
+  "variables": [{"name": "--vibe-accent", "value": "#ff6b6b"}],
+  "themeDescription": "A brief description"
+}`,
 } as const;
