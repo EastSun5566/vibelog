@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.0.4](https://github.com/EastSun5566/vibe/compare/v0.0.3...v0.0.4) (2025-06-06)
+
+
+### Bug Fixes
+
+* add astro to external ([1c3db81](https://github.com/EastSun5566/vibe/commit/1c3db810ed544b02159f877de7a8bb2b1707d9fa))
+
 ### [0.0.3](https://github.com/EastSun5566/vibe/compare/v0.0.2...v0.0.3) (2025-06-06)
 
 
