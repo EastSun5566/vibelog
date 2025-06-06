@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.0.5](https://github.com/EastSun5566/vibe/compare/v0.0.4...v0.0.5) (2025-06-06)
+
+
+### Bug Fixes
+
+* module path resolve ([78ac464](https://github.com/EastSun5566/vibe/commit/78ac4641862740b2ca1180db0d9842ab2ca06566))
+* remove astro from external ([9cbe099](https://github.com/EastSun5566/vibe/commit/9cbe09977e21b225a8efb869b2d75bebcb7dc7ae))
+
 ### [0.0.4](https://github.com/EastSun5566/vibe/compare/v0.0.3...v0.0.4) (2025-06-06)
 
 
