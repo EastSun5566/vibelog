@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.0.3](https://github.com/EastSun5566/vibe/compare/v0.0.2...v0.0.3) (2025-06-06)
+
+
+### Bug Fixes
+
+* template problem ([f87b0cd](https://github.com/EastSun5566/vibe/commit/f87b0cda11d45993b14bba197d25952508265ecd))
+
 ### [0.0.2](https://github.com/EastSun5566/vibe/compare/v0.0.1...v0.0.2) (2025-06-06)
 
 ### 0.0.1 (2025-06-06)
