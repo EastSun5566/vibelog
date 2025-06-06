@@ -16,7 +16,7 @@
   },
   "scripts": {
     "dev": "tsx src/cli",
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "lint": "eslint --fix src",
     "prepublishOnly": "pnpm run build"
   },
