@@ -6,7 +6,11 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "strictNullChecks": true
+    "strictNullChecks": true,
+    "allowImportingTsExtensions": false,
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src"
   },
   "include": ["src"]
 }

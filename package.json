@@ -7,13 +7,18 @@
   "bin": {
     "vibelog": "./dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "template"
+  ],
   "engines": {
     "node": ">=20.0.0"
   },
   "scripts": {
     "dev": "tsx src/cli",
     "build": "tsc",
-    "lint": "eslint --fix src"
+    "lint": "eslint --fix src",
+    "prepublishOnly": "pnpm run build"
   },
   "keywords": [
     "content",
