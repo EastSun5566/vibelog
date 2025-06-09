@@ -27,7 +27,7 @@ function findTemplateDir() {
 }
 
 export interface DevBuilderOptions {
-  tempDir: string
+  root: string
   contentProvider: ContentProvider
   styleTransformer: StyleTransformer
   stateManager: StateManager;
@@ -41,13 +41,13 @@ export class DevBuilder {
 
   constructor(
     {
-      tempDir,
+      root,
       contentProvider,
       styleTransformer,
       stateManager,
     }: DevBuilderOptions,
   ) {
-    this.root = resolve(process.cwd(), tempDir);
+    this.root = resolve(process.cwd(), root);
     this.contentProvider = contentProvider;
     this.styleTransformer = styleTransformer;
     this.stateManager = stateManager;
@@ -139,7 +139,7 @@ export interface ProdBuilderOptions {
   stateManager: StateManager;
 }
 export class ProdBuilder {
-  private tempDir: string;
+  private root: string;
   private outDir: string;
   private site: string;
   private stateManager: StateManager;
@@ -149,7 +149,7 @@ export class ProdBuilder {
     site,
     stateManager,
   }: ProdBuilderOptions) {
-    this.tempDir = resolve(process.cwd(), '.temp-build');
+    this.root = resolve(process.cwd(), '.temp-build');
     this.outDir = resolve(process.cwd(), outDir);
     this.site = site;
     this.stateManager = stateManager;
@@ -178,11 +178,11 @@ export class ProdBuilder {
   private async prepare() {
     logger.info('Preparing build environment...');
 
-    await fs.remove(this.tempDir);
+    await fs.remove(this.root);
     await fs.remove(this.outDir);
 
     const templateDir = findTemplateDir();
-    await fs.copy(templateDir, this.tempDir);
+    await fs.copy(templateDir, this.root);
 
     logger.info('Build environment prepared');
   }
@@ -192,7 +192,7 @@ export class ProdBuilder {
 
     // restore css
     if (state.lastModifiedCss) {
-      const cssPath = join(this.tempDir, 'src/styles/global.css');
+      const cssPath = join(this.root, 'src/styles/global.css');
       await fs.writeFile(cssPath, state.lastModifiedCss);
       logger.info('CSS styles restored');
     } else {
@@ -211,7 +211,7 @@ export class ProdBuilder {
   private async restoreContent(contentSnapshot: NonNullable<VibeState['contentSnapshot']>) {
     const { posts, author } = contentSnapshot;
 
-    await fs.ensureDir(join(this.tempDir, 'src/content/blog'));
+    await fs.ensureDir(join(this.root, 'src/content/blog'));
 
     for (const post of posts) {
       const title = post.title || 'Untitled';
@@ -227,14 +227,14 @@ export class ProdBuilder {
         slug,
       });
 
-      const filePath = join(this.tempDir, 'src/content/blog', `${slug}.md`);
+      const filePath = join(this.root, 'src/content/blog', `${slug}.md`);
       await fs.writeFile(filePath, fileContent);
     }
 
     const authorContent = matter.stringify(author.bio, {
       name: author.name,
     });
-    const authorPath = join(this.tempDir, 'src/content', 'author.md');
+    const authorPath = join(this.root, 'src/content', 'author.md');
     await fs.writeFile(authorPath, authorContent);
   }
 
@@ -242,7 +242,7 @@ export class ProdBuilder {
     logger.info('Building with Astro...');
 
     await build({
-      root: this.tempDir,
+      root: this.root,
       outDir: this.outDir,
       site: this.site,
       integrations: [
@@ -259,7 +259,7 @@ export class ProdBuilder {
 
   private async cleanup() {
     try {
-      await fs.remove(this.tempDir);
+      await fs.remove(this.root);
       logger.info('Build environment cleaned up');
     } catch (error) {
       logger.warn('Cleanup warning:', error);

@@ -6,27 +6,18 @@ import { createContentProvider, createAiProvider } from './providers';
 import { createStyleTransformer, StateManager, createDevBuilder } from '../core';
 
 function checkAndInstallDeps(tempDir: string) {
+  logger.info('Installing dependencies...');
   try {
-    execSync('npx astro --version', {
+    execSync('npm install', {
       cwd: tempDir,
-      stdio: 'pipe',
-      timeout: 10000,
+      stdio: 'inherit',
+      timeout: 60000,
     });
-  } catch {
-    logger.info('Installing dependencies...');
-    try {
-      execSync('npm install', {
-        cwd: tempDir,
-        stdio: 'inherit',
-        timeout: 60000,
-      });
-      logger.info('Dependencies installed successfully');
-    } catch (error) {
-      logger.error('Failed to install dependencies:', error);
-      throw error;
-    }
+    logger.info('Dependencies installed successfully');
+  } catch (error) {
+    logger.error('Failed to install dependencies:', error);
+    throw error;
   }
-
 }
 
 interface DevOptions {
@@ -47,7 +38,7 @@ export async function devCommand({ content, ai, port }: DevOptions) {
 
     const tempDir = '.temp';
     const devBuilder = createDevBuilder({
-      tempDir,
+      root: tempDir,
       contentProvider,
       styleTransformer,
       stateManager,
@@ -58,7 +49,7 @@ export async function devCommand({ content, ai, port }: DevOptions) {
     await devBuilder.fetchContent();
 
     const server = await createDevServer({
-      root: '.temp',
+      root: tempDir,
       port: parseInt(port),
       styleTransformer,
       stateManager,
