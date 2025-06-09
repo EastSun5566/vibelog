@@ -1,4 +1,4 @@
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dev } from 'astro';
 import fs from 'fs-extra';
@@ -76,32 +76,16 @@ export async function createDevServer({
   stateManager,
 }: DevServerOptions) {
   const root = resolve(process.cwd(), _root);
-  const originalCwd = process.cwd();
 
-  try {
-    const vibelogDir = dirname(dirname(fileURLToPath(import.meta.url)));
-    process.chdir(vibelogDir);
+  const server = await dev({
+    root,
+    server: { port },
+    site: `http://localhost:${port.toString()}`,
+    devToolbar: {
+      enabled: false,
+    },
+    integrations: [vibe({ root, styleTransformer, stateManager })],
+  });
 
-    const server = await dev({
-      root,
-      server: { port },
-      site: `http://localhost:${port.toString()}`,
-      devToolbar: {
-        enabled: false,
-      },
-      integrations: [vibe({ root, styleTransformer, stateManager })],
-    });
-
-    return {
-      ...server,
-      stop: async () => {
-        await server.stop();
-        process.chdir(originalCwd);
-      },
-    };
-
-  } catch (error) {
-    process.chdir(originalCwd);
-    throw error;
-  }
+  return server;
 }
