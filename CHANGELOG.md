@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.0.6](https://github.com/EastSun5566/vibe/compare/v0.0.5...v0.0.6) (2025-06-09)
+
+
+### Bug Fixes
+
+* add deps installation check and template `package.json` ([cd257c0](https://github.com/EastSun5566/vibe/commit/cd257c0a0421aa1d3ad222f8a6af0c3d9c0500ab))
+* dev server chdir impl ([6f445be](https://github.com/EastSun5566/vibe/commit/6f445beea4ceefef160bc5531e87311e080b2314))
+
 ### [0.0.5](https://github.com/EastSun5566/vibe/compare/v0.0.4...v0.0.5) (2025-06-06)
 
 
