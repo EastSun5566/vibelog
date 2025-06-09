@@ -1,4 +1,4 @@
-export const TOOLBAR_CODE = `export class VibeUI extends HTMLElement {
+export const TOOLBAR_CODE = `class VibeUI extends HTMLElement {
   constructor() {
     super();
     const shadow = this.attachShadow({ mode: 'open' });
@@ -55,9 +55,9 @@ export const TOOLBAR_CODE = `export class VibeUI extends HTMLElement {
       </style>
     \`;
 
-    const form = shadow.querySelector<HTMLFormElement>('.vibe-form');
-    const input = shadow.querySelector<HTMLInputElement>('.vibe-prompt');
-    const button = shadow.querySelector<HTMLButtonElement>('.vibe-button');
+    const form = shadow.querySelector('.vibe-form');
+    const input = shadow.querySelector('.vibe-prompt');
+    const button = shadow.querySelector('.vibe-button');
 
     async function handleTransform() {
       if (!form || !input || !button) return;
@@ -89,7 +89,7 @@ export const TOOLBAR_CODE = `export class VibeUI extends HTMLElement {
       }
     }
 
-    form?.addEventListener('submit', (event) => {
+    form.addEventListener('submit', (event) => {
       event.preventDefault();
       handleTransform().catch(console.error);
     });
