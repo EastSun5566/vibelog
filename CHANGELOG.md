@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.0.8](https://github.com/EastSun5566/vibe/compare/v0.0.7...v0.0.8) (2025-06-09)
+
+
+### Bug Fixes
+
+* string should be pure js ([c86db29](https://github.com/EastSun5566/vibe/commit/c86db29ad2b1653c4e7348a83b30d5fb8a917c8a))
+
 ### [0.0.7](https://github.com/EastSun5566/vibe/compare/v0.0.6...v0.0.7) (2025-06-09)
 
 
