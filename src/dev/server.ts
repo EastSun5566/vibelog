@@ -1,10 +1,10 @@
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { dev } from 'astro';
 import fs from 'fs-extra';
 import type { AstroIntegration } from 'astro';
 
 import { StyleTransformer, type StateManager } from '../core';
+import { TOOLBAR_CODE } from './toolbar';
 
 
 interface VibeOptions {
@@ -19,7 +19,7 @@ function vibe({ root, styleTransformer, stateManager }: VibeOptions): AstroInteg
     hooks: {
       'astro:config:setup': ({ injectScript }) => {
         injectScript('page', `
-          import { VibeUI } from ${JSON.stringify(fileURLToPath(new URL('./toolbar.ts', import.meta.url)))};
+          ${TOOLBAR_CODE}
           customElements.define('vibe-toolbar', VibeUI);
           document.body.appendChild(document.createElement('vibe-toolbar'));
         `);

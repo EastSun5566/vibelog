@@ -1,9 +1,9 @@
-export class VibeUI extends HTMLElement {
+export const TOOLBAR_CODE = `export class VibeUI extends HTMLElement {
   constructor() {
     super();
     const shadow = this.attachShadow({ mode: 'open' });
 
-    shadow.innerHTML = `
+    shadow.innerHTML = \`
       <div class="vibe-container">
         <form class="vibe-form">
           <input 
@@ -53,7 +53,7 @@ export class VibeUI extends HTMLElement {
           cursor: not-allowed;
         }
       </style>
-    `;
+    \`;
 
     const form = shadow.querySelector<HTMLFormElement>('.vibe-form');
     const input = shadow.querySelector<HTMLInputElement>('.vibe-prompt');
@@ -95,3 +95,4 @@ export class VibeUI extends HTMLElement {
     });
   }
 }
+`;
