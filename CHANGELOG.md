@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.0.7](https://github.com/EastSun5566/vibe/compare/v0.0.6...v0.0.7) (2025-06-09)
+
+
+### Bug Fixes
+
+* use inline prevent not be bundle ([ad1f583](https://github.com/EastSun5566/vibe/commit/ad1f583bb2d886014446e1d4d1f08bcb22aed96f))
+
 ### [0.0.6](https://github.com/EastSun5566/vibe/compare/v0.0.5...v0.0.6) (2025-06-09)
 
 
