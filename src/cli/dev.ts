@@ -1,7 +1,33 @@
+import { execSync } from 'node:child_process';
+
 import { logger } from '../core';
 import { createDevServer } from '../dev';
 import { createContentProvider, createAiProvider } from './providers';
 import { createStyleTransformer, StateManager, createDevBuilder } from '../core';
+
+function checkAndInstallDeps(tempDir: string) {
+  try {
+    execSync('npx astro --version', {
+      cwd: tempDir,
+      stdio: 'pipe',
+      timeout: 10000,
+    });
+  } catch {
+    logger.info('Installing dependencies...');
+    try {
+      execSync('npm install', {
+        cwd: tempDir,
+        stdio: 'inherit',
+        timeout: 60000,
+      });
+      logger.info('Dependencies installed successfully');
+    } catch (error) {
+      logger.error('Failed to install dependencies:', error);
+      throw error;
+    }
+  }
+
+}
 
 interface DevOptions {
   content: string;
@@ -19,14 +45,16 @@ export async function devCommand({ content, ai, port }: DevOptions) {
     const styleTransformer = createStyleTransformer({ aiProvider });
     const stateManager = new StateManager();
 
+    const tempDir = '.temp';
     const devBuilder = createDevBuilder({
-      tempDir: '.temp',
+      tempDir,
       contentProvider,
       styleTransformer,
       stateManager,
     });
 
     await devBuilder.prepare();
+    checkAndInstallDeps(tempDir);
     await devBuilder.fetchContent();
 
     const server = await createDevServer({
