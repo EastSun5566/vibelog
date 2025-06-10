@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.1.0](https://github.com/EastSun5566/vibe/compare/v0.0.8...v0.1.0) (2025-06-10)
+
+
+### Features
+
+* use `.vibelog` as state ([2f58b41](https://github.com/EastSun5566/vibe/commit/2f58b414b4968540a3567a72d2263bd02193abad))
+
+
+### Bug Fixes
+
+* always install deps ([4928841](https://github.com/EastSun5566/vibe/commit/4928841d050aeb365dade0d99d8e188f9005fbc4))
+
 ### [0.0.8](https://github.com/EastSun5566/vibe/compare/v0.0.7...v0.0.8) (2025-06-09)
 
 
