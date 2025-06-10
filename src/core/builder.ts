@@ -1,5 +1,6 @@
-import { resolve, join, dirname, basename } from 'node:path';
+import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 import { build } from 'astro';
 import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
@@ -9,71 +10,54 @@ import matter from 'gray-matter';
 import { generateSlug, slugify } from './utils';
 import { logger } from './logger';
 import type { ContentProvider } from '../types';
-import type { StyleTransformer } from './transformer';
-import type { StateManager, VibeState } from './state';
 
 function findTemplateDir() {
   const currentDir = dirname(fileURLToPath(import.meta.url));
   const templateDir = resolve(
     currentDir,
-    basename(currentDir) === 'dist' ? '../' : '../..',
+    basename(currentDir) === 'dist' ? '..' : '../..',
     'template',
   );
   if (!fs.existsSync(templateDir)) {
     throw new Error(`Template directory not found: ${templateDir}`);
   }
-
   return templateDir;
 }
 
 export interface DevBuilderOptions {
-  root: string
-  contentProvider: ContentProvider
-  styleTransformer: StyleTransformer
-  stateManager: StateManager;
-}
-
-export class DevBuilder {
-  private root: string;
+  root: string;
   contentProvider: ContentProvider;
-  styleTransformer: StyleTransformer;
-  stateManager: StateManager;
+}
+export class DevBuilder {
+  private vibelogDir: string;
+  private contentProvider: ContentProvider;
 
-  constructor(
-    {
-      root,
-      contentProvider,
-      styleTransformer,
-      stateManager,
-    }: DevBuilderOptions,
-  ) {
-    this.root = resolve(process.cwd(), root);
+  constructor({ root, contentProvider }: DevBuilderOptions) {
+    this.vibelogDir = resolve(process.cwd(), root, '.vibelog');
     this.contentProvider = contentProvider;
-    this.styleTransformer = styleTransformer;
-    this.stateManager = stateManager;
-  }
-
-  private async restoreLastCssState() {
-    const lastCss = await this.stateManager.getLastCss();
-    if (lastCss) {
-      const cssPath = join(this.root, 'src/styles/global.css');
-      await fs.writeFile(cssPath, lastCss);
-      logger.info('Restored last CSS modifications');
-    }
   }
 
   async prepare() {
-    logger.info(`Creating directory structure in ${this.root}`);
+    if (await fs.pathExists(this.vibelogDir)) {
+      logger.info('Using existing ".vibelog" directory');
+      return;
+    }
 
-    // clear old temp directory
-    await fs.remove(this.root);
+    logger.info('Initializing ".vibelog" directory...');
+    await this.initializeVibelog();
+  }
 
+  private async initializeVibelog() {
     const templateDir = findTemplateDir();
-    await fs.copy(templateDir, this.root);
-    logger.info('Template structure copied');
+    await fs.copy(templateDir, this.vibelogDir);
 
-    // restore last CSS state
-    await this.restoreLastCssState();
+    logger.info('Installing dependencies...');
+    execSync('npm install', {
+      cwd: this.vibelogDir,
+      stdio: 'inherit',
+      timeout: 5 * 60 * 1000,
+    });
+    logger.info('Dependencies installed successfully');
   }
 
   async fetchContent() {
@@ -83,9 +67,11 @@ export class DevBuilder {
       this.contentProvider.getPosts(),
       this.contentProvider.getAuthor(),
     ]);
-    logger.info(`Found ${String(posts.length)} posts of author ${author.name}`);
+    logger.info(`Found ${String(posts.length)} posts by ${author.name}`);
 
-    await fs.ensureDir(join(this.root, 'src/content/blog'));
+    const blogDir = join(this.vibelogDir, 'src/content/blog');
+    await fs.ensureDir(blogDir);
+    await fs.emptyDir(blogDir);
 
     logger.info('Writing blog posts...');
     for (const post of posts) {
@@ -102,7 +88,7 @@ export class DevBuilder {
         slug,
       });
 
-      const filePath = join(this.root, 'src/content/blog', `${slug}.md`);
+      const filePath = join(blogDir, `${slug}.md`);
       await fs.writeFile(filePath, fileContent);
     }
 
@@ -110,164 +96,48 @@ export class DevBuilder {
     const authorContent = matter.stringify(author.bio, {
       name: author.name,
     });
-    const authorPath = join(this.root, 'src/content', 'author.md');
+    const authorPath = join(this.vibelogDir, 'src/content', 'author.md');
     await fs.writeFile(authorPath, authorContent);
 
-    await this.stateManager.saveContentSnapshot(posts, author);
-    logger.info('Content fetched and saved to state');
+    logger.info('Content updated successfully');
   }
 
-  async cleanup() {
-    logger.info('Cleaning up development environment...');
-    try {
-      await fs.remove(this.root);
-      logger.info('Cleanup completed');
-    } catch (error) {
-      logger.warn('Cleanup warning:', error);
-    }
+  getVibelogDir() {
+    return this.vibelogDir;
   }
 }
-export function createDevBuilder(
-  options: DevBuilderOptions,
-): DevBuilder {
+export function createDevBuilder(options: DevBuilderOptions) {
   return new DevBuilder(options);
 }
 
-export interface ProdBuilderOptions {
+export interface BuildOptions {
+  vibelogDir: string;
   outDir: string;
   site: string;
-  stateManager: StateManager;
 }
-export class ProdBuilder {
-  private root: string;
-  private outDir: string;
-  private site: string;
-  private stateManager: StateManager;
+export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOptions) {
+  logger.info('Starting production build...');
 
-  constructor({
-    outDir,
+  if (!await fs.pathExists(vibelogDir)) {
+    throw new Error('No .vibelog directory found. Please run "vibelog dev" first.');
+  }
+
+  logger.info('Building with Astro...');
+
+  const tempOutDir = join(vibelogDir, 'dist');
+  await build({
+    root: vibelogDir,
+    outDir: tempOutDir,
     site,
-    stateManager,
-  }: ProdBuilderOptions) {
-    this.root = resolve(process.cwd(), '.temp-build');
-    this.outDir = resolve(process.cwd(), outDir);
-    this.site = site;
-    this.stateManager = stateManager;
-  }
+    integrations: [mdx(), sitemap()],
+    vite: {
+      logLevel: 'warn',
+    },
+  });
 
-  async build() {
-    logger.info('Starting production build...');
+  const finalOutDir = resolve(outDir);
+  await fs.remove(finalOutDir);
+  await fs.copy(tempOutDir, finalOutDir);
 
-    try {
-      const state = await this.stateManager.loadState();
-
-      await this.prepare();
-      await this.restoreFromState(state);
-      await this.astroBuild();
-
-      logger.info('Production build completed successfully!');
-
-    } catch (error) {
-      logger.error('Production build failed:', error);
-      throw error;
-    } finally {
-      await this.cleanup();
-    }
-  }
-
-  private async prepare() {
-    logger.info('Preparing build environment...');
-
-    await fs.remove(this.root);
-    await fs.remove(this.outDir);
-
-    const templateDir = findTemplateDir();
-    await fs.copy(templateDir, this.root);
-
-    logger.info('Build environment prepared');
-  }
-
-  private async restoreFromState(state: VibeState) {
-    logger.info('Restoring content and styles from state...');
-
-    // restore css
-    if (state.lastModifiedCss) {
-      const cssPath = join(this.root, 'src/styles/global.css');
-      await fs.writeFile(cssPath, state.lastModifiedCss);
-      logger.info('CSS styles restored');
-    } else {
-      logger.warn('No custom CSS found, using default styles');
-    }
-
-    // restore content snapshot
-    if (state.contentSnapshot) {
-      await this.restoreContent(state.contentSnapshot);
-      logger.info('Content restored from snapshot');
-    } else {
-      throw new Error('No content snapshot found in state. Please run "vibelog dev" first.');
-    }
-  }
-
-  private async restoreContent(contentSnapshot: NonNullable<VibeState['contentSnapshot']>) {
-    const { posts, author } = contentSnapshot;
-
-    await fs.ensureDir(join(this.root, 'src/content/blog'));
-
-    for (const post of posts) {
-      const title = post.title || 'Untitled';
-      const excerpt = post.content
-        .split('\n')
-        .find((line) => line.trim().length > 0) ?? '';
-      const slug = post.slug || slugify(post.title) || generateSlug();
-
-      const fileContent = matter.stringify(post.content, {
-        title,
-        description: excerpt.slice(0, 100),
-        date: post.date || new Date().toISOString(),
-        slug,
-      });
-
-      const filePath = join(this.root, 'src/content/blog', `${slug}.md`);
-      await fs.writeFile(filePath, fileContent);
-    }
-
-    const authorContent = matter.stringify(author.bio, {
-      name: author.name,
-    });
-    const authorPath = join(this.root, 'src/content', 'author.md');
-    await fs.writeFile(authorPath, authorContent);
-  }
-
-  private async astroBuild() {
-    logger.info('Building with Astro...');
-
-    await build({
-      root: this.root,
-      outDir: this.outDir,
-      site: this.site,
-      integrations: [
-        mdx(),
-        sitemap(),
-      ],
-      vite: {
-        logLevel: 'warn',
-      },
-    });
-
-    logger.info(`Site built to ${this.outDir}`);
-  }
-
-  private async cleanup() {
-    try {
-      await fs.remove(this.root);
-      logger.info('Build environment cleaned up');
-    } catch (error) {
-      logger.warn('Cleanup warning:', error);
-    }
-  }
-}
-export function createProdBuilder(
-  options: ProdBuilderOptions,
-): ProdBuilder {
-  return new ProdBuilder(options);
+  logger.info(`Production build completed in ${outDir}`);
 }

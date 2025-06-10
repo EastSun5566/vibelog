@@ -7,9 +7,10 @@ import { devCommand } from './dev';
 import { buildCommand } from './build';
 
 const argv = minimist(process.argv.slice(2), {
-  string: ['content', 'ai', 'port', 'out', 'site'],
+  string: ['root', 'content', 'ai', 'port', 'out', 'site'],
   boolean: ['help', 'version'],
   alias: {
+    r: 'root',
     c: 'content',
     h: 'help',
     v: 'version',
@@ -17,6 +18,7 @@ const argv = minimist(process.argv.slice(2), {
     o: 'out',
   },
   default: {
+    root: '.',
     content: 'fs@./content',
     ai: 'ollama@codegemma:2b',
     port: '5000',
@@ -38,6 +40,9 @@ Commands:
   dev       Start development server with content preview
   build     Build production site from dev state
 
+Global Options:
+  -r, --root <dir>         Project root directory (default: .)
+
 Dev Options:
   -c, --content <provider>      Content provider (default: fs@./content)
                            Examples: hackmd@username, fs@./content
@@ -54,7 +59,7 @@ Global Options:
   -v, --version            Show version
 
 Examples:
-  vibelog dev --content hackmd@eastsun5566 --ai ollama@codegemma:2b
+  vibelog dev --root ./my-blog --content hackmd@eastsun5566 --ai ollama@codegemma:2b
   vibelog dev --content fs@./my-content --port 3000
   vibelog build --out public --site https://myblog.com
 `);
@@ -78,6 +83,7 @@ async function main() {
     switch (command) {
     case 'dev':
       await devCommand({
+        root: argv.root as string,
         content: argv.content as string,
         ai: argv.ai as string,
         port: argv.port as string,
@@ -86,6 +92,7 @@ async function main() {
 
     case 'build':
       await buildCommand({
+        root: argv.root as string,
         out: argv.out as string,
         site: argv.site as string,
       });

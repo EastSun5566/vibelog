@@ -1,32 +1,30 @@
+import { resolve } from 'node:path';
+
 import { logger } from '../core';
-import { createProdBuilder, StateManager } from '../core';
+import { buildFromVibelog } from '../core';
 
 interface BuildOptions {
   out: string;
   site: string;
+  root: string;
 }
-export async function buildCommand(options: BuildOptions) {
+export async function buildCommand({ out, root, site }: BuildOptions) {
   logger.info('Building production site...');
-  logger.info(`Output: ${options.out}`);
-  logger.info(`Site: ${options.site}`);
+  logger.info(`Project root: ${root}`);
+  logger.info(`Output: ${out}`);
+  logger.info(`Site: ${site}`);
 
   try {
-    const stateManager = new StateManager();
-    const state = await stateManager.loadState();
+    const vibelogDir = resolve(process.cwd(), root, '.vibelog');
+    const outDir = resolve(process.cwd(), root, out);
 
-    if (!state.lastModifiedCss && !state.contentSnapshot) {
-      logger.error('No dev state found. Please run "vibelog dev" first.');
-      process.exit(1);
-    }
-
-    const builder = createProdBuilder({
-      outDir: options.out,
-      site: options.site,
-      stateManager,
+    await buildFromVibelog({
+      vibelogDir,
+      outDir,
+      site,
     });
 
-    await builder.build();
-    logger.info(`Production build completed in ${options.out}`);
+    logger.info(`Production build completed in ${out}`);
 
   } catch (error) {
     logger.error('Build failed:', error);

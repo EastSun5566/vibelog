@@ -1,19 +1,17 @@
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { dev } from 'astro';
 import fs from 'fs-extra';
 import type { AstroIntegration } from 'astro';
 
-import { StyleTransformer, type StateManager } from '../core';
+import { StyleTransformer } from '../core';
 import { TOOLBAR_CODE } from './toolbar';
-
 
 interface VibeOptions {
   root: string;
   styleTransformer: StyleTransformer;
-  stateManager: StateManager;
 }
 
-function vibe({ root, styleTransformer, stateManager }: VibeOptions): AstroIntegration {
+function vibe({ root, styleTransformer }: VibeOptions): AstroIntegration {
   return {
     name: 'vibe-dev',
     hooks: {
@@ -38,12 +36,12 @@ function vibe({ root, styleTransformer, stateManager }: VibeOptions): AstroInteg
                 const cssPath = join(root, 'src/styles/global.css');
                 const originalCss = await fs.readFile(cssPath, 'utf-8');
 
-                // transform the CSS
-                const transformedCss = await styleTransformer.transform({ originalCss, stylePrompt: prompt });
-                await fs.writeFile(cssPath, transformedCss);
+                const transformedCss = await styleTransformer.transform({
+                  originalCss,
+                  stylePrompt: prompt,
+                });
 
-                // save the new CSS state
-                await stateManager.saveCss(transformedCss);
+                await fs.writeFile(cssPath, transformedCss);
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: true }));
@@ -66,25 +64,25 @@ function vibe({ root, styleTransformer, stateManager }: VibeOptions): AstroInteg
   };
 }
 
-interface DevServerOptions extends VibeOptions {
+interface DevServerOptions {
+  root: string;
   port?: number;
+  styleTransformer: StyleTransformer;
 }
+
 export async function createDevServer({
-  root: _root,
+  root,
   port = 5000,
   styleTransformer,
-  stateManager,
 }: DevServerOptions) {
-  const root = resolve(process.cwd(), _root);
-
   const server = await dev({
     root,
     server: { port },
-    site: `http://localhost:${port.toString()}`,
+    site: `http://localhost:${String(port)}`,
     devToolbar: {
       enabled: false,
     },
-    integrations: [vibe({ root, styleTransformer, stateManager })],
+    integrations: [vibe({ root, styleTransformer })],
   });
 
   return server;

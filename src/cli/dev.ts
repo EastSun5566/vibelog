@@ -1,32 +1,17 @@
-import { execSync } from 'node:child_process';
-
 import { logger } from '../core';
 import { createDevServer } from '../dev';
 import { createContentProvider, createAiProvider } from './providers';
-import { createStyleTransformer, StateManager, createDevBuilder } from '../core';
-
-function checkAndInstallDeps(tempDir: string) {
-  logger.info('Installing dependencies...');
-  try {
-    execSync('npm install', {
-      cwd: tempDir,
-      stdio: 'inherit',
-      timeout: 60000,
-    });
-    logger.info('Dependencies installed successfully');
-  } catch (error) {
-    logger.error('Failed to install dependencies:', error);
-    throw error;
-  }
-}
+import { createStyleTransformer, createDevBuilder } from '../core';
 
 interface DevOptions {
   content: string;
   ai: string;
   port: string;
+  root: string;
 }
-export async function devCommand({ content, ai, port }: DevOptions) {
+export async function devCommand({ content, ai, port, root }: DevOptions) {
   logger.info('Starting vibelog dev server...');
+  logger.info(`Project root: ${root}`);
   logger.info(`Content: ${content}`);
   logger.info(`AI: ${ai}`);
 
@@ -34,26 +19,21 @@ export async function devCommand({ content, ai, port }: DevOptions) {
     const contentProvider = createContentProvider(content);
     const aiProvider = createAiProvider(ai);
     const styleTransformer = createStyleTransformer({ aiProvider });
-    const stateManager = new StateManager();
 
-    const tempDir = '.temp';
     const devBuilder = createDevBuilder({
-      root: tempDir,
+      root,
       contentProvider,
-      styleTransformer,
-      stateManager,
     });
 
     await devBuilder.prepare();
-    checkAndInstallDeps(tempDir);
     await devBuilder.fetchContent();
 
     const server = await createDevServer({
-      root: tempDir,
+      root: devBuilder.getVibelogDir(),
       port: parseInt(port),
       styleTransformer,
-      stateManager,
     });
+
     logger.info(`Dev server running at http://localhost:${port}`);
     logger.info('Use the toolbar to modify styles with AI prompts');
     logger.info('Press Ctrl+C to stop');
@@ -63,9 +43,6 @@ export async function devCommand({ content, ai, port }: DevOptions) {
       server.stop()
         .then(() => {
           logger.info('Dev server stopped');
-          return devBuilder.cleanup();
-        })
-        .then(() => {
           process.exit(0);
         })
         .catch((error: unknown) => {
@@ -73,7 +50,6 @@ export async function devCommand({ content, ai, port }: DevOptions) {
           process.exit(1);
         });
     };
-
     process.on('SIGINT', cleanup);
     process.on('SIGTERM', cleanup);
 
