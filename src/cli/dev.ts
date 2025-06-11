@@ -12,8 +12,6 @@ interface DevOptions {
 export async function devCommand({ content, ai, port, root }: DevOptions) {
   logger.info('Starting vibelog dev server...');
   logger.info(`Project root: ${root}`);
-  logger.info(`Content: ${content}`);
-  logger.info(`AI: ${ai}`);
 
   try {
     const contentProvider = createContentProvider(content);

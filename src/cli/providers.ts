@@ -1,5 +1,5 @@
 import { FsProvider, HackMdProvider } from '../adapters/content';
-import { OllamaProvider } from '../adapters/ai';
+import { VercelAiProvider } from '../adapters/ai';
 import type { ContentProvider, AiProvider } from '../types';
 
 export function createContentProvider(providerString: string): ContentProvider {
@@ -17,15 +17,6 @@ export function createContentProvider(providerString: string): ContentProvider {
 }
 
 export function createAiProvider(providerString: string): AiProvider {
-  const [type, model] = providerString.split('@');
-
-  switch (type) {
-  case 'ollama':
-    if (!model) throw new Error('Ollama model required: ollama@model');
-    return new OllamaProvider(model);
-    // case 'openai':
-    //   return new OpenAiProvider(model || 'gpt-4');
-  default:
-    throw new Error(`Unknown AI provider: ${type}`);
-  }
+  const [providerName, modelName] = providerString.split('@');
+  return new VercelAiProvider(providerName, modelName);
 }

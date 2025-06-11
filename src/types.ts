@@ -20,6 +20,15 @@ export interface ContentProvider {
   getAuthor(): Promise<AuthorResponse>
 }
 
+export interface CssVariable {
+  name: string;
+  value: string;
+}
+export interface CssTransformResult {
+  variables: CssVariable[];
+  themeDescription: string;
+}
+
 export interface AiProvider {
-  generate<T>(prompt: string, schema: object): Promise<T>
+  generate(prompt: string): Promise<CssTransformResult>
 }
