@@ -20,11 +20,11 @@ export const TOOLBAR_CODE = `class VibeUI extends HTMLElement {
           position: fixed;
           bottom: 16px;
           right: 16px;
-          z-index: 999999;
-          background: var(--vibe-black);
+          z-index: 999;
+          background: var(--vibe-c-black);
           border-radius: 4px;
           padding: 8px;
-          box-shadow: var(--vibe-box-shadow);
+          box-shadow: var(--vibe-shadow-1);
         }
 
         .vibe-form {
@@ -34,9 +34,8 @@ export const TOOLBAR_CODE = `class VibeUI extends HTMLElement {
 
         .vibe-prompt {
           padding: 8px;
-          border: 1px solid var(--vibe-gray-2);
+          border: 1px solid var(--vibe-c-gray-2);
           border-radius: 4px;
-          background: transparent;
         }
 
         .vibe-button {
@@ -44,7 +43,7 @@ export const TOOLBAR_CODE = `class VibeUI extends HTMLElement {
           border: none;
           border-radius: 4px;
           background: var(--vibe-accent);
-          color: var(--vibe-white);
+          color: var(--vibe-c-white);
           cursor: pointer;
         }
 
