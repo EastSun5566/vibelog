@@ -1,3 +1,5 @@
+import { inspect } from 'node:util';
+
 import { AI_PROMPTS } from '../consts';
 import { CssParser } from './parser';
 import { logger } from './logger';
@@ -62,7 +64,7 @@ Return JSON with updated variables and theme description.
       logger.info('Style transformation completed');
       return transformedCss;
     } catch (error) {
-      logger.error('Style transformation failed:', error);
+      logger.error('Style transformation failed:', inspect(error, { depth: null }));
       return originalCss;
     }
   }

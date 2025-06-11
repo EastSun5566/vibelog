@@ -19,13 +19,8 @@ const cssTransformSchema = z.object({
 
 export class VercelAiProvider implements AiProvider {
   private model: LanguageModelV1 | null = null;
-  private providerName: string;
-  private modelName: string;
 
   constructor(providerName: string, modelName: string) {
-    this.providerName = providerName;
-    this.modelName = modelName;
-
     switch (providerName) {
     case 'openai':
       // this.model = openai(modelName);
@@ -53,27 +48,23 @@ export class VercelAiProvider implements AiProvider {
       throw new Error('AI model is not initialized. Check provider and model name.');
     }
 
-    try {
-      const { object } = await generateObject({
-        model: this.model,
-        schema: cssTransformSchema,
-        messages: [
-          {
-            role: 'system',
-            content: AI_PROMPTS.CSS_EXPERT,
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: 0.1,
-      });
+    const { object } = await generateObject({
+      model: this.model,
+      mode: 'json',
+      schema: cssTransformSchema,
+      messages: [
+        {
+          role: 'system',
+          content: AI_PROMPTS.CSS_EXPERT,
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      temperature: 0.1,
+    });
 
-      return object;
-    } catch (error) {
-      logger.error('AI generation failed:', error);
-      throw error;
-    }
+    return object;
   }
 }
