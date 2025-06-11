@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.2.0](https://github.com/EastSun5566/vibe/compare/v0.1.0...v0.2.0) (2025-06-11)
+
+
+### Features
+
+* enhance css vars ([f4292db](https://github.com/EastSun5566/vibe/commit/f4292db030fce19bf1795fb7d5c9e7adf2a2d294))
+* impl vercel AI provider and update AI generation logic ([92cf15b](https://github.com/EastSun5566/vibe/commit/92cf15b2612c313b0c05f89216c75eabb7506ed3))
+
+
+### Bug Fixes
+
+* remove unnecessary entries from .gitignore ([0306e8c](https://github.com/EastSun5566/vibe/commit/0306e8cea13d307cf3dad470ca368d3ae26e321a))
+* use json mode by default ([f11fa61](https://github.com/EastSun5566/vibe/commit/f11fa618565cc46d9f56b65adfdc77015590d6ef))
+
 ## [0.1.0](https://github.com/EastSun5566/vibe/compare/v0.0.8...v0.1.0) (2025-06-10)
 
 
