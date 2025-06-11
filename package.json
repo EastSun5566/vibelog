@@ -54,7 +54,6 @@
     "gray-matter": "^4.0.3",
     "kleur": "^4.1.5",
     "minimist": "^1.2.8",
-    "ollama": "^0.5.16",
     "ollama-ai-provider": "^1.2.0",
     "postcss": "^8.5.4",
     "zod": "^3.25.55"

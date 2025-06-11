@@ -3,6 +3,6 @@
   "compilerOptions": {
     "strictNullChecks": true
   },
-  "include": ["src", "tsdown.config.ts"],
+  "include": ["src", "tsdown.config.ts", "template"],
   "exclude": ["dist"]
 }
