@@ -30,5 +30,7 @@ export interface CssTransformResult {
 }
 
 export interface AiProvider {
+  providerName: string;
+  modelName: string;
   generate(prompt: string): Promise<CssTransformResult>
 }

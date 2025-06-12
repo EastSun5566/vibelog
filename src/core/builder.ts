@@ -39,11 +39,11 @@ export class DevBuilder {
 
   async prepare() {
     if (await fs.pathExists(this.vibelogDir)) {
-      logger.info('Using existing ".vibelog" directory');
+      logger.info('Using existing ".vibelog" state');
       return;
     }
 
-    logger.info('Initializing ".vibelog" directory...');
+    logger.info('Initializing ".vibelog" state...');
     await this.initializeVibelog();
   }
 

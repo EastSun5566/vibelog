@@ -1,7 +1,8 @@
 import { generateObject, type LanguageModelV1 } from 'ai';
-// import { openai } from '@ai-sdk/openai';
-// import { anthropic } from '@ai-sdk/anthropic';
 import { createOllama } from 'ollama-ai-provider';
+import { createOpenAI } from '@ai-sdk/openai';
+import { createAnthropic } from '@ai-sdk/anthropic';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { z } from 'zod';
 
@@ -19,17 +20,31 @@ const cssTransformSchema = z.object({
 
 export class VercelAiProvider implements AiProvider {
   private model: LanguageModelV1 | null = null;
+  providerName: string;
+  modelName: string;
 
   constructor(providerName: string, modelName: string) {
+    this.providerName = providerName;
+    this.modelName = modelName;
+
     switch (providerName) {
-    case 'openai':
-      // this.model = openai(modelName);
-      break;
-    case 'anthropic':
-      // this.model = anthropic(modelName);
-      break;
     case 'ollama':
       this.model = createOllama()(modelName);
+      break;
+    case 'openai':
+      this.model = createOpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+      })(modelName);
+      break;
+    case 'anthropic':
+      this.model = createAnthropic({
+        apiKey: process.env.ANTHROPIC_API_KEY,
+      })(modelName);
+      break;
+    case 'google':
+      this.model = createGoogleGenerativeAI({
+        apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+      })(modelName);
       break;
     case 'openrouter':
       this.model = createOpenRouter({
@@ -44,13 +59,14 @@ export class VercelAiProvider implements AiProvider {
   }
 
   async generate(prompt: string) {
-    if (!this.model) {
+    const { model } = this;
+    if (!model) {
       throw new Error('AI model is not initialized. Check provider and model name.');
     }
 
     const { object } = await generateObject({
-      model: this.model,
-      mode: 'json',
+      model,
+      ...(this.providerName === 'openrouter' && { mode: 'json' }),
       schema: cssTransformSchema,
       messages: [
         {

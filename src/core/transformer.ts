@@ -46,7 +46,7 @@ Return JSON with updated variables and theme description.
         return originalCss;
       }
 
-      logger.info('Generating styles with AI...');
+      logger.info(`Generating styles with ${this.aiProvider.modelName}...`);
       const prompt = this.createPrompt(variables, stylePrompt);
       const result = await this.aiProvider.generate(
         prompt,
