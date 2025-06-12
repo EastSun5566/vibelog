@@ -41,38 +41,33 @@ export class HackMdProvider implements ContentProvider {
   }
 
   async getPosts() {
-    try {
-      const response = await fetch(`${BASE_URL}/api/@${this.username}/overview`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch HackMD content: ${response.statusText}`);
-      }
-
-      const { notes } = await response.json() as NotesResponse;
-      const posts = await Promise.all(notes
-        .filter(note => note.publishType === 'view' && note.publishedAt)
-        .map(async note => {
-          const response = await fetch(`${BASE_URL}/${note.id}/download`);
-          if (!response.ok) {
-            throw new Error(`Failed to fetch the content for note ${note.id}: ${response.statusText}`);
-          }
-          const content = await response.text();
-
-          return {
-            id: note.id,
-            title: note.title,
-            content,
-            slug: note.permalink ?? note.title,
-            date: new Date(note.publishedAt).toISOString(),
-          };
-        }));
-
-      return {
-        posts,
-      };
-    } catch (error) {
-      logger.error('Error fetching HackMD content:', error);
-      throw error;
+    const response = await fetch(`${BASE_URL}/api/@${this.username}/overview`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch HackMD content: ${response.statusText}`);
     }
+
+    const { notes } = await response.json() as NotesResponse;
+    const posts = await Promise.all(notes
+      .filter(note => note.publishType === 'view' && note.publishedAt)
+      .map(async note => {
+        const response = await fetch(`${BASE_URL}/${note.id}/download`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch the content for note ${note.id}: ${response.statusText}`);
+        }
+        const content = await response.text();
+
+        return {
+          id: note.id,
+          title: note.title,
+          content,
+          slug: note.permalink ?? note.title,
+          date: new Date(note.publishedAt).toISOString(),
+        };
+      }));
+
+    return {
+      posts,
+    };
   }
 
   async getAuthor() {

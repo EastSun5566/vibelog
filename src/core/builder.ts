@@ -39,11 +39,11 @@ export class DevBuilder {
 
   async prepare() {
     if (await fs.pathExists(this.vibelogDir)) {
-      logger.info('Using existing ".vibelog" state');
+      logger.info('Using existing ".vibelog" directory');
       return;
     }
 
-    logger.info('Initializing ".vibelog" state...');
+    logger.info('Initializing ".vibelog"...');
     await this.initializeVibelog();
   }
 
@@ -51,13 +51,13 @@ export class DevBuilder {
     const templateDir = findTemplateDir();
     await fs.copy(templateDir, this.vibelogDir);
 
-    logger.info('Installing dependencies...');
+    logger.info('Installing deps...');
     execSync('npm install', {
       cwd: this.vibelogDir,
       stdio: 'inherit',
       timeout: 5 * 60 * 1000,
     });
-    logger.info('Dependencies installed successfully');
+    logger.info('Deps installed successfully');
   }
 
   async fetchContent() {
@@ -119,7 +119,7 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
   logger.info('Starting production build...');
 
   if (!await fs.pathExists(vibelogDir)) {
-    throw new Error('No .vibelog directory found. Please run "vibelog dev" first.');
+    throw new Error('No ".vibelog" directory found. Please run "vibelog dev" first.');
   }
 
   logger.info('Building with Astro...');

@@ -11,33 +11,28 @@ export class FsProvider implements ContentProvider {
   }
 
   async getPosts() {
-    try {
-      const files = await readdir(this.contentDir);
-      const mdFiles = files.filter(file => file.endsWith('.md'));
+    const files = await readdir(this.contentDir);
+    const mdFiles = files.filter(file => file.endsWith('.md'));
 
-      const posts = mdFiles.map(file => {
-        const fullPath = join(this.contentDir, file);
-        const { data, content } = matter.read(fullPath) as {
+    const posts = mdFiles.map(file => {
+      const fullPath = join(this.contentDir, file);
+      const { data, content } = matter.read(fullPath) as {
           data: Record<string, string>;
           content: string;
         };
 
-        return {
-          id: file.replace('.md', ''),
-          title: data.title,
-          content: content,
-          slug: data.slug || file.replace('.md', ''),
-          date: data.date ? new Date(data.date).toISOString() : new Date().toISOString(),
-        };
-      });
-
       return {
-        posts,
+        id: file.replace('.md', ''),
+        title: data.title,
+        content: content,
+        slug: data.slug || file.replace('.md', ''),
+        date: data.date ? new Date(data.date).toISOString() : new Date().toISOString(),
       };
-    } catch (error) {
-      logger.error('Error reading content:', error);
-      throw error;
-    }
+    });
+
+    return {
+      posts,
+    };
   }
 
   getAuthor() {

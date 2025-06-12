@@ -26,6 +26,7 @@ export class VercelAiProvider implements AiProvider {
   constructor(providerName: string, modelName: string) {
     this.providerName = providerName;
     this.modelName = modelName;
+    logger.info(`AI provider: ${providerName} (${modelName})`);
 
     switch (providerName) {
     case 'ollama':
@@ -54,8 +55,6 @@ export class VercelAiProvider implements AiProvider {
     default:
       throw new Error(`Unsupported provider: ${providerName}. Supported: openai, anthropic, ollama, openrouter`);
     }
-
-    logger.info(`AI provider: ${providerName} (${modelName})`);
   }
 
   async generate(prompt: string) {
