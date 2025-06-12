@@ -10,8 +10,8 @@ interface StyleTransformerOptions {
 }
 
 export class StyleTransformer {
-  private aiProvider: AiProvider;
-  private cssParser: CssParser;
+  readonly aiProvider: AiProvider;
+  readonly cssParser: CssParser;
 
   constructor({
     aiProvider,
@@ -46,7 +46,7 @@ Return JSON with updated variables and theme description.
         return originalCss;
       }
 
-      logger.info(`Generating styles with ${this.aiProvider.modelName}...`);
+      logger.info(`Generating styles with ${this.aiProvider.modelId}...`);
       const prompt = this.createPrompt(variables, stylePrompt);
       const result = await this.aiProvider.generate(
         prompt,

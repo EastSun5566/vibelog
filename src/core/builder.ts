@@ -29,25 +29,15 @@ export interface DevBuilderOptions {
   contentProvider: ContentProvider;
 }
 export class DevBuilder {
-  private vibelogDir: string;
-  private contentProvider: ContentProvider;
+  readonly vibelogDir: string;
+  readonly contentProvider: ContentProvider;
 
   constructor({ root, contentProvider }: DevBuilderOptions) {
     this.vibelogDir = resolve(process.cwd(), root, '.vibelog');
     this.contentProvider = contentProvider;
   }
 
-  async prepare() {
-    if (await fs.pathExists(this.vibelogDir)) {
-      logger.info('Using existing ".vibelog" directory');
-      return;
-    }
-
-    logger.info('Initializing ".vibelog"...');
-    await this.initializeVibelog();
-  }
-
-  private async initializeVibelog() {
+  private async initVibelogDir() {
     const templateDir = findTemplateDir();
     await fs.copy(templateDir, this.vibelogDir);
 
@@ -60,8 +50,18 @@ export class DevBuilder {
     logger.info('Deps installed successfully');
   }
 
+  async prepare() {
+    if (await fs.pathExists(this.vibelogDir)) {
+      logger.info('Using existing ".vibelog" directory');
+      return;
+    }
+
+    logger.info('Initializing ".vibelog"...');
+    await this.initVibelogDir();
+  }
+
   async fetchContent() {
-    logger.info('Fetching content...');
+    logger.info(`Fetching ${this.contentProvider.name} content...`);
 
     const [{ posts }, author] = await Promise.all([
       this.contentProvider.getPosts(),
@@ -100,10 +100,6 @@ export class DevBuilder {
     await fs.writeFile(authorPath, authorContent);
 
     logger.info('Content updated successfully');
-  }
-
-  getVibelogDir() {
-    return this.vibelogDir;
   }
 }
 export function createDevBuilder(options: DevBuilderOptions) {

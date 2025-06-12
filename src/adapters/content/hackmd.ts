@@ -36,7 +36,8 @@ interface ProfileResponse {
 const BASE_URL = 'https://hackmd.io';
 
 export class HackMdProvider implements ContentProvider {
-  constructor(private username: string) {
+  readonly name = 'hackmd';
+  constructor(readonly username: string) {
     logger.info(`Content provider: HackMD (${username})`);
   }
 

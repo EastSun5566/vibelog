@@ -16,6 +16,7 @@ export interface Author {
 export type AuthorResponse = Author
 
 export interface ContentProvider {
+  readonly name: string
   getPosts(): Promise<PostsResponse>
   getAuthor(): Promise<AuthorResponse>
 }
@@ -30,7 +31,7 @@ export interface CssTransformResult {
 }
 
 export interface AiProvider {
-  providerName: string;
-  modelName: string;
+  readonly name: string;
+  readonly modelId: string;
   generate(prompt: string): Promise<CssTransformResult>
 }

@@ -6,7 +6,8 @@ import { logger } from '../../core';
 import type { ContentProvider } from '../../types';
 
 export class FsProvider implements ContentProvider {
-  constructor(private contentDir: string) {
+  readonly name = 'fs';
+  constructor(readonly contentDir: string) {
     logger.info(`Content provider: FS (${contentDir})`);
   }
 

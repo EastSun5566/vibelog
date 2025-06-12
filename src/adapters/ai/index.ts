@@ -19,41 +19,37 @@ const cssTransformSchema = z.object({
 });
 
 export class VercelAiProvider implements AiProvider {
-  private model: LanguageModelV1 | null = null;
-  providerName: string;
-  modelName: string;
+  readonly model: LanguageModelV1 | null = null;
 
-  constructor(providerName: string, modelName: string) {
-    this.providerName = providerName;
-    this.modelName = modelName;
-    logger.info(`AI provider: ${providerName} (${modelName})`);
+  constructor(readonly name: string, readonly modelId: string) {
+    logger.info(`AI provider: ${name} (${modelId})`);
 
-    switch (providerName) {
+    switch (name) {
     case 'ollama':
-      this.model = createOllama()(modelName);
+      this.model = createOllama()(modelId);
       break;
     case 'openai':
       this.model = createOpenAI({
         apiKey: process.env.OPENAI_API_KEY,
-      })(modelName);
+      })(modelId);
       break;
     case 'anthropic':
       this.model = createAnthropic({
         apiKey: process.env.ANTHROPIC_API_KEY,
-      })(modelName);
+      })(modelId);
       break;
     case 'google':
       this.model = createGoogleGenerativeAI({
         apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-      })(modelName);
+      })(modelId);
       break;
     case 'openrouter':
       this.model = createOpenRouter({
         apiKey: process.env.OPENROUTER_API_KEY,
-      })(modelName);
+      })(modelId);
       break;
     default:
-      throw new Error(`Unsupported provider: ${providerName}. Supported: openai, anthropic, ollama, openrouter`);
+      throw new Error(`Unsupported provider: ${name}. Supported: openai, anthropic, ollama, openrouter`);
     }
   }
 
@@ -65,7 +61,7 @@ export class VercelAiProvider implements AiProvider {
 
     const { object } = await generateObject({
       model,
-      ...(this.providerName === 'openrouter' && { mode: 'json' }),
+      ...(this.name === 'openrouter' && { mode: 'json' }),
       schema: cssTransformSchema,
       messages: [
         {

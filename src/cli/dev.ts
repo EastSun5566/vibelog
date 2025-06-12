@@ -27,7 +27,7 @@ export async function devCommand({ content, ai, port, root }: DevOptions) {
     await devBuilder.fetchContent();
 
     const server = await createDevServer({
-      root: devBuilder.getVibelogDir(),
+      root: devBuilder.vibelogDir,
       port: parseInt(port),
       styleTransformer,
     });
