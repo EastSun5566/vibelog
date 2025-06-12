@@ -6,15 +6,15 @@ export class Logger {
   }
 
   info(...messages: unknown[]) {
-    console.info(`${dim(this.getTime())} ${blue('[vibe] [INFO]')}`, ...messages);
+    console.info(`${dim(this.getTime())} ${blue('[vibelog] ℹ')}`, ...messages);
   }
 
   error(...messages: unknown[]) {
-    console.error(`${dim(this.getTime())} ${red('[vibe] [ERROR]')}`, ...messages);
+    console.error(`${dim(this.getTime())} ${red('[vibelog] ❌')}`, ...messages);
   }
 
   warn(...messages: unknown[]) {
-    console.warn(`${dim(this.getTime())} ${blue('[vibe] [WARN]')}`, ...messages);
+    console.warn(`${dim(this.getTime())} ${blue('[vibelog] ⚠️')}`, ...messages);
   }
 }
 
