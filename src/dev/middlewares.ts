@@ -72,8 +72,8 @@ export function handleError() {
 }
 
 
-export function handleTransformStyle({  root, styleTransformer, server }: {
-  root: string;
+export function handleTransformStyle({  vibelogDir, styleTransformer, server }: {
+  vibelogDir: string;
   styleTransformer: StyleTransformer;
   server: Parameters<BaseIntegrationHooks['astro:server:setup']>['0']['server'];
 }) {
@@ -88,7 +88,7 @@ export function handleTransformStyle({  root, styleTransformer, server }: {
     }
 
     (async () => {
-      const cssPath = join(root, 'src/styles/global.css');
+      const cssPath = join(vibelogDir, 'src/styles/global.css');
       const originalCss = await fs.readFile(cssPath, 'utf-8');
 
       const transformedCss = await styleTransformer.transform({

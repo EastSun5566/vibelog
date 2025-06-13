@@ -6,10 +6,10 @@ import { createPanelScript } from './ui';
 import { handleTransformStyle, handleError, parseBody } from './middlewares';
 
 interface VibelogOptions {
-  root: string;
+  vibelogDir: string;
   styleTransformer: StyleTransformer;
 }
-function vibelog({ root, styleTransformer }: VibelogOptions): AstroIntegration {
+function vibelog({ vibelogDir, styleTransformer }: VibelogOptions): AstroIntegration {
   return {
     name: 'vibelog-dev',
     hooks: {
@@ -19,7 +19,7 @@ function vibelog({ root, styleTransformer }: VibelogOptions): AstroIntegration {
       'astro:server:setup': ({ server }) => {
         server.middlewares
           .use(parseBody())
-          .use('/_vibe/transform', handleTransformStyle({ root, styleTransformer, server }))
+          .use('/_vibe/transform', handleTransformStyle({ vibelogDir, styleTransformer, server }))
           .use(handleError());
       },
     },
@@ -43,7 +43,7 @@ export async function createDevServer({
     devToolbar: {
       enabled: false,
     },
-    integrations: [vibelog({ root, styleTransformer })],
+    integrations: [vibelog({ vibelogDir: root, styleTransformer })],
   });
 
   return server;

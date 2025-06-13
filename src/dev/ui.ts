@@ -232,7 +232,7 @@ export function createPanelScript() {
           if (!prompt) return;
 
           try {
-            button.textContent = '🚀...';
+            button.textContent = '🚀';
             button.disabled = true;
 
             const response = await fetch('/_vibe/transform', {
