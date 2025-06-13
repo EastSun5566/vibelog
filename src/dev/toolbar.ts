@@ -1,114 +1,130 @@
-function html(strings: TemplateStringsArray, ...values: string[]) {
-  return strings.reduce((result, string, index) => result + string + (values[index] ?? ''), '');
-}
+export function createPanelScript() {
 
-function css(strings: TemplateStringsArray, ...values: string[]) {
-  return strings.reduce((result, string, index) => result + string + (values[index] ?? ''), '');
-}
+  const createVibelogUi = () => {
+    const html = (strings: TemplateStringsArray, ...values: string[]) => {
+      return strings.reduce((result, string, index) => result + string + (values[index] ?? ''), '');
+    };
+    const css = (strings: TemplateStringsArray, ...values: string[]) => {
+      return strings.reduce((result, string, index) => result + string + (values[index] ?? ''), '');
+    };
 
-const toolbarHtml = html`
-<div class="vibe-container">
-    <form class="vibe-form">
-      <input 
-        type="text" 
-        class="vibe-prompt" 
-        placeholder="style prompt..."
-        required
-      />
+    return class VibelogUi extends HTMLElement {
+      constructor() {
+        super();
+        const shadow = this.attachShadow({ mode: 'open' });
 
-      <button type="submit" class="vibe-button">Vibe</button>
-    </form>
-</div>
-`;
+        const panelHtml = html`
+  <div class="vibelog-panel">
+      <form class="vibelog-form">
+        <textarea
+          class="vibelog-prompt" 
+          placeholder="✨🔥🚀"
+          rows="3"
+          required
+          autofocus
+          style="resize: none"
+        >Light theme with a calm green tone</textarea>
 
-const toolbarCss = css`
-.vibe-container {
-  position: fixed;
-  bottom: 16px;
-  right: 16px;
-  z-index: 999;
-  background: var(--vibe-c-black);
-  border-radius: 4px;
-  padding: 8px;
-  box-shadow: var(--vibe-shadow-1);
-}
+        <button type="submit" class="vibelog-button">Vibe</button>
+      </form>
+  </div>
+  `;
 
-.vibe-form {
-  display: flex;
-  gap: 8px;
-}
+        const panelCss = css`
+  .vibelog-panel {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    z-index: 999;
+    background: var(--vibe-c-black);
+    border-radius: var(--vibe-border-radius-md);
+    padding: var(--vibe-space-1);
+    box-shadow: var(--vibe-shadow-1);
+  }
 
-.vibe-prompt {
-  padding: 8px;
-  border: 1px solid var(--vibe-c-gray-2);
-  border-radius: 4px;
-}
+  .vibelog-form {
+    display: flex;
+    gap: var(--vibe-space-1);
+  }
 
-.vibe-button {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
-  background: var(--vibe-accent);
-  color: var(--vibe-c-white);
-  cursor: pointer;
-}
+  .vibelog-prompt {
+    padding: var(--vibe-space-1);
+    border: var(--vibe-border-width-thin) solid var(--vibe-c-gray-2);
+    border-radius:  var(--vibe-border-radius-md);
+  }
 
-.vibe-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-`;
+  .vibelog-button {
+    padding: var(--vibe-space-1) var(--vibe-space-2);
+    border: none;
+    border-radius: var(--vibe-border-radius-md);
+    background: var(--vibe-accent);
+    color: var(--vibe-c-white);
+    cursor: pointer;
 
-export const TOOLBAR_CODE = `class VibeUI extends HTMLElement {
-  constructor() {
-    super();
-    const shadow = this.attachShadow({ mode: 'open' });
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;  
+    }
+  }
+  `;
 
-    shadow.innerHTML = \`
-      ${toolbarHtml}
+        shadow.innerHTML = `
+        ${panelHtml}
+  
+        <style>
+          ${panelCss}
+        </style>
+        `;
 
-      <style>
-        ${toolbarCss}
-      </style>
-    \`;
+        const form = shadow.querySelector<HTMLFormElement>('.vibelog-form');
+        const textarea = shadow.querySelector<HTMLTextAreaElement>('.vibelog-prompt');
+        const button = shadow.querySelector<HTMLButtonElement>('.vibelog-button');
 
-    const form = shadow.querySelector('.vibe-form');
-    const input = shadow.querySelector('.vibe-prompt');
-    const button = shadow.querySelector('.vibe-button');
+        async function handleTransform() {
+          if (!form || !textarea || !button) return;
 
-    async function handleTransform() {
-      if (!form || !input || !button) return;
+          const prompt = textarea.value.trim();
+          if (!prompt) return;
 
-      const prompt = input.value.trim();
-      if (!prompt) return;
+          try {
+            button.textContent = 'Vibing...';
+            button.disabled = true;
 
-      try {
-        button.textContent = 'Vibing...';
-        button.disabled = true;
+            const response = await fetch('/_vibe/transform', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ prompt }),
+            });
+            if (!response.ok) {
+              const errorMessage = await response.json().then(({ error }: { error?: string }) => error);
+              throw new Error(errorMessage ?? 'Failed to transform styles');
+            }
 
-        const response = await fetch('/_vibe/transform', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt }),
-        });
-        if (!response.ok) {
-          throw new Error(await response.json().then(({ error }) => error));
+            textarea.value = '';
+          } catch (error) {
+            console.error(error);
+            alert(error instanceof Error ? error.message : 'An error occurred');
+          } finally {
+            button.textContent = 'Vibe';
+            button.disabled = false;
+          }
         }
 
-        input.value = '';
-      } catch (error) {
-        console.error(error);
-        alert(error.message);
-      } finally {
-        button.textContent = 'Vibe';
-        button.disabled = false;
+        form?.addEventListener('submit', (event) => {
+          event.preventDefault();
+          handleTransform().catch(console.error);
+        });
       }
+    };
+  };
+
+  return `
+    // esbuild will inject this function, but I don't know why :(
+    function __name(target, name) {
+      return target;
     }
 
-    form.addEventListener('submit', (event) => {
-      event.preventDefault();
-      handleTransform().catch(console.error);
-    });
-  }
+    customElements.define('vibelog-ui', (${createVibelogUi.toString()})());
+    document.body.appendChild(document.createElement('vibelog-ui'));
+  `;
 }
-`;

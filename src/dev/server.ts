@@ -4,24 +4,19 @@ import fs from 'fs-extra';
 import type { AstroIntegration } from 'astro';
 
 import { StyleTransformer } from '../core';
-import { TOOLBAR_CODE } from './toolbar';
+import { createPanelScript } from './toolbar';
 import { handleError, parseBody } from './utils';
 
-interface VibeOptions {
+interface VibelogOptions {
   root: string;
   styleTransformer: StyleTransformer;
 }
-
-function vibe({ root, styleTransformer }: VibeOptions): AstroIntegration {
+function vibelog({ root, styleTransformer }: VibelogOptions): AstroIntegration {
   return {
-    name: 'vibe-dev',
+    name: 'vibelog-dev',
     hooks: {
       'astro:config:setup': ({ injectScript }) => {
-        injectScript('page', `
-          ${TOOLBAR_CODE}
-          customElements.define('vibe-toolbar', VibeUI);
-          document.body.appendChild(document.createElement('vibe-toolbar'));
-        `);
+        injectScript('page', createPanelScript());
       },
       'astro:server:setup': ({ server }) => {
         server.middlewares
@@ -77,7 +72,7 @@ export async function createDevServer({
     devToolbar: {
       enabled: false,
     },
-    integrations: [vibe({ root, styleTransformer })],
+    integrations: [vibelog({ root, styleTransformer })],
   });
 
   return server;
