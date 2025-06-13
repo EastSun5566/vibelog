@@ -5,6 +5,7 @@ import type { AstroIntegration } from 'astro';
 
 import { StyleTransformer } from '../core';
 import { TOOLBAR_CODE } from './toolbar';
+import { handleError, parseBody } from './utils';
 
 interface VibeOptions {
   root: string;
@@ -23,42 +24,36 @@ function vibe({ root, styleTransformer }: VibeOptions): AstroIntegration {
         `);
       },
       'astro:server:setup': ({ server }) => {
-        server.middlewares.use((req, res, next) => {
-          if (req.url === '/_vibe/transform' && req.method === 'POST') {
-            let body = '';
-            req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        server.middlewares
+          .use(parseBody())
+          .use('/_vibe/transform', (req, res, next) => {
+            if (req.method !== 'POST') {
+              return res.writeHead(405).end();
+            }
 
-            // eslint-disable-next-line @typescript-eslint/no-misused-promises
-            req.on('end', async () => {
-              try {
-                const { prompt } = JSON.parse(body) as { prompt: string };
+            const { prompt } = req.body as { prompt: string };
+            if (!prompt) {
+              return res.writeHead(400).end();
+            }
 
-                const cssPath = join(root, 'src/styles/global.css');
-                const originalCss = await fs.readFile(cssPath, 'utf-8');
+            (async () => {
+              const cssPath = join(root, 'src/styles/global.css');
+              const originalCss = await fs.readFile(cssPath, 'utf-8');
 
-                const transformedCss = await styleTransformer.transform({
-                  originalCss,
-                  stylePrompt: prompt,
-                });
+              const transformedCss = await styleTransformer.transform({
+                originalCss,
+                stylePrompt: prompt,
+              });
 
-                await fs.writeFile(cssPath, transformedCss);
+              await fs.writeFile(cssPath, transformedCss);
+              server.ws.send({ type: 'full-reload' });
 
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: true }));
-
-                server.ws.send({ type: 'full-reload' });
-              } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: errorMessage }));
-              }
-            });
-
-            return;
-          }
-
-          next();
-        });
+              res
+                .writeHead(200, { 'Content-Type': 'application/json' })
+                .end(JSON.stringify({ success: true }));
+            })().catch(next);
+          })
+          .use(handleError());
       },
     },
   };
