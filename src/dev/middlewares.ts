@@ -1,4 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { join } from 'node:path';
+import type { BaseIntegrationHooks } from 'astro';
+
+import fs from 'fs-extra';
+import type { StyleTransformer } from '../core';
 
 declare module 'http' {
   interface IncomingMessage {
@@ -65,3 +70,39 @@ export function handleError() {
     }));
   };
 }
+
+
+export function handleTransformStyle({  root, styleTransformer, server }: {
+  root: string;
+  styleTransformer: StyleTransformer;
+  server: Parameters<BaseIntegrationHooks['astro:server:setup']>['0']['server'];
+}) {
+  return (req: IncomingMessage, res: ServerResponse, next: NextFunction) => {
+    if (req.method !== 'POST') {
+      return res.writeHead(405).end();
+    }
+
+    const { prompt } = req.body as { prompt: string };
+    if (!prompt) {
+      return res.writeHead(400).end();
+    }
+
+    (async () => {
+      const cssPath = join(root, 'src/styles/global.css');
+      const originalCss = await fs.readFile(cssPath, 'utf-8');
+
+      const transformedCss = await styleTransformer.transform({
+        originalCss,
+        stylePrompt: prompt,
+      });
+
+      await fs.writeFile(cssPath, transformedCss);
+      server.ws.send({ type: 'full-reload' });
+
+      res
+        .writeHead(200, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ success: true }));
+    })().catch(next);
+  };
+}
+
