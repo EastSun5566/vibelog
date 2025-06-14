@@ -6,7 +6,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { z } from 'zod';
 
-import { AI_PROMPTS } from '../../consts';
+import { AI_PROMPTS, AiProviderName } from '../../consts';
 import type { AiProvider } from '../../types';
 import { logger } from '../../core';
 
@@ -21,35 +21,35 @@ const cssTransformSchema = z.object({
 export class VercelAiProvider implements AiProvider {
   readonly model: LanguageModelV1 | null = null;
 
-  constructor(readonly name: string, readonly modelId: string) {
-    logger.info(`AI provider: ${name} (${modelId})`);
+  constructor(readonly providerName: AiProviderName, readonly modelId: string) {
+    logger.info(`AI provider: ${providerName} (${modelId})`);
 
-    switch (name) {
-    case 'ollama':
+    switch (providerName) {
+    case AiProviderName.OLLAMA:
       this.model = createOllama()(modelId);
       break;
-    case 'openai':
+    case AiProviderName.OPENAI:
       this.model = createOpenAI({
         apiKey: process.env.OPENAI_API_KEY,
       })(modelId);
       break;
-    case 'anthropic':
+    case AiProviderName.ANTHROPIC:
       this.model = createAnthropic({
         apiKey: process.env.ANTHROPIC_API_KEY,
       })(modelId);
       break;
-    case 'google':
+    case AiProviderName.GOOGLE:
       this.model = createGoogleGenerativeAI({
         apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
       })(modelId);
       break;
-    case 'openrouter':
+    case AiProviderName.OPENROUTER:
       this.model = createOpenRouter({
         apiKey: process.env.OPENROUTER_API_KEY,
       })(modelId);
       break;
     default:
-      throw new Error(`Unsupported provider: ${name}. Supported: openai, anthropic, ollama, openrouter`);
+      throw new Error(`Unsupported AI provider: ${providerName as string}. Supported: ${Object.values(AiProviderName).join(', ')}`);
     }
   }
 
@@ -61,7 +61,7 @@ export class VercelAiProvider implements AiProvider {
 
     const { object } = await generateObject({
       model,
-      ...(this.name === 'openrouter' && { mode: 'json' }),
+      ...(this.providerName === AiProviderName.OPENROUTER && { mode: 'json' }),
       schema: cssTransformSchema,
       messages: [
         {

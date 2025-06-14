@@ -3,7 +3,7 @@ import { createDevServer } from '../dev';
 import { createContentProvider, createAiProvider } from './providers';
 import { createStyleTransformer, createDevBuilder } from '../core';
 
-interface DevOptions {
+export interface DevOptions {
   content: string;
   ai: string;
   port: string;
@@ -32,8 +32,7 @@ export async function devCommand({ content, ai, port, root }: DevOptions) {
       styleTransformer,
     });
 
-    logger.info(`Dev server running at http://localhost:${port}`);
-    logger.info('Use the toolbar to modify styles with AI prompts');
+    logger.info('Use the vibelog panel to modify styles with AI prompts');
     logger.info('Press Ctrl+C to stop');
 
     const cleanup = () => {

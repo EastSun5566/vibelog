@@ -1,3 +1,16 @@
+export enum ContentProviderName {
+  FS = 'fs',
+  HACKMD = 'hackmd',
+}
+
+export enum AiProviderName {
+  OPENAI = 'openai',
+  ANTHROPIC = 'anthropic',
+  OLLAMA = 'ollama',
+  GOOGLE = 'google',
+  OPENROUTER = 'openrouter',
+}
+
 export const AI_PROMPTS = {
   CSS_EXPERT: `You are a CSS design expert specializing in color theory and web accessibility.
 

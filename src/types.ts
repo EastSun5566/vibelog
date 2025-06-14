@@ -1,3 +1,5 @@
+import { AiProviderName, ContentProviderName } from './consts';
+
 export interface Post {
   id: string
   title: string
@@ -16,7 +18,7 @@ export interface Author {
 export type AuthorResponse = Author
 
 export interface ContentProvider {
-  readonly name: string
+  readonly name: ContentProviderName;
   getPosts(): Promise<PostsResponse>
   getAuthor(): Promise<AuthorResponse>
 }
@@ -31,7 +33,7 @@ export interface CssTransformResult {
 }
 
 export interface AiProvider {
-  readonly name: string;
+  readonly providerName: AiProviderName;
   readonly modelId: string;
   generate(prompt: string): Promise<CssTransformResult>
 }

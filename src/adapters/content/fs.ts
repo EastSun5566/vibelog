@@ -1,18 +1,23 @@
 import matter from 'gray-matter';
-import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import fs from 'fs-extra';
 
 import { logger } from '../../core';
+import { ContentProviderName } from '../../consts';
 import type { ContentProvider } from '../../types';
 
 export class FsProvider implements ContentProvider {
-  readonly name = 'fs';
+  readonly name = ContentProviderName.FS;
   constructor(readonly contentDir: string) {
     logger.info(`Content provider: FS (${contentDir})`);
   }
 
   async getPosts() {
-    const files = await readdir(this.contentDir);
+    if (!await fs.exists(this.contentDir)) {
+      throw new Error(`Content directory not found: ${this.contentDir}`);
+    }
+
+    const files = await fs.readdir(this.contentDir);
     const mdFiles = files.filter(file => file.endsWith('.md'));
 
     const posts = mdFiles.map(file => {

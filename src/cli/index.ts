@@ -1,112 +1,47 @@
 #!/usr/bin/env node
 
-import minimist from 'minimist';
+import { cac } from 'cac';
+import { version, description } from '../../package.json';
+import { devCommand, type DevOptions } from './dev';
+import { buildCommand, type BuildOptions } from './build';
 
-import { version } from '../../package.json';
-import { devCommand } from './dev';
-import { buildCommand } from './build';
+const cli = cac('vibelog');
+cli
+  .version(`v${version} - ${description}`)
+  .help();
 
-const argv = minimist(process.argv.slice(2), {
-  string: ['root', 'content', 'ai', 'port', 'out', 'site'],
-  boolean: ['help', 'version'],
-  alias: {
-    r: 'root',
-    c: 'content',
-    h: 'help',
-    v: 'version',
-    p: 'port',
-    o: 'out',
-  },
-  default: {
-    root: '.',
-    content: 'fs@./content',
-    ai: 'ollama@codegemma:2b',
-    port: '5000',
-    out: 'dist',
-    site: 'https://example.com',
-  },
-});
+cli.option('-r, --root <dir>', 'Project root directory', { default: '.' });
 
-const command = argv._[0];
+// dev command
+cli
+  .command('dev', 'Start development server with content preview', { allowUnknownOptions: false })
+  .option('-c, --content <provider>', 'Content provider', {
+    default: 'fs@./content',
+  })
+  .option('--ai <provider>', 'AI provider', {
+    default: 'ollama@qwen2.5-coder:3b',
+  })
+  .option('-p, --port <port>', 'Development server port', {
+    default: '5000',
+  })
+  .example('vibelog dev --root ./my-blog --content hackmd@eastsun5566 --ai ollama@qwen2.5-coder:3b')
+  .example('vibelog dev --content fs@./my-content --port 3000')
+  .action(async (options: DevOptions) => {
+    await devCommand(options);
+  });
 
-function showHelp() {
-  console.log(`
-vibelog v${version} - Bring your own content with some vibes
+// build command
+cli
+  .command('build', 'Build production site from dev state', { allowUnknownOptions: false })
+  .option('-o, --out <dir>', 'Output directory', {
+    default: 'dist',
+  })
+  .option('--site <url>', 'Site URL for sitemap', {
+    default: 'https://example.com',
+  })
+  .example('vibelog build --out public --site https://myblog.com')
+  .action(async (options: BuildOptions) => {
+    await buildCommand(options);
+  });
 
-Usage:
-  vibelog <command> [options]
-
-Commands:
-  dev       Start development server with content preview
-  build     Build production site from dev state
-
-Global Options:
-  -r, --root <dir>         Project root directory (default: .)
-
-Dev Options:
-  -c, --content <provider>      Content provider (default: fs@./content)
-                           Examples: hackmd@username, fs@./content
-  --ai <provider>          AI provider (default: ollama@codegemma:2b)
-                           Examples: ollama@model, openai@model
-  -p, --port <port>        Development server port (default: 5000)
-
-Build Options:
-  -o, --out <dir>          Output directory (default: dist)
-  --site <url>             Site URL for sitemap (default: https://example.com)
-
-Global Options:
-  -h, --help               Show help
-  -v, --version            Show version
-
-Examples:
-  vibelog dev --root ./my-blog --content hackmd@eastsun5566 --ai ollama@codegemma:2b
-  vibelog dev --content fs@./my-content --port 3000
-  vibelog build --out public --site https://myblog.com
-`);
-}
-
-function showVersion() {
-  console.log(`vibelog v${version}`);
-}
-
-async function main() {
-  if (argv.version) {
-    showVersion();
-    return;
-  }
-  if (argv.help || !command) {
-    showHelp();
-    return;
-  }
-
-  try {
-    switch (command) {
-    case 'dev':
-      await devCommand({
-        root: argv.root as string,
-        content: argv.content as string,
-        ai: argv.ai as string,
-        port: argv.port as string,
-      });
-      break;
-
-    case 'build':
-      await buildCommand({
-        root: argv.root as string,
-        out: argv.out as string,
-        site: argv.site as string,
-      });
-      break;
-
-    default:
-      console.error(`Unknown command: ${command}`);
-      console.log('Run "vibelog --help" for usage information.');
-      process.exit(1);
-    }
-  } catch (error) {
-    console.error('Error:', error instanceof Error ? error.message : error);
-    process.exit(1);
-  }
-}
-
-main().catch(console.error);
+cli.parse();

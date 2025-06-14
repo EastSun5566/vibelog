@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { logger } from '../core';
 import { buildFromVibelog } from '../core';
 
-interface BuildOptions {
+export interface BuildOptions {
   out: string;
   site: string;
   root: string;

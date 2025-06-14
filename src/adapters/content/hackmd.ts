@@ -1,5 +1,6 @@
 import type { ContentProvider } from '../../types';
 import { logger } from '../../core';
+import { ContentProviderName } from '../../consts';
 
 interface Note {
   id: string;
@@ -36,7 +37,7 @@ interface ProfileResponse {
 const BASE_URL = 'https://hackmd.io';
 
 export class HackMdProvider implements ContentProvider {
-  readonly name = 'hackmd';
+  readonly name = ContentProviderName.HACKMD;
   constructor(readonly username: string) {
     logger.info(`Content provider: HackMD (${username})`);
   }

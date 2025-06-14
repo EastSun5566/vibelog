@@ -11,16 +11,17 @@ import { generateSlug, slugify } from './utils';
 import { logger } from './logger';
 import type { ContentProvider } from '../types';
 
-function findTemplateDir() {
+async function findTemplateDir() {
   const currentDir = dirname(fileURLToPath(import.meta.url));
   const templateDir = resolve(
     currentDir,
     basename(currentDir) === 'dist' ? '..' : '../..',
     'template',
   );
-  if (!fs.existsSync(templateDir)) {
+  if (!await fs.exists(templateDir)) {
     throw new Error(`Template directory not found: ${templateDir}`);
   }
+
   return templateDir;
 }
 
@@ -38,7 +39,7 @@ export class DevBuilder {
   }
 
   private async initVibelogDir() {
-    const templateDir = findTemplateDir();
+    const templateDir = await findTemplateDir();
     await fs.copy(templateDir, this.vibelogDir);
 
     logger.info('Installing deps...');
@@ -51,7 +52,7 @@ export class DevBuilder {
   }
 
   async prepare() {
-    if (await fs.pathExists(this.vibelogDir)) {
+    if (await fs.exists(this.vibelogDir)) {
       logger.info('Using existing ".vibelog" directory');
       return;
     }
@@ -114,7 +115,7 @@ export interface BuildOptions {
 export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOptions) {
   logger.info('Starting production build...');
 
-  if (!await fs.pathExists(vibelogDir)) {
+  if (!await fs.exists(vibelogDir)) {
     throw new Error('No ".vibelog" directory found. Please run "vibelog dev" first.');
   }
 

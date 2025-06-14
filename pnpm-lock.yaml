@@ -35,6 +35,9 @@ importers:
       astro:
         specifier: ^5.9.0
         version: 5.9.0(@types/node@22.15.30)(jiti@2.4.2)(rollup@4.41.1)(tsx@4.19.4)(typescript@5.8.3)
+      cac:
+        specifier: ^6.7.14
+        version: 6.7.14
       fs-extra:
         specifier: ^11.3.0
         version: 11.3.0
@@ -44,9 +47,6 @@ importers:
       kleur:
         specifier: ^4.1.5
         version: 4.1.5
-      minimist:
-        specifier: ^1.2.8
-        version: 1.2.8
       ollama-ai-provider:
         specifier: ^1.2.0
         version: 1.2.0(zod@3.25.55)
@@ -1788,9 +1788,6 @@ packages:
   minimatch@9.0.5:
     resolution: {integrity: sha512-G6T0ZX48xgozx7587koeX9Ys2NYy6Gmv//P89sEte9V9whIapMNF4idKxnW2QtCcLiTWlb/wfCabAtAFWhhBow==}
     engines: {node: '>=16 || 14 >=14.17'}
-
-  minimist@1.2.8:
-    resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
 
   mrmime@2.0.1:
     resolution: {integrity: sha512-Y3wQdFg2Va6etvQ5I82yUhGdsKrcYox6p7FfL1LbK2J4V01F9TGlepTIhnK24t7koZibmg82KGglhA1XK5IsLQ==}
@@ -4637,8 +4634,6 @@ snapshots:
   minimatch@9.0.5:
     dependencies:
       brace-expansion: 2.0.1
-
-  minimist@1.2.8: {}
 
   mrmime@2.0.1: {}
 
