@@ -59,7 +59,7 @@ Return JSON with updated variables and description.
       );
 
       logger.info('AI generation completed');
-      logger.info('Style description:', description);
+      logger.info('Response:', description);
 
       const updates: CssVariable[] = newVariables.map(({ name, value }) => ({
         name,

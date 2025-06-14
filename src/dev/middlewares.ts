@@ -75,8 +75,7 @@ export function handleError() {
 export function handleTransformStyle({  vibelogDir, styleTransformer, server }: {
   vibelogDir: string;
   styleTransformer: StyleTransformer;
-  server: Parameters<BaseIntegrationHooks['astro:server:setup']>['0']['server'];
-}) {
+} & Parameters<BaseIntegrationHooks['astro:server:setup']>[0]) {
   return (req: IncomingMessage, res: ServerResponse, next: NextFunction) => {
     if (req.method !== 'POST') {
       return res.writeHead(405).end();

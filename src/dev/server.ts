@@ -16,10 +16,10 @@ function vibelog({ vibelogDir, styleTransformer }: VibelogOptions): AstroIntegra
       'astro:config:setup': ({ injectScript }) => {
         injectScript('page', createPanelScript());
       },
-      'astro:server:setup': ({ server }) => {
+      'astro:server:setup': ({ server, ...options }) => {
         server.middlewares
           .use(parseBody())
-          .use('/_vibe/transform', handleTransformStyle({ vibelogDir, styleTransformer, server }))
+          .use('/_vibe/transform', handleTransformStyle({ vibelogDir, styleTransformer, server, ...options }))
           .use(handleError());
       },
     },
