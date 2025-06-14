@@ -91,17 +91,25 @@ export function handleTransformStyle({  vibelogDir, styleTransformer, server }: 
       const cssPath = join(vibelogDir, 'src/styles/global.css');
       const originalCss = await fs.readFile(cssPath, 'utf-8');
 
-      const transformedCss = await styleTransformer.transform({
+      const { transformedCss, description } = await styleTransformer.transform({
         originalCss,
         stylePrompt: prompt,
       });
 
       await fs.writeFile(cssPath, transformedCss);
-      server.ws.send({ type: 'full-reload' });
+      server.ws.send({
+        type: 'update',
+        updates: [{
+          type: 'css-update',
+          path: cssPath,
+          acceptedPath: cssPath,
+          timestamp: Date.now(),
+        }],
+      });
 
       res
         .writeHead(200, { 'Content-Type': 'application/json' })
-        .end(JSON.stringify({ success: true }));
+        .end(JSON.stringify({ description }));
     })().catch(next);
   };
 }

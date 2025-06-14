@@ -34,7 +34,7 @@ export function createPanelScript() {
       ⋮⋮
     </span>
   </section>
-  `;
+`;
 
         const panelCss = css`
   .vibelog-panel {
@@ -47,8 +47,8 @@ export function createPanelScript() {
     right: 32px;
     z-index: 999;
     min-width: 300px;
-    background: var(--vibe-c-black);
-    color: var(--vibe-c-white);
+    background: var(--vibe-c-white);
+    color: var(--vibe-c-black);
     border-radius: var(--vibe-border-radius-md);
     padding: var(--vibe-space-1);
     box-shadow: var(--vibe-shadow-3);
@@ -113,10 +113,10 @@ export function createPanelScript() {
         </style>
         `;
         const panel = shadow.querySelector<HTMLDivElement>('#vibelog-panel');
-        const dragger = shadow.querySelector<HTMLDivElement>('#vibelog-dragger');
-        const form = shadow.querySelector<HTMLFormElement>('.vibelog-form');
-        const textarea = shadow.querySelector<HTMLTextAreaElement>('.vibelog-prompt');
-        const button = shadow.querySelector<HTMLButtonElement>('.vibelog-button');
+        const dragger = panel?.querySelector<HTMLDivElement>('#vibelog-dragger');
+        const form = panel?.querySelector<HTMLFormElement>('.vibelog-form');
+        const textarea = form?.querySelector<HTMLTextAreaElement>('.vibelog-prompt');
+        const button = form?.querySelector<HTMLButtonElement>('.vibelog-button');
 
         const STORAGE_KEY = 'vibelog-panel-position';
         const CONTENT_KEY = 'vibelog-panel-content';
@@ -241,17 +241,19 @@ export function createPanelScript() {
               body: JSON.stringify({ prompt }),
             });
             if (!response.ok) {
-              const errorMessage = await response.json().then(({ error }: { error?: string }) => error);
-              throw new Error(errorMessage ?? 'Failed to transform styles');
+              const { error } = await response.json() as { error?: string };
+              throw new Error(error ?? 'Failed to transform styles');
             }
+
+            const { description } = await response.json() as { description: string };
+            console.log('Style description:', description);
 
             textarea.value = '';
             saveContent('');
           } catch (error) {
             console.error(error);
-            alert(error instanceof Error ? error.message : 'An error occurred');
+            button.textContent = '❌';
           } finally {
-            button.textContent = '✨';
             button.disabled = false;
           }
         }
@@ -296,6 +298,8 @@ export function createPanelScript() {
     }
 
     customElements.define('vibelog-ui', (${createVibelogUi.toString()})());
-    document.body.appendChild(document.createElement('vibelog-ui'));
+    document.addEventListener('DOMContentLoaded', () => {
+        document.body.appendChild(document.createElement('vibelog-ui'));
+    });
   `;
 }

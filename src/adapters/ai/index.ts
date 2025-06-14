@@ -15,7 +15,7 @@ const cssTransformSchema = z.object({
     name: z.string(),
     value: z.string(),
   })),
-  themeDescription: z.string(),
+  description: z.string(),
 });
 
 export class VercelAiProvider implements AiProvider {

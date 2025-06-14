@@ -26,7 +26,7 @@ export class StyleTransformer {
 Current variables:
 ${variables.map(({ name, value }) => `${name}: ${value}`).join('\n')}
 
-Return JSON with updated variables and theme description.
+Return JSON with updated variables and description.
 `;
   }
 
@@ -36,36 +36,48 @@ Return JSON with updated variables and theme description.
   }: {
     originalCss: string
     stylePrompt?: string
-  }): Promise<string> {
+  }): Promise<{
+    transformedCss: string
+    description: string
+  }> {
     logger.info('Style prompt:', stylePrompt);
 
     try {
       const variables = this.cssParser.extractVariables(originalCss);
       if (variables.length === 0) {
         logger.error('No CSS variables found in :root');
-        return originalCss;
+        return {
+          transformedCss: originalCss,
+          description: '',
+        };
       }
 
       logger.info(`Generating styles with ${this.aiProvider.modelId}...`);
       const prompt = this.createPrompt(variables, stylePrompt);
-      const result = await this.aiProvider.generate(
+      const { variables: newVariables, description } = await this.aiProvider.generate(
         prompt,
       );
 
       logger.info('AI generation completed');
-      logger.info('Theme description:', result.themeDescription);
+      logger.info('Style description:', description);
 
-      const updatedVariables: CssVariable[] = result.variables.map(({ name, value }) => ({
+      const updates: CssVariable[] = newVariables.map(({ name, value }) => ({
         name,
         value,
       }));
-      const transformedCss = this.cssParser.updateVariables(originalCss, updatedVariables);
+      const transformedCss = this.cssParser.updateVariables(originalCss, updates);
 
       logger.info('Style transformation completed');
-      return transformedCss;
+      return {
+        transformedCss,
+        description: description,
+      };
     } catch (error) {
       logger.error('Style transformation failed:', inspect(error, { depth: null }));
-      return originalCss;
+      return {
+        transformedCss: originalCss,
+        description: '',
+      };
     }
   }
 }

@@ -27,7 +27,7 @@ export interface CssVariable {
 }
 export interface CssTransformResult {
   variables: CssVariable[];
-  themeDescription: string;
+  description: string;
 }
 
 export interface AiProvider {

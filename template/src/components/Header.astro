@@ -1,11 +1,14 @@
 ---
+import { getCollection } from "astro:content";
+
 import HeaderLink from "./HeaderLink.astro";
-import { SITE_TITLE } from "../consts";
+
+const [author] = await getCollection("author");
 ---
 
 <header class="site-header">
   <nav>
-    <h2><a href="/">{SITE_TITLE}</a></h2>
+    <h2><a href="/">{author.data.name}</a></h2>
     <div class="site-nav-links">
       <HeaderLink href="/">Home</HeaderLink>
       <HeaderLink href="/blog">Blog</HeaderLink>
