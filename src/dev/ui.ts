@@ -39,16 +39,15 @@ export function createPanelScript() {
         const panelCss = css`
   .vibelog-panel {
     display: flex;
-    justify-content: space-between;
     align-items: stretch;
     gap: 2px;
     position: fixed;
     bottom: 32px;
     right: 32px;
     z-index: 999;
-    min-width: 300px;
-    background: var(--vibe-c-white);
-    color: var(--vibe-c-black);
+    min-width: 50vw;
+    background: var(--vibe-c-bg);
+    color: var(--vibe-c-text-1);
     border-radius: var(--vibe-border-radius-md);
     padding: var(--vibe-space-1);
     box-shadow: var(--vibe-shadow-3);
@@ -59,15 +58,15 @@ export function createPanelScript() {
   }
 
   .vibelog-form {
+    flex: 1;
     display: flex;
     gap: var(--vibe-space-1);
   }
 
   .vibelog-prompt {
+    flex: 1;
     font-size: 14px;
     line-height: 1.5;
-    background: var(--vibe-c-bg);
-    color: var(--vibe-c-text-1);
     padding: var(--vibe-space-1);
     border: var(--vibe-border-width-thin) solid var(--vibe-c-gray-2);
     border-radius:  var(--vibe-border-radius-md);
@@ -246,15 +245,23 @@ export function createPanelScript() {
             }
 
             const { description } = await response.json() as { description: string };
-            console.log('Style description:', description);
 
-            textarea.value = '';
-            saveContent('');
+            const result = `> ${prompt}
+
+${description}
+`;
+            textarea.value = result;
+            saveContent(result);
           } catch (error) {
             console.error(error);
             button.textContent = '❌';
+            textarea.value = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
           } finally {
             button.disabled = false;
+            setTimeout(() => {
+              button.textContent = '✨';
+            }
+            , 2000);
           }
         }
 
