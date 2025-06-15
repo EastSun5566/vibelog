@@ -20,7 +20,6 @@ const cssTransformSchema = z.object({
 
 export class VercelAiProvider implements AiProvider {
   readonly model: LanguageModelV1 | null = null;
-  private conversationHistory: CoreMessage[] = [];
 
   constructor(readonly providerName: AiProviderName, readonly modelId: string) {
     logger.info(`AI provider: ${providerName} (${modelId})`);
@@ -60,11 +59,6 @@ export class VercelAiProvider implements AiProvider {
       throw new Error('AI model is not initialized. Check provider and model name.');
     }
 
-    this.conversationHistory.push({
-      role: 'user',
-      content: prompt,
-    });
-
     const { object } = await generateObject({
       model,
       ...(this.providerName === AiProviderName.OPENROUTER && { mode: 'json' }),
@@ -74,14 +68,12 @@ export class VercelAiProvider implements AiProvider {
           role: 'system',
           content: AI_PROMPTS.CSS_EXPERT,
         },
-        ...this.conversationHistory,
+        {
+          role: 'user',
+          content: prompt,
+        },
       ],
       temperature: 0.1,
-    });
-
-    this.conversationHistory.push({
-      role: 'assistant',
-      content: `Applied: ${object.description}`,
     });
 
     return object;
