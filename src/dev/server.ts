@@ -1,4 +1,4 @@
-import { dev } from 'astro';
+import { dev as createAstroDevServer } from 'astro';
 import type { AstroIntegration } from 'astro';
 
 import { StyleTransformer } from '../core';
@@ -36,7 +36,7 @@ export async function createDevServer({
   port = 5000,
   styleTransformer,
 }: DevServerOptions) {
-  const server = await dev({
+  const server = await createAstroDevServer({
     root,
     server: { port },
     site: `http://localhost:${String(port)}`,

@@ -1,7 +1,7 @@
 import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
-import { build } from 'astro';
+import { build as astroBuild } from 'astro';
 import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
 import fs from 'fs-extra';
@@ -122,7 +122,7 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
   logger.info('Building with Astro...');
 
   const tempOutDir = join(vibelogDir, 'dist');
-  await build({
+  await astroBuild({
     root: vibelogDir,
     outDir: tempOutDir,
     site,
