@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.3.2](https://github.com/EastSun5566/vibe/compare/v0.3.1...v0.3.2) (2025-06-15)
+
+
+### Features
+
+* enhance config support ([418d3f2](https://github.com/EastSun5566/vibe/commit/418d3f2bd4e9a8c461eac7df91f02eaddf942ca5))
+* remove redundant h1 & improve fs author support ([db7e455](https://github.com/EastSun5566/vibe/commit/db7e45540323679bd12d60bdd9e7478997e64c61))
+
 ### [0.3.1](https://github.com/EastSun5566/vibe/compare/v0.3.0...v0.3.1) (2025-06-15)
 
 
