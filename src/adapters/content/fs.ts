@@ -19,35 +19,49 @@ export class FsProvider implements ContentProvider {
     if (!await fs.exists(this.contentDir)) {
       throw new Error(`Content directory not found: ${this.contentDir}`);
     }
+    const blogDir = join(this.contentDir, 'blog');
+    if (!await fs.exists(blogDir)) {
+      throw new Error(`Blog directory not found: ${blogDir}`);
+    }
 
-    const files = await fs.readdir(this.contentDir);
-    const mdFiles = files.filter(file => file.endsWith('.md'));
-
-    const posts = mdFiles.map(file => {
-      const fullPath = join(this.contentDir, file);
-      const { data, content } = matter.read(fullPath) as {
+    const files = await fs.readdir(blogDir);
+    const posts = files
+      .filter(file => file.endsWith('.md'))
+      .map(file => {
+        const fullPath = join(blogDir, file);
+        const { data, content } = matter.read(fullPath) as {
           data: Record<string, string>;
           content: string;
         };
 
-      return {
-        id: file.replace('.md', ''),
-        title: data.title,
-        content: content,
-        slug: data.slug || file.replace('.md', ''),
-        date: data.date ? new Date(data.date).toISOString() : new Date().toISOString(),
-      };
-    });
+        return {
+          id: file.replace('.md', ''),
+          title: data.title,
+          content: content,
+          slug: data.slug || file.replace('.md', ''),
+          date: data.date ? new Date(data.date).toISOString() : new Date().toISOString(),
+        };
+      });
 
     return {
       posts,
     };
   }
 
-  getAuthor() {
-    return Promise.resolve({
-      name: 'My Name',
-      bio: 'My bio',
-    });
+  async getAuthor() {
+    const authorPath = join(this.contentDir, 'author.md');
+    if (!await fs.exists(authorPath)) {
+      throw new Error(`Author profile not found: ${authorPath}`);
+    }
+
+    const { data, content } = matter.read(authorPath) as {
+        data: Record<string, string>;
+        content: string;
+      };
+
+    return {
+      name: data.name || 'Unknown Author',
+      bio: content.trim() || data.bio || '',
+    };
   }
 }

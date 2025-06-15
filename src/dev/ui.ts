@@ -45,7 +45,7 @@ export function createPanelScript() {
     bottom: 32px;
     right: 32px;
     z-index: 999;
-    min-width: 50vw;
+    min-width: 30vw;
     background: var(--vibe-c-bg);
     color: var(--vibe-c-text-1);
     border-radius: var(--vibe-border-radius-md);

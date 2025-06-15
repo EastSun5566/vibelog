@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { ContentProvider } from '../../types';
 import { logger } from '../../core';
 import { ContentProviderName } from '../../consts';
+import { removeFirstH1IfMatchesTitle } from './utils';
 
 interface Note {
   id: string;
@@ -65,7 +66,7 @@ export class HackMdProvider implements ContentProvider {
         return {
           id: note.id,
           title: note.title,
-          content,
+          content: removeFirstH1IfMatchesTitle(content, note.title),
           slug: note.permalink ?? note.title,
           date: new Date(note.publishedAt).toISOString(),
         };
