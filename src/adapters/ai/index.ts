@@ -1,4 +1,4 @@
-import { generateObject, type LanguageModelV1 } from 'ai';
+import { generateObject, type LanguageModelV1, type CoreMessage } from 'ai';
 import { createOllama } from 'ollama-ai-provider';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
@@ -20,6 +20,7 @@ const cssTransformSchema = z.object({
 
 export class VercelAiProvider implements AiProvider {
   readonly model: LanguageModelV1 | null = null;
+  private conversationHistory: CoreMessage[] = [];
 
   constructor(readonly providerName: AiProviderName, readonly modelId: string) {
     logger.info(`AI provider: ${providerName} (${modelId})`);
@@ -59,6 +60,11 @@ export class VercelAiProvider implements AiProvider {
       throw new Error('AI model is not initialized. Check provider and model name.');
     }
 
+    this.conversationHistory.push({
+      role: 'user',
+      content: prompt,
+    });
+
     const { object } = await generateObject({
       model,
       ...(this.providerName === AiProviderName.OPENROUTER && { mode: 'json' }),
@@ -68,12 +74,14 @@ export class VercelAiProvider implements AiProvider {
           role: 'system',
           content: AI_PROMPTS.CSS_EXPERT,
         },
-        {
-          role: 'user',
-          content: prompt,
-        },
+        ...this.conversationHistory,
       ],
       temperature: 0.1,
+    });
+
+    this.conversationHistory.push({
+      role: 'assistant',
+      content: `Applied: ${object.description}`,
     });
 
     return object;
