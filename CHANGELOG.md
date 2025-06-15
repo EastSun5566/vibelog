@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.3.0](https://github.com/EastSun5566/vibe/compare/v0.2.0...v0.3.0) (2025-06-15)
+
+
+### Features
+
+* add border radius and width CSS variables ([927d098](https://github.com/EastSun5566/vibe/commit/927d098f8a641d2dcd6bc4c711c126e5847a85e6))
+* add conversation history to server ([d3633c8](https://github.com/EastSun5566/vibe/commit/d3633c8c4a123ffa928797fdbf57bb8e5d7b5d66))
+* impl other ai providers ([c548110](https://github.com/EastSun5566/vibe/commit/c54811086635325a295d80a8f3658623f72d51a2))
+* impl vibelog panel with drag-and-drop ([8f3dd13](https://github.com/EastSun5566/vibe/commit/8f3dd13967e144fc7e1f9004d964607ba6f5daa1))
+* improve server setup transform endpoint ([d685677](https://github.com/EastSun5566/vibe/commit/d6856771b94e2896993c703d91865b6a3d68f1c5))
+* refactor vibelog integration ([e674be7](https://github.com/EastSun5566/vibe/commit/e674be78d76e258639b1e4770cf72b85bd435cbe))
+* remove conversation history ([753f20e](https://github.com/EastSun5566/vibe/commit/753f20e11d2cddfef9e411980daf528b88b7cd29))
+* transform api param ([a425f15](https://github.com/EastSun5566/vibe/commit/a425f15c36c3bb477279400171462b9a2e22b618))
+* update panel styling ([ea28afd](https://github.com/EastSun5566/vibe/commit/ea28afd5d6421a7588d5785ffd48d4a8fbd2ab59))
+
 ## [0.2.0](https://github.com/EastSun5566/vibe/compare/v0.1.0...v0.2.0) (2025-06-11)
 
 
