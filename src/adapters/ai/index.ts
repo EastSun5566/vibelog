@@ -1,4 +1,5 @@
-import { generateObject, type LanguageModelV1, type CoreMessage } from 'ai';
+import assert from 'node:assert/strict';
+import { generateObject, type LanguageModelV1 } from 'ai';
 import { createOllama } from 'ollama-ai-provider';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
@@ -29,21 +30,25 @@ export class VercelAiProvider implements AiProvider {
       this.model = createOllama()(modelId);
       break;
     case AiProviderName.OPENAI:
+      assert(process.env.OPENAI_API_KEY, 'OPENAI_API_KEY environment variable is required.');
       this.model = createOpenAI({
         apiKey: process.env.OPENAI_API_KEY,
       })(modelId);
       break;
     case AiProviderName.ANTHROPIC:
+      assert(process.env.ANTHROPIC_API_KEY, 'ANTHROPIC_API_KEY environment variable is required.');
       this.model = createAnthropic({
         apiKey: process.env.ANTHROPIC_API_KEY,
       })(modelId);
       break;
     case AiProviderName.GOOGLE:
+      assert(process.env.GOOGLE_GENERATIVE_AI_API_KEY, 'GOOGLE_GENERATIVE_AI_API_KEY environment variable is required.');
       this.model = createGoogleGenerativeAI({
         apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
       })(modelId);
       break;
     case AiProviderName.OPENROUTER:
+      assert(process.env.OPENROUTER_API_KEY, 'OPENROUTER_API_KEY environment variable is required.');
       this.model = createOpenRouter({
         apiKey: process.env.OPENROUTER_API_KEY,
       })(modelId);

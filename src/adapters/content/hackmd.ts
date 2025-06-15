@@ -1,3 +1,5 @@
+import assert from 'node:assert/strict';
+
 import type { ContentProvider } from '../../types';
 import { logger } from '../../core';
 import { ContentProviderName } from '../../consts';
@@ -40,6 +42,8 @@ export class HackMdProvider implements ContentProvider {
   readonly name = ContentProviderName.HACKMD;
   constructor(readonly username: string) {
     logger.info(`Content provider: HackMD (${username})`);
+
+    assert(username, 'HackMD username is required. Use hackmd@<username>');
   }
 
   async getPosts() {

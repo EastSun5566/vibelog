@@ -240,8 +240,8 @@ export function createPanelScript() {
               body: JSON.stringify({ prompt }),
             });
             if (!response.ok) {
-              const { error } = await response.json() as { error?: string };
-              throw new Error(error ?? 'Failed to transform styles');
+              const errorMessage = await response.text();
+              throw new Error(`Error: ${response.status.toString()} - ${errorMessage}`);
             }
 
             const { description } = await response.json() as { description: string };
@@ -255,7 +255,6 @@ ${description}
           } catch (error) {
             console.error(error);
             button.textContent = '❌';
-            textarea.value = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
           } finally {
             button.disabled = false;
             setTimeout(() => {

@@ -1,5 +1,6 @@
-import matter from 'gray-matter';
+import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import matter from 'gray-matter';
 import fs from 'fs-extra';
 
 import { logger } from '../../core';
@@ -10,6 +11,8 @@ export class FsProvider implements ContentProvider {
   readonly name = ContentProviderName.FS;
   constructor(readonly contentDir: string) {
     logger.info(`Content provider: FS (${contentDir})`);
+
+    assert(contentDir, 'Content directory is required. Use fs@<path-to-content-dir>');
   }
 
   async getPosts() {
