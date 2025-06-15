@@ -11,6 +11,12 @@ export enum AiProviderName {
   OPENROUTER = 'openrouter',
 }
 
+export const DEFAULT_CONTENT_INFO = 'fs@./content';
+export const DEFAULT_AI_INFO = 'openai@gpt-4o-mini';
+export const DEFAULT_DEV_PORT = 5566;
+export const DEFAULT_BUILD_OUT_DIR = 'dist';
+export const DEFAULT_SITE_URL = 'https://example.com';
+
 export const AI_PROMPTS = {
   CSS_EXPERT: `You are a CSS design expert specializing in color theory and web accessibility.
 

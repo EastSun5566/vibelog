@@ -10,6 +10,7 @@ import matter from 'gray-matter';
 import { generateSlug, slugify } from './utils';
 import { logger } from './logger';
 import type { ContentProvider } from '../types';
+import { loadConfig } from '../cli/config';
 
 async function findTemplateDir() {
   const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -30,10 +31,12 @@ export interface DevBuilderOptions {
   contentProvider: ContentProvider;
 }
 export class DevBuilder {
+  readonly root: string;
   readonly vibelogDir: string;
   readonly contentProvider: ContentProvider;
 
   constructor({ root, contentProvider }: DevBuilderOptions) {
+    this.root = root;
     this.vibelogDir = resolve(process.cwd(), root, '.vibelog');
     this.contentProvider = contentProvider;
   }
@@ -70,7 +73,18 @@ export class DevBuilder {
     ]);
     logger.info(`Found ${String(posts.length)} posts by ${author.name}`);
 
-    const blogDir = join(this.vibelogDir, 'src/content/blog');
+    const config = await loadConfig(this.root);
+    const siteTitle = config.site.title ?? basename(resolve(process.cwd(), this.root));
+    const siteDescription = config.site.description ?? author.bio;
+
+    const configContent = `// Auto-generated site configuration
+export const SITE_TITLE = ${JSON.stringify(siteTitle)};
+export const SITE_DESCRIPTION = ${JSON.stringify(siteDescription)};
+`;
+    const configPath = join(this.vibelogDir, 'src', 'consts.ts');
+    await fs.writeFile(configPath, configContent);
+
+    const blogDir = join(this.vibelogDir, 'src', 'content', 'blog');
     await fs.ensureDir(blogDir);
     await fs.emptyDir(blogDir);
 
@@ -97,7 +111,7 @@ export class DevBuilder {
     const authorContent = matter.stringify(author.bio, {
       name: author.name,
     });
-    const authorPath = join(this.vibelogDir, 'src/content', 'author.md');
+    const authorPath = join(this.vibelogDir, 'src', 'content', 'author.md');
     await fs.writeFile(authorPath, authorContent);
 
     logger.info('Content updated successfully');

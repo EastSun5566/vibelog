@@ -35,6 +35,8 @@ export async function devCommand({ content, ai, port, root }: DevOptions) {
     logger.info('Use the vibelog panel to modify styles with AI prompts');
     logger.info('Press Ctrl+C to stop');
 
+    logger.info('When you are done, run "vibelog build" to generate the production site');
+
     const cleanup = () => {
       logger.info('Shutting down...');
       server.stop()

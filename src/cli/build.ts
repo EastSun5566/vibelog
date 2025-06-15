@@ -4,27 +4,24 @@ import { logger } from '../core';
 import { buildFromVibelog } from '../core';
 
 export interface BuildOptions {
-  out: string;
-  site: string;
+  outDir: string;
+  siteUrl: string;
   root: string;
 }
-export async function buildCommand({ out, root, site }: BuildOptions) {
+export async function buildCommand({ outDir, root, siteUrl }: BuildOptions) {
   logger.info('Building production site...');
   logger.info(`Project root: ${root}`);
-  logger.info(`Output: ${out}`);
-  logger.info(`Site: ${site}`);
+  logger.info(`Output: ${outDir}`);
+  logger.info(`Site: ${siteUrl}`);
 
   try {
-    const vibelogDir = resolve(process.cwd(), root, '.vibelog');
-    const outDir = resolve(process.cwd(), root, out);
-
     await buildFromVibelog({
-      vibelogDir,
-      outDir,
-      site,
+      vibelogDir: resolve(process.cwd(), root, '.vibelog'),
+      outDir: resolve(process.cwd(), root, outDir),
+      site: siteUrl,
     });
 
-    logger.info(`Production build completed in ${out}`);
+    logger.info(`Production build completed in ${outDir}`);
 
   } catch (error) {
     logger.error('Build failed:', error);

@@ -6,38 +6,39 @@ Transform any content source into a production-ready blog with AI-powered stylin
 
 ## Philosophy
 
-- **Markdown as infrastructure** - Everything is markdown including content & structure
+- **Markdown as primitive** - Everything is markdown, including content & structure
 - **Modify, don't generate** - Transform existing mature frameworks instead of generating UI from scratch
 - **Pass the vibe check** - Good enough is perfect
 
-## Installation
-
-```bash
-npm install -g vibelog
-```
-
 ## Quick Start
 
-```bash
-mkdir my-blog && cd my-blog
+```sh
+mkdir your-blog && cd your-blog
+```
 
-# Start dev server with your content
-vibelog dev --content hackmd@yourusername --ai ollama@qwen2.5-coder:3b
+### Preview your content with vibes
 
-# Customize styles using the in-browser toolbar
-# Try prompts like: "dark theme with purple accents" or "minimal design"
+```sh
+# Start dev server
+export OPENAI_API_KEY=<your_openai_api_key>
+npx vibelog dev --content hackmd@<yourusername> --ai openai@gpt-4o-mini
 
-# Build production site
-vibelog build --out dist --site https://yourblog.com
+# Go to http://localhost:5566 and try prompts like: "dark theme with pink"
+```
+
+### Build production-ready blog
+
+```sh
+# Build to `dist`
+vibelog build --site-url https://your-blog.com
 ```
 
 ## Commands
 
-```bash
+```sh
 vibelog --help
 ```
 
 ## Requirements
 
 - Node.js v20+
-- AI provider (e.g., Ollama)
