@@ -16,7 +16,7 @@ Transform any content source into a production-ready blog with AI-powered stylin
 mkdir your-blog && cd your-blog
 ```
 
-### Preview your content with vibes
+### Preview your content
 
 ```sh
 # Start dev server
@@ -26,11 +26,17 @@ npx vibelog dev --content hackmd@<yourusername> --ai openai@gpt-4o-mini
 # Go to http://localhost:5566 and try prompts like: "dark theme with pink"
 ```
 
-### Build production-ready blog
+### Build prod-ready blog
 
 ```sh
 # Build to `dist`
 vibelog build --site-url https://your-blog.com
+```
+
+## Ship it
+
+```sh
+npx surge dist
 ```
 
 ## Commands
