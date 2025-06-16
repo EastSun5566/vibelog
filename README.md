@@ -48,6 +48,8 @@ npx surge dist
 
 ```sh
 vibelog --help
+vibelog dev --help
+vibelog build --help
 ```
 
 ## Requirements
