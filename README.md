@@ -38,7 +38,7 @@ npx vibelog dev --content hackmd@<yourusername> --ai openai@gpt-4o-mini
 vibelog build --site-url https://your-blog.com
 ```
 
-## Ship it
+### Ship it
 
 ```sh
 npx surge dist
