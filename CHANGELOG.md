@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.3.3](https://github.com/EastSun5566/vibe/compare/v0.3.2...v0.3.3) (2025-06-16)
+
+
+### Features
+
+* move config logic to core ([2be18a2](https://github.com/EastSun5566/vibe/commit/2be18a2473c35bc6183ee1d262065121f0cc38f1))
+* update favicon ([0212e87](https://github.com/EastSun5566/vibe/commit/0212e87f85bb4653e27dd4dd6d1cf8c506639675))
+
 ### [0.3.2](https://github.com/EastSun5566/vibe/compare/v0.3.1...v0.3.2) (2025-06-15)
 
 
