@@ -1,4 +1,9 @@
+<img src="./template/public/favicon.svg" width="180" alt="VibeLog Logo" />
+
 # VibeLog
+
+[![NPM Version](https://img.shields.io/npm/v/vibelog.svg?style=for-the-badge)](https://www.npmjs.com/package/vibelog)
+[![NPM Downloads](https://img.shields.io/npm/dt/vibelog.svg?style=for-the-badge)](https://www.npmjs.com/package/vibelog)
 
 > Bring your own content with some vibes
 
