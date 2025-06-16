@@ -1,4 +1,4 @@
-<img src="./template/public/favicon.svg" width="180" alt="VibeLog Logo" />
+<img src="./logo.svg" width="180" alt="VibeLog Logo" />
 
 # VibeLog
 
@@ -24,9 +24,10 @@ mkdir your-blog && cd your-blog
 ### Preview your content
 
 ```sh
-# Start dev server
 export OPENAI_API_KEY=<your_openai_api_key>
-npx vibelog dev --content hackmd@<yourusername> --ai openai@gpt-4o-mini
+
+# Start dev server
+npx vibelog dev --content hackmd@<your_username> --ai openai@gpt-4o-mini
 
 # Go to http://localhost:5566 and try prompts like: "dark theme with pink"
 ```
@@ -38,7 +39,7 @@ npx vibelog dev --content hackmd@<yourusername> --ai openai@gpt-4o-mini
 vibelog build --site-url https://your-blog.com
 ```
 
-### Ship it
+### Deploy
 
 ```sh
 npx surge dist
