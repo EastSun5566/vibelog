@@ -1,12 +1,11 @@
 import { join } from 'node:path';
 import fs from 'fs-extra';
-import { logger } from '../core/logger';
-import type { VibelogConfig } from './types';
+import { logger } from './logger';
+import type { VibelogConfig } from '../types';
 
 const CONFIG_FILES = [
   'vibelog.config.json',
   'vibelog.config.js',
-  'vibelog.config.ts',
 ];
 
 function mergeConfig(defaultConfig: VibelogConfig, userConfig: Partial<VibelogConfig>): VibelogConfig {

@@ -10,7 +10,7 @@ import matter from 'gray-matter';
 import { generateSlug, slugify } from './utils';
 import { logger } from './logger';
 import type { ContentProvider } from '../types';
-import { loadConfig } from '../cli/config';
+import { loadConfig } from './config';
 
 async function findTemplateDir() {
   const currentDir = dirname(fileURLToPath(import.meta.url));

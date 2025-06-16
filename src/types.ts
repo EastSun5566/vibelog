@@ -1,5 +1,13 @@
 import { AiProviderName, ContentProviderName } from './consts';
 
+export interface VibelogConfig {
+  site: {
+    title?: string;
+    description?: string;
+  };
+}
+
+
 export interface Post {
   id: string
   title: string
