@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.3.4](https://github.com/EastSun5566/vibe/compare/v0.3.3...v0.3.4) (2025-06-17)
+
+
+### Features
+
+* add docs ([fd1b73c](https://github.com/EastSun5566/vibe/commit/fd1b73c3acd5f595f0d9b54d264cf2c63e8eb7b5))
+* update docs ([2440728](https://github.com/EastSun5566/vibe/commit/24407284af277420dfc80e8deaeade4e15fafc1f))
+
 ### [0.3.3](https://github.com/EastSun5566/vibe/compare/v0.3.2...v0.3.3) (2025-06-16)
 
 
