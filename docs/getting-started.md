@@ -2,6 +2,10 @@
 
 VibeLog transforms any content source into a production-ready blog with AI-powered styling. Get up and running in minutes.
 
+<div style="width: 100%; aspect-ratio: 16 / 9;">
+  <iframe width="100%" height="100%" src="https://www.youtube.com/embed/ojKU4krO5CE" title="Introducing VibeLog" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</div>
+
 ## Prerequisites
 
 - Node.js v20+

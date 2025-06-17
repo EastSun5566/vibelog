@@ -58,5 +58,9 @@ export default defineConfig({
     // socialLinks: [
     //   { icon: 'github', link: 'https://github.com/eastsun5566/vibelog' }
     // ]
+
+    footer: {
+      copyright: 'Made with ❤️ By <a href="https://github.com/EastSun5566" target="_blank">@EastSun5566</a>',
+    },
   },
 });

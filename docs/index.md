@@ -2,9 +2,11 @@
 # https://vitepress.dev/reference/default-theme-home-page
 layout: home
 
+title: VibeLog
+
 hero:
-  name: "VibeLog"
-  text: "Bring your own content with some vibes ✨"
+  name: VibeLog
+  text: Bring your own content with some vibes ✨
   tagline: Transform any content source into a production-ready blog with AI-powered styling
   image:
     src: /logo.svg
