@@ -39,13 +39,13 @@ vibelog dev [options]
 
 #### AI Providers
 
-| Provider     | Format               | Example                                 |
-| ------------ | -------------------- | --------------------------------------- |
-| `openai`     | `openai@<model>`     | `openai@gpt-4o-mini`                    |
-| `anthropic`  | `anthropic@<model>`  | `anthropic@claude-3-haiku-20240307`     |
-| `google`     | `google@<model>`     | `google@gemini-pro`                     |
-| `ollama`     | `ollama@<model>`     | `ollama@llama2`                         |
-| `openrouter` | `openrouter@<model>` | `openrouter@microsoft/wizardlm-2-8x22b` |
+| Provider     | Format               | Example                                       |
+| ------------ | -------------------- | --------------------------------------------- |
+| `openai`     | `openai@<model>`     | `openai@gpt-4o-mini`                          |
+| `anthropic`  | `anthropic@<model>`  | `anthropic@claude-3-5-haiku-20241022`         |
+| `google`     | `google@<model>`     | `google@gemini-2.5-flash`                     |
+| `ollama`     | `ollama@<model>`     | `ollama@qwen2.5-coder:3b`                     |
+| `openrouter` | `openrouter@<model>` | `openrouter@deepseek/deepseek-r1-0528:free｀` |
 
 #### Dev Examples
 
@@ -60,7 +60,7 @@ vibelog dev --content fs@./my-content --port 3000
 vibelog dev --content fs@./content --ai anthropic@claude-3-haiku-20240307
 
 # Using Ollama (local AI) for offline development
-vibelog dev --content fs@./content --ai ollama@llama2
+vibelog dev --content fs@./content --ai ollama@qwen2.5-coder:3b
 ```
 
 ### `vibelog build`

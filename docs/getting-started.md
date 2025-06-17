@@ -62,24 +62,11 @@ npx netlify deploy --prod --dir dist
 
 VibeLog supports multiple content sources:
 
-### HackMD
-
-Perfect for collaborative writing and public notes:
-
-```sh
-vibelog dev --content hackmd@<your_username>
-```
-
-For more content sources including local files and Ollama examples, see the Content Sources section below.
-
 ### File System
 
 Use local markdown files:
 
 ```sh
-vibelog dev --content fs@./my-content
-
-# Or use Ollama for local AI without API key
 vibelog dev --content fs@./my-content --ai ollama@qwen2.5-coder:3b
 ```
 
@@ -94,6 +81,14 @@ my-content/
 └── author.md
 ```
 
+### HackMD
+
+Perfect for collaborative writing and public notes:
+
+```sh
+vibelog dev --content hackmd@<your_username> --ai anthropic@claude-3-5-haiku-20241022
+```
+
 ## AI Providers
 
 VibeLog supports multiple AI providers for styling:
@@ -103,16 +98,16 @@ VibeLog supports multiple AI providers for styling:
 --ai openai@gpt-4o-mini
 
 # Anthropic
---ai anthropic@claude-3-haiku-20240307
+--ai anthropic@claude-3-5-haiku-20241022
 
 # Google
---ai google@gemini-pro
+--ai google@gemini-2.5-flash
 
 # Ollama (local, no API key needed)
 --ai ollama@qwen2.5-coder:3b
 
 # OpenRouter
---ai openrouter@microsoft/wizardlm-2-8x22b
+--ai openrouter@qwen/qwen-2.5-coder-32b-instruct:free
 ```
 
 ## Next Steps

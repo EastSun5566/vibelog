@@ -18,10 +18,13 @@ hero:
       link: /cli-reference
 
 features:
-  - title: Markdown as Primitive
+  - icon: 📄
+    title: Markdown as Primitive
     details: Everything is markdown, including content & structure.
-  - title: Modify, Don't Generate
+  - icon: 🎨
+    title: Modify, Don't Generate
     details: Transform existing mature frameworks instead of generating UI from scratch.
-  - title: Pass the Vibe Check
+  - icon: ✅
+    title: Pass the Vibe Check
     details: Good enough is perfect.
 ---
