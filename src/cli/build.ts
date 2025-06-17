@@ -20,9 +20,6 @@ export async function buildCommand({ outDir, root, siteUrl }: BuildOptions) {
       outDir: resolve(process.cwd(), root, outDir),
       site: siteUrl,
     });
-
-    logger.info(`Production build completed in ${outDir}`);
-
   } catch (error) {
     logger.error('Build failed:', error);
     process.exit(1);
