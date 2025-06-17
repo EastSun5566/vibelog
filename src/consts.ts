@@ -1,4 +1,4 @@
-export enum ContentProviderName {
+export enum ContentSourceName {
   FS = 'fs',
   HACKMD = 'hackmd',
 }

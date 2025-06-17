@@ -22,10 +22,10 @@ const cssTransformSchema = z.object({
 export class VercelAiProvider implements AiProvider {
   readonly model: LanguageModelV1 | null = null;
 
-  constructor(readonly providerName: AiProviderName, readonly modelId: string) {
-    logger.info(`AI provider: ${providerName} (${modelId})`);
+  constructor(readonly name: AiProviderName, readonly modelId: string) {
+    logger.info(`AI provider: ${name} (${modelId})`);
 
-    switch (providerName) {
+    switch (name) {
     case AiProviderName.OLLAMA:
       this.model = createOllama()(modelId);
       break;
@@ -54,7 +54,7 @@ export class VercelAiProvider implements AiProvider {
       })(modelId);
       break;
     default:
-      throw new Error(`Unsupported AI provider: ${providerName as string}. Supported: ${Object.values(AiProviderName).join(', ')}`);
+      throw new Error(`Unsupported AI provider: ${name as string}. Supported: ${Object.values(AiProviderName).join(', ')}`);
     }
   }
 
@@ -66,7 +66,7 @@ export class VercelAiProvider implements AiProvider {
 
     const { object } = await generateObject({
       model,
-      ...(this.providerName === AiProviderName.OPENROUTER && { mode: 'json' }),
+      ...(this.name === AiProviderName.OPENROUTER && { mode: 'json' }),
       schema: cssTransformSchema,
       messages: [
         {

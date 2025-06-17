@@ -1,4 +1,4 @@
-import { AiProviderName, ContentProviderName } from './consts';
+import { AiProviderName, ContentSourceName } from './consts';
 
 export interface VibelogConfig {
   site: {
@@ -25,8 +25,8 @@ export interface Author {
 }
 export type AuthorResponse = Author
 
-export interface ContentProvider {
-  readonly name: ContentProviderName;
+export interface ContentSource {
+  readonly name: ContentSourceName;
   getPosts(): Promise<PostsResponse>
   getAuthor(): Promise<AuthorResponse>
 }
@@ -41,7 +41,7 @@ export interface CssTransformResult {
 }
 
 export interface AiProvider {
-  readonly providerName: AiProviderName;
+  readonly name: AiProviderName;
   readonly modelId: string;
   generate(prompt: string): Promise<CssTransformResult>
 }

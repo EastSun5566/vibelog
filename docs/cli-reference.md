@@ -26,11 +26,11 @@ vibelog dev [options]
 
 #### Dev Options
 
-- `-c, --content <provider>` - Content provider info (default: `fs@./content`)
+- `-c, --content <provider>` - Content source info (default: `fs@./content`)
 - `--ai <provider>` - AI provider info (default: `openai@gpt-4o-mini`)
 - `-p, --port <port>` - Development server port (default: `5566`)
 
-#### Content Providers
+#### Content Sources
 
 | Provider | Format              | Description               |
 | -------- | ------------------- | ------------------------- |
@@ -128,7 +128,7 @@ This directory contains the generated Astro project that serves as your blog.
 ### Common Issues
 
 1. **Missing API Key**: Ensure your AI provider's API key is set in environment variables
-2. **Content Not Found**: Verify content provider path/username exists
+2. **Content Not Found**: Verify content source path/username exists
 3. **Port in Use**: Use `-p` option to specify a different port
 4. **Build Fails**: Ensure `vibelog dev` was run first to generate the project structure
 

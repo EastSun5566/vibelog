@@ -198,7 +198,7 @@ def greet():
 
 ### Custom Content Sources
 
-VibeLog is designed to be extensible. Additional content providers can be added to support:
+VibeLog is designed to be extensible. Additional content sources can be added to support:
 
 - Notion databases
 - Contentful

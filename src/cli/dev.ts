@@ -1,6 +1,6 @@
 import { logger } from '../core';
 import { createDevServer } from '../dev';
-import { createContentProvider, createAiProvider } from './providers';
+import { createContentSource, createAiProvider } from './providers';
 import { createStyleTransformer, createDevBuilder } from '../core';
 
 export interface DevOptions {
@@ -14,13 +14,13 @@ export async function devCommand({ content, ai, port, root }: DevOptions) {
   logger.info(`Project root: ${root}`);
 
   try {
-    const contentProvider = createContentProvider(content);
+    const contentSource = createContentSource(content);
     const aiProvider = createAiProvider(ai);
     const styleTransformer = createStyleTransformer({ aiProvider });
 
     const devBuilder = createDevBuilder({
       root,
-      contentProvider,
+      contentSource,
     });
 
     await devBuilder.prepare();

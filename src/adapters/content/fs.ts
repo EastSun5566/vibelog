@@ -4,13 +4,13 @@ import matter from 'gray-matter';
 import fs from 'fs-extra';
 
 import { logger } from '../../core';
-import { ContentProviderName } from '../../consts';
-import type { ContentProvider } from '../../types';
+import { ContentSourceName } from '../../consts';
+import type { ContentSource } from '../../types';
 
-export class FsProvider implements ContentProvider {
-  readonly name = ContentProviderName.FS;
+export class FsProvider implements ContentSource {
+  readonly name = ContentSourceName.FS;
   constructor(readonly contentDir: string) {
-    logger.info(`Content provider: FS (${contentDir})`);
+    logger.info(`Content source: FS (${contentDir})`);
 
     assert(contentDir, 'Content directory is required. Use fs@<path-to-content-dir>');
   }

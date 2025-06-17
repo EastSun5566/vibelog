@@ -9,7 +9,7 @@ import matter from 'gray-matter';
 
 import { generateSlug, slugify } from './utils';
 import { logger } from './logger';
-import type { ContentProvider } from '../types';
+import type { ContentSource } from '../types';
 import { loadConfig } from './config';
 
 async function findTemplateDir() {
@@ -28,17 +28,17 @@ async function findTemplateDir() {
 
 export interface DevBuilderOptions {
   root: string;
-  contentProvider: ContentProvider;
+  contentSource: ContentSource;
 }
 export class DevBuilder {
   readonly root: string;
   readonly vibelogDir: string;
-  readonly contentProvider: ContentProvider;
+  readonly contentSource: ContentSource;
 
-  constructor({ root, contentProvider }: DevBuilderOptions) {
+  constructor({ root, contentSource }: DevBuilderOptions) {
     this.root = root;
     this.vibelogDir = resolve(process.cwd(), root, '.vibelog');
-    this.contentProvider = contentProvider;
+    this.contentSource = contentSource;
   }
 
   private async initVibelogDir() {
@@ -65,11 +65,11 @@ export class DevBuilder {
   }
 
   async fetchContent() {
-    logger.info(`Fetching ${this.contentProvider.name} content...`);
+    logger.info(`Fetching ${this.contentSource.name} content...`);
 
     const [{ posts }, author] = await Promise.all([
-      this.contentProvider.getPosts(),
-      this.contentProvider.getAuthor(),
+      this.contentSource.getPosts(),
+      this.contentSource.getAuthor(),
     ]);
     logger.info(`Found ${String(posts.length)} posts by ${author.name}`);
 

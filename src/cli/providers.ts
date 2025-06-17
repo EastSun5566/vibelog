@@ -1,12 +1,12 @@
 import { FsProvider, HackMdProvider } from '../adapters/content';
 import { VercelAiProvider } from '../adapters/ai';
-import { ContentProviderName, AiProviderName } from '../consts';
+import { ContentSourceName, AiProviderName } from '../consts';
 
-function getProviderInfo<T extends string>(
-  providerString: string,
+function getInfo<T extends string>(
+  infoString: string,
   enumObject: Record<string, T>,
 ): [T, string] {
-  const [name, id] = providerString.split('@');
+  const [name, id] = infoString.split('@');
   const enumValues = Object.values(enumObject);
   if (!Object.values(enumObject).includes(name as T)) {
     throw new Error(`Unknown provider: ${name}. Supported: ${enumValues.join(', ')}`);
@@ -15,19 +15,19 @@ function getProviderInfo<T extends string>(
   return [name as T, id];
 }
 
-export function createContentProvider(providerString: string) {
-  const [contentName, handle] = getProviderInfo(providerString, ContentProviderName);
+export function createContentSource(contentString: string) {
+  const [contentName, handle] = getInfo(contentString, ContentSourceName);
   switch (contentName) {
-  case ContentProviderName.HACKMD:
+  case ContentSourceName.HACKMD:
     return new HackMdProvider(handle);
-  case ContentProviderName.FS:
+  case ContentSourceName.FS:
     return new FsProvider(handle);
   default:
-    throw new Error(`Unsupported content provider: ${contentName as string}. Supported: ${Object.values(ContentProviderName).join(', ')}`);
+    throw new Error(`Unsupported content source: ${contentName as string}. Supported: ${Object.values(ContentSourceName).join(', ')}`);
   }
 }
 
 export function createAiProvider(providerString: string) {
-  const [providerName, modelId] = getProviderInfo(providerString, AiProviderName);
+  const [providerName, modelId] = getInfo(providerString, AiProviderName);
   return new VercelAiProvider(providerName, modelId);
 }

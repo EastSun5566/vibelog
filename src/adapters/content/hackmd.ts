@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import type { ContentProvider } from '../../types';
+import type { ContentSource } from '../../types';
 import { logger } from '../../core';
-import { ContentProviderName } from '../../consts';
+import { ContentSourceName } from '../../consts';
 import { removeFirstH1IfMatchesTitle } from './utils';
 
 interface Note {
@@ -39,10 +39,10 @@ interface ProfileResponse {
 
 const BASE_URL = 'https://hackmd.io';
 
-export class HackMdProvider implements ContentProvider {
-  readonly name = ContentProviderName.HACKMD;
+export class HackMdProvider implements ContentSource {
+  readonly name = ContentSourceName.HACKMD;
   constructor(readonly username: string) {
-    logger.info(`Content provider: HackMD (${username})`);
+    logger.info(`Content source: HackMD (${username})`);
 
     assert(username, 'HackMD username is required. Use hackmd@<username>');
   }
