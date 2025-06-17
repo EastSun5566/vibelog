@@ -88,13 +88,13 @@ When using HackMD as your content source, VibeLog automatically fetches your pub
 ### Requirements
 
 - HackMD account with public notes
-- Notes must be published with "View" permission
+- Notes must be published with "View" mode
 - Notes with publication dates are treated as blog posts
 
 ### How It Works
 
 1. VibeLog fetches your HackMD profile and notes
-2. Only published notes (with "View" permission) are included
+2. Only published notes (with "View" mode) are included
 3. Note titles become post titles
 4. Publication dates become post dates
 5. Content is automatically processed to remove duplicate H1 headers
@@ -113,97 +113,6 @@ Your HackMD profile information is automatically used:
 - Private or unpublished notes are ignored
 - Note permalinks are preserved when available
 
-## Content Processing
+---
 
-### Markdown Support
-
-VibeLog supports standard Markdown syntax:
-
-- Headers (H1-H6)
-- **Bold** and _italic_ text
-- Lists (ordered and unordered)
-- Links and images
-- Code blocks and inline code
-- Tables
-- Blockquotes
-
-### Image Handling
-
-- Images are copied to the public directory during build
-- Relative paths are preserved and resolved correctly
-- External images (HTTP/HTTPS) are kept as-is
-
-### Code Syntax Highlighting
-
-Code blocks support syntax highlighting for many languages:
-
-```javascript
-// JavaScript example
-const greeting = "Hello, VibeLog!";
-console.log(greeting);
-```
-
-```python
-# Python example
-def greet():
-    print("Hello, VibeLog!")
-```
-
-## Content Guidelines
-
-### Writing Tips
-
-1. **Clear Titles**: Use descriptive, SEO-friendly titles
-2. **Consistent Dates**: Use YYYY-MM-DD format for dates
-3. **Readable URLs**: Create meaningful slugs for better URLs
-4. **Image Optimization**: Compress images for faster loading
-
-### SEO Best Practices
-
-- Include relevant keywords in titles and content
-- Write meta descriptions (coming soon)
-- Use proper heading hierarchy (H1 → H2 → H3)
-- Add alt text to images
-
-### Content Organization
-
-- Group related posts by topic or series
-- Use consistent naming conventions
-- Include publication dates for chronological ordering
-- Write engaging introductions and conclusions
-
-## Migration from Other Platforms
-
-### From Jekyll/GitHub Pages
-
-1. Copy your `_posts` directory to `content/blog/`
-2. Update frontmatter format if needed
-3. Create an `author.md` file with your profile
-
-### From WordPress
-
-1. Export content as Markdown
-2. Place files in `content/blog/`
-3. Update image paths to relative paths
-4. Create author profile
-
-### From Medium/Other Platforms
-
-1. Export or copy content as Markdown
-2. Add proper frontmatter to each post
-3. Download and organize images locally
-4. Set up author profile
-
-## Advanced Features
-
-### Custom Content Sources
-
-VibeLog is designed to be extensible. Additional content sources can be added to support:
-
-- Notion databases
-- Contentful
-- Strapi
-- Ghost
-- Custom APIs
-
-Contact the maintainers or contribute if you need support for additional content sources.
+> More Content Sources will be supported...

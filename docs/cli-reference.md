@@ -104,37 +104,3 @@ vibelog build --root ./my-project --site-url https://my-project.netlify.app
 2. **Styling**: Use the web interface to apply AI-generated styles with natural language prompts
 3. **Build**: Run `vibelog build` to generate production-ready static site
 4. **Deploy**: Upload the `dist` directory to any static hosting service
-
-## File Structure
-
-After running `vibelog dev`, VibeLog creates a `.vibelog` directory in your project:
-
-```text
-.vibelog/
-├── src/
-│   ├── pages/
-│   ├── components/
-│   ├── layouts/
-│   └── styles/
-├── public/
-├── astro.config.mjs
-└── package.json
-```
-
-This directory contains the generated Astro project that serves as your blog.
-
-## Error Handling
-
-### Common Issues
-
-1. **Missing API Key**: Ensure your AI provider's API key is set in environment variables
-2. **Content Not Found**: Verify content source path/username exists
-3. **Port in Use**: Use `-p` option to specify a different port
-4. **Build Fails**: Ensure `vibelog dev` was run first to generate the project structure
-
-## Tips
-
-- Use `vibelog dev` in watch mode - it automatically updates when you modify content
-- Experiment with different AI prompts for styling: try descriptive terms like "minimalist", "dark", "corporate", "playful"
-- The development server includes hot reloading for instant feedback
-- Always run `vibelog build` from the same directory where you ran `vibelog dev`
