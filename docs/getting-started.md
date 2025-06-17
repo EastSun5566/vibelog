@@ -38,7 +38,7 @@ Navigate to `http://localhost:5566` and use the vibelog panel to modify styles w
 Once you're happy with your design, build the production-ready site:
 
 ```sh
-vibelog build --site-url https://your-blog.com
+npx vibelog build --site-url https://your-blog.com
 ```
 
 This generates a static site in the `dist` directory.
