@@ -24,11 +24,12 @@
     "docs:build": "vitepress build docs"
   },
   "keywords": [
+    "blog-builder",
     "content",
     "markdown",
-    "blog",
     "vibe",
     "ai",
+    "styling",
     "cli"
   ],
   "author": "Michael Wang <michael19920327@gmail.com>",
