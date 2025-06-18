@@ -32,10 +32,11 @@ vibelog dev [options]
 
 #### Content Sources
 
-| Provider | Format              | Description               |
-| -------- | ------------------- | ------------------------- |
-| `fs`     | `fs@<path>`         | Local file system content |
-| `hackmd` | `hackmd@<username>` | HackMD public notes       |
+| Provider | Format                 | Description               |
+| -------- | ---------------------- | ------------------------- |
+| `fs`     | `fs@<path>`            | Local file system content |
+| `hackmd` | `hackmd@<username>`    | HackMD public notes       |
+| `notion` | `notion@<database_id>` | Notion database pages     |
 
 #### AI Providers
 
@@ -55,6 +56,9 @@ vibelog dev --content hackmd@eastsun5566 --ai openai@gpt-4o-mini
 
 # Local content with custom port
 vibelog dev --content fs@./my-content --port 3000
+
+# Using Notion database as content source
+vibelog dev --content notion@abc123def456 --ai openai@gpt-4o-mini
 
 # Using Anthropic AI with local content
 vibelog dev --content fs@./content --ai anthropic@claude-3-haiku-20240307
@@ -97,6 +101,10 @@ vibelog build --root ./my-project --site-url https://my-project.netlify.app
 - `ANTHROPIC_API_KEY` - Anthropic API key (for Anthropic provider)
 - `GOOGLE_GENERATIVE_AI_API_KEY` - Google API key (for Google provider)
 - `OPENROUTER_API_KEY` - OpenRouter API key (for OpenRouter provider)
+
+### Required for Content Sources
+
+- `NOTION_TOKEN` - Notion integration token (for Notion provider)
 
 ## Workflow
 

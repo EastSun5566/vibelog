@@ -113,6 +113,66 @@ Your HackMD profile information is automatically used:
 - Private or unpublished notes are ignored
 - Note permalinks are preserved when available
 
----
+## Notion Content (`notion@<database_id>`)
 
-> More Content Sources will be supported...
+Transform your Notion database into a blog by using pages as blog posts.
+
+### Notion Requirements
+
+- Notion integration with access to your database
+- Database with pages that contain blog content
+- `NOTION_TOKEN` environment variable set with your integration token
+
+### Notion Integration
+
+1. VibeLog connects to your Notion database using the integration token
+2. All pages in the database become blog posts
+3. Page titles (from title property) become post titles
+4. Page content is converted to Markdown using notion-to-md
+5. Publication dates use custom date properties or creation time
+6. Author info is extracted from database creator and database title
+
+### Database Setup
+
+Your Notion database should contain pages with the following structure:
+
+#### Page Properties
+
+- **Title** - Any property with type "title" (becomes post title)
+- **Date** - Any property with type "date" (optional, for custom publication date)
+
+If no date property is found, the page creation time will be used.
+
+#### Page Content
+
+- Page content is automatically converted to Markdown using notion-to-md
+- All Notion blocks (text, headings, lists, etc.) are supported
+- Images and files are processed and included
+- Duplicate H1 headers matching the title are automatically removed
+
+### Notion Integration Setup
+
+1. Create a new integration at [https://www.notion.so/my-integrations](https://www.notion.so/my-integrations)
+2. Copy the integration token
+3. Share your database with the integration
+4. Set the `NOTION_TOKEN` environment variable
+
+```sh
+export NOTION_TOKEN=secret_your_notion_integration_token
+```
+
+### Common Issues
+
+If you encounter errors, VibeLog provides specific error messages to help diagnose issues:
+
+- **Database not found**: Check that the database ID is correct and your integration has access
+- **Unauthorized**: Verify your `NOTION_TOKEN` and integration permissions
+- **Invalid database ID**: Ensure the database ID format is correct (32-character string)
+
+### Database Organization
+
+- All pages in the database become blog posts
+- Pages are sorted by date (custom date property or creation time)
+- Empty or untitled pages are handled gracefully (titled "Untitled")
+- Page IDs are preserved for reference
+- Author information is extracted from database creator and title

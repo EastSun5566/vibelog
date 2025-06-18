@@ -87,11 +87,30 @@ my-content/
 
 ### HackMD
 
-Perfect for collaborative writing and public notes:
+Turn your HackMD workspace notes into a blog:
 
 ```sh
 vibelog dev --content hackmd@<your_username> --ai anthropic@claude-3-5-haiku-20241022
 ```
+
+### Notion
+
+Transform your Notion database pages into a blog:
+
+```sh
+# Set your Notion integration token
+export NOTION_TOKEN=<your_notion_token>
+
+# Use Notion database as content source
+vibelog dev --content notion@<database_id> --ai openai@gpt-4o-mini
+```
+
+**Note**: Make sure your Notion integration has access to the database and the database ID is correct. VibeLog will provide helpful error messages if there are authentication or permission issues.
+
+---
+
+> [!NOTE]
+> More content sources will be supported in the future
 
 ## AI Providers
 
