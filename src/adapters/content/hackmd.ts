@@ -39,7 +39,7 @@ interface ProfileResponse {
 
 const BASE_URL = 'https://hackmd.io';
 
-export class HackMdProvider implements ContentSource {
+export class HackMdSource implements ContentSource {
   readonly name = ContentSourceName.HACKMD;
   constructor(readonly username: string) {
     logger.info(`Content source: HackMD (${username})`);

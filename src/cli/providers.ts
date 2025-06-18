@@ -1,4 +1,4 @@
-import { FsProvider, HackMdProvider } from '../adapters/content';
+import { FsSource, HackMdSource, NotionSource } from '../adapters/content';
 import { VercelAiProvider } from '../adapters/ai';
 import { ContentSourceName, AiProviderName } from '../consts';
 
@@ -19,9 +19,11 @@ export function createContentSource(contentString: string) {
   const [contentName, handle] = getInfo(contentString, ContentSourceName);
   switch (contentName) {
   case ContentSourceName.HACKMD:
-    return new HackMdProvider(handle);
+    return new HackMdSource(handle);
   case ContentSourceName.FS:
-    return new FsProvider(handle);
+    return new FsSource(handle);
+  case ContentSourceName.NOTION:
+    return new NotionSource(handle);
   default:
     throw new Error(`Unsupported content source: ${contentName as string}. Supported: ${Object.values(ContentSourceName).join(', ')}`);
   }

@@ -1,6 +1,7 @@
 export enum ContentSourceName {
   FS = 'fs',
   HACKMD = 'hackmd',
+  NOTION = 'notion',
 }
 
 export enum AiProviderName {

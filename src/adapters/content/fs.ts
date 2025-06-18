@@ -7,7 +7,7 @@ import { logger } from '../../core';
 import { ContentSourceName } from '../../consts';
 import type { ContentSource } from '../../types';
 
-export class FsProvider implements ContentSource {
+export class FsSource implements ContentSource {
   readonly name = ContentSourceName.FS;
   constructor(readonly contentDir: string) {
     logger.info(`Content source: FS (${contentDir})`);
