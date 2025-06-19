@@ -3,6 +3,12 @@
   "compilerOptions": {
     "strictNullChecks": true
   },
-  "include": ["src", "docs/.vitepress/config.ts", "tsdown.config.ts"],
-  "exclude": ["dist"]
+  "include": [
+    "src",
+    "tests",
+    "docs/.vitepress",
+    "tsdown.config.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": ["dist", "coverage"]
 }
