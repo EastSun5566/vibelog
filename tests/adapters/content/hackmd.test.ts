@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { HackMdSource } from '../src/adapters/content/hackmd';
+import { HackMdSource } from '../../../src/adapters/content/hackmd';
 
 // Mock global fetch
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
 // Mock logger
-vi.mock('../src/core', () => ({
+vi.mock('../../../src/core', () => ({
   logger: {
     info: vi.fn(),
   },

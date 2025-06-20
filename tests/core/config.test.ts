@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { loadConfig } from '../src/core/config';
+import { loadConfig } from '../../src/core/config';
 
 // Mock fs-extra and logger
 vi.mock('fs-extra');
-vi.mock('./logger');
+vi.mock('../../src/core/logger');
 
 describe('Config', () => {
   beforeEach(() => {
