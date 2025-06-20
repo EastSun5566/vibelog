@@ -1,6 +1,20 @@
 # Changelog
 
-All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
+All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
+
+## [0.4.1-beta.0](https://github.com/EastSun5566/vibe/compare/v0.4.0...v0.4.1-beta.0) (2025-06-20)
+
+
+### Bug Fixes
+
+* update astro dep version to exact match ([b997578](https://github.com/EastSun5566/vibe/commit/b99757869764581d63084f4f1004e44b99736770))
+
+## [0.4.0](https://github.com/EastSun5566/vibe/compare/v0.3.4...v0.4.0) (2025-06-19)
+
+
+### Features
+
+* support notion content source ([fa0217f](https://github.com/EastSun5566/vibe/commit/fa0217f1446d2c87cc1921b5093d5fb802ca66ae))
 
 ### [0.3.4](https://github.com/EastSun5566/vibe/compare/v0.3.3...v0.3.4) (2025-06-17)
 
