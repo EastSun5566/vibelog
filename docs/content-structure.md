@@ -67,7 +67,6 @@ Create an `author.md` file in the content root with your profile information:
 ```yaml
 ---
 name: "Your Name"
-bio: "Short bio description" # optional, can use content instead
 ---
 This is your longer bio description that supports **Markdown formatting**.
 
@@ -77,13 +76,12 @@ You can include multiple paragraphs, links, and other Markdown elements.
 #### Author Fields
 
 - `name` (required) - Your display name
-- `bio` (optional) - Short bio, alternative to using content body
 
-The content body supports full Markdown and will be used as the bio if the `bio` field is not provided.
+The content body supports full Markdown and will be used as the bio.
 
 ## HackMD Content (`hackmd@<username>`)
 
-When using HackMD as your content source, VibeLog automatically fetches your public notes.
+When using [HackMD](https://hackmd.io/) as your content source, VibeLog automatically fetches your public notes.
 
 ### Requirements
 
@@ -115,7 +113,7 @@ Your HackMD profile information is automatically used:
 
 ## Notion Content (`notion@<database_id>`)
 
-Transform your Notion database into a blog by using pages as blog posts.
+Transform your [Notion](https://www.notion.com/) database into a blog by using pages as blog posts.
 
 ### Notion Requirements
 

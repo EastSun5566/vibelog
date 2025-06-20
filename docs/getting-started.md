@@ -9,7 +9,7 @@ VibeLog transforms any content source into a production-ready blog with AI-power
 ## Prerequisites
 
 - Node.js v20+
-- AI provider API key (or use Ollama without API key)
+- AI provider API key (or use [Ollama](https://ollama.com/) without API key)
 
 ## Quick Start
 
@@ -87,7 +87,7 @@ my-content/
 
 ### HackMD
 
-Turn your HackMD workspace notes into a blog:
+Turn your [HackMD](https://hackmd.io/) workspace public notes into a blog:
 
 ```sh
 vibelog dev --content hackmd@<your_username> --ai anthropic@claude-3-5-haiku-20241022
@@ -95,7 +95,7 @@ vibelog dev --content hackmd@<your_username> --ai anthropic@claude-3-5-haiku-202
 
 ### Notion
 
-Transform your Notion database pages into a blog:
+Transform your [Notion](https://www.notion.com/) database pages into a blog:
 
 ```sh
 # Set your Notion integration token
@@ -118,19 +118,23 @@ VibeLog supports multiple AI providers for styling:
 
 ```sh
 # OpenAI
+export OPENAI_API_KEY=<your_openai_api_key>
 --ai openai@gpt-4o-mini
 
 # Anthropic
+export ANTHROPIC_API_KEY=<your_anthropic_api_key>
 --ai anthropic@claude-3-5-haiku-20241022
 
 # Google
+export GOOGLE_GENERATIVE_AI_API_KEY=<your_google_api_key>
 --ai google@gemini-2.5-flash
+
+# OpenRouter
+export OPENROUTER_API_KEY=<your_openrouter_api_key>
+--ai openrouter@qwen/qwen-2.5-coder-32b-instruct:free
 
 # Ollama (local, no API key needed)
 --ai ollama@qwen2.5-coder:3b
-
-# OpenRouter
---ai openrouter@qwen/qwen-2.5-coder-32b-instruct:free
 ```
 
 ## Next Steps
