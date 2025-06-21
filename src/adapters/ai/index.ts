@@ -11,13 +11,26 @@ import { AI_PROMPTS, AiProviderName } from '../../consts';
 import type { AiProvider } from '../../types';
 import { logger } from '../../core';
 
-const cssTransformSchema = z.object({
-  variables: z.array(z.object({
-    name: z.string(),
-    value: z.string(),
-  })),
-  description: z.string(),
-});
+const cssTransformSchema = z
+  .object({
+    variables: z
+      .array(z
+        .object({
+          name: z
+            .string()
+            .describe('The name of the CSS variable, which must remain unchanged.'),
+          value: z
+            .string()
+            .describe('The value of the CSS variable.'),
+        })
+        .describe('CSS variable map object'),
+      )
+      .describe('Array of CSS variables, each with a name and value.'),
+    description: z
+      .string()
+      .describe('A brief description of the theme created or changed, explaining the design intent and any notable features.'),
+  })
+  .describe('Schema for CSS transformation result');
 
 export class VercelAiProvider implements AiProvider {
   readonly model: LanguageModelV1 | null = null;
