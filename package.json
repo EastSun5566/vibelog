@@ -50,7 +50,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.33.1",
     "vitepress": "^1.6.3",
-    "vitest": "3.2.4"
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
