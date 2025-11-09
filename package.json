@@ -16,6 +16,7 @@
   },
   "scripts": {
     "dev": "tsx --env-file=.env src/cli",
+    "start": "node ./dist/index.js",
     "typecheck": "tsc",
     "build": "rm -rf dist && tsdown",
     "lint": "eslint --fix src",

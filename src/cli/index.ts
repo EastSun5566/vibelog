@@ -54,4 +54,9 @@ cli
     await buildCommand(options);
   });
 
+cli.on('command:*', () => {
+  console.error('Invalid command: %s', cli.args.join(' '));
+  process.exit(1);
+});
+
 cli.parse();
