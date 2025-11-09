@@ -6,7 +6,7 @@
   "include": [
     "src",
     "tests",
-    "docs/.vitepress",
+    "docs/.vitepress/**/*.ts",
     "tsdown.config.ts",
     "vitest.config.ts"
   ],
