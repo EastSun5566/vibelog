@@ -20,6 +20,8 @@
     "typecheck": "tsc",
     "build": "rm -rf dist && tsdown",
     "lint": "eslint --fix src",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "prepublishOnly": "pnpm run build",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs"
@@ -41,12 +43,14 @@
     "@types/fs-extra": "^11.0.4",
     "@types/minimist": "^1.2.5",
     "@types/node": "^22.15.30",
+    "@vitest/coverage-v8": "^3.2.4",
     "eslint": "^9.28.0",
     "tsdown": "^0.12.7",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.33.1",
-    "vitepress": "^1.6.3"
+    "vitepress": "^1.6.3",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
