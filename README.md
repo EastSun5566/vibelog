@@ -36,16 +36,25 @@ npx vibelog dev --content hackmd@<your_username> --ai openai@gpt-4o-mini
 
 ```sh
 # Build to `dist`
-vibelog build --site-url https://your-blog.com
+npx vibelog build --site-url https://your-blog.com
 ```
 
 ### Deploy
 
 ```sh
 npx surge dist
+
+# Or
+npx vercel deploy dist
+
+# Or
+npx netlify deploy --dir=dist
+
+# Or
+npx wrangler pages deploy dist
 ```
 
-## Commands
+## Other commands
 
 ```sh
 vibelog --help
