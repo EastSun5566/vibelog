@@ -51,7 +51,7 @@ describe('VercelAiProvider', () => {
 
     it('should create OpenAI provider successfully with API key', () => {
       process.env.OPENAI_API_KEY = 'test-openai-key';
-      
+
       const provider = new VercelAiProvider(AiProviderName.OPENAI, 'gpt-4');
 
       expect(provider.name).toBe(AiProviderName.OPENAI);
@@ -69,7 +69,7 @@ describe('VercelAiProvider', () => {
 
     it('should create Anthropic provider successfully with API key', () => {
       process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
-      
+
       const provider = new VercelAiProvider(AiProviderName.ANTHROPIC, 'claude-3');
 
       expect(provider.name).toBe(AiProviderName.ANTHROPIC);
@@ -87,7 +87,7 @@ describe('VercelAiProvider', () => {
 
     it('should create Google provider successfully with API key', () => {
       process.env.GOOGLE_GENERATIVE_AI_API_KEY = 'test-google-key';
-      
+
       const provider = new VercelAiProvider(AiProviderName.GOOGLE, 'gemini-pro');
 
       expect(provider.name).toBe(AiProviderName.GOOGLE);
@@ -105,7 +105,7 @@ describe('VercelAiProvider', () => {
 
     it('should create OpenRouter provider successfully with API key', () => {
       process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-      
+
       const provider = new VercelAiProvider(AiProviderName.OPENROUTER, 'openrouter/model');
 
       expect(provider.name).toBe(AiProviderName.OPENROUTER);
@@ -131,7 +131,7 @@ describe('VercelAiProvider', () => {
   describe('generate', () => {
     it('should generate CSS transformation successfully', async () => {
       const { generateObject } = await import('ai');
-      
+
       const mockResult = {
         variables: [
           { name: '--primary-color', value: '#3b82f6' },
@@ -156,9 +156,9 @@ describe('VercelAiProvider', () => {
 
     it('should include JSON mode for OpenRouter provider', async () => {
       process.env.OPENROUTER_API_KEY = 'test-key';
-      
+
       const { generateObject } = await import('ai');
-      
+
       const mockResult = {
         variables: [{ name: '--color', value: '#000' }],
         description: 'Test theme',
@@ -193,7 +193,7 @@ describe('VercelAiProvider', () => {
 
     it('should handle generateObject errors', async () => {
       const { generateObject } = await import('ai');
-      
+
       const error = new Error('API call failed');
       vi.mocked(generateObject).mockRejectedValue(error);
 

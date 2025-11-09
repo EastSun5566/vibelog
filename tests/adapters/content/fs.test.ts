@@ -31,10 +31,10 @@ describe('FsSource', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    
+
     const fs = await import('fs-extra');
     const matter = await import('gray-matter');
-    
+
     mockExists = vi.mocked(fs.default.exists);
     mockReaddir = vi.mocked(fs.default.readdir);
     mockMatterRead = vi.mocked(matter.default.read);
@@ -76,7 +76,7 @@ describe('FsSource', () => {
       expect(mockExists).toHaveBeenCalledWith(join(testContentDir, 'blog'));
       expect(mockReaddir).toHaveBeenCalledWith(join(testContentDir, 'blog'));
       expect(mockMatterRead).toHaveBeenCalledTimes(2); // Only .md files
-      
+
       expect(result.posts).toHaveLength(2);
       expect(result.posts[0]).toEqual({
         id: 'post1',
@@ -169,7 +169,7 @@ describe('FsSource', () => {
 
       expect(mockExists).toHaveBeenCalledWith(join(testContentDir, 'author.md'));
       expect(mockMatterRead).toHaveBeenCalledWith(join(testContentDir, 'author.md'));
-      
+
       expect(result).toEqual({
         name: 'John Doe',
         bio: 'Author bio from content',

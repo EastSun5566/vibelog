@@ -52,7 +52,7 @@ describe('NotionSource', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    
+
     // Set environment variable
     process.env.NOTION_TOKEN = 'test-token';
 
@@ -78,8 +78,8 @@ describe('NotionSource', () => {
       toMarkdownString: vi.fn(),
     };
 
-    vi.mocked(notionClient.Client).mockImplementation(() => mockNotion as any);
-    vi.mocked(notionToMd.NotionToMarkdown).mockImplementation(() => mockN2m as any);
+    vi.mocked(notionClient.Client).mockImplementation(() => mockNotion as unknown as InstanceType<typeof notionClient.Client>);
+    vi.mocked(notionToMd.NotionToMarkdown).mockImplementation(() => mockN2m as unknown as InstanceType<typeof notionToMd.NotionToMarkdown>);
   });
 
   afterEach(() => {
@@ -100,7 +100,7 @@ describe('NotionSource', () => {
 
     it('should throw error when NOTION_TOKEN is not set', () => {
       delete process.env.NOTION_TOKEN;
-      
+
       expect(() => new NotionSource(testDatabaseId)).toThrow('NOTION_TOKEN environment variable is required');
     });
   });
@@ -150,7 +150,7 @@ describe('NotionSource', () => {
       );
       expect(mockN2m.pageToMarkdown).toHaveBeenCalledTimes(2);
       expect(result.posts).toHaveLength(2);
-      
+
       expect(result.posts[0]).toEqual({
         id: 'page-1',
         title: 'Test Post 1',
@@ -185,9 +185,9 @@ describe('NotionSource', () => {
     });
 
     it('should handle Notion API errors', async () => {
-      const notionError = new Error('Notion API Error') as any;
+      const notionError = new Error('Notion API Error') as Error & { code: string };
       notionError.code = APIErrorCode.ObjectNotFound;
-      
+
       mockIsNotionClientError.mockReturnValue(true);
       mockCollectPaginatedAPI.mockRejectedValue(notionError);
 
@@ -199,9 +199,9 @@ describe('NotionSource', () => {
     });
 
     it('should handle unauthorized errors', async () => {
-      const notionError = new Error('Unauthorized') as any;
+      const notionError = new Error('Unauthorized') as Error & { code: string };
       notionError.code = APIErrorCode.Unauthorized;
-      
+
       mockIsNotionClientError.mockReturnValue(true);
       mockCollectPaginatedAPI.mockRejectedValue(notionError);
 
@@ -213,9 +213,9 @@ describe('NotionSource', () => {
     });
 
     it('should handle validation errors', async () => {
-      const notionError = new Error('Validation Error') as any;
+      const notionError = new Error('Validation Error') as Error & { code: string };
       notionError.code = APIErrorCode.ValidationError;
-      
+
       mockIsNotionClientError.mockReturnValue(true);
       mockCollectPaginatedAPI.mockRejectedValue(notionError);
 
@@ -228,7 +228,7 @@ describe('NotionSource', () => {
 
     it('should re-throw non-Notion errors', async () => {
       const genericError = new Error('Generic error');
-      
+
       mockIsNotionClientError.mockReturnValue(false);
       mockCollectPaginatedAPI.mockRejectedValue(genericError);
 
@@ -244,7 +244,7 @@ describe('NotionSource', () => {
         created_by: { id: 'user-123' },
         title: [{ plain_text: 'My Blog Database' }],
       };
-      
+
       const mockUser = {
         name: 'John Doe',
       };
@@ -261,7 +261,7 @@ describe('NotionSource', () => {
       expect(mockNotion.users.retrieve).toHaveBeenCalledWith({
         user_id: 'user-123',
       });
-      
+
       expect(result).toEqual({
         name: 'John Doe',
         bio: 'My Blog Database',

@@ -130,7 +130,7 @@ describe('Builder', () => {
     it('should throw error when vibelog directory does not exist', async () => {
       const fs = await import('fs-extra');
       const mockExists = vi.mocked(fs.default.exists);
-      mockExists.mockResolvedValue(false);
+      mockExists.mockResolvedValue();
 
       await expect(buildFromVibelog({
         vibelogDir: '/test/.vibelog',
