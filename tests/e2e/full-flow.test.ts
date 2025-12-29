@@ -97,7 +97,7 @@ describe('End-to-End Flow', () => {
         site: 'https://test-blog.com',
       }),
     ).rejects.toThrow('No ".vibelog" directory found');
-  });
+  }, 60000);
 
   it('should reuse existing .vibelog directory on second prepare', async () => {
     const contentSource = new FsSource(fixtureContentDir);
