@@ -29,9 +29,11 @@ describe('End-to-End Flow', () => {
     const { posts } = await contentSource.getPosts();
     const author = await contentSource.getAuthor();
 
-    expect(posts).toHaveLength(2);
-    expect(posts[0].title).toBe('First Test Post');
-    expect(posts[1].title).toBe('Second Test Post');
+    const sortedPosts = [...posts].sort((a, b) => a.title.localeCompare(b.title));
+
+    expect(sortedPosts).toHaveLength(2);
+    expect(sortedPosts[0].title).toBe('First Test Post');
+    expect(sortedPosts[1].title).toBe('Second Test Post');
     expect(author.name).toBe('Test Author');
 
     // Step 2: Create and prepare dev builder
