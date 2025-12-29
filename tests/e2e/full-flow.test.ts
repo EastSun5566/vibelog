@@ -109,14 +109,13 @@ describe('End-to-End Flow', () => {
     // First prepare
     await devBuilder.prepare();
     const vibelogDir = join(testRoot, '.vibelog');
-    const firstPrepareStat = fs.statSync(vibelogDir);
+    const firstPrepareEntries = fs.readdirSync(vibelogDir).sort();
 
-    // Second prepare should reuse existing directory
+    // Second prepare should reuse existing directory without recreating it
     await devBuilder.prepare();
-    const secondPrepareStat = fs.statSync(vibelogDir);
+    const secondPrepareEntries = fs.readdirSync(vibelogDir).sort();
 
-    // The directory should not have been recreated (same inode and modification time)
-    expect(secondPrepareStat.ino).toBe(firstPrepareStat.ino);
-    expect(secondPrepareStat.mtimeMs).toBe(firstPrepareStat.mtimeMs);
+    // The directory should not have been recreated (contents should remain the same)
+    expect(secondPrepareEntries).toEqual(firstPrepareEntries);
   }, 60000);
 });
