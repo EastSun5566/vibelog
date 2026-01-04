@@ -1,28 +1,19 @@
 {
-  "name": "vibelog",
+  "name": "vibelog-monorepo",
   "version": "0.4.1-beta.0",
+  "private": true,
   "description": "Bring your own content with some vibes ✨",
-  "main": "dist/index.js",
   "type": "module",
-  "bin": {
-    "vibelog": "./dist/index.js"
-  },
-  "files": [
-    "dist",
-    "template"
-  ],
   "engines": {
     "node": ">=20.0.0"
   },
   "scripts": {
-    "dev": "tsx --env-file=.env src/cli",
-    "start": "node ./dist/index.js",
-    "typecheck": "tsc",
-    "build": "rm -rf dist && tsdown",
-    "lint": "eslint --fix src",
+    "build": "pnpm -r --filter './packages/*' build",
+    "dev": "pnpm --filter cli dev",
+    "typecheck": "pnpm -r --filter './packages/*' typecheck",
+    "lint": "pnpm -r --filter './packages/*' lint",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "prepublishOnly": "pnpm run build",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs"
   },

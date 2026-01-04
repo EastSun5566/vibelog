@@ -1,0 +1,23 @@
+{
+  "name": "@vibelog/app",
+  "version": "0.1.0",
+  "description": "VibeLog App - Web API for blog generation",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx --env-file=../../.env src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@vibelog/core": "workspace:*",
+    "fastify": "^5.2.0",
+    "@fastify/cors": "^10.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

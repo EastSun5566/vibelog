@@ -1,0 +1,42 @@
+{
+  "name": "vibelog-cli",
+  "version": "0.4.1-beta.0",
+  "description": "Bring your own content with some vibes ✨ - CLI tool",
+  "type": "module",
+  "bin": {
+    "vibelog": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "tsx --env-file=../../.env src/index.ts",
+    "typecheck": "tsc",
+    "build": "rm -rf dist && tsdown",
+    "lint": "eslint --fix src"
+  },
+  "keywords": [
+    "blog-builder",
+    "content",
+    "markdown",
+    "vibe",
+    "ai",
+    "styling",
+    "cli"
+  ],
+  "author": "Michael Wang <michael19920327@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "@vibelog/core": "workspace:*",
+    "cac": "^6.7.14"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsdown": "^0.12.7",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

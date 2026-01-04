@@ -1,6 +1,9 @@
-import { createContentSource as createContentSourceFactory } from '../adapters/content';
-import { createAiProvider as createAiProviderFactory } from '../adapters/ai';
-import { ContentSourceName, AiProviderName } from '../consts';
+import {
+  createContentSource as createContentSourceFactory,
+  createAiProvider as createAiProviderFactory,
+  ContentSourceName,
+  AiProviderName,
+} from '@vibelog/core';
 
 function getInfo<T extends string>(
   infoString: string,
