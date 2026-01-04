@@ -1,21 +1,34 @@
-# VibeLog SaaS API
+# @vibelog/app
 
-A web API service for programmatic blog generation using VibeLog.
+VibeLog App is a REST API server built with [Hono](https://hono.dev/), providing SaaS functionality for blog generation.
+
+## Features
+
+- ✨ **Ultra-fast**: Uses Hono framework, lightweight and high-performance
+- 🚀 **REST API**: Complete project management API
+- 🎨 **AI Style Transform**: Automatically adjust blog theme styles with AI
+- 🔌 **Multi-source**: Support multiple content sources (File System, Notion, HackMD)
+
+## Tech Stack
+
+- **Framework**: [Hono](https://hono.dev/) - Lightweight web framework
+- **Runtime**: Node.js (via @hono/node-server)
+- **Core**: @vibelog/core - VibeLog core functionality library
 
 ## Quick Start
 
 ```bash
-# Install dependencies
+# Install dependencies (from monorepo root)
 pnpm install
 
 # Start development server
-pnpm dev
+pnpm --filter @vibelog/app dev
 
 # Build for production
-pnpm build
+pnpm --filter @vibelog/app build
 
 # Start production server
-pnpm start
+pnpm --filter @vibelog/app start
 ```
 
 ## API Endpoints
@@ -45,6 +58,35 @@ Content-Type: application/json
   "siteUrl": "https://myblog.com"
 }
 ```
+
+**Response:**
+
+```json
+{
+  "projectId": "my-blog",
+  "status": "built",
+  "outputDir": "/path/to/dist",
+  "previewUrl": "http://localhost:3000/preview/my-blog/"
+}
+```
+
+### Preview Project
+
+```bash
+GET /api/projects/:projectId/preview
+```
+
+**Response:**
+
+```json
+{
+  "projectId": "my-blog",
+  "previewUrl": "http://localhost:3000/preview/my-blog/",
+  "status": "ready"
+}
+```
+
+Visit the `previewUrl` in your browser to see the built site.
 
 ### Transform Styles with AI
 

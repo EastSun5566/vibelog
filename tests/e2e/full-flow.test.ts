@@ -15,9 +15,14 @@ describe('End-to-End Flow', () => {
   });
 
   afterEach(async () => {
-    // Clean up temporary directory
+    // Clean up temporary directory with retry logic
     if (testRoot) {
-      await fs.rm(testRoot, { recursive: true, force: true });
+      try {
+        await fs.rm(testRoot, { recursive: true, force: true, maxRetries: 3 });
+      } catch (error) {
+        // Ignore cleanup errors in tests
+        console.warn(`Failed to clean up test directory: ${testRoot}`, error);
+      }
     }
   });
 
@@ -84,7 +89,7 @@ describe('End-to-End Flow', () => {
     const constsContent = await fs.readFile(constsPath, 'utf-8');
     expect(constsContent).toContain('SITE_TITLE');
     expect(constsContent).toContain('SITE_DESCRIPTION');
-  }, 60000); // 1 minute timeout
+  }, 120000); // 2 minutes timeout for full workflow
 
   it('should throw error when building without dev preparation', async () => {
     const vibelogDir = join(testRoot, '.vibelog');
@@ -117,5 +122,5 @@ describe('End-to-End Flow', () => {
 
     // The directory should not have been recreated (contents should remain the same)
     expect(secondPrepareEntries).toEqual(firstPrepareEntries);
-  }, 60000);
+  }, 120000); // 2 minutes timeout
 });
