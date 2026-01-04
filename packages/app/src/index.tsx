@@ -13,21 +13,73 @@ import {
 } from '@vibelog/core';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
+import { ProjectList } from './components/ProjectList';
+import { CreateProject } from './components/CreateProject';
+import { ProjectDetail } from './components/ProjectDetail';
+import { StyleTransform } from './components/StyleTransform';
 
 /**
  * Main Hono application instance
  *
- * This app provides a REST API for VibeLog's blog generation functionality.
- * It exposes three main endpoints:
- * 1. POST /api/projects - Create a new blog project from content source
- * 2. POST /api/projects/:id/build - Build static site from .vibelog directory
- * 3. POST /api/projects/:id/style - Transform styles using AI
+ * This app provides both a web UI and REST API for VibeLog's blog generation functionality.
+ * 
+ * UI Routes:
+ * - GET / - Home page (redirects to projects)
+ * - GET /projects - List all projects
+ * - GET /projects/new - Create new project form
+ * - GET /projects/:id - Project detail page
+ * - GET /projects/:id/style - Style transformation form
+ * 
+ * API Routes:
+ * - POST /api/projects - Create a new blog project from content source
+ * - POST /api/projects/:id/build - Build static site from .vibelog directory
+ * - POST /api/projects/:id/style - Transform styles using AI
+ * - POST /api/projects/:id/deploy - Deploy to Cloudflare Pages
  */
 const app = new Hono();
 
 // Global middleware
 app.use('*', logger());  // Request logging
 app.use('*', cors());    // Enable CORS for all origins
+
+// ============================================================================
+// UI Routes (HTML Pages)
+// ============================================================================
+
+/**
+ * Home page - redirects to projects list
+ */
+app.get('/', (c) => c.redirect('/projects'));
+
+/**
+ * Projects list page
+ */
+app.get('/projects', (c) => c.html(<ProjectList />));
+
+/**
+ * Create new project form
+ */
+app.get('/projects/new', (c) => c.html(<CreateProject />));
+
+/**
+ * Project detail page
+ */
+app.get('/projects/:id', (c) => {
+  const projectId = c.req.param('id');
+  return c.html(<ProjectDetail projectId={projectId} />);
+});
+
+/**
+ * Style transformation form
+ */
+app.get('/projects/:id/style', (c) => {
+  const projectId = c.req.param('id');
+  return c.html(<StyleTransform projectId={projectId} />);
+});
+
+// ============================================================================
+// API Routes (JSON)
+// ============================================================================
 
 // Static file serving for preview
 // Serves built sites from projects/*/dist/ directories
@@ -71,6 +123,8 @@ app.get('/health', (c) => {
  * 3. Installs dependencies
  * 4. Fetches content from source and writes to .vibelog/src/content
  *
+ * Accepts both JSON (API) and form-encoded data (from HTML form)
+ *
  * Request Body:
  * {
  *   "contentSource": {
@@ -81,19 +135,35 @@ app.get('/health', (c) => {
  * }
  *
  * Response:
- * {
- *   "projectId": string,
- *   "status": "created",
- *   "vibelogDir": string  // Path to .vibelog directory
- * }
+ * - JSON API: Returns JSON with project details
+ * - HTML Form: Redirects to project detail page
  */
 app.post('/api/projects', async (c) => {
-  const { contentSource: sourceConfig, projectName } = await c.req.json<{
-    contentSource: { type: string; handle: string };
-    projectName: string;
-  }>();
-
+  // Parse request body (supports both JSON and form data)
+  const contentType = c.req.header('content-type') ?? '';
+  
   try {
+    let sourceConfig: { type: string; handle: string };
+    let projectName: string;
+
+    if (contentType.includes('application/json')) {
+      // JSON API request
+      const body = await c.req.json<{
+        contentSource: { type: string; handle: string };
+        projectName: string;
+      }>();
+      sourceConfig = body.contentSource;
+      projectName = body.projectName;
+    } else {
+      // HTML form request
+      const formData = await c.req.formData();
+      projectName = String(formData.get('projectName'));
+      sourceConfig = {
+        type: String(formData.get('contentSource.type')),
+        handle: String(formData.get('contentSource.handle')),
+      };
+    }
+
     // Factory function creates type-safe content source adapter
     const contentSource = createContentSource(
       sourceConfig.type as ContentSourceName,
@@ -113,16 +183,38 @@ app.post('/api/projects', async (c) => {
     await builder.prepare();
     await builder.fetchContent();
 
-    return c.json({
-      projectId: projectName,
-      status: 'created',
-      vibelogDir: builder.vibelogDir,
-    });
+    // Return response based on request type
+    if (contentType.includes('application/json')) {
+      // JSON API response
+      return c.json({
+        projectId: projectName,
+        status: 'created',
+        vibelogDir: builder.vibelogDir,
+      });
+    } else {
+      // HTML form response - redirect to project page
+      return c.redirect(`/projects/${projectName}`);
+    }
   } catch (error) {
-    return c.json({
-      error: 'Failed to create project',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    }, 500);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Return error based on request type
+    if (contentType.includes('application/json')) {
+      return c.json({
+        error: 'Failed to create project',
+        message: errorMessage,
+      }, 500);
+    } else {
+      // For HTML forms, redirect back with error (in a real app, use flash messages)
+      return c.html(
+        <div>
+          <h1>Error Creating Project</h1>
+          <p>{errorMessage}</p>
+          <a href="/projects/new">Try Again</a>
+        </div>,
+        500,
+      );
+    }
   }
 });
 
@@ -135,23 +227,37 @@ app.post('/api/projects', async (c) => {
  * 3. Generates static HTML/CSS/JS files
  * 4. Outputs to dist/ directory
  *
+ * Accepts both JSON (API) and form-encoded data (from HTML form)
+ *
  * Request Body:
  * {
  *   "siteUrl": string  // Base URL for the site (optional, defaults to example.com)
  * }
  *
  * Response:
- * {
- *   "projectId": string,
- *   "status": "built",
- *   "outputDir": string  // Path to dist/ directory with static files
- * }
+ * - JSON API: Returns JSON with build details
+ * - HTML Form: Redirects to project detail page
  */
 app.post('/api/projects/:projectId/build', async (c) => {
   const projectId = c.req.param('projectId');
-  const { siteUrl = 'https://example.com' } = await c.req.json<{ siteUrl?: string }>();
-
+  const contentType = c.req.header('content-type') ?? '';
+  
   try {
+    let siteUrl = 'https://example.com';
+
+    if (contentType.includes('application/json')) {
+      // JSON API request
+      const body = await c.req.json<{ siteUrl?: string }>();
+      siteUrl = body.siteUrl ?? siteUrl;
+    } else {
+      // HTML form request
+      const formData = await c.req.formData();
+      const formSiteUrl = formData.get('siteUrl');
+      if (formSiteUrl && String(formSiteUrl).trim()) {
+        siteUrl = String(formSiteUrl);
+      }
+    }
+
     const projectRoot = resolve(process.cwd(), 'projects', projectId);
     const vibelogDir = resolve(projectRoot, '.vibelog');
     const outDir = resolve(projectRoot, 'dist');
@@ -166,17 +272,39 @@ app.post('/api/projects/:projectId/build', async (c) => {
     const url = new URL(c.req.url);
     const baseUrl = `${url.protocol}//${url.host}`;
 
-    return c.json({
-      projectId,
-      status: 'built',
-      outputDir: outDir,
-      previewUrl: `${baseUrl}/preview/${projectId}/`,
-    });
+    // Return response based on request type
+    if (contentType.includes('application/json')) {
+      // JSON API response
+      return c.json({
+        projectId,
+        status: 'built',
+        outputDir: outDir,
+        previewUrl: `${baseUrl}/preview/${projectId}/`,
+      });
+    } else {
+      // HTML form response - redirect to project page
+      return c.redirect(`/projects/${projectId}`);
+    }
   } catch (error) {
-    return c.json({
-      error: 'Failed to build project',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    }, 500);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Return error based on request type
+    if (contentType.includes('application/json')) {
+      return c.json({
+        error: 'Failed to build project',
+        message: errorMessage,
+      }, 500);
+    } else {
+      // For HTML forms, show error page
+      return c.html(
+        <div>
+          <h1>Error Building Project</h1>
+          <p>{errorMessage}</p>
+          <a href={`/projects/${projectId}`}>Back to Project</a>
+        </div>,
+        500,
+      );
+    }
   }
 });
 
@@ -189,6 +317,8 @@ app.post('/api/projects/:projectId/build', async (c) => {
  * 3. AI generates transformed CSS based on prompt
  * 4. Writes transformed CSS back to global.css
  *
+ * Accepts both JSON (API) and form-encoded data (from HTML form)
+ *
  * Request Body:
  * {
  *   "prompt": string,  // Natural language style description
@@ -199,20 +329,35 @@ app.post('/api/projects/:projectId/build', async (c) => {
  * }
  *
  * Response:
- * {
- *   "projectId": string,
- *   "status": "styled",
- *   "description": string  // AI's description of changes made
- * }
+ * - JSON API: Returns JSON with transformation details
+ * - HTML Form: Redirects to project detail page
  */
 app.post('/api/projects/:projectId/style', async (c) => {
   const projectId = c.req.param('projectId');
-  const { prompt, aiProvider: providerConfig } = await c.req.json<{
-    prompt: string;
-    aiProvider: { type: string; model: string };
-  }>();
-
+  const contentType = c.req.header('content-type') ?? '';
+  
   try {
+    let prompt: string;
+    let providerConfig: { type: string; model: string };
+
+    if (contentType.includes('application/json')) {
+      // JSON API request
+      const body = await c.req.json<{
+        prompt: string;
+        aiProvider: { type: string; model: string };
+      }>();
+      prompt = body.prompt;
+      providerConfig = body.aiProvider;
+    } else {
+      // HTML form request
+      const formData = await c.req.formData();
+      prompt = String(formData.get('prompt'));
+      providerConfig = {
+        type: String(formData.get('aiProvider.type')),
+        model: String(formData.get('aiProvider.model')),
+      };
+    }
+
     // Factory function creates type-safe AI provider
     const aiProvider = createAiProvider(
       providerConfig.type as AiProviderName,
@@ -235,16 +380,38 @@ app.post('/api/projects/:projectId/style', async (c) => {
 
     await writeFile(cssPath, transformedCss);
 
-    return c.json({
-      projectId,
-      status: 'styled',
-      description,
-    });
+    // Return response based on request type
+    if (contentType.includes('application/json')) {
+      // JSON API response
+      return c.json({
+        projectId,
+        status: 'styled',
+        description,
+      });
+    } else {
+      // HTML form response - redirect to project page
+      return c.redirect(`/projects/${projectId}`);
+    }
   } catch (error) {
-    return c.json({
-      error: 'Failed to transform styles',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    }, 500);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Return error based on request type
+    if (contentType.includes('application/json')) {
+      return c.json({
+        error: 'Failed to transform styles',
+        message: errorMessage,
+      }, 500);
+    } else {
+      // For HTML forms, show error page
+      return c.html(
+        <div>
+          <h1>Error Transforming Styles</h1>
+          <p>{errorMessage}</p>
+          <a href={`/projects/${projectId}/style`}>Try Again</a>
+        </div>,
+        500,
+      );
+    }
   }
 });
 
