@@ -12,8 +12,9 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@vibelog/core": "workspace:*",
+    "@cloudflare/pages-shared": "^0.13.95",
     "@hono/node-server": "^1.14.3",
+    "@vibelog/core": "workspace:*",
     "hono": "^4.7.15"
   },
   "devDependencies": {

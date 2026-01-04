@@ -33,6 +33,58 @@ pnpm --filter @vibelog/app start
 
 ## API Endpoints
 
+### List All Projects
+
+```bash
+GET /api/projects
+```
+
+**Response:**
+
+```json
+{
+  "projects": [
+    {
+      "id": "my-blog",
+      "name": "my-blog",
+      "hasVibelog": true,
+      "hasBuilt": true,
+      "createdAt": "2026-01-05T12:00:00Z"
+    }
+  ]
+}
+```
+
+### Get Project Details
+
+```bash
+GET /api/projects/:projectId
+```
+
+**Response:**
+
+```json
+{
+  "id": "my-blog",
+  "name": "my-blog",
+  "paths": {
+    "root": "/path/to/projects/my-blog",
+    "vibelog": "/path/to/projects/my-blog/.vibelog",
+    "dist": "/path/to/projects/my-blog/dist"
+  },
+  "status": {
+    "hasVibelog": true,
+    "hasBuilt": true,
+    "canPreview": true
+  },
+  "stats": {
+    "createdAt": "2026-01-05T12:00:00Z",
+    "modifiedAt": "2026-01-05T13:00:00Z",
+    "size": 1024
+  }
+}
+```
+
 ### Create Project
 
 ```bash
@@ -87,6 +139,53 @@ GET /api/projects/:projectId/preview
 ```
 
 Visit the `previewUrl` in your browser to see the built site.
+
+### Deploy to Cloudflare Pages
+
+```bash
+POST /api/projects/:projectId/deploy
+Content-Type: application/json
+
+{
+  "cloudflare": {
+    "accountId": "your-account-id",
+    "apiToken": "your-api-token",
+    "projectName": "my-vibelog-blog",
+    "branch": "main"
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "projectId": "my-blog",
+  "status": "deployed",
+  "platform": "cloudflare",
+  "deploymentUrl": "https://my-vibelog-blog.pages.dev",
+  "deploymentId": "deployment-id",
+  "environment": "production"
+}
+```
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment guide.
+
+### Delete Project
+
+```bash
+DELETE /api/projects/:projectId
+```
+
+**Response:**
+
+```json
+{
+  "projectId": "my-blog",
+  "status": "deleted",
+  "message": "Project 'my-blog' has been deleted successfully"
+}
+```
 
 ### Transform Styles with AI
 

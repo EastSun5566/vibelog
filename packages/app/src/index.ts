@@ -8,10 +8,8 @@ import {
   createContentSource,
   createAiProvider,
   createStyleTransformer,
-  createLogger,
   ContentSourceName,
   AiProviderName,
-  type ContentSource,
 } from '@vibelog/core';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
@@ -52,12 +50,10 @@ app.get('/preview/:projectId/*', async (c) => {
     rewriteRequestPath: () => path,
   });
 
-  return handler(c, async () => {});
+  return handler(c, async () => {
+    // Fallback handler - do nothing
+  });
 });
-
-// Create a silent logger for @vibelog/core library calls
-// This prevents verbose logging from content fetching and building processes
-const silentLogger = createLogger(true);
 
 /**
  * Health check endpoint
@@ -289,6 +285,328 @@ app.get('/api/projects/:projectId/preview', (c) => {
     previewUrl: `${baseUrl}/preview/${projectId}/`,
     status: 'ready',
   });
+});
+
+/**
+ * Deploy project to Cloudflare Pages
+ *
+ * This endpoint deploys the built static site to Cloudflare Pages.
+ * The project must be built first using POST /api/projects/:id/build.
+ *
+ * Request Body:
+ * {
+ *   "cloudflare": {
+ *     "accountId": string,      // Cloudflare account ID
+ *     "apiToken": string,       // Cloudflare API token with Pages write access
+ *     "projectName": string,    // Cloudflare Pages project name
+ *     "branch"?: string         // Git branch name (optional, defaults to "main")
+ *   }
+ * }
+ *
+ * Response:
+ * {
+ *   "projectId": string,
+ *   "status": "deployed" | "failed",
+ *   "platform": "cloudflare",
+ *   "deploymentUrl": string,     // Live deployment URL
+ *   "deploymentId": string,
+ *   "environment": string,        // "production" or "preview"
+ *   "error"?: string
+ * }
+ */
+app.post('/api/projects/:projectId/deploy', async (c) => {
+  const projectId = c.req.param('projectId');
+  const { cloudflare } = await c.req.json<{
+    cloudflare: {
+      accountId: string;
+      apiToken: string;
+      projectName: string;
+      branch?: string;
+    };
+  }>();
+
+  try {
+    const projectRoot = resolve(process.cwd(), 'projects', projectId);
+    const distDir = resolve(projectRoot, 'dist');
+
+    // Check if project has been built
+    if (!existsSync(distDir)) {
+      return c.json({
+        error: 'Project not built',
+        message: 'Please build the project first before deploying.',
+      }, 400);
+    }
+
+    // Import deployment function dynamically to avoid loading it unnecessarily
+    const { deployToCloudflarePages } = await import('./deploy/cloudflare.js');
+
+    // Deploy to Cloudflare Pages
+    const result = await deployToCloudflarePages(distDir, {
+      accountId: cloudflare.accountId,
+      apiToken: cloudflare.apiToken,
+      projectName: cloudflare.projectName,
+      branch: cloudflare.branch,
+    });
+
+    if (!result.success) {
+      return c.json({
+        projectId,
+        status: 'failed',
+        platform: 'cloudflare',
+        error: result.error,
+      }, 500);
+    }
+
+    return c.json({
+      projectId,
+      status: 'deployed',
+      platform: 'cloudflare',
+      deploymentUrl: result.url,
+      deploymentId: result.deploymentId,
+      environment: result.environment,
+    });
+  } catch (error) {
+    return c.json({
+      error: 'Failed to deploy project',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * List deployments for a project
+ *
+ * This endpoint returns all deployments for a Cloudflare Pages project.
+ *
+ * Query Parameters:
+ * - accountId: Cloudflare account ID
+ * - apiToken: Cloudflare API token
+ * - projectName: Cloudflare Pages project name
+ *
+ * Response:
+ * {
+ *   "projectId": string,
+ *   "platform": "cloudflare",
+ *   "deployments": Array<{
+ *     "id": string,
+ *     "url": string,
+ *     "environment": string,
+ *     "createdOn": string,
+ *     "productionBranch": boolean
+ *   }>
+ * }
+ */
+app.get('/api/projects/:projectId/deployments', async (c) => {
+  const projectId = c.req.param('projectId');
+  const accountId = c.req.query('accountId');
+  const apiToken = c.req.query('apiToken');
+  const projectName = c.req.query('projectName');
+
+  if (!accountId || !apiToken || !projectName) {
+    return c.json({
+      error: 'Missing required parameters',
+      message: 'accountId, apiToken, and projectName are required',
+    }, 400);
+  }
+
+  try {
+    const { listCloudflareDeployments } = await import('./deploy/cloudflare.js');
+
+    const deployments = await listCloudflareDeployments(
+      accountId,
+      apiToken,
+      projectName,
+    );
+
+    return c.json({
+      projectId,
+      platform: 'cloudflare',
+      deployments,
+    });
+  } catch (error) {
+    return c.json({
+      error: 'Failed to list deployments',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * List all projects
+ *
+ * Returns a list of all projects in the projects directory.
+ *
+ * Response:
+ * {
+ *   "projects": Array<{
+ *     "id": string,
+ *     "name": string,
+ *     "hasVibelog": boolean,
+ *     "hasBuilt": boolean,
+ *     "createdAt": string,
+ *     "size"?: number
+ *   }>
+ * }
+ */
+app.get('/api/projects', async (c) => {
+  try {
+    const projectsRoot = resolve(process.cwd(), 'projects');
+    const { readdir, stat } = await import('node:fs/promises');
+
+    // Check if projects directory exists
+    if (!existsSync(projectsRoot)) {
+      return c.json({ projects: [] });
+    }
+
+    const entries = await readdir(projectsRoot, { withFileTypes: true });
+    const projects = [];
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const projectPath = resolve(projectsRoot, entry.name);
+        const vibelogDir = resolve(projectPath, '.vibelog');
+        const distDir = resolve(projectPath, 'dist');
+
+        const stats = await stat(projectPath);
+
+        projects.push({
+          id: entry.name,
+          name: entry.name,
+          hasVibelog: existsSync(vibelogDir),
+          hasBuilt: existsSync(distDir),
+          createdAt: stats.birthtime.toISOString(),
+        });
+      }
+    }
+
+    return c.json({ projects });
+  } catch (error) {
+    return c.json({
+      error: 'Failed to list projects',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * Get project details
+ *
+ * Returns detailed information about a specific project.
+ *
+ * Response:
+ * {
+ *   "id": string,
+ *   "name": string,
+ *   "paths": {
+ *     "root": string,
+ *     "vibelog": string,
+ *     "dist": string
+ *   },
+ *   "status": {
+ *     "hasVibelog": boolean,
+ *     "hasBuilt": boolean,
+ *     "canPreview": boolean
+ *   },
+ *   "stats": {
+ *     "createdAt": string,
+ *     "modifiedAt": string,
+ *     "size": number
+ *   }
+ * }
+ */
+app.get('/api/projects/:projectId', async (c) => {
+  const projectId = c.req.param('projectId');
+
+  try {
+    const projectRoot = resolve(process.cwd(), 'projects', projectId);
+
+    if (!existsSync(projectRoot)) {
+      return c.json({
+        error: 'Project not found',
+        message: `Project '${projectId}' does not exist`,
+      }, 404);
+    }
+
+    const { stat } = await import('node:fs/promises');
+    const vibelogDir = resolve(projectRoot, '.vibelog');
+    const distDir = resolve(projectRoot, 'dist');
+
+    const stats = await stat(projectRoot);
+    const hasVibelog = existsSync(vibelogDir);
+    const hasBuilt = existsSync(distDir);
+
+    return c.json({
+      id: projectId,
+      name: projectId,
+      paths: {
+        root: projectRoot,
+        vibelog: vibelogDir,
+        dist: distDir,
+      },
+      status: {
+        hasVibelog,
+        hasBuilt,
+        canPreview: hasBuilt,
+      },
+      stats: {
+        createdAt: stats.birthtime.toISOString(),
+        modifiedAt: stats.mtime.toISOString(),
+        size: stats.size,
+      },
+    });
+  } catch (error) {
+    return c.json({
+      error: 'Failed to get project details',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * Delete a project
+ *
+ * Deletes a project and all its associated files.
+ *
+ * Response:
+ * {
+ *   "projectId": string,
+ *   "status": "deleted",
+ *   "message": string
+ * }
+ */
+app.delete('/api/projects/:projectId', async (c) => {
+  const projectId = c.req.param('projectId');
+
+  try {
+    const projectRoot = resolve(process.cwd(), 'projects', projectId);
+
+    if (!existsSync(projectRoot)) {
+      return c.json({
+        error: 'Project not found',
+        message: `Project '${projectId}' does not exist`,
+      }, 404);
+    }
+
+    const { rm } = await import('node:fs/promises');
+
+    // Delete project directory with retry logic
+    await rm(projectRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+    });
+
+    return c.json({
+      projectId,
+      status: 'deleted',
+      message: `Project '${projectId}' has been deleted successfully`,
+    });
+  } catch (error) {
+    return c.json({
+      error: 'Failed to delete project',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
 });
 
 export default app;
