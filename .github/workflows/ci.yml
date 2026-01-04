@@ -61,7 +61,18 @@ jobs:
       - name: Build project
         run: pnpm run build
 
-      - name: Test build output
+      - name: Verify build outputs
         run: |
-          ls -la dist/
-          node dist/index.js --help
+          echo "Checking @vibelog/core build..."
+          ls -la packages/core/dist/
+          test -f packages/core/dist/index.js
+          test -f packages/core/dist/index.d.ts
+
+          echo "Checking vibelog-cli build..."
+          ls -la packages/cli/dist/
+          test -f packages/cli/dist/index.js
+          node packages/cli/dist/index.js --help
+
+          echo "Checking @vibelog/app build..."
+          ls -la packages/app/dist/
+          test -f packages/app/dist/index.js
