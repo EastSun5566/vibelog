@@ -6,7 +6,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx --env-file=../../.env src/server.tsx",
-    "build": "tsc",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "test": "vitest run",
     "typecheck": "tsc"
