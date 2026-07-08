@@ -6,6 +6,6 @@
     "astro": "6.4.8",
     "@astrojs/mdx": "^5.0.6",
     "@astrojs/rss": "^4.0.12",
-    "@astrojs/sitemap": "^3.4.1"
+    "@astrojs/sitemap": "^3.7.3"
   }
 }
