@@ -1,11 +1,13 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import app from '../src/index';
 import { rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 describe('Preview Integration', () => {
   const testProjectId = 'preview-test';
   const projectRoot = resolve(process.cwd(), 'projects', testProjectId);
+  const fixtureContentDir = fileURLToPath(new URL('../../../tests/fixtures/content', import.meta.url));
 
   afterAll(async () => {
     // Cleanup test project
@@ -25,7 +27,7 @@ describe('Preview Integration', () => {
         projectName: testProjectId,
         contentSource: {
           type: 'fs',
-          handle: resolve(process.cwd(), '..', '..', 'tests', 'fixtures', 'content'),
+          handle: fixtureContentDir,
         },
       }),
     });
