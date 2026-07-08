@@ -24,15 +24,15 @@ export { Logger, logger, createLogger } from './core/logger';
 export { generateSlug, slugify } from './core/utils';
 
 // Adapters - Content
-export { 
-  FsSource, 
-  HackMdSource, 
+export {
+  FsSource,
+  HackMdSource,
   NotionSource,
   createContentSource,
 } from './adapters/content';
 
 // Adapters - AI
-export { 
+export {
   VercelAiProvider,
   createAiProvider,
 } from './adapters/ai';

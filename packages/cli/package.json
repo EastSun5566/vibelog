@@ -10,7 +10,7 @@
     "dist"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "dev": "tsx --env-file=../../.env src/index.ts",
