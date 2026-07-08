@@ -5,7 +5,7 @@ import { CssParser } from './parser';
 import { logger } from './logger';
 import type { AiProvider, CssVariable } from '../types';
 
-interface StyleTransformerOptions {
+export interface StyleTransformerOptions {
   aiProvider: AiProvider
 }
 

@@ -97,3 +97,14 @@ export class VercelAiProvider implements AiProvider {
     return object;
   }
 }
+
+/**
+ * Type-safe factory function to create AI providers
+ * For programmatic API usage
+ */
+export function createAiProvider(
+  name: AiProviderName,
+  modelId: string,
+): VercelAiProvider {
+  return new VercelAiProvider(name, modelId);
+}

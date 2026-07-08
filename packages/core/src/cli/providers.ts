@@ -1,5 +1,5 @@
-import { FsSource, HackMdSource, NotionSource } from '../adapters/content';
-import { VercelAiProvider } from '../adapters/ai';
+import { createContentSource as createContentSourceFactory } from '../adapters/content';
+import { createAiProvider as createAiProviderFactory } from '../adapters/ai';
 import { ContentSourceName, AiProviderName } from '../consts';
 
 function getInfo<T extends string>(
@@ -15,21 +15,20 @@ function getInfo<T extends string>(
   return [name as T, id];
 }
 
+/**
+ * CLI-specific string parsing wrapper
+ * Parses "fs@./content" format into ContentSource
+ */
 export function createContentSource(contentString: string) {
   const [contentName, handle] = getInfo(contentString, ContentSourceName);
-  switch (contentName) {
-  case ContentSourceName.HACKMD:
-    return new HackMdSource(handle);
-  case ContentSourceName.FS:
-    return new FsSource(handle);
-  case ContentSourceName.NOTION:
-    return new NotionSource(handle);
-  default:
-    throw new Error(`Unsupported content source: ${contentName as string}. Supported: ${Object.values(ContentSourceName).join(', ')}`);
-  }
+  return createContentSourceFactory(contentName, handle);
 }
 
+/**
+ * CLI-specific string parsing wrapper
+ * Parses "openai@gpt-4o-mini" format into AiProvider
+ */
 export function createAiProvider(providerString: string) {
   const [providerName, modelId] = getInfo(providerString, AiProviderName);
-  return new VercelAiProvider(providerName, modelId);
+  return createAiProviderFactory(providerName, modelId);
 }

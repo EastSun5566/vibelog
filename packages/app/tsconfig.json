@@ -1,13 +1,16 @@
 {
   "extends": "astro/tsconfigs/strict",
   "compilerOptions": {
-    "strictNullChecks": true
+    "strictNullChecks": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx"
   },
   "include": [
-    "packages/*/src",
+    "src",
     "tests",
     "docs/.vitepress/**/*.ts",
+    "tsdown.config.ts",
     "vitest.config.ts"
   ],
-  "exclude": ["dist", "coverage", "packages/*/dist", "packages/*/node_modules"]
+  "exclude": ["dist", "coverage"]
 }

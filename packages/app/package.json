@@ -1,0 +1,25 @@
+{
+  "name": "@vibelog/app",
+  "version": "0.1.0",
+  "description": "VibeLog App - Web API for blog generation",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx --env-file=../../.env src/server.tsx",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@cloudflare/pages-shared": "^0.13.95",
+    "@hono/node-server": "^1.14.3",
+    "@vibelog/core": "workspace:*",
+    "hono": "^4.7.15"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

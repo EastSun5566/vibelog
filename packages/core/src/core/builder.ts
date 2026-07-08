@@ -29,15 +29,16 @@ async function findTemplateDir() {
 export interface DevBuilderOptions {
   root: string;
   contentSource: ContentSource;
+  baseDir?: string;
 }
 export class DevBuilder {
   readonly root: string;
   readonly vibelogDir: string;
   readonly contentSource: ContentSource;
 
-  constructor({ root, contentSource }: DevBuilderOptions) {
-    this.root = root;
-    this.vibelogDir = resolve(process.cwd(), root, '.vibelog');
+  constructor({ root, contentSource, baseDir = process.cwd() }: DevBuilderOptions) {
+    this.root = resolve(baseDir, root);
+    this.vibelogDir = resolve(this.root, '.vibelog');
     this.contentSource = contentSource;
   }
 
@@ -74,7 +75,7 @@ export class DevBuilder {
     logger.info(`Found ${String(posts.length)} posts by ${author.name}`);
 
     const config = await loadConfig(this.root);
-    const siteTitle = config.site.title ?? basename(resolve(process.cwd(), this.root));
+    const siteTitle = config.site.title ?? basename(this.root);
     const siteDescription = config.site.description ?? author.bio;
 
     const configContent = `// Auto-generated site configuration

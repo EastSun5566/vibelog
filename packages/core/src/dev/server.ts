@@ -5,6 +5,9 @@ import { StyleTransformer } from '../core';
 import { createPanelScript } from './ui';
 import { handleTransformStyle, handleError, parseBody } from './middlewares';
 
+// Infer DevServer type from the dev() function return type
+type DevServer = Awaited<ReturnType<typeof createAstroDevServer>>;
+
 interface VibelogOptions {
   vibelogDir: string;
   styleTransformer: StyleTransformer;
@@ -26,7 +29,7 @@ function vibelog({ vibelogDir, styleTransformer }: VibelogOptions): AstroIntegra
   };
 }
 
-interface DevServerOptions {
+export interface DevServerOptions {
   root: string;
   port?: number;
   styleTransformer: StyleTransformer;
@@ -35,7 +38,7 @@ export async function createDevServer({
   root,
   port = 5000,
   styleTransformer,
-}: DevServerOptions) {
+}: DevServerOptions): Promise<DevServer> {
   const server = await createAstroDevServer({
     root,
     server: { port },

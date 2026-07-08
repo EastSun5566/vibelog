@@ -5,3 +5,6 @@ dist/
 cache/
 coverage/
 .astro/
+
+# App package user projects (BYOC model)
+packages/app/projects/
