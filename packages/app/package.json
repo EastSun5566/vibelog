@@ -1,6 +1,7 @@
 {
   "name": "@vibelog/app",
   "version": "0.1.0",
+  "private": true,
   "description": "VibeLog App - Web API for blog generation",
   "type": "module",
   "main": "dist/server.js",
