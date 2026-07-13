@@ -272,7 +272,9 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
 
   logger.info('Building with Astro...');
 
-  const tempOutDir = join(projectRoot, `.vibelog-build-staging-${randomUUID()}`);
+  // Keep prerender chunks below the generated runtime so Node can resolve
+  // externalized template dependencies through .vibelog/node_modules.
+  const tempOutDir = join(resolvedVibelogDir, `.build-staging-${randomUUID()}`);
   const backupOutDir = `${finalOutDir}.vibelog-backup-${randomUUID()}`;
   const previousWorkingDirectory = process.cwd();
   try {

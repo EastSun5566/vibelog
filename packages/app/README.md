@@ -4,7 +4,7 @@ Single-node Hono service for authenticated VibeLog projects. Production uses SQL
 
 ## Runtime
 
-- Node.js >=22.12.0
+- Node.js >=24.0.0
 - OIDC Authorization Code + PKCE
 - SQLite (`DATA_ROOT/vibelog.sqlite`)
 - isolated preview origin
