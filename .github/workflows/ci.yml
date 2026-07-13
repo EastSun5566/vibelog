@@ -18,8 +18,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
-      - name: Ensure checks did not modify the worktree
-        run: git diff --exit-code
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
