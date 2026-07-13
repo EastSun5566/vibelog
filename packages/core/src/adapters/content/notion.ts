@@ -20,14 +20,15 @@ export class NotionSource implements ContentSource {
   private notion: Client;
   private n2m: NotionToMarkdown;
 
-  constructor(readonly databaseId: string) {
+  constructor(readonly databaseId: string, options: { token?: string } = {}) {
     logger.info(`Content source: Notion (${databaseId})`);
 
     assert(databaseId, 'Notion database ID is required. Use notion@<database_id>');
-    assert(process.env.NOTION_TOKEN, 'NOTION_TOKEN environment variable is required.');
+    const token = options.token ?? process.env.NOTION_TOKEN;
+    assert(token, 'A Notion token is required. Pass token or set NOTION_TOKEN.');
 
     this.notion = new Client({
-      auth: process.env.NOTION_TOKEN,
+      auth: token,
     });
     this.n2m = new NotionToMarkdown({
       notionClient: this.notion,
@@ -106,7 +107,7 @@ export class NotionSource implements ContentSource {
       name: authorName,
       // @ts-ignore
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      bio: database.title?.[0]?.plain_text,
+      bio: database.title?.[0]?.plain_text ?? '',
     };
   }
 

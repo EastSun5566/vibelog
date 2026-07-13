@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { DevBuilder, createDevBuilder, buildFromVibelog } from '../../src/core/builder';
 import { ContentSourceName } from '../../src/consts';
 import type { ContentSource, Post, Author } from '../../src/types';
@@ -12,6 +15,7 @@ vi.mock('fs-extra', () => ({
     ensureDir: vi.fn(),
     emptyDir: vi.fn(),
     remove: vi.fn(),
+    move: vi.fn(),
   },
 }));
 vi.mock('node:child_process', () => ({
@@ -137,6 +141,27 @@ describe('Builder', () => {
         outDir: '/test/dist',
         site: 'https://example.com',
       })).rejects.toThrow('No ".vibelog" directory found');
+    });
+
+    it('keeps the previous output when Astro build fails', async () => {
+      const realRoot = await mkdtemp(join(tmpdir(), 'vibelog-builder-'));
+      const vibelogDir = join(realRoot, '.vibelog');
+      const outDir = join(realRoot, 'dist');
+      await mkdir(vibelogDir);
+      await mkdir(outDir);
+      await writeFile(join(outDir, 'previous.html'), 'previous');
+
+      const fs = await import('fs-extra');
+      vi.mocked(fs.default.exists).mockResolvedValue(true);
+
+      try {
+        await expect(buildFromVibelog({ vibelogDir, outDir, site: 'https://example.com' }))
+          .rejects.toThrow();
+        expect(await readFile(join(outDir, 'previous.html'), 'utf8')).toBe('previous');
+        expect(process.cwd()).toBe(resolve(__dirname, '../..'));
+      } finally {
+        await rm(realRoot, { recursive: true, force: true });
+      }
     });
   });
 });

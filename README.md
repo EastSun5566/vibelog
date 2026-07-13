@@ -64,4 +64,4 @@ vibelog build --help
 
 ## Requirements
 
-- Node.js v20+
+- Node.js >=22.12.0

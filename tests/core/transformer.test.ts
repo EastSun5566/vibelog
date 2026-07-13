@@ -105,46 +105,25 @@ describe('Transformer', () => {
         );
       });
 
-      it('should return original CSS when no variables are found', async () => {
+      it('should reject CSS with no variables', async () => {
         mockCssParser.extractVariables.mockReturnValue([]);
 
-        const result = await transformer.transform({
-          originalCss,
-        });
-
-        expect(result).toEqual({
-          transformedCss: originalCss,
-          description: '',
-        });
+        await expect(transformer.transform({ originalCss })).rejects.toThrow('No CSS variables found');
         expect(mockGenerate).not.toHaveBeenCalled();
       });
 
-      it('should handle AI provider errors gracefully', async () => {
+      it('should propagate AI provider errors', async () => {
         mockGenerate.mockRejectedValue(new Error('AI service unavailable'));
 
-        const result = await transformer.transform({
-          originalCss,
-        });
-
-        expect(result).toEqual({
-          transformedCss: originalCss,
-          description: '',
-        });
+        await expect(transformer.transform({ originalCss })).rejects.toThrow('AI service unavailable');
       });
 
-      it('should handle CSS parser errors gracefully', async () => {
+      it('should propagate CSS parser errors', async () => {
         mockCssParser.extractVariables.mockImplementation(() => {
           throw new Error('CSS parsing failed');
         });
 
-        const result = await transformer.transform({
-          originalCss,
-        });
-
-        expect(result).toEqual({
-          transformedCss: originalCss,
-          description: '',
-        });
+        await expect(transformer.transform({ originalCss })).rejects.toThrow('CSS parsing failed');
       });
 
       it('should create correct prompt with variables and style description', async () => {

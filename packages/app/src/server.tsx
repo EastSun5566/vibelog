@@ -1,16 +1,15 @@
 import { serve } from '@hono/node-server';
-import app from './index.js';
+import { createApp } from './index.js';
+
+const { app } = createApp();
 
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
+const hostname = process.env.HOST ?? '127.0.0.1';
 
-console.log(`🚀 VibeLog SaaS API Server running on http://localhost:${String(port)}`);
-console.log('📝 API Endpoints:');
-console.log('   GET  /health                      - Health check');
-console.log('   POST /api/projects                - Create a new blog project');
-console.log('   POST /api/projects/:id/build      - Build static site');
-console.log('   POST /api/projects/:id/style      - AI-powered style transformation');
+console.log(`VibeLog SaaS listening on http://${hostname}:${String(port)}`);
 
 serve({
   fetch: app.fetch,
   port,
+  hostname,
 });

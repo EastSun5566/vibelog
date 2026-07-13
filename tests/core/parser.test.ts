@@ -98,12 +98,10 @@ describe('Parser', () => {
         expect(variables[0]).toEqual({ name: '--var', value: ' ' });
       });
 
-      it('should handle completely invalid CSS', () => {
+      it('should reject completely invalid CSS', () => {
         const invalidCss = 'this is not css at all {{{';
 
-        const variables = parser.extractVariables(invalidCss);
-
-        expect(variables).toEqual([]);
+        expect(() => parser.extractVariables(invalidCss)).toThrow('Unclosed block');
       });
     });
 
@@ -180,15 +178,13 @@ describe('Parser', () => {
         expect(updatedCss).toContain('--var1: value1');
       });
 
-      it('should handle invalid CSS gracefully', () => {
+      it('should reject invalid CSS', () => {
         const invalidCss = 'this is not css {{{';
         const updates: CssVariable[] = [
           { name: '--var', value: 'value' },
         ];
 
-        const result = parser.updateVariables(invalidCss, updates);
-
-        expect(result).toBe(invalidCss);
+        expect(() => parser.updateVariables(invalidCss, updates)).toThrow('Unclosed block');
       });
     });
   });

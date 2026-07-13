@@ -8,7 +8,7 @@ VibeLog transforms any content source into a production-ready blog with AI-power
 
 ## Prerequisites
 
-- Node.js v20+
+- Node.js >=22.12.0
 - AI provider API key (or use [Ollama](https://ollama.com/) without API key)
 
 ## Quick Start

@@ -48,5 +48,14 @@ describe('utils', () => {
     it('should collapse multiple hyphens', () => {
       expect(slugify('hello---world')).toBe('hello-world');
     });
+
+    it('normalizes Unicode and never creates a subpath', () => {
+      expect(slugify('Ｔｅｓｔ／中文/文章')).toBe('test-中文-文章');
+      expect(slugify('Ｔｅｓｔ／中文/文章')).not.toMatch(/[\\/]/);
+    });
+
+    it('limits excessively long slugs', () => {
+      expect(slugify('a'.repeat(200))).toHaveLength(80);
+    });
   });
 });

@@ -47,8 +47,8 @@ describe('End-to-End Flow', () => {
       contentSource,
     });
 
-    // Prepare the vibelog directory (copy template and install deps)
-    await devBuilder.prepare();
+    // Programmatic Astro uses the pinned workspace runtime; no network install is needed.
+    await devBuilder.prepare({ installDependencies: false });
 
     // Verify .vibelog directory was created
     const vibelogDir = join(testRoot, '.vibelog');
@@ -89,6 +89,10 @@ describe('End-to-End Flow', () => {
     const constsContent = await fs.readFile(constsPath, 'utf-8');
     expect(constsContent).toContain('SITE_TITLE');
     expect(constsContent).toContain('SITE_DESCRIPTION');
+
+    const outDir = join(testRoot, 'dist');
+    await buildFromVibelog({ vibelogDir, outDir, site: 'https://test-blog.example' });
+    expect(await fs.exists(join(outDir, 'index.html'))).toBe(true);
   }, 120000); // 2 minutes timeout for full workflow
 
   it('should throw error when building without dev preparation', async () => {
@@ -112,12 +116,12 @@ describe('End-to-End Flow', () => {
     });
 
     // First prepare
-    await devBuilder.prepare();
+    await devBuilder.prepare({ installDependencies: false });
     const vibelogDir = join(testRoot, '.vibelog');
     const firstPrepareEntries = fs.readdirSync(vibelogDir).sort();
 
     // Second prepare should reuse existing directory without recreating it
-    await devBuilder.prepare();
+    await devBuilder.prepare({ installDependencies: false });
     const secondPrepareEntries = fs.readdirSync(vibelogDir).sort();
 
     // The directory should not have been recreated (contents should remain the same)

@@ -1,9 +1,7 @@
-import { readdir, readFile } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 
-/**
- * Cloudflare Pages deployment configuration
- */
 export interface CloudflarePagesConfig {
   accountId: string;
   apiToken: string;
@@ -11,179 +9,126 @@ export interface CloudflarePagesConfig {
   branch?: string;
 }
 
-/**
- * Deployment result
- */
 export interface DeploymentResult {
-  success: boolean;
+  success: true;
   url: string;
   deploymentId: string;
   environment: string;
-  error?: string;
 }
 
-/**
- * Get all files in a directory recursively
- */
-async function getAllFiles(dir: string, baseDir: string = dir): Promise<Map<string, Buffer>> {
-  const files = new Map<string, Buffer>();
-  const entries = await readdir(dir, { withFileTypes: true });
+interface WranglerDeployment {
+  Id?: string;
+  id?: string;
+  Url?: string;
+  url?: string;
+  Environment?: string;
+  environment?: string;
+  Created?: string;
+  created_on?: string;
+}
 
-  for (const entry of entries) {
-    const fullPath = join(dir, entry.name);
+const require = createRequire(import.meta.url);
+const wranglerPackage = require.resolve('wrangler/package.json');
+const wranglerBin = join(dirname(wranglerPackage), 'bin', 'wrangler.js');
+const MAX_OUTPUT_BYTES = 1024 * 1024;
 
-    if (entry.isDirectory()) {
-      const subFiles = await getAllFiles(fullPath, baseDir);
-      for (const [path, content] of subFiles) {
-        files.set(path, content);
+function redact(value: string, secrets: string[]): string {
+  return secrets.reduce((output, secret) => secret ? output.replaceAll(secret, '[REDACTED]') : output, value);
+}
+
+async function runWrangler(
+  args: string[],
+  config: Pick<CloudflarePagesConfig, 'accountId' | 'apiToken'>,
+  timeoutMs = 10 * 60 * 1000,
+): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [wranglerBin, ...args], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        CLOUDFLARE_ACCOUNT_ID: config.accountId,
+        CLOUDFLARE_API_TOKEN: config.apiToken,
+        NO_COLOR: '1',
+      },
+    });
+    let stdout = '';
+    let stderr = '';
+    const append = (current: string, chunk: Buffer): string => {
+      const next = current + chunk.toString('utf8');
+      if (Buffer.byteLength(next) > MAX_OUTPUT_BYTES) {
+        child.kill('SIGKILL');
+        reject(new Error('Wrangler output exceeded the safety limit'));
       }
-    } else {
-      const relativePath = relative(baseDir, fullPath);
-      const content = await readFile(fullPath);
-      files.set(relativePath, content);
-    }
-  }
-
-  return files;
+      return next;
+    };
+    child.stdout.on('data', (chunk: Buffer) => { stdout = append(stdout, chunk); });
+    child.stderr.on('data', (chunk: Buffer) => { stderr = append(stderr, chunk); });
+    child.on('error', reject);
+    const timeout = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error('Cloudflare deployment timed out'));
+    }, timeoutMs);
+    child.on('close', (code) => {
+      clearTimeout(timeout);
+      const secrets = [config.apiToken, config.accountId];
+      if (code !== 0) {
+        reject(new Error(redact(stderr || stdout || `Wrangler exited with code ${String(code)}`, secrets)));
+        return;
+      }
+      resolve(redact(stdout, secrets));
+    });
+  });
 }
 
-/**
- * Deploy to Cloudflare Pages using Direct Upload API
- *
- * @see https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/
- */
+function parseDeploymentUrl(output: string): string {
+  const urls = output.match(/https:\/\/[^\s]+\.pages\.dev[^\s]*/g);
+  const url = urls?.at(-1)?.replace(/[),.;]+$/, '');
+  if (!url) throw new Error('Wrangler completed without returning a deployment URL');
+  return url;
+}
+
 export async function deployToCloudflarePages(
   distDir: string,
   config: CloudflarePagesConfig,
 ): Promise<DeploymentResult> {
-  const { accountId, apiToken, projectName, branch = 'main' } = config;
+  const branch = config.branch ?? 'main';
+  const output = await runWrangler([
+    'pages',
+    'deploy',
+    distDir,
+    '--project-name',
+    config.projectName,
+    '--branch',
+    branch,
+    '--commit-dirty=true',
+  ], config);
 
-  try {
-    // Step 1: Get all files from dist directory
-    const files = await getAllFiles(distDir);
-
-    // Step 2: Create manifest of files with hashes
-    const manifest: Record<string, string> = {};
-    for (const [path] of files) {
-      // Use relative path as hash placeholder (Cloudflare will compute actual hash)
-      manifest[`/${path}`] = path;
-    }
-
-    // Step 3: Create deployment
-    const createDeploymentResponse = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${projectName}/deployments`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          branch,
-          manifest,
-        }),
-      },
-    );
-
-    if (!createDeploymentResponse.ok) {
-      const errorText = await createDeploymentResponse.text();
-      throw new Error(`Failed to create deployment: ${errorText}`);
-    }
-
-    const deploymentData = await createDeploymentResponse.json() as {
-      result: {
-        id: string;
-        url: string;
-        environment: string;
-        upload_url?: string;
-      };
-    };
-
-    const { id: deploymentId, url: deploymentUrl, environment } = deploymentData.result;
-
-    // Step 4: Upload files if upload_url is provided
-    if (deploymentData.result.upload_url) {
-      const formData = new FormData();
-
-      for (const [path, content] of files) {
-        const blob = new Blob([content]);
-        formData.append(path, blob, path);
-      }
-
-      const uploadResponse = await fetch(deploymentData.result.upload_url, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error(`Failed to upload files: ${await uploadResponse.text()}`);
-      }
-    }
-
-    return {
-      success: true,
-      url: deploymentUrl,
-      deploymentId,
-      environment,
-    };
-  } catch (error) {
-    return {
-      success: false,
-      url: '',
-      deploymentId: '',
-      environment: '',
-      error: error instanceof Error ? error.message : 'Unknown error',
-    };
-  }
+  return {
+    success: true,
+    url: parseDeploymentUrl(output),
+    deploymentId: '',
+    environment: branch === 'main' ? 'production' : 'preview',
+  };
 }
 
-/**
- * List deployments for a Cloudflare Pages project
- */
 export async function listCloudflareDeployments(
   accountId: string,
   apiToken: string,
   projectName: string,
-): Promise<{
-  id: string;
-  url: string;
-  environment: string;
-  createdOn: string;
-  productionBranch: boolean;
-}[]> {
-  try {
-    const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${projectName}/deployments`,
-      {
-        headers: {
-          'Authorization': `Bearer ${apiToken}`,
-        },
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error(`Failed to list deployments: ${await response.text()}`);
-    }
-
-    const data = await response.json() as {
-      result: {
-        id: string;
-        url: string;
-        environment: string;
-        created_on: string;
-        production_branch: boolean;
-      }[];
-    };
-
-    return data.result.map((deployment) => ({
-      id: deployment.id,
-      url: deployment.url,
-      environment: deployment.environment,
-      createdOn: deployment.created_on,
-      productionBranch: deployment.production_branch,
-    }));
-  } catch (error) {
-    console.error('Failed to list deployments:', error);
-    return [];
-  }
+): Promise<Record<string, unknown>[]> {
+  const output = await runWrangler([
+    'pages',
+    'deployment',
+    'list',
+    '--project-name',
+    projectName,
+    '--json',
+  ], { accountId, apiToken });
+  const parsed = JSON.parse(output) as WranglerDeployment[];
+  return parsed.map((deployment) => ({
+    id: deployment.id ?? deployment.Id ?? '',
+    url: deployment.url ?? deployment.Url ?? '',
+    environment: deployment.environment ?? deployment.Environment ?? '',
+    createdOn: deployment.created_on ?? deployment.Created ?? '',
+  }));
 }

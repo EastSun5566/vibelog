@@ -1,5 +1,3 @@
-import { inspect } from 'node:util';
-
 import { AI_PROMPTS } from '../consts';
 import { CssParser } from './parser';
 import { logger } from './logger';
@@ -30,6 +28,23 @@ Return JSON with updated variables and description.
 `;
   }
 
+  private validateUpdates(original: CssVariable[], updates: CssVariable[]): CssVariable[] {
+    const originalNames = new Set(original.map(({ name }) => name));
+    const seen = new Set<string>();
+    for (const update of updates) {
+      if (!originalNames.has(update.name) || seen.has(update.name)) {
+        throw new Error(`AI returned an unknown or duplicate CSS variable: ${update.name}`);
+      }
+      const hasControlCharacter = Array.from(update.value)
+        .some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
+      if (/[;{}@]|url\s*\(/i.test(update.value) || hasControlCharacter) {
+        throw new Error(`AI returned an unsafe value for ${update.name}`);
+      }
+      seen.add(update.name);
+    }
+    return updates;
+  }
+
   async transform({
     originalCss,
     stylePrompt = AI_PROMPTS.CSS_EXPERT,
@@ -42,43 +57,27 @@ Return JSON with updated variables and description.
   }> {
     logger.info('Style prompt:', stylePrompt);
 
-    try {
-      const variables = this.cssParser.extractVariables(originalCss);
-      if (variables.length === 0) {
-        logger.error('No CSS variables found in :root');
-        return {
-          transformedCss: originalCss,
-          description: '',
-        };
-      }
-
-      logger.info(`Generating styles with ${this.aiProvider.modelId}...`);
-      const prompt = this.createPrompt(variables, stylePrompt);
-      const { variables: newVariables, description } = await this.aiProvider.generate(
-        prompt,
-      );
-
-      logger.info('AI generation completed');
-      logger.info('Response:', description);
-
-      const updates: CssVariable[] = newVariables.map(({ name, value }) => ({
-        name,
-        value,
-      }));
-      const transformedCss = this.cssParser.updateVariables(originalCss, updates);
-
-      logger.info('Style transformation completed');
-      return {
-        transformedCss,
-        description: description,
-      };
-    } catch (error) {
-      logger.error('Style transformation failed:', inspect(error, { depth: null }));
-      return {
-        transformedCss: originalCss,
-        description: '',
-      };
+    const variables = this.cssParser.extractVariables(originalCss);
+    if (variables.length === 0) {
+      throw new Error('No CSS variables found in :root');
     }
+
+    logger.info(`Generating styles with ${this.aiProvider.modelId}...`);
+    const prompt = this.createPrompt(variables, stylePrompt);
+    const { variables: newVariables, description } = await this.aiProvider.generate(prompt);
+
+    logger.info('AI generation completed');
+    logger.info('Response:', description);
+
+    const updates = this.validateUpdates(variables, newVariables.map(({ name, value }) => ({
+      name,
+      value,
+    })));
+    const transformedCss = this.cssParser.updateVariables(originalCss, updates);
+    this.cssParser.extractVariables(transformedCss);
+
+    logger.info('Style transformation completed');
+    return { transformedCss, description };
   }
 }
 

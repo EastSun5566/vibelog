@@ -4,6 +4,7 @@ import BaseHead from "../components/BaseHead.astro";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
 import FormattedDate from "../components/FormattedDate.astro";
+import { SITE_LANGUAGE } from "../consts";
 
 type Props = CollectionEntry<"blog">["data"];
 
@@ -12,7 +13,7 @@ const { title, description, date, updatedDate } = Astro.props;
 const [author] = await getCollection("author");
 ---
 
-<html lang="en">
+<html lang={SITE_LANGUAGE}>
   <head>
     <BaseHead title={title} description={description} />
   </head>
@@ -21,9 +22,6 @@ const [author] = await getCollection("author");
     <Header />
     <main>
       <article class="blog-post">
-        <figure class="blog-post-hero">
-          <!-- hero image here -->
-        </figure>
         <div class="blog-post-content">
           <header class="blog-post-header">
             <div class="blog-post-date">

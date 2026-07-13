@@ -9,7 +9,12 @@ function getInfo<T extends string>(
   infoString: string,
   enumObject: Record<string, T>,
 ): [T, string] {
-  const [name, id] = infoString.split('@');
+  const separator = infoString.indexOf('@');
+  if (separator <= 0 || separator === infoString.length - 1) {
+    throw new Error('Provider must use the format name@handle');
+  }
+  const name = infoString.slice(0, separator);
+  const id = infoString.slice(separator + 1);
   const enumValues = Object.values(enumObject);
   if (!Object.values(enumObject).includes(name as T)) {
     throw new Error(`Unknown provider: ${name}. Supported: ${enumValues.join(', ')}`);

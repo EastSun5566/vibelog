@@ -55,7 +55,7 @@ vibelog dev [options]
 vibelog dev --content hackmd@eastsun5566 --ai openai@gpt-4o-mini
 
 # Local content with custom port
-vibelog dev --content fs@./my-content --port 3000
+vibelog dev --content fs@./my-content --port 5566
 
 # Using Notion database as content source
 vibelog dev --content notion@abc123def456 --ai openai@gpt-4o-mini

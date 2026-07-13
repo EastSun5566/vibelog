@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { cac } from 'cac';
+import { createRequire } from 'node:module';
 import {
   ContentSourceName,
   AiProviderName,
@@ -11,13 +12,14 @@ import { buildCommand, type BuildOptions } from './commands/build.js';
 
 const DEFAULT_CONTENT_INFO = 'fs@./content';
 const DEFAULT_AI_INFO = 'openai@gpt-4o-mini';
-const DEFAULT_DEV_PORT = 3333;
+const DEFAULT_DEV_PORT = 5566;
 const DEFAULT_BUILD_OUT_DIR = 'dist';
 const DEFAULT_SITE_URL = 'https://example.com';
+const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
 
 const cli = cac('vibelog');
 cli
-  .version('v0.4.1-beta.0')
+  .version(`v${version}`)
   .help();
 
 cli.option('-r, --root <dir>', 'Project root directory', { default: '.' });
@@ -34,8 +36,9 @@ cli
   .option('-p, --port <port>', 'Development server port', {
     default: DEFAULT_DEV_PORT,
   })
+  .option('--no-install', 'Use the packaged template runtime without running npm install')
   .example('vibelog dev --root . --content hackmd@eastsun5566 --ai openai@gpt-4o-mini')
-  .example('vibelog dev --content fs@./my-content --port 3000')
+  .example('vibelog dev --content fs@./my-content --port 5566')
   .action(async (options: DevOptions) => {
     await devCommand(options);
   });

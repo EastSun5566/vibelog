@@ -101,7 +101,7 @@ describe('NotionSource', () => {
     it('should throw error when NOTION_TOKEN is not set', () => {
       delete process.env.NOTION_TOKEN;
 
-      expect(() => new NotionSource(testDatabaseId)).toThrow('NOTION_TOKEN environment variable is required');
+      expect(() => new NotionSource(testDatabaseId)).toThrow('A Notion token is required');
     });
   });
 

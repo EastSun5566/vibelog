@@ -6,9 +6,10 @@ export interface DevOptions {
   ai: string;
   port: string;
   root: string;
+  install: boolean;
 }
 
-export async function devCommand({ content, ai, port, root }: DevOptions) {
+export async function devCommand({ content, ai, port, root, install }: DevOptions) {
   logger.info('Starting vibelog dev server...');
   logger.info(`Project root: ${root}`);
 
@@ -22,7 +23,7 @@ export async function devCommand({ content, ai, port, root }: DevOptions) {
       contentSource,
     });
 
-    await devBuilder.prepare();
+    await devBuilder.prepare({ installDependencies: install });
     await devBuilder.fetchContent();
 
     const server = await createDevServer({

@@ -6,16 +6,22 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx --env-file=../../.env src/server.tsx",
+    "worker": "tsx --env-file=../../.env src/worker.ts",
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
+    "start:worker": "node dist/worker.js",
     "test": "vitest run",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "lint": "eslint src tests",
+    "lint:fix": "eslint --fix src tests"
   },
   "dependencies": {
-    "@cloudflare/pages-shared": "^0.13.95",
-    "@hono/node-server": "^1.14.3",
+    "@hono/node-server": "^1.19.14",
     "@vibelog/core": "workspace:*",
-    "hono": "^4.7.15"
+    "hono": "^4.12.30",
+    "openid-client": "6.8.4",
+    "wrangler": "^4.110.0",
+    "zod": "3.25.55"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",

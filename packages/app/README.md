@@ -1,245 +1,49 @@
-# @vibelog/app
+# VibeLog SaaS app
 
-VibeLog App is a REST API server built with [Hono](https://hono.dev/), providing SaaS functionality for blog generation.
+Single-node Hono service for authenticated VibeLog projects. Production uses SQLite on a persistent `DATA_ROOT`, one web process, and one worker process.
 
-## Features
+## Runtime
 
-- ✨ **Ultra-fast**: Uses Hono framework, lightweight and high-performance
-- 🚀 **REST API**: Complete project management API
-- 🎨 **AI Style Transform**: Automatically adjust blog theme styles with AI
-- 🔌 **Multi-source**: Support multiple content sources (File System, Notion, HackMD)
+- Node.js >=22.12.0
+- OIDC Authorization Code + PKCE
+- SQLite (`DATA_ROOT/vibelog.sqlite`)
+- isolated preview origin
+- Wrangler Direct Upload for Cloudflare Pages
 
-## Tech Stack
-
-- **Framework**: [Hono](https://hono.dev/) - Lightweight web framework
-- **Runtime**: Node.js (via @hono/node-server)
-- **Core**: @vibelog/core - VibeLog core functionality library
-
-## Quick Start
+Build and start the two processes:
 
 ```bash
-# Install dependencies (from monorepo root)
-pnpm install
-
-# Start development server
-pnpm --filter @vibelog/app dev
-
-# Build for production
 pnpm --filter @vibelog/app build
-
-# Start production server
 pnpm --filter @vibelog/app start
+pnpm --filter @vibelog/app start:worker
 ```
 
-## API Endpoints
+Required production variables:
 
-### List All Projects
-
-```bash
-GET /api/projects
+```dotenv
+NODE_ENV=production
+DATA_ROOT=/var/lib/vibelog
+APP_ORIGIN=https://app.example.com
+PREVIEW_ORIGIN=https://preview.example.com
+APP_ENCRYPTION_KEY=<base64-encoded 32-byte key>
+OIDC_ISSUER=https://issuer.example.com
+OIDC_CLIENT_ID=...
+OIDC_CLIENT_SECRET=...
+OIDC_REDIRECT_URI=https://app.example.com/auth/callback
+VIBELOG_AI_PROVIDER=openai
+VIBELOG_AI_MODEL=gpt-4o-mini
 ```
 
-**Response:**
+`APP_ALLOWED_ORIGINS` may contain a comma-separated explicit allowlist. It is empty by default; same-origin requests remain allowed.
 
-```json
-{
-  "projects": [
-    {
-      "id": "my-blog",
-      "name": "my-blog",
-      "hasVibelog": true,
-      "hasBuilt": true,
-      "createdAt": "2026-01-05T12:00:00Z"
-    }
-  ]
-}
-```
+## API contract
 
-### Get Project Details
+All `/api/*` routes require the session cookie. Mutations also require the exact app `Origin` and the `X-CSRF-Token` returned by `GET /api/session`.
 
-```bash
-GET /api/projects/:projectId
-```
+- `POST /api/projects` accepts `{ name, source }`, where `source` is `{ type: "hackmd", username }` or `{ type: "notion", databaseId, credentialId }`.
+- `POST /api/projects/:id/{sync|build|style|deploy|delete}` returns `202 { jobId, status: "queued" }`.
+- `GET /api/jobs/:jobId` returns persistent job state.
+- `POST /api/credentials` stores Notion or Cloudflare credentials encrypted with AES-256-GCM.
+- `GET /api/projects/:id/deployments` accepts credential metadata IDs, never API tokens.
 
-**Response:**
-
-```json
-{
-  "id": "my-blog",
-  "name": "my-blog",
-  "paths": {
-    "root": "/path/to/projects/my-blog",
-    "vibelog": "/path/to/projects/my-blog/.vibelog",
-    "dist": "/path/to/projects/my-blog/dist"
-  },
-  "status": {
-    "hasVibelog": true,
-    "hasBuilt": true,
-    "canPreview": true
-  },
-  "stats": {
-    "createdAt": "2026-01-05T12:00:00Z",
-    "modifiedAt": "2026-01-05T13:00:00Z",
-    "size": 1024
-  }
-}
-```
-
-### Create Project
-
-```bash
-POST /api/projects
-Content-Type: application/json
-
-{
-  "projectName": "my-blog",
-  "contentSource": {
-    "type": "fs",
-    "handle": "./content"
-  }
-}
-```
-
-### Build Project
-
-```bash
-POST /api/projects/:projectId/build
-Content-Type: application/json
-
-{
-  "siteUrl": "https://myblog.com"
-}
-```
-
-**Response:**
-
-```json
-{
-  "projectId": "my-blog",
-  "status": "built",
-  "outputDir": "/path/to/dist",
-  "previewUrl": "http://localhost:3000/preview/my-blog/"
-}
-```
-
-### Preview Project
-
-```bash
-GET /api/projects/:projectId/preview
-```
-
-**Response:**
-
-```json
-{
-  "projectId": "my-blog",
-  "previewUrl": "http://localhost:3000/preview/my-blog/",
-  "status": "ready"
-}
-```
-
-Visit the `previewUrl` in your browser to see the built site.
-
-### Deploy to Cloudflare Pages
-
-```bash
-POST /api/projects/:projectId/deploy
-Content-Type: application/json
-
-{
-  "cloudflare": {
-    "accountId": "your-account-id",
-    "apiToken": "your-api-token",
-    "projectName": "my-vibelog-blog",
-    "branch": "main"
-  }
-}
-```
-
-**Response:**
-
-```json
-{
-  "projectId": "my-blog",
-  "status": "deployed",
-  "platform": "cloudflare",
-  "deploymentUrl": "https://my-vibelog-blog.pages.dev",
-  "deploymentId": "deployment-id",
-  "environment": "production"
-}
-```
-
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment guide.
-
-### Delete Project
-
-```bash
-DELETE /api/projects/:projectId
-```
-
-**Response:**
-
-```json
-{
-  "projectId": "my-blog",
-  "status": "deleted",
-  "message": "Project 'my-blog' has been deleted successfully"
-}
-```
-
-### Transform Styles with AI
-
-```bash
-POST /api/projects/:projectId/style
-Content-Type: application/json
-
-{
-  "prompt": "dark theme with neon purple accents",
-  "aiProvider": {
-    "type": "openai",
-    "model": "gpt-4o-mini"
-  }
-}
-```
-
-## Environment Variables
-
-```bash
-# AI Provider API Keys
-OPENAI_API_KEY=your-key
-ANTHROPIC_API_KEY=your-key
-GOOGLE_GENERATIVE_AI_API_KEY=your-key
-OPENROUTER_API_KEY=your-key
-
-# Server Configuration
-PORT=3000
-```
-
-## Architecture
-
-This SaaS package demonstrates how to use the `vibelog` core library programmatically:
-
-- **vibelog**: Core library providing `DevBuilder`, `buildFromVibelog`, `StyleTransformer`, and adapters
-- **fastify**: Web server framework for REST API
-- **TypeScript**: Type-safe API development
-
-## Example Usage
-
-```typescript
-import {
-  createDevBuilder,
-  createContentSource,
-  ContentSourceName,
-} from "vibelog";
-
-const contentSource = createContentSource(ContentSourceName.FS, "./my-content");
-
-const builder = createDevBuilder({
-  root: "/path/to/project",
-  contentSource,
-  baseDir: "/",
-});
-
-await builder.prepare();
-await builder.fetchContent();
-```
+Errors use `{ error: { code, message, requestId } }`. Responses never include credential values, absolute server paths, or stack traces.

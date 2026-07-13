@@ -7,69 +7,45 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  verify:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 22.12.0
           cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run type checking
-        run: pnpm run typecheck
-
-      - name: Run linting
-        run: pnpm run lint
-
-      - name: Run tests
-        run: pnpm run test
-
-  build:
-    runs-on: ubuntu-latest
-    needs: test
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build project
-        run: pnpm run build
-
-      - name: Verify build outputs
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - name: Ensure checks did not modify the worktree
+        run: git diff --exit-code
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm docs:build
+      - name: Smoke test packaged core and CLI
+        run: node .github/scripts/package-smoke.mjs
+      - name: Smoke test compiled SaaS server
+        env:
+          NODE_ENV: production
+          APP_ORIGIN: https://app.example
+          PREVIEW_ORIGIN: https://preview.example
+          APP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          OIDC_ISSUER: https://issuer.example
+          OIDC_CLIENT_ID: test
+          OIDC_CLIENT_SECRET: test
+          OIDC_REDIRECT_URI: https://app.example/auth/callback
+          DATA_ROOT: ${{ runner.temp }}/vibelog-data
+          PORT: 34123
         run: |
-          echo "Checking @vibelog/core build..."
-          ls -la packages/core/dist/
-          test -f packages/core/dist/index.js
-          test -f packages/core/dist/index.d.ts
-
-          echo "Checking vibelog-cli build..."
-          ls -la packages/cli/dist/
-          test -f packages/cli/dist/index.js
-          node packages/cli/dist/index.js --help
-
-          echo "Checking @vibelog/app build..."
-          ls -la packages/app/dist/
-          test -f packages/app/dist/index.js
+          node packages/app/dist/server.js &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:34123/health && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Production dependency audit
+        run: pnpm audit --prod --audit-level high

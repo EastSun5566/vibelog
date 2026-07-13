@@ -1,5 +1,6 @@
 import { dev as createAstroDevServer } from 'astro';
 import type { AstroIntegration } from 'astro';
+import { join } from 'node:path';
 
 import { StyleTransformer } from '../core';
 import { createPanelScript } from './ui';
@@ -36,11 +37,12 @@ export interface DevServerOptions {
 }
 export async function createDevServer({
   root,
-  port = 5000,
+  port = 5566,
   styleTransformer,
 }: DevServerOptions): Promise<DevServer> {
   const server = await createAstroDevServer({
     root,
+    cacheDir: join(root, '.astro'),
     server: { port },
     site: `http://localhost:${String(port)}`,
     devToolbar: {

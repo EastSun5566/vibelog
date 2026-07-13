@@ -1,5 +1,5 @@
 {
-  "name": "vibelog-cli",
+  "name": "vibelog",
   "version": "0.4.1-beta.0",
   "description": "Bring your own content with some vibes ✨ - CLI tool",
   "type": "module",
@@ -16,7 +16,8 @@
     "dev": "tsx --env-file=../../.env src/index.ts",
     "typecheck": "tsc",
     "build": "rm -rf dist && tsdown",
-    "lint": "eslint --fix src"
+    "lint": "eslint src",
+    "lint:fix": "eslint --fix src"
   },
   "keywords": [
     "blog-builder",
