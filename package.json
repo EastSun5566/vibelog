@@ -11,7 +11,7 @@
     "build": "pnpm -r --filter './packages/*' build",
     "dev": "pnpm --filter cli dev",
     "typecheck": "pnpm --filter '@vibelog/core' build && pnpm -r --filter './packages/*' typecheck",
-    "lint": "pnpm -r --filter './packages/*' lint",
+    "lint": "pnpm --filter '@vibelog/core' build && pnpm -r --filter './packages/*' lint",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "docs:dev": "vitepress dev docs",
