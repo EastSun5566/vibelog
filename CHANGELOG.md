@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.4.1-beta.3](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.0...v0.4.1-beta.3) (2026-07-15)
+
+
+### Features
+
+* add ui ([4e9cdab](https://github.com/EastSun5566/vibe/commit/4e9cdabcf44838d0ed504f37c5a62e90823a5324))
+* enhance cssTransformSchema with detailed descriptions ([864d1af](https://github.com/EastSun5566/vibe/commit/864d1af386fcbe082512cb52c3c9cc9d7df39988))
+* improve project strcture and upgrade deps ([fe4d382](https://github.com/EastSun5566/vibe/commit/fe4d3823b4831f72c0613aa4381c310c46661632))
+* improve saas app and project structure ([e3eceb2](https://github.com/EastSun5566/vibe/commit/e3eceb276adbb0fbe652fffaa587cb1473c9ab95))
+* integrate cloundflare ([3ed4417](https://github.com/EastSun5566/vibe/commit/3ed4417bc4cec666d3ddcf237d124558c6b54475))
+* move to monorepo ([6ae6b9a](https://github.com/EastSun5566/vibe/commit/6ae6b9a2b63ce3e1e2554fbe47861326351ce7d0))
+* use hono ([18ef542](https://github.com/EastSun5566/vibe/commit/18ef5422265990fbdf1baeda73328fe5be6e50d4))
+
+
+### Bug Fixes
+
+* add node engine to template package manifest ([0ca8a51](https://github.com/EastSun5566/vibe/commit/0ca8a51a59ba63a19d6d93d4259e26f6c5f13181))
+* **app:** disable allowImportingTsExtensions in build tsconfig ([7d3303b](https://github.com/EastSun5566/vibe/commit/7d3303b33bcd86c75a27ae948636114664dc0c34))
+* build @vibelog/core before typechecking to generate dist type declarations ([87ea927](https://github.com/EastSun5566/vibe/commit/87ea927f7493a9381461b7a47816b67983078b62))
+* build core before linting workspace ([501ab15](https://github.com/EastSun5566/vibe/commit/501ab15959ff68e3ddacaa9d5340d772deaedb84))
+* handle invalid commands in cli ([ee5e9d8](https://github.com/EastSun5566/vibe/commit/ee5e9d89086a6a7a78ad42fe29880b38e893a49c))
+* packages/app build does not emit dist files ([d4c9445](https://github.com/EastSun5566/vibe/commit/d4c9445a890d73bb40fa65cdd8a7372ca78d6d39))
+* prepare node 24 beta.2 release ([efb8117](https://github.com/EastSun5566/vibe/commit/efb8117976b618c4e24323bc6f703707d8c8125f))
+* resolve fixture content path relative to test file in preview.test.ts ([794127a](https://github.com/EastSun5566/vibe/commit/794127abed211469c9a27ee421a64d5c20fe5692))
+* upgrade @astrojs/sitemap to 3.7.3 for Astro 6 / Zod v4 compatibility ([f6562d7](https://github.com/EastSun5566/vibe/commit/f6562d7a93a41b129b189458d57f4e717bc5bde0))
+
 ## [0.4.1-beta.0](https://github.com/EastSun5566/vibe/compare/v0.4.0...v0.4.1-beta.0) (2025-06-20)
 
 
