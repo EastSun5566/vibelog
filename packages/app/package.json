@@ -12,10 +12,12 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "tsx --env-file=../../.env src/server.tsx",
+    "dev": "tsx --env-file=../../.env src/main.ts",
+    "dev:server": "tsx --env-file=../../.env src/server.tsx",
     "worker": "tsx --env-file=../../.env src/worker.ts",
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "start": "node dist/server.js",
+    "start": "node dist/main.js",
+    "start:server": "node dist/server.js",
     "start:worker": "node dist/worker.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"

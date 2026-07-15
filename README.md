@@ -70,10 +70,12 @@ vibelog build --help
 
 ## Self-host the app
 
-Copy `.env.example` to `.env`, fill the production settings, then start the web and worker processes on one shared SQLite volume:
+Copy `.env.example` to `.env`, fill the production settings, then start the fat container. One Node.js process hosts the web app and worker on the same SQLite database:
 
 ```sh
 docker compose up --build -d
 ```
 
 The published image is `ghcr.io/eastsun5566/vibelog-app:beta`.
+
+For a Render demo, create one Web Service from that existing image, leave Docker Command empty, use `/health` as the health check, and set `HOST=0.0.0.0`, `PORT=10000`, and `DATA_ROOT=/data`. Render storage is ephemeral unless you attach a paid disk at `/data`; keep a separate preview custom domain for `PREVIEW_ORIGIN`. See the [app deployment guide](packages/app/README.md#render-demo) for the required OIDC and origin settings.

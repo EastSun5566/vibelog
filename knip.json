@@ -31,7 +31,7 @@
       "project": ["src/**/*.ts"]
     },
     "packages/app": {
-      "entry": ["src/server.tsx", "src/worker.ts", "tests/**/*.test.ts"],
+      "entry": ["src/main.ts", "src/server.tsx", "src/worker.ts", "tests/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx}", "tests/**/*.ts"]
     }
   }

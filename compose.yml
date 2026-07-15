@@ -4,7 +4,6 @@ services:
     build:
       context: .
       dockerfile: packages/app/Dockerfile
-    command: ["node", "dist/server.js"]
     env_file:
       - path: .env
         required: false
@@ -28,37 +27,6 @@ services:
       - "${PORT:-3000}:3000"
     volumes:
       - app_data:/data
-    stop_grace_period: 30s
-
-  worker:
-    image: ${VIBELOG_APP_IMAGE:-ghcr.io/eastsun5566/vibelog-app:beta}
-    build:
-      context: .
-      dockerfile: packages/app/Dockerfile
-    command: ["node", "dist/worker.js"]
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      NODE_ENV: production
-      HOST: 0.0.0.0
-      PORT: 3000
-      DATA_ROOT: /data
-      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
-      PREVIEW_ORIGIN: ${PREVIEW_ORIGIN:-http://preview.localhost:3000}
-      APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-}
-      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
-      OIDC_ISSUER: ${OIDC_ISSUER:-}
-      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
-      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
-      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
-      VIBELOG_AI_PROVIDER: ${VIBELOG_AI_PROVIDER:-openai}
-      VIBELOG_AI_MODEL: ${VIBELOG_AI_MODEL:-gpt-4o-mini}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
-    volumes:
-      - app_data:/data
-    healthcheck:
-      disable: true
     stop_grace_period: 30s
 
 volumes:

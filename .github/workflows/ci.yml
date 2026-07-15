@@ -22,7 +22,7 @@ jobs:
       - run: pnpm docs:build
       - name: Smoke test packaged core and CLI
         run: node .github/scripts/package-smoke.mjs
-      - name: Build and smoke test app and worker containers
+      - name: Build and smoke test fat app container
         env:
           VIBELOG_APP_IMAGE: vibelog-app:ci
           NODE_ENV: production
@@ -43,13 +43,13 @@ jobs:
               fi
               sleep 1
             done
-            docker compose logs app worker
+            docker compose logs app
             return 1
           }
           docker compose up --detach --build
           wait_for_app
+          test "$(docker image inspect "$VIBELOG_APP_IMAGE" --format '{{json .Config.Cmd}}')" = '["node","dist/main.js"]'
           test "$(docker compose exec -T app node -p 'process.getuid()')" != "0"
-          test "$(docker compose exec -T worker node -p 'process.getuid()')" != "0"
           docker compose exec -T app node --input-type=module -e "import { writeFileSync } from 'node:fs'; import { AppDatabase } from './dist/database.js'; const db=new AppDatabase('/data'); const user=db.upsertUser({issuer:'smoke',subject:'smoke',email:null,displayName:null}); const project=db.createProject({userId:user.id,name:'smoke',slug:'smoke',sourceType:'hackmd',sourceConfig:{}}); const job=db.createJob(user.id,project.id,'delete'); writeFileSync('/data/smoke-job',job.id); db.close()"
           job_complete=false
           for _ in $(seq 1 30); do
@@ -61,8 +61,9 @@ jobs:
           done
           test "$job_complete" = true
           docker compose exec -T app node -e "require('node:fs').writeFileSync('/data/persistence-smoke','ok')"
-          docker compose restart app worker
+          docker compose restart app
           wait_for_app
-          docker compose exec -T worker node -e "process.exit(0)"
           docker compose exec -T app node -e "if(require('node:fs').readFileSync('/data/persistence-smoke','utf8')!=='ok')process.exit(1)"
-          docker compose stop --timeout 10 worker app
+          container_id="$(docker compose ps --all --quiet app)"
+          docker compose stop --timeout 10 app
+          test "$(docker inspect "$container_id" --format '{{.State.ExitCode}}')" = "0"

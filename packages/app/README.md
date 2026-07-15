@@ -1,6 +1,6 @@
 # VibeLog SaaS app
 
-Single-node Hono service for authenticated VibeLog projects. Production uses SQLite on a persistent `DATA_ROOT`, one web process, and one worker process.
+Single-node Hono service for authenticated VibeLog projects. The default runtime hosts the web app and job worker in one Node.js process backed by SQLite on `DATA_ROOT`.
 
 ## Runtime
 
@@ -10,13 +10,14 @@ Single-node Hono service for authenticated VibeLog projects. Production uses SQL
 - isolated preview origin
 - Wrangler Direct Upload for Cloudflare Pages
 
-Build and start the two processes:
+Build and start the combined runtime:
 
 ```bash
 pnpm --filter @vibelog/app build
 pnpm --filter @vibelog/app start
-pnpm --filter @vibelog/app start:worker
 ```
+
+Advanced deployments can still run `start:server` and `start:worker` as separate processes when they share the same data store.
 
 Required production variables:
 
@@ -46,7 +47,25 @@ From the repository root, copy `.env.example` to `.env`, fill the required produ
 docker compose up --build -d
 ```
 
-Both services use `ghcr.io/eastsun5566/vibelog-app:beta` by default. `app` runs `node dist/server.js`, `worker` runs `node dist/worker.js`, and both mount the same named volume at `/data`.
+The single service uses `ghcr.io/eastsun5566/vibelog-app:beta`, runs the web app and worker together, and mounts a named volume at `/data`.
+
+## Render demo
+
+Create one Render Web Service from the existing image `ghcr.io/eastsun5566/vibelog-app:beta`. Leave Docker Command empty so the image starts the combined runtime, set the health check path to `/health`, and keep the instance count at one.
+
+Set these runtime values in addition to the production variables above:
+
+```dotenv
+HOST=0.0.0.0
+PORT=10000
+DATA_ROOT=/data
+```
+
+Use the service's HTTPS URL for `APP_ORIGIN`, register `${APP_ORIGIN}/auth/callback` with the OIDC provider, and point a separate preview custom domain at the same Render service for `PREVIEW_ORIGIN`. Generate `APP_ENCRYPTION_KEY` once with `openssl rand -base64 32` and keep it stable.
+
+The demo can use Render's ephemeral filesystem, in which case projects disappear after a redeploy or instance replacement. Attach a paid persistent disk at `/data` only when the demo needs durable data. A disk cannot be shared by separate Render services, which is why the default image runs the app and worker together. See [Render persistent disks](https://render.com/docs/disks).
+
+Image-backed services do not redeploy automatically when the `beta` tag moves. After publishing, use **Manual Deploy → Deploy latest reference** or a deploy hook. See [Render image deployment](https://render.com/docs/deploying-an-image).
 
 ## API contract
 
