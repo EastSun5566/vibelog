@@ -39,7 +39,7 @@ const expectedVersion = registryVersion ?? cliPackage.version;
 let dependencies;
 
 if (registryVersion) {
-  dependencies = { vibelog: registryVersion };
+  dependencies = { '@vibelog/core': registryVersion, vibelog: registryVersion };
 } else {
   if (corePackage.version !== cliPackage.version) {
     throw new Error('Local core and CLI versions must match');
