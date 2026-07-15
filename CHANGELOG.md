@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.4.1-beta.6](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.5...v0.4.1-beta.6) (2026-07-15)
+
+
+### Bug Fixes
+
+* allow npm dist-tag propagation ([b5888ef](https://github.com/EastSun5566/vibe/commit/b5888ef6a1237ee0efba28bb92c22b7fd86fb60a))
+* install both packages in registry smoke ([6719f8d](https://github.com/EastSun5566/vibe/commit/6719f8da2653adbed292500df8ad6cf6396125eb))
+
 ## [0.4.1-beta.5](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.4...v0.4.1-beta.5) (2026-07-15)
 
 
