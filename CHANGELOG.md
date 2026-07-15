@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.4.1-beta.4](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.3...v0.4.1-beta.4) (2026-07-15)
+
+
+### Bug Fixes
+
+* build before lint ([6fec277](https://github.com/EastSun5566/vibe/commit/6fec277c80958c59caaef276afbc6d6d6c7c954f))
+
 ## [0.4.1-beta.3](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.0...v0.4.1-beta.3) (2026-07-15)
 
 

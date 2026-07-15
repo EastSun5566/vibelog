@@ -1,6 +1,6 @@
 {
   "name": "vibelog",
-  "version": "0.4.1-beta.3",
+  "version": "0.4.1-beta.4",
   "description": "Bring your own content with some vibes ✨ - CLI tool",
   "type": "module",
   "bin": {
