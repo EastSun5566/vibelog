@@ -96,6 +96,10 @@ vibelog build --root ./my-project --site-url https://my-project.netlify.app
 - `GEMINI_API_KEY` - Google API key (canonical)
 - `GOOGLE_GENERATIVE_AI_API_KEY` - Legacy Google fallback, used only when `GEMINI_API_KEY` is unset
 - `OPENROUTER_API_KEY` - OpenRouter API key (for OpenRouter provider)
+- `GROQ_API_KEY` - Groq API key (for Groq's hosted OpenAI-compatible API)
+- `NVIDIA_API_KEY` - NVIDIA API key (for the hosted NVIDIA NIM API)
+- `MISTRAL_API_KEY` - Mistral API key (for Mistral's hosted API)
+- `XAI_API_KEY` - xAI API key (for xAI's hosted OpenAI-compatible API)
 - `OLLAMA_BASE_URL` - Ollama OpenAI-compatible endpoint (default: `http://localhost:11434/v1`)
 
 Other pi-ai providers use their documented environment variables or supported AWS/Google ambient credentials. VibeLog does not provide interactive OAuth login or store AI credentials.

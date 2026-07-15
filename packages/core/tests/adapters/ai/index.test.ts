@@ -182,7 +182,40 @@ describe('PiAiProvider', () => {
   });
 
   it('registers all built-in providers and Ollama', () => {
-    expect(getAiProviderNames()).toEqual(expect.arrayContaining(['openai', 'anthropic', 'google', 'ollama']));
+    expect(getAiProviderNames()).toEqual(expect.arrayContaining([
+      'openai',
+      'anthropic',
+      'google',
+      'groq',
+      'nvidia',
+      'mistral',
+      'xai',
+      'ollama',
+    ]));
+  });
+
+  it('uses the pi-ai catalog endpoints for hosted providers', () => {
+    const groq = createAiProvider('groq', 'openai/gpt-oss-20b');
+    const nvidia = createAiProvider('nvidia', 'nvidia/nemotron-3-super-120b-a12b');
+    const mistral = createAiProvider('mistral', 'devstral-medium-latest');
+    const xai = createAiProvider('xai', 'grok-code-fast-1');
+
+    expect(groq.model).toMatchObject({
+      id: 'openai/gpt-oss-20b',
+      baseUrl: 'https://api.groq.com/openai/v1',
+    });
+    expect(nvidia.model).toMatchObject({
+      id: 'nvidia/nemotron-3-super-120b-a12b',
+      baseUrl: 'https://integrate.api.nvidia.com/v1',
+    });
+    expect(mistral.model).toMatchObject({
+      id: 'devstral-medium-latest',
+      baseUrl: 'https://api.mistral.ai',
+    });
+    expect(xai.model).toMatchObject({
+      id: 'grok-code-fast-1',
+      baseUrl: 'https://api.x.ai/v1',
+    });
   });
 
   it('accepts arbitrary Ollama model IDs and honors OLLAMA_BASE_URL', () => {

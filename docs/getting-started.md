@@ -133,6 +133,22 @@ export GEMINI_API_KEY=<your_google_api_key>
 export OPENROUTER_API_KEY=<your_openrouter_api_key>
 --ai openrouter@qwen/qwen-2.5-coder-32b-instruct:free
 
+# Groq
+export GROQ_API_KEY=<your_groq_api_key>
+--ai groq@openai/gpt-oss-20b
+
+# NVIDIA NIM hosted API
+export NVIDIA_API_KEY=<your_nvidia_api_key>
+--ai nvidia@nvidia/nemotron-3-super-120b-a12b
+
+# Mistral
+export MISTRAL_API_KEY=<your_mistral_api_key>
+--ai mistral@devstral-medium-latest
+
+# xAI
+export XAI_API_KEY=<your_xai_api_key>
+--ai xai@grok-code-fast-1
+
 # Ollama (local, no API key needed)
 export OLLAMA_BASE_URL=http://localhost:11434/v1
 --ai ollama@qwen2.5-coder:3b

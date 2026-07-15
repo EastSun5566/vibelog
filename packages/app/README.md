@@ -37,7 +37,7 @@ VIBELOG_AI_MODEL=gpt-4o-mini
 
 `APP_ALLOWED_ORIGINS` may contain a comma-separated explicit allowlist. It is empty by default; same-origin requests remain allowed.
 
-AI provider and model IDs use the pi-ai catalog. Google uses `GEMINI_API_KEY`; `GOOGLE_GENERATIVE_AI_API_KEY` remains a legacy fallback. Ollama accepts any model ID and uses `OLLAMA_BASE_URL` (default `http://localhost:11434/v1`).
+AI provider and model IDs use the pi-ai catalog. Google uses `GEMINI_API_KEY`; `GOOGLE_GENERATIVE_AI_API_KEY` remains a legacy fallback. Groq uses `GROQ_API_KEY` with `https://api.groq.com/openai/v1`, hosted NVIDIA NIM uses `NVIDIA_API_KEY` with `https://integrate.api.nvidia.com/v1`, Mistral uses `MISTRAL_API_KEY` with `https://api.mistral.ai`, and xAI uses `XAI_API_KEY` with `https://api.x.ai/v1`. These providers support the tool-calling flow used by VibeLog ([Groq](https://console.groq.com/docs/tool-use/local-tool-calling), [NVIDIA NIM](https://docs.nvidia.com/nim/large-language-models/latest/api-reference.html), [Mistral](https://docs.mistral.ai/studio-api/conversations/function-calling), [xAI](https://docs.x.ai/developers/tools/function-calling)). Ollama accepts any model ID and uses `OLLAMA_BASE_URL` (default `http://localhost:11434/v1`).
 
 ## Docker Compose
 
@@ -60,6 +60,32 @@ HOST=0.0.0.0
 PORT=10000
 DATA_ROOT=/data
 ```
+
+To use a hosted AI provider, add one of these sets to the Render service:
+
+```dotenv
+# Groq
+VIBELOG_AI_PROVIDER=groq
+VIBELOG_AI_MODEL=openai/gpt-oss-20b
+GROQ_API_KEY=...
+
+# NVIDIA NIM
+VIBELOG_AI_PROVIDER=nvidia
+VIBELOG_AI_MODEL=nvidia/nemotron-3-super-120b-a12b
+NVIDIA_API_KEY=...
+
+# Mistral
+VIBELOG_AI_PROVIDER=mistral
+VIBELOG_AI_MODEL=devstral-medium-latest
+MISTRAL_API_KEY=...
+
+# xAI
+VIBELOG_AI_PROVIDER=xai
+VIBELOG_AI_MODEL=grok-code-fast-1
+XAI_API_KEY=...
+```
+
+Set only the provider configuration you use. The fat container's built-in worker receives the same Render environment automatically.
 
 Use the service's HTTPS URL for `APP_ORIGIN`, register `${APP_ORIGIN}/auth/callback` with the OIDC provider, and point a separate preview custom domain at the same Render service for `PREVIEW_ORIGIN`. Generate `APP_ENCRYPTION_KEY` once with `openssl rand -base64 32` and keep it stable.
 
