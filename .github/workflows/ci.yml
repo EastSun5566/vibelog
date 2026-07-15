@@ -36,11 +36,23 @@ jobs:
           PORT: 34123
         run: |
           trap 'docker compose down --volumes' EXIT
-          docker compose up --detach --build --wait --wait-timeout 120
+          wait_for_app() {
+            for _ in $(seq 1 60); do
+              if node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(response=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"; then
+                return 0
+              fi
+              sleep 1
+            done
+            docker compose logs app worker
+            return 1
+          }
+          docker compose up --detach --build
+          wait_for_app
           test "$(docker compose exec -T app node -p 'process.getuid()')" != "0"
+          test "$(docker compose exec -T worker node -p 'process.getuid()')" != "0"
           docker compose exec -T app node --input-type=module -e "import { writeFileSync } from 'node:fs'; import { AppDatabase } from './dist/database.js'; const db=new AppDatabase('/data'); const user=db.upsertUser({issuer:'smoke',subject:'smoke',email:null,displayName:null}); const project=db.createProject({userId:user.id,name:'smoke',slug:'smoke',sourceType:'hackmd',sourceConfig:{}}); const job=db.createJob(user.id,project.id,'delete'); writeFileSync('/data/smoke-job',job.id); db.close()"
           job_complete=false
-          for attempt in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if docker compose exec -T app node --input-type=module -e "import { readFileSync } from 'node:fs'; import { AppDatabase } from './dist/database.js'; const db=new AppDatabase('/data'); const id=readFileSync('/data/smoke-job','utf8'); const status=db.connection.prepare('SELECT status FROM jobs WHERE id = ?').get(id)?.status; db.close(); process.exit(status==='succeeded'?0:1)"; then
               job_complete=true
               break
@@ -50,6 +62,7 @@ jobs:
           test "$job_complete" = true
           docker compose exec -T app node -e "require('node:fs').writeFileSync('/data/persistence-smoke','ok')"
           docker compose restart app worker
-          docker compose up --detach --wait --wait-timeout 60
+          wait_for_app
+          docker compose exec -T worker node -e "process.exit(0)"
           docker compose exec -T app node -e "if(require('node:fs').readFileSync('/data/persistence-smoke','utf8')!=='ok')process.exit(1)"
           docker compose stop --timeout 10 worker app
