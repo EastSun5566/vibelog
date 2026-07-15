@@ -47,12 +47,13 @@ async function packument(name) {
 
 async function retry(task, label) {
   let lastError;
-  for (let attempt = 1; attempt <= 12; attempt += 1) {
+  const attempts = 24;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       return await task();
     } catch (error) {
       lastError = error;
-      if (attempt < 12) await new Promise((resolve) => setTimeout(resolve, 5000));
+      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }
   throw new Error(`${label}: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
