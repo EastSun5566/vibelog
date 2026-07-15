@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { join } from 'node:path';
-import { FsSource } from '../../../src/adapters/content/fs';
+import { FsSource } from '../../../src/adapters/content/fs.js';
 
 // Mock dependencies
 vi.mock('fs-extra', () => ({
@@ -16,7 +16,7 @@ vi.mock('gray-matter', () => ({
   },
 }));
 
-vi.mock('../../../src/core', () => ({
+vi.mock('../../../src/core/index.js', () => ({
   logger: {
     info: vi.fn(),
     error: vi.fn(),

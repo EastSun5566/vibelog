@@ -12,7 +12,7 @@ export function assertUuid(value: string, name = 'id'): string {
 
 export function resolveWithin(base: string, ...segments: string[]): string {
   for (const segment of segments) {
-    if (!segment || isAbsolute(segment) || segment === '.' || segment === '..' || /[\\/\0]/.test(segment)) {
+    if (!segment || isAbsolute(segment) || segment === '.' || segment === '..' || segment.includes('\0') || /[\\/]/.test(segment)) {
       throw new Error('Unsafe path segment');
     }
   }

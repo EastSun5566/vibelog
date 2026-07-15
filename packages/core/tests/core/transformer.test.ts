@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { StyleTransformer, createStyleTransformer } from '../../src/core/transformer';
-import { CssParser } from '../../src/core/parser';
-import { AiProviderName } from '../../src/consts';
-import type { AiProvider, CssVariable } from '../../src/types';
+import { StyleTransformer, createStyleTransformer } from '../../src/core/transformer.js';
+import { CssParser } from '../../src/core/parser.js';
+import type { AiProvider, CssVariable } from '../../src/types.js';
 
 // Mock dependencies
-vi.mock('../../src/core/parser');
-vi.mock('../../src/core/logger', () => ({
+vi.mock('../../src/core/parser.js');
+vi.mock('../../src/core/logger.js', () => ({
   logger: {
     info: vi.fn(),
     error: vi.fn(),
@@ -29,7 +28,7 @@ describe('Transformer', () => {
 
     mockGenerate = vi.fn();
     mockAiProvider = {
-      name: AiProviderName.OPENAI,
+      name: 'openai',
       modelId: 'test-model',
       generate: mockGenerate,
     };
@@ -140,7 +139,7 @@ describe('Transformer', () => {
         expect(generatedPrompt).toContain(stylePrompt);
         expect(generatedPrompt).toContain('--color: blue');
         expect(generatedPrompt).toContain('--bg: white');
-        expect(generatedPrompt).toContain('Return JSON');
+        expect(generatedPrompt).not.toContain('Return JSON');
       });
     });
   });

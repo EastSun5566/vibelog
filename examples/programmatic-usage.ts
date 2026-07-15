@@ -1,16 +1,16 @@
 // Example: Using @vibelog/core library programmatically
-import { 
-  createDevBuilder, 
-  createContentSource, 
+import {
+  createDevBuilder,
+  createContentSource,
   buildFromVibelog,
-  ContentSourceName 
+  ContentSourceName,
 } from '@vibelog/core';
 
 async function buildMyBlog() {
   // 1. Create content source
   const contentSource = createContentSource(
     ContentSourceName.FS,
-    './content'
+    './content',
   );
 
   // 2. Create dev builder
@@ -34,4 +34,4 @@ async function buildMyBlog() {
   console.log('✅ Blog built successfully!');
 }
 
-buildMyBlog().catch(console.error);
+await buildMyBlog();

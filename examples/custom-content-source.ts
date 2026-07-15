@@ -1,25 +1,34 @@
 // Example: Custom content source implementation
-import type { ContentSource, PostsResponse, AuthorResponse } from '@vibelog/core';
+import {
+  ContentSourceName,
+  type AuthorResponse,
+  type ContentSource,
+  type PostsResponse,
+} from '@vibelog/core';
 
 export class DatabaseSource implements ContentSource {
-  readonly name = 'database' as const;
-  
+  readonly name = ContentSourceName.FS;
+
   constructor(private databaseUrl: string) {}
-  
+
   async getPosts(): Promise<PostsResponse> {
     // Fetch posts from your database
-    const posts = await fetch(`${this.databaseUrl}/api/posts`)
-      .then(r => r.json());
-    
-    return { posts };
+    const posts: unknown = await fetch(`${this.databaseUrl}/api/posts`)
+      .then((response) => response.json());
+    if (!Array.isArray(posts)) throw new Error('Invalid posts response');
+
+    return { posts: posts as PostsResponse['posts'] };
   }
-  
+
   async getAuthor(): Promise<AuthorResponse> {
     // Fetch author from your database
-    const author = await fetch(`${this.databaseUrl}/api/author`)
-      .then(r => r.json());
-    
-    return author;
+    const author: unknown = await fetch(`${this.databaseUrl}/api/author`)
+      .then((response) => response.json());
+    if (!author || typeof author !== 'object' || !('name' in author) || !('bio' in author)) {
+      throw new Error('Invalid author response');
+    }
+
+    return author as AuthorResponse;
   }
 }
 

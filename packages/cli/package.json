@@ -14,10 +14,8 @@
   },
   "scripts": {
     "dev": "tsx --env-file=../../.env src/index.ts",
-    "typecheck": "tsc",
-    "build": "rm -rf dist && tsdown",
-    "lint": "eslint src",
-    "lint:fix": "eslint --fix src"
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json"
   },
   "keywords": [
     "blog-builder",
@@ -36,8 +34,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "tsdown": "^0.12.7",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "typescript": "7.0.2"
   }
 }

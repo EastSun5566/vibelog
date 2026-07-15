@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { removeFirstH1IfMatchesTitle } from '../../../src/adapters/content/utils';
+import { removeFirstH1IfMatchesTitle } from '../../../src/adapters/content/utils.js';
 
 describe('Content Utils', () => {
   describe('removeFirstH1IfMatchesTitle', () => {

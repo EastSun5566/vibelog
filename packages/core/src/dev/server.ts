@@ -2,9 +2,9 @@ import { dev as createAstroDevServer } from 'astro';
 import type { AstroIntegration } from 'astro';
 import { join } from 'node:path';
 
-import { StyleTransformer } from '../core';
-import { createPanelScript } from './ui';
-import { handleTransformStyle, handleError, parseBody } from './middlewares';
+import { StyleTransformer } from '../core/index.js';
+import { createPanelScript } from './ui.js';
+import { handleTransformStyle, handleError, parseBody } from './middlewares.js';
 
 // Infer DevServer type from the dev() function return type
 type DevServer = Awaited<ReturnType<typeof createAstroDevServer>>;

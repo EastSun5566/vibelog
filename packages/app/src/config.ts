@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
+import { getAiProviderNames } from '@vibelog/core';
 
 export interface OidcSettings {
   issuer: URL;
@@ -75,6 +76,10 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     .map((origin) => origin.trim())
     .filter(Boolean)
     .map((origin) => parseOrigin(origin, 'APP_ALLOWED_ORIGINS'));
+  const aiProvider = env.VIBELOG_AI_PROVIDER ?? 'openai';
+  if (!getAiProviderNames().includes(aiProvider)) {
+    throw new Error(`VIBELOG_AI_PROVIDER is not in the pi-ai catalog: ${aiProvider}`);
+  }
 
   return {
     nodeEnv,
@@ -84,7 +89,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     allowedOrigins: new Set([appOrigin, ...extraOrigins]),
     encryptionKey: parseEncryptionKey(env, production),
     oidc: loadOidcSettings(env, production),
-    aiProvider: env.VIBELOG_AI_PROVIDER ?? 'openai',
+    aiProvider,
     aiModel: env.VIBELOG_AI_MODEL ?? 'gpt-4o-mini',
     secureCookies: production || appOrigin.startsWith('https://'),
   };

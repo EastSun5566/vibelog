@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { DevBuilder, createDevBuilder, buildFromVibelog } from '../../src/core/builder';
-import { ContentSourceName } from '../../src/consts';
-import type { ContentSource, Post, Author } from '../../src/types';
+import { join } from 'node:path';
+import { DevBuilder, createDevBuilder, buildFromVibelog } from '../../src/core/builder.js';
+import { ContentSourceName } from '../../src/consts.js';
+import type { ContentSource, Post, Author } from '../../src/types.js';
 
 // Mock dependencies
 vi.mock('fs-extra', () => ({
@@ -24,13 +24,13 @@ vi.mock('node:child_process', () => ({
 vi.mock('astro', () => ({
   build: vi.fn(),
 }));
-vi.mock('../../src/core/logger', () => ({
+vi.mock('../../src/core/logger.js', () => ({
   logger: {
     info: vi.fn(),
     error: vi.fn(),
   },
 }));
-vi.mock('../../src/core/config', () => ({
+vi.mock('../../src/core/config.js', () => ({
   loadConfig: vi.fn(),
 }));
 
@@ -91,7 +91,7 @@ describe('Builder', () => {
 
     describe('fetchContent', () => {
       it('should fetch and write content successfully', async () => {
-        const { loadConfig } = await import('../../src/core/config');
+        const { loadConfig } = await import('../../src/core/config.js');
         const fs = await import('fs-extra');
 
         vi.mocked(loadConfig).mockResolvedValue({
@@ -144,6 +144,7 @@ describe('Builder', () => {
     });
 
     it('keeps the previous output when Astro build fails', async () => {
+      const previousWorkingDirectory = process.cwd();
       const realRoot = await mkdtemp(join(tmpdir(), 'vibelog-builder-'));
       const vibelogDir = join(realRoot, '.vibelog');
       const outDir = join(realRoot, 'dist');
@@ -152,13 +153,15 @@ describe('Builder', () => {
       await writeFile(join(outDir, 'previous.html'), 'previous');
 
       const fs = await import('fs-extra');
-      vi.mocked(fs.default.exists).mockResolvedValue(true);
+      const { build } = await import('astro');
+      vi.mocked(fs.default.exists as (path: string) => Promise<boolean>).mockResolvedValue(true);
+      vi.mocked(build).mockRejectedValue(new Error('Astro build failed'));
 
       try {
         await expect(buildFromVibelog({ vibelogDir, outDir, site: 'https://example.com' }))
           .rejects.toThrow();
         expect(await readFile(join(outDir, 'previous.html'), 'utf8')).toBe('previous');
-        expect(process.cwd()).toBe(resolve(__dirname, '../..'));
+        expect(process.cwd()).toBe(previousWorkingDirectory);
       } finally {
         await rm(realRoot, { recursive: true, force: true });
       }

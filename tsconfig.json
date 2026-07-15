@@ -3,16 +3,19 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "paths": {
+      "@vibelog/core": ["./packages/core/src/index.ts"]
+    },
+    "rootDir": ".",
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node", "vitest/globals"]
+    "types": ["node"]
   },
   "include": [
-    "packages/*/src",
-    "tests",
+    "examples/**/*.ts",
     "docs/.vitepress/**/*.ts",
     "vitest.config.ts"
   ],
-  "exclude": ["dist", "coverage", "packages/*/dist", "packages/*/node_modules"]
+  "exclude": ["dist", "coverage", "node_modules"]
 }

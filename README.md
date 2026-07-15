@@ -32,6 +32,8 @@ npx vibelog dev --content hackmd@<your_username> --ai openai@gpt-4o-mini
 # Go to http://localhost:5566 and try prompts like: "dark theme with pink"
 ```
 
+AI provider and model IDs come from the [pi-ai catalog](https://github.com/earendil-works/pi/tree/main/packages/ai). All built-in pi-ai providers are accepted; `ollama@<model>` also accepts any local model ID.
+
 ### Build prod-ready blog
 
 ```sh
@@ -65,3 +67,13 @@ vibelog build --help
 ## Requirements
 
 - Node.js >=24.0.0
+
+## Self-host the app
+
+Copy `.env.example` to `.env`, fill the production settings, then start the web and worker processes on one shared SQLite volume:
+
+```sh
+docker compose up --build -d
+```
+
+The published image is `ghcr.io/eastsun5566/vibelog-app:beta`.

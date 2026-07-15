@@ -89,7 +89,7 @@ if (reportedVersion.split(' ')[0] !== `vibelog/v${expectedVersion}`) {
   throw new Error(`Expected CLI to report vibelog/v${expectedVersion}, got ${reportedVersion}`);
 }
 
-await cp(join(repository, 'tests/fixtures/content'), join(consumer, 'content'), { recursive: true });
+await cp(join(repository, 'packages/core/tests/fixtures/content'), join(consumer, 'content'), { recursive: true });
 const port = 45678;
 const dev = spawn(process.execPath, [cli, 'dev', '--root', consumer, '--content', `fs@${join(consumer, 'content')}`, '--ai', 'ollama@smoke', '--port', String(port), '--no-install'], {
   cwd: scratch,

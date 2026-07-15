@@ -40,13 +40,7 @@ vibelog dev [options]
 
 #### AI Providers
 
-| Provider     | Format               | Example                                       |
-| ------------ | -------------------- | --------------------------------------------- |
-| `openai`     | `openai@<model>`     | `openai@gpt-4o-mini`                          |
-| `anthropic`  | `anthropic@<model>`  | `anthropic@claude-3-5-haiku-20241022`         |
-| `google`     | `google@<model>`     | `google@gemini-2.5-flash`                     |
-| `ollama`     | `ollama@<model>`     | `ollama@qwen2.5-coder:3b`                     |
-| `openrouter` | `openrouter@<model>` | `openrouter@deepseek/deepseek-r1-0528:free｀` |
+Use `provider@modelId` with an exact provider and model from the [pi-ai catalog](https://github.com/earendil-works/pi/tree/main/packages/ai). VibeLog accepts every pi-ai built-in provider. `ollama@<modelId>` is the custom exception and accepts any model ID, using `OLLAMA_BASE_URL` or `http://localhost:11434/v1` by default.
 
 #### Dev Examples
 
@@ -99,8 +93,12 @@ vibelog build --root ./my-project --site-url https://my-project.netlify.app
 
 - `OPENAI_API_KEY` - OpenAI API key (for OpenAI provider)
 - `ANTHROPIC_API_KEY` - Anthropic API key (for Anthropic provider)
-- `GOOGLE_GENERATIVE_AI_API_KEY` - Google API key (for Google provider)
+- `GEMINI_API_KEY` - Google API key (canonical)
+- `GOOGLE_GENERATIVE_AI_API_KEY` - Legacy Google fallback, used only when `GEMINI_API_KEY` is unset
 - `OPENROUTER_API_KEY` - OpenRouter API key (for OpenRouter provider)
+- `OLLAMA_BASE_URL` - Ollama OpenAI-compatible endpoint (default: `http://localhost:11434/v1`)
+
+Other pi-ai providers use their documented environment variables or supported AWS/Google ambient credentials. VibeLog does not provide interactive OAuth login or store AI credentials.
 
 ### Required for Content Sources
 

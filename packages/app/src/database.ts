@@ -267,25 +267,26 @@ export class AppDatabase {
       enableForeignKeyConstraints: true,
       enableDoubleQuotedStringLiterals: false,
     });
-    this.connection.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
+    this.connection.exec('PRAGMA busy_timeout = 5000;');
+    this.connection.exec('PRAGMA journal_mode = WAL;');
     this.migrate();
   }
 
   private migrate(): void {
     this.connection.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL) STRICT;');
     const migrations = [[1, MIGRATION_1], [2, MIGRATION_2]] as const;
-    for (const [version, sql] of migrations) {
-      const applied = this.connection.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(version);
-      if (applied) continue;
-      this.connection.exec('BEGIN IMMEDIATE;');
-      try {
+    this.connection.exec('BEGIN IMMEDIATE;');
+    try {
+      for (const [version, sql] of migrations) {
+        const applied = this.connection.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(version);
+        if (applied) continue;
         this.connection.exec(sql);
         this.connection.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(version, now());
-        this.connection.exec('COMMIT;');
-      } catch (error) {
-        this.connection.exec('ROLLBACK;');
-        throw error;
       }
+      this.connection.exec('COMMIT;');
+    } catch (error) {
+      this.connection.exec('ROLLBACK;');
+      throw error;
     }
   }
 

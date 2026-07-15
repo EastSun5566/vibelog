@@ -1,110 +1,162 @@
-import assert from 'node:assert/strict';
-import { generateObject, type LanguageModelV1 } from 'ai';
-import { createOllama } from 'ollama-ai-provider';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createAnthropic } from '@ai-sdk/anthropic';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-import { z } from 'zod';
+import {
+  Type,
+  createModels,
+  createProvider,
+  validateToolCall,
+  type Api,
+  type Context,
+  type Model,
+  type Models,
+  type MutableModels,
+  type ProviderEnv,
+  type Tool,
+} from '@earendil-works/pi-ai';
+import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
+import { builtinModels, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all';
 
-import { AI_PROMPTS, AiProviderName } from '../../consts';
-import type { AiProvider } from '../../types';
-import { logger } from '../../core';
+import { AI_PROMPTS } from '../../consts.js';
+import type { AiProvider, CssTransformResult } from '../../types.js';
+import { logger } from '../../core/index.js';
 
-const cssTransformSchema = z
-  .object({
-    variables: z
-      .array(z
-        .object({
-          name: z
-            .string()
-            .describe('The name of the CSS variable, which must remain unchanged.'),
-          value: z
-            .string()
-            .describe('The value of the CSS variable.'),
-        })
-        .describe('CSS variable map object'),
-      )
-      .describe('Array of CSS variables, each with a name and value.'),
-    description: z
-      .string()
-      .describe('A brief description of the theme created or changed, explaining the design intent and any notable features.'),
-  })
-  .describe('Schema for CSS transformation result');
+const CSS_TRANSFORM_TOOL_NAME = 'submit_css_transform';
+const OLLAMA_PROVIDER = 'ollama';
+const OLLAMA_BASE_URL = 'http://localhost:11434/v1';
 
-export class VercelAiProvider implements AiProvider {
-  readonly model: LanguageModelV1 | null = null;
+const cssTransformTool: Tool = {
+  name: CSS_TRANSFORM_TOOL_NAME,
+  description: 'Return the complete, validated CSS variable transformation result.',
+  parameters: Type.Object({
+    variables: Type.Array(Type.Object({
+      name: Type.String({ description: 'The CSS variable name. It must remain unchanged.' }),
+      value: Type.String({ description: 'The replacement CSS variable value.' }),
+    }, { additionalProperties: false })),
+    description: Type.String({
+      description: 'A brief explanation of the resulting theme and design intent.',
+    }),
+  }, { additionalProperties: false }),
+};
 
-  constructor(readonly name: AiProviderName, readonly modelId: string) {
-    logger.info(`AI provider: ${name} (${modelId})`);
+function createOllamaProvider(modelId: string) {
+  const baseUrl = process.env.OLLAMA_BASE_URL ?? OLLAMA_BASE_URL;
+  const model: Model<'openai-completions'> = {
+    id: modelId,
+    name: `${modelId} (Ollama)`,
+    api: 'openai-completions',
+    provider: OLLAMA_PROVIDER,
+    baseUrl,
+    reasoning: false,
+    input: ['text'],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128_000,
+    maxTokens: 32_000,
+    compat: {
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: false,
+    },
+  };
 
-    switch (name) {
-    case AiProviderName.OLLAMA:
-      this.model = createOllama()(modelId);
-      break;
-    case AiProviderName.OPENAI:
-      assert(process.env.OPENAI_API_KEY, 'OPENAI_API_KEY environment variable is required.');
-      this.model = createOpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
-      })(modelId);
-      break;
-    case AiProviderName.ANTHROPIC:
-      assert(process.env.ANTHROPIC_API_KEY, 'ANTHROPIC_API_KEY environment variable is required.');
-      this.model = createAnthropic({
-        apiKey: process.env.ANTHROPIC_API_KEY,
-      })(modelId);
-      break;
-    case AiProviderName.GOOGLE:
-      assert(process.env.GOOGLE_GENERATIVE_AI_API_KEY, 'GOOGLE_GENERATIVE_AI_API_KEY environment variable is required.');
-      this.model = createGoogleGenerativeAI({
-        apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-      })(modelId);
-      break;
-    case AiProviderName.OPENROUTER:
-      assert(process.env.OPENROUTER_API_KEY, 'OPENROUTER_API_KEY environment variable is required.');
-      this.model = createOpenRouter({
-        apiKey: process.env.OPENROUTER_API_KEY,
-      })(modelId);
-      break;
-    default:
-      throw new Error(`Unsupported AI provider: ${name as string}. Supported: ${Object.values(AiProviderName).join(', ')}`);
+  return createProvider({
+    id: OLLAMA_PROVIDER,
+    name: 'Ollama',
+    baseUrl,
+    auth: {
+      apiKey: {
+        name: 'Ollama',
+        resolve: () => Promise.resolve({ auth: {} }),
+      },
+    },
+    models: [model],
+    api: openAICompletionsApi(),
+  });
+}
+
+function defaultModels(provider: string, modelId: string): MutableModels {
+  const models = provider === OLLAMA_PROVIDER ? createModels() : builtinModels();
+  if (provider === OLLAMA_PROVIDER) models.setProvider(createOllamaProvider(modelId));
+  return models;
+}
+
+function requestEnv(provider: string): ProviderEnv | undefined {
+  const legacyGoogleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  if (provider === 'google' && !process.env.GEMINI_API_KEY && legacyGoogleKey) {
+    return { GEMINI_API_KEY: legacyGoogleKey };
+  }
+  return undefined;
+}
+
+function safeProviderError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const secrets = Object.entries(process.env)
+    .flatMap(([name, value]) => value && value.length >= 8 && /(?:token|secret|api.?key|password)/i.test(name) ? [value] : []);
+  return secrets
+    .reduce((output, secret) => output.replaceAll(secret, '[REDACTED]'), message)
+    .replaceAll(/(?:sk-|Bearer\s+)[A-Za-z0-9._-]+/gi, '[REDACTED]')
+    .slice(0, 500);
+}
+
+export function getAiProviderNames(): string[] {
+  return [...getBuiltinProviders(), OLLAMA_PROVIDER];
+}
+
+export class PiAiProvider implements AiProvider {
+  readonly model: Model<Api>;
+
+  constructor(
+    readonly name: string,
+    readonly modelId: string,
+    private readonly models: Models = defaultModels(name, modelId),
+  ) {
+    if (!getAiProviderNames().includes(name) && !models.getProvider(name)) {
+      throw new Error(`Unsupported AI provider: ${name}`);
     }
+
+    const model = models.getModel(name, modelId);
+    if (!model) throw new Error(`Unknown AI model: ${name}@${modelId}`);
+    this.model = model;
+    logger.info(`AI provider: ${name} (${modelId})`);
   }
 
-  async generate(prompt: string) {
-    const { model } = this;
-    if (!model) {
-      throw new Error('AI model is not initialized. Check provider and model name.');
+  async generate(prompt: string): Promise<CssTransformResult> {
+    const context: Context = {
+      systemPrompt: `${AI_PROMPTS.CSS_EXPERT}\n\nYou must call ${CSS_TRANSFORM_TOOL_NAME} exactly once. Do not answer with plain text.`,
+      messages: [{ role: 'user', content: prompt, timestamp: Date.now() }],
+      tools: [cssTransformTool],
+    };
+
+    let response;
+    try {
+      response = await this.models.complete(this.model, context, {
+        temperature: 0.1,
+        env: requestEnv(this.name),
+      });
+    } catch (error) {
+      throw new Error(`AI provider request failed: ${safeProviderError(error)}`);
     }
 
-    const { object } = await generateObject({
-      model,
-      ...(this.name === AiProviderName.OPENROUTER && { mode: 'json' }),
-      schema: cssTransformSchema,
-      messages: [
-        {
-          role: 'system',
-          content: AI_PROMPTS.CSS_EXPERT,
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      temperature: 0.1,
-    });
+    if (response.stopReason === 'error' || response.stopReason === 'aborted') {
+      throw new Error(`AI provider request failed: ${safeProviderError(response.errorMessage ?? response.stopReason)}`);
+    }
+    if (response.stopReason === 'length') {
+      throw new Error('AI response exceeded the model output limit.');
+    }
 
-    return object;
+    const toolCalls = response.content.filter((block) => block.type === 'toolCall');
+    if (response.stopReason !== 'toolUse' || toolCalls.length !== 1) {
+      throw new Error(`AI must call ${CSS_TRANSFORM_TOOL_NAME} exactly once.`);
+    }
+    const [toolCall] = toolCalls;
+    if (toolCall.name !== CSS_TRANSFORM_TOOL_NAME) {
+      throw new Error(`AI called an unexpected tool: ${toolCall.name}`);
+    }
+
+    try {
+      return validateToolCall([cssTransformTool], toolCall) as CssTransformResult;
+    } catch {
+      throw new Error(`AI returned invalid arguments for ${CSS_TRANSFORM_TOOL_NAME}.`);
+    }
   }
 }
 
-/**
- * Type-safe factory function to create AI providers
- * For programmatic API usage
- */
-export function createAiProvider(
-  name: AiProviderName,
-  modelId: string,
-): VercelAiProvider {
-  return new VercelAiProvider(name, modelId);
+export function createAiProvider(name: string, modelId: string): PiAiProvider {
+  return new PiAiProvider(name, modelId);
 }

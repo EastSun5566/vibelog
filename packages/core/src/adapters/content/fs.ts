@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import matter from 'gray-matter';
 import fs from 'fs-extra';
 
-import { logger } from '../../core';
-import { ContentSourceName } from '../../consts';
-import type { ContentSource } from '../../types';
+import { logger } from '../../core/index.js';
+import { ContentSourceName } from '../../consts.js';
+import type { ContentSource } from '../../types.js';
 
 export class FsSource implements ContentSource {
   readonly name = ContentSourceName.FS;

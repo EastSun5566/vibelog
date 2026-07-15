@@ -2,8 +2,8 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import fs from 'fs-extra';
 import { z } from 'zod';
-import { logger } from './logger';
-import type { VibelogConfig } from '../types';
+import { logger } from './logger.js';
+import type { VibelogConfig } from '../types.js';
 
 const CONFIG_FILES = [
   'vibelog.config.json',

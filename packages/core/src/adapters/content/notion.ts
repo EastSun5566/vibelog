@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 import assert from 'node:assert/strict';
 import {
   Client,
@@ -10,10 +9,10 @@ import {
 } from '@notionhq/client';
 import { NotionToMarkdown } from 'notion-to-md';
 
-import { logger, slugify } from '../../core';
-import { ContentSourceName } from '../../consts';
-import { removeFirstH1IfMatchesTitle } from './utils';
-import type { ContentSource } from '../../types';
+import { logger, slugify } from '../../core/index.js';
+import { ContentSourceName } from '../../consts.js';
+import { removeFirstH1IfMatchesTitle } from './utils.js';
+import type { ContentSource } from '../../types.js';
 
 export class NotionSource implements ContentSource {
   readonly name = ContentSourceName.NOTION;
@@ -90,13 +89,9 @@ export class NotionSource implements ContentSource {
 
     let authorName = '';
 
-    // @ts-ignore
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    if (database.created_by?.id) {
+    if ('created_by' in database && database.created_by.id) {
       try {
         const creator = await this.notion.users.retrieve({
-          // @ts-ignore
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
           user_id: database.created_by.id,
         });
         authorName = creator.name ?? 'Unknown';
@@ -105,9 +100,7 @@ export class NotionSource implements ContentSource {
 
     return {
       name: authorName,
-      // @ts-ignore
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      bio: database.title?.[0]?.plain_text ?? '',
+      bio: 'title' in database ? database.title[0]?.plain_text ?? '' : '',
     };
   }
 

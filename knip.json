@@ -1,0 +1,38 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignore": [
+    "**/dist/**",
+    "**/coverage/**",
+    "**/.vibelog/**",
+    "packages/core/template/**"
+  ],
+  "workspaces": {
+    ".": {
+      "entry": [
+        ".github/scripts/*.mjs",
+        "docs/.vitepress/config.ts",
+        "examples/*.ts",
+        "vitest.config.ts"
+      ],
+      "project": [
+        ".github/scripts/*.mjs",
+        "docs/.vitepress/**/*.ts",
+        "examples/*.ts",
+        "vitest.config.ts"
+      ]
+    },
+    "packages/core": {
+      "entry": ["src/index.ts", "tests/**/*.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"],
+      "ignoreDependencies": ["@astrojs/rss"]
+    },
+    "packages/cli": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/app": {
+      "entry": ["src/server.tsx", "src/worker.ts", "tests/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx}", "tests/**/*.ts"]
+    }
+  }
+}

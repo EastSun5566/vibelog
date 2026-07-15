@@ -1,12 +1,12 @@
-export * from './fs';
-export * from './hackmd';
-export * from './notion';
+export * from './fs.js';
+export * from './hackmd.js';
+export * from './notion.js';
 
-import { FsSource } from './fs';
-import { HackMdSource } from './hackmd';
-import { NotionSource } from './notion';
-import { ContentSourceName } from '../../consts';
-import type { ContentSource } from '../../types';
+import { FsSource } from './fs.js';
+import { HackMdSource } from './hackmd.js';
+import { NotionSource } from './notion.js';
+import { ContentSourceName } from '../../consts.js';
+import type { ContentSource } from '../../types.js';
 
 /**
  * Type-safe factory function to create content sources

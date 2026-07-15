@@ -1,6 +1,6 @@
 import { parse } from 'postcss';
-import { logger } from './logger';
-import type { CssVariable } from '../types';
+import { logger } from './logger.js';
+import type { CssVariable } from '../types.js';
 
 export class CssParser {
   extractVariables(css: string): CssVariable[] {

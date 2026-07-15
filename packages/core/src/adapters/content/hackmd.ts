@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 
-import type { ContentSource } from '../../types';
-import { logger } from '../../core';
-import { ContentSourceName } from '../../consts';
-import { removeFirstH1IfMatchesTitle } from './utils';
+import type { ContentSource } from '../../types.js';
+import { logger } from '../../core/index.js';
+import { ContentSourceName } from '../../consts.js';
+import { removeFirstH1IfMatchesTitle } from './utils.js';
 
 interface Note {
   id: string;

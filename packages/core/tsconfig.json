@@ -1,14 +1,17 @@
 {
-  "extends": "astro/tsconfigs/strict",
   "compilerOptions": {
-    "strictNullChecks": true
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"]
   },
   "include": [
     "src",
-    "tests",
-    "docs/.vitepress/**/*.ts",
-    "tsdown.config.ts",
-    "vitest.config.ts"
+    "tests"
   ],
   "exclude": ["dist", "coverage"]
 }

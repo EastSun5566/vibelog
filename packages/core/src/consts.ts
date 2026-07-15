@@ -4,14 +4,6 @@ export enum ContentSourceName {
   NOTION = 'notion',
 }
 
-export enum AiProviderName {
-  OPENAI = 'openai',
-  ANTHROPIC = 'anthropic',
-  OLLAMA = 'ollama',
-  GOOGLE = 'google',
-  OPENROUTER = 'openrouter',
-}
-
 export const DEFAULT_CONTENT_INFO = 'fs@./content';
 export const DEFAULT_AI_INFO = 'openai@gpt-4o-mini';
 export const DEFAULT_DEV_PORT = 5566;

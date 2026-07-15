@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { NotionSource } from '../../../src/adapters/content/notion';
+import { NotionSource } from '../../../src/adapters/content/notion.js';
 import { APIErrorCode } from '@notionhq/client';
 
 // Mock dependencies
@@ -19,7 +19,7 @@ vi.mock('notion-to-md', () => ({
   NotionToMarkdown: vi.fn(),
 }));
 
-vi.mock('../../../src/core', () => ({
+vi.mock('../../../src/core/index.js', () => ({
   logger: {
     info: vi.fn(),
     error: vi.fn(),
@@ -27,7 +27,7 @@ vi.mock('../../../src/core', () => ({
   slugify: vi.fn((text: string) => text.toLowerCase().replace(/\s+/g, '-')),
 }));
 
-vi.mock('../../../src/adapters/content/utils', () => ({
+vi.mock('../../../src/adapters/content/utils.js', () => ({
   removeFirstH1IfMatchesTitle: vi.fn((content: string) => content),
 }));
 

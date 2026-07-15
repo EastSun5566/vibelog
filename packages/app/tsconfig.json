@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "rootDir": ".",
     "strictNullChecks": true,
     "strict": true,
     "skipLibCheck": true,
@@ -13,10 +14,7 @@
   },
   "include": [
     "src",
-    "tests",
-    "docs/.vitepress/**/*.ts",
-    "tsdown.config.ts",
-    "vitest.config.ts"
+    "tests"
   ],
   "exclude": ["dist", "coverage"]
 }

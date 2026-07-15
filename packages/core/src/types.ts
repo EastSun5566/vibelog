@@ -1,4 +1,4 @@
-import { AiProviderName, ContentSourceName } from './consts';
+import { ContentSourceName } from './consts.js';
 
 export interface VibelogConfig {
   site: {
@@ -42,7 +42,7 @@ export interface CssTransformResult {
 }
 
 export interface AiProvider {
-  readonly name: AiProviderName;
+  readonly name: string;
   readonly modelId: string;
   generate(prompt: string): Promise<CssTransformResult>
 }

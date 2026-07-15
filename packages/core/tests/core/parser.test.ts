@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { CssParser } from '../../src/core/parser';
-import type { CssVariable } from '../../src/types';
+import { CssParser } from '../../src/core/parser.js';
+import type { CssVariable } from '../../src/types.js';
 
 // Mock logger
-vi.mock('../../src/core/logger', () => ({
+vi.mock('../../src/core/logger.js', () => ({
   logger: {
     info: vi.fn(),
     error: vi.fn(),

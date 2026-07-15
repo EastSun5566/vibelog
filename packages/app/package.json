@@ -5,6 +5,9 @@
   "description": "VibeLog App - Web API for blog generation",
   "type": "module",
   "main": "dist/server.js",
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=24.0.0"
   },
@@ -15,9 +18,7 @@
     "start": "node dist/server.js",
     "start:worker": "node dist/worker.js",
     "test": "vitest run",
-    "typecheck": "tsc",
-    "lint": "eslint src tests",
-    "lint:fix": "eslint --fix src tests"
+    "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.14",
@@ -30,6 +31,6 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "typescript": "7.0.2"
   }
 }

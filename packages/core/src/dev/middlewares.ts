@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { BaseIntegrationHooks } from 'astro';
 
 import fs from 'fs-extra';
-import type { StyleTransformer } from '../core';
+import type { StyleTransformer } from '../core/index.js';
 
 declare module 'http' {
   interface IncomingMessage {
@@ -61,8 +61,7 @@ export function parseBody(limit = 1024 * 1024) {
 }
 
 export function handleError() {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  return (error: Error, req: IncomingMessage, res: ServerResponse, next: NextFunction) => {
+  return (error: Error, _req: IncomingMessage, res: ServerResponse, _next: NextFunction) => {
     const status = error instanceof HttpError ? error.status : 500;
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
@@ -112,4 +111,3 @@ export function handleTransformStyle({  vibelogDir, styleTransformer, server }: 
     })().catch(next);
   };
 }
-

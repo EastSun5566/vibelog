@@ -17,33 +17,39 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
+      - run: pnpm check
       - run: pnpm build
       - run: pnpm docs:build
       - name: Smoke test packaged core and CLI
         run: node .github/scripts/package-smoke.mjs
-      - name: Smoke test compiled SaaS server
+      - name: Build and smoke test app and worker containers
         env:
+          VIBELOG_APP_IMAGE: vibelog-app:ci
           NODE_ENV: production
-          APP_ORIGIN: https://app.example
-          PREVIEW_ORIGIN: https://preview.example
+          APP_ORIGIN: http://localhost:34123
+          PREVIEW_ORIGIN: http://preview.localhost:34123
           APP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           OIDC_ISSUER: https://issuer.example
           OIDC_CLIENT_ID: test
           OIDC_CLIENT_SECRET: test
-          OIDC_REDIRECT_URI: https://app.example/auth/callback
-          DATA_ROOT: ${{ runner.temp }}/vibelog-data
+          OIDC_REDIRECT_URI: http://localhost:34123/auth/callback
           PORT: 34123
         run: |
-          node packages/app/dist/server.js &
-          server_pid=$!
-          trap 'kill "$server_pid"' EXIT
+          trap 'docker compose down --volumes' EXIT
+          docker compose up --detach --build --wait --wait-timeout 120
+          test "$(docker compose exec -T app node -p 'process.getuid()')" != "0"
+          docker compose exec -T app node --input-type=module -e "import { writeFileSync } from 'node:fs'; import { AppDatabase } from './dist/database.js'; const db=new AppDatabase('/data'); const user=db.upsertUser({issuer:'smoke',subject:'smoke',email:null,displayName:null}); const project=db.createProject({userId:user.id,name:'smoke',slug:'smoke',sourceType:'hackmd',sourceConfig:{}}); const job=db.createJob(user.id,project.id,'delete'); writeFileSync('/data/smoke-job',job.id); db.close()"
+          job_complete=false
           for attempt in $(seq 1 30); do
-            curl --fail --silent http://127.0.0.1:34123/health && exit 0
+            if docker compose exec -T app node --input-type=module -e "import { readFileSync } from 'node:fs'; import { AppDatabase } from './dist/database.js'; const db=new AppDatabase('/data'); const id=readFileSync('/data/smoke-job','utf8'); const status=db.connection.prepare('SELECT status FROM jobs WHERE id = ?').get(id)?.status; db.close(); process.exit(status==='succeeded'?0:1)"; then
+              job_complete=true
+              break
+            fi
             sleep 1
           done
-          exit 1
-      - name: Production dependency audit
-        run: pnpm audit --prod --audit-level high
+          test "$job_complete" = true
+          docker compose exec -T app node -e "require('node:fs').writeFileSync('/data/persistence-smoke','ok')"
+          docker compose restart app worker
+          docker compose up --detach --wait --wait-timeout 60
+          docker compose exec -T app node -e "if(require('node:fs').readFileSync('/data/persistence-smoke','utf8')!=='ok')process.exit(1)"
+          docker compose stop --timeout 10 worker app

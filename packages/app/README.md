@@ -36,6 +36,18 @@ VIBELOG_AI_MODEL=gpt-4o-mini
 
 `APP_ALLOWED_ORIGINS` may contain a comma-separated explicit allowlist. It is empty by default; same-origin requests remain allowed.
 
+AI provider and model IDs use the pi-ai catalog. Google uses `GEMINI_API_KEY`; `GOOGLE_GENERATIVE_AI_API_KEY` remains a legacy fallback. Ollama accepts any model ID and uses `OLLAMA_BASE_URL` (default `http://localhost:11434/v1`).
+
+## Docker Compose
+
+From the repository root, copy `.env.example` to `.env`, fill the required production variables, and run:
+
+```bash
+docker compose up --build -d
+```
+
+Both services use `ghcr.io/eastsun5566/vibelog-app:beta` by default. `app` runs `node dist/server.js`, `worker` runs `node dist/worker.js`, and both mount the same named volume at `/data`.
+
 ## API contract
 
 All `/api/*` routes require the session cookie. Mutations also require the exact app `Origin` and the `X-CSRF-Token` returned by `GET /api/session`.

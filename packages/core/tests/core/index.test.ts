@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import * as coreIndex from '../../src/core/index';
+import * as coreIndex from '../../src/core/index.js';
 
 describe('Core Index', () => {
   it('should export all core modules', () => {

@@ -2,7 +2,6 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
-  AiProviderName,
   HackMdSource,
   NotionSource,
   buildFromVibelog,
@@ -86,11 +85,8 @@ export class JobWorker {
     case 'style': {
       const prompt = job.payload.prompt;
       if (typeof prompt !== 'string') throw new Error('Style prompt is required');
-      const providers = Object.fromEntries(Object.values(AiProviderName).map((value) => [value, value])) as Partial<Record<string, AiProviderName>>;
-      const provider = providers[this.config.aiProvider];
-      if (!provider) throw new Error('Configured AI provider is unsupported');
       const cssPath = join(root, '.vibelog', 'src', 'styles', 'global.css');
-      const transformer = createStyleTransformer({ aiProvider: createAiProvider(provider, this.config.aiModel) });
+      const transformer = createStyleTransformer({ aiProvider: createAiProvider(this.config.aiProvider, this.config.aiModel) });
       const result = await transformer.transform({ originalCss: await readFile(cssPath, 'utf8'), stylePrompt: prompt });
       await atomicWrite(cssPath, result.transformedCss);
       return { description: result.description };

@@ -1,7 +1,7 @@
-import { AI_PROMPTS } from '../consts';
-import { CssParser } from './parser';
-import { logger } from './logger';
-import type { AiProvider, CssVariable } from '../types';
+import { AI_PROMPTS } from '../consts.js';
+import { CssParser } from './parser.js';
+import { logger } from './logger.js';
+import type { AiProvider, CssVariable } from '../types.js';
 
 export interface StyleTransformerOptions {
   aiProvider: AiProvider
@@ -23,8 +23,6 @@ export class StyleTransformer {
 
 Current variables:
 ${variables.map(({ name, value }) => `${name}: ${value}`).join('\n')}
-
-Return JSON with updated variables and description.
 `;
   }
 

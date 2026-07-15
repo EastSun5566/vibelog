@@ -1,27 +1,27 @@
 // Core builders
-export { DevBuilder, createDevBuilder, buildFromVibelog } from './core/builder';
-export type { DevBuilderOptions, BuildOptions } from './core/builder';
+export { DevBuilder, createDevBuilder, buildFromVibelog } from './core/builder.js';
+export type { DevBuilderOptions, BuildOptions } from './core/builder.js';
 
 // Style transformation
-export { StyleTransformer, createStyleTransformer } from './core/transformer';
-export type { StyleTransformerOptions } from './core/transformer';
+export { StyleTransformer, createStyleTransformer } from './core/transformer.js';
+export type { StyleTransformerOptions } from './core/transformer.js';
 
 // CSS parsing
-export { CssParser } from './core/parser';
+export { CssParser } from './core/parser.js';
 
 // Configuration
-export { loadConfig } from './core/config';
-export type { VibelogConfig } from './types';
+export { loadConfig } from './core/config.js';
+export type { VibelogConfig } from './types.js';
 
 // Dev server
-export { createDevServer } from './dev/server';
-export type { DevServerOptions } from './dev/server';
+export { createDevServer } from './dev/server.js';
+export type { DevServerOptions } from './dev/server.js';
 
 // Logger
-export { Logger, logger, createLogger } from './core/logger';
+export { Logger, logger, createLogger } from './core/logger.js';
 
 // Utilities
-export { generateSlug, slugify } from './core/utils';
+export { generateSlug, slugify } from './core/utils.js';
 
 // Adapters - Content
 export {
@@ -29,13 +29,14 @@ export {
   HackMdSource,
   NotionSource,
   createContentSource,
-} from './adapters/content';
+} from './adapters/content/index.js';
 
 // Adapters - AI
 export {
-  VercelAiProvider,
+  PiAiProvider,
   createAiProvider,
-} from './adapters/ai';
+  getAiProviderNames,
+} from './adapters/ai/index.js';
 
 // Types & Interfaces
 export type {
@@ -47,7 +48,7 @@ export type {
   CssVariable,
   CssTransformResult,
   AiProvider,
-} from './types';
+} from './types.js';
 
 // Constants
-export { ContentSourceName, AiProviderName } from './consts';
+export { ContentSourceName } from './consts.js';

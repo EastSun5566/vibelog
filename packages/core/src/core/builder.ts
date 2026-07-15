@@ -9,10 +9,10 @@ import fs from 'fs-extra';
 import matter from 'gray-matter';
 import { z } from 'zod';
 
-import { generateSlug, slugify } from './utils';
-import { logger } from './logger';
-import type { ContentSource } from '../types';
-import { loadConfig } from './config';
+import { generateSlug, slugify } from './utils.js';
+import { logger } from './logger.js';
+import type { ContentSource } from '../types.js';
+import { loadConfig } from './config.js';
 
 const TEMPLATE_VERSION = 1;
 const postSchema = z.object({

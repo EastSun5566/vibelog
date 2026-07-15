@@ -1,8 +1,8 @@
 import {
   createContentSource as createContentSourceFactory,
   createAiProvider as createAiProviderFactory,
+  getAiProviderNames,
   ContentSourceName,
-  AiProviderName,
 } from '@vibelog/core';
 
 function getInfo<T extends string>(
@@ -37,6 +37,14 @@ export function createContentSource(contentString: string) {
  * Parses "openai@gpt-4o-mini" format into AiProvider
  */
 export function createAiProvider(providerString: string) {
-  const [providerName, modelId] = getInfo(providerString, AiProviderName);
+  const separator = providerString.indexOf('@');
+  if (separator <= 0 || separator === providerString.length - 1) {
+    throw new Error('Provider must use the format name@modelId');
+  }
+  const providerName = providerString.slice(0, separator);
+  const modelId = providerString.slice(separator + 1);
+  if (!getAiProviderNames().includes(providerName)) {
+    throw new Error(`Unknown provider: ${providerName}. See the pi-ai catalog for supported providers.`);
+  }
   return createAiProviderFactory(providerName, modelId);
 }

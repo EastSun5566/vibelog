@@ -114,7 +114,7 @@ vibelog dev --content notion@<database_id> --ai openai@gpt-4o-mini
 
 ## AI Providers
 
-VibeLog supports multiple AI providers for styling:
+VibeLog accepts every built-in provider and model in the [pi-ai catalog](https://github.com/earendil-works/pi/tree/main/packages/ai). Use the exact `provider@modelId` pair from that catalog. Authentication is non-interactive and uses provider environment variables or supported AWS/Google ambient credentials.
 
 ```sh
 # OpenAI
@@ -126,7 +126,7 @@ export ANTHROPIC_API_KEY=<your_anthropic_api_key>
 --ai anthropic@claude-3-5-haiku-20241022
 
 # Google
-export GOOGLE_GENERATIVE_AI_API_KEY=<your_google_api_key>
+export GEMINI_API_KEY=<your_google_api_key>
 --ai google@gemini-2.5-flash
 
 # OpenRouter
@@ -134,8 +134,11 @@ export OPENROUTER_API_KEY=<your_openrouter_api_key>
 --ai openrouter@qwen/qwen-2.5-coder-32b-instruct:free
 
 # Ollama (local, no API key needed)
+export OLLAMA_BASE_URL=http://localhost:11434/v1
 --ai ollama@qwen2.5-coder:3b
 ```
+
+`GOOGLE_GENERATIVE_AI_API_KEY` remains accepted as a legacy, request-scoped fallback when `GEMINI_API_KEY` is not set. OAuth-only providers require credentials already available to pi-ai; VibeLog does not add interactive login or credential storage.
 
 ## Next Steps
 

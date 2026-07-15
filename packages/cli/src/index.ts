@@ -4,7 +4,6 @@ import { cac } from 'cac';
 import { createRequire } from 'node:module';
 import {
   ContentSourceName,
-  AiProviderName,
 } from '@vibelog/core';
 
 import { devCommand, type DevOptions } from './commands/dev.js';
@@ -30,7 +29,7 @@ cli
   .option('-c, --content <source>', `Content source info (name@handle). Supported name: ${Object.values(ContentSourceName).join(', ')}`, {
     default: DEFAULT_CONTENT_INFO,
   })
-  .option('--ai <provider>', `AI provider info (name@modelId). Supported name: ${Object.values(AiProviderName).join(', ')}`, {
+  .option('--ai <provider>', 'AI provider info (name@modelId). Provider and model IDs come from the pi-ai catalog; Ollama model IDs are unrestricted.', {
     default: DEFAULT_AI_INFO,
   })
   .option('-p, --port <port>', 'Development server port', {

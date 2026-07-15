@@ -10,5 +10,8 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => { worker.stop(); });
 }
 
-await worker.run();
-database.close();
+try {
+  await worker.run();
+} finally {
+  database.close();
+}

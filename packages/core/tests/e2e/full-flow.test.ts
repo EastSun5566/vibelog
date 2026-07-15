@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join, resolve } from 'node:path';
 import fs from 'fs-extra';
 import { tmpdir } from 'node:os';
-import { FsSource } from '../../src/adapters/content/fs';
-import { DevBuilder, buildFromVibelog } from '../../src/core/builder';
+import { FsSource } from '../../src/adapters/content/fs.js';
+import { DevBuilder, buildFromVibelog } from '../../src/core/builder.js';
 
 describe('End-to-End Flow', () => {
   let testRoot: string;
