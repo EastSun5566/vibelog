@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.4.1-beta.5](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.4...v0.4.1-beta.5) (2026-07-15)
+
+
+### Bug Fixes
+
+* add npm repository metadata ([634c3d0](https://github.com/EastSun5566/vibe/commit/634c3d09daef68fcff8e7df5a983f6bd35c3ea9e))
+
 ## [0.4.1-beta.4](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.3...v0.4.1-beta.4) (2026-07-15)
 
 
