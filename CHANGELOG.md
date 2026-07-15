@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.4.1-beta.7](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.6...v0.4.1-beta.7) (2026-07-15)
+
+
+### Features
+
+* make app single process includes worker ([61895b8](https://github.com/EastSun5566/vibe/commit/61895b8f9c3959725f91c22cf93a783629859491))
+
 ## [0.4.1-beta.6](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.5...v0.4.1-beta.6) (2026-07-15)
 
 
