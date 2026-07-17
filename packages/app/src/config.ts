@@ -2,13 +2,6 @@ import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { getAiProviderNames } from '@vibelog/core';
 
-export interface OidcSettings {
-  issuer: URL;
-  clientId: string;
-  clientSecret: string;
-  redirectUri: string;
-}
-
 export interface AppConfig {
   nodeEnv: string;
   dataRoot: string;
@@ -16,7 +9,9 @@ export interface AppConfig {
   previewOrigin: string;
   allowedOrigins: Set<string>;
   encryptionKey: Buffer;
-  oidc?: OidcSettings;
+  betterAuthSecret: string;
+  aiUserDailyLimit: number;
+  aiGlobalDailyLimit: number;
   aiProvider: string;
   aiModel: string;
   secureCookies: boolean;
@@ -48,22 +43,22 @@ function parseEncryptionKey(env: NodeJS.ProcessEnv, production: boolean): Buffer
   return createHash('sha256').update(developmentSecret).digest();
 }
 
-function loadOidcSettings(env: NodeJS.ProcessEnv, production: boolean): OidcSettings | undefined {
-  const [issuer, clientId, clientSecret, redirectUri] = [env.OIDC_ISSUER, env.OIDC_CLIENT_ID, env.OIDC_CLIENT_SECRET, env.OIDC_REDIRECT_URI];
-  if (issuer && clientId && clientSecret && redirectUri) {
-    return {
-      issuer: new URL(issuer),
-      clientId,
-      clientSecret,
-      redirectUri,
-    };
-  }
+function required(env: NodeJS.ProcessEnv, name: string): string {
+  const value = env[name]?.trim();
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+}
 
-  if (production) {
-    throw new Error('OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and OIDC_REDIRECT_URI are required in production');
-  }
+function parseBetterAuthSecret(env: NodeJS.ProcessEnv): string {
+  const secret = required(env, 'BETTER_AUTH_SECRET');
+  if (secret.length < 32) throw new Error('BETTER_AUTH_SECRET must be at least 32 characters');
+  return secret;
+}
 
-  return undefined;
+function positiveInteger(value: string | undefined, fallback: number, name: string): number {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`${name} must be a positive integer`);
+  return parsed;
 }
 
 export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -88,7 +83,9 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     previewOrigin,
     allowedOrigins: new Set([appOrigin, ...extraOrigins]),
     encryptionKey: parseEncryptionKey(env, production),
-    oidc: loadOidcSettings(env, production),
+    betterAuthSecret: parseBetterAuthSecret(env),
+    aiUserDailyLimit: positiveInteger(env.VIBELOG_AI_USER_DAILY_LIMIT, 20, 'VIBELOG_AI_USER_DAILY_LIMIT'),
+    aiGlobalDailyLimit: positiveInteger(env.VIBELOG_AI_GLOBAL_DAILY_LIMIT, 200, 'VIBELOG_AI_GLOBAL_DAILY_LIMIT'),
     aiProvider,
     aiModel: env.VIBELOG_AI_MODEL ?? 'gpt-4o-mini',
     secureCookies: production || appOrigin.startsWith('https://'),

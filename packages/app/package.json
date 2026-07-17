@@ -15,7 +15,9 @@
     "dev": "tsx --env-file=../../.env src/main.ts",
     "dev:server": "tsx --env-file=../../.env src/server.tsx",
     "worker": "tsx --env-file=../../.env src/worker.ts",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -R src/drizzle dist/drizzle",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:check": "drizzle-kit check --config drizzle.config.ts",
     "start": "node dist/main.js",
     "start:server": "node dist/server.js",
     "start:worker": "node dist/worker.js",
@@ -25,13 +27,15 @@
   "dependencies": {
     "@hono/node-server": "^1.19.14",
     "@vibelog/core": "workspace:*",
+    "better-auth": "1.6.23",
+    "drizzle-orm": "0.45.2",
     "hono": "^4.12.30",
-    "openid-client": "6.8.4",
     "wrangler": "^4.110.0",
-    "zod": "3.25.55"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "drizzle-kit": "0.31.10",
     "tsx": "^4.19.4",
     "typescript": "7.0.2"
   }

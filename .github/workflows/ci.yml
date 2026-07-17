@@ -18,6 +18,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+      - name: Verify generated Drizzle migrations are current
+        run: |
+          pnpm --filter @vibelog/app db:generate
+          git diff --exit-code -- packages/app/src/drizzle
+          test -z "$(git status --porcelain -- packages/app/src/drizzle)"
       - run: pnpm build
       - run: pnpm docs:build
       - name: Smoke test packaged core and CLI
@@ -29,10 +34,7 @@ jobs:
           APP_ORIGIN: http://localhost:34123
           PREVIEW_ORIGIN: http://preview.localhost:34123
           APP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-          OIDC_ISSUER: https://issuer.example
-          OIDC_CLIENT_ID: test
-          OIDC_CLIENT_SECRET: test
-          OIDC_REDIRECT_URI: http://localhost:34123/auth/callback
+          BETTER_AUTH_SECRET: vibelog-ci-secret-that-is-at-least-thirty-two-chars
           PORT: 34123
         run: |
           trap 'docker compose down --volumes' EXIT
@@ -50,10 +52,10 @@ jobs:
           wait_for_app
           test "$(docker image inspect "$VIBELOG_APP_IMAGE" --format '{{json .Config.Cmd}}')" = '["node","dist/main.js"]'
           test "$(docker compose exec -T app node -p 'process.getuid()')" != "0"
-          docker compose exec -T app node --input-type=module -e "import { writeFileSync } from 'node:fs'; import { AppDatabase } from './dist/database.js'; const db=new AppDatabase('/data'); const user=db.upsertUser({issuer:'smoke',subject:'smoke',email:null,displayName:null}); const project=db.createProject({userId:user.id,name:'smoke',slug:'smoke',sourceType:'hackmd',sourceConfig:{}}); const job=db.createJob(user.id,project.id,'delete'); writeFileSync('/data/smoke-job',job.id); db.close()"
+          docker compose exec -T app node --input-type=module -e "import { randomUUID } from 'node:crypto'; import { writeFileSync } from 'node:fs'; import { AppDatabase } from './dist/database.js'; import { user } from './dist/schema.js'; const db=new AppDatabase('/data'); const userId=randomUUID(); const timestamp=new Date(); db.db.insert(user).values({id:userId,name:'smoke',email:'smoke@users.vibelog.invalid',emailVerified:false,username:'smoke',displayUsername:'smoke',createdAt:timestamp,updatedAt:timestamp}).run(); const project=db.createProject({userId,name:'smoke',slug:'smoke',sourceType:'hackmd',sourceConfig:{}}); const job=db.createJob(userId,project.id,'delete'); writeFileSync('/data/smoke-job',JSON.stringify({jobId:job.id,userId})); db.close()"
           job_complete=false
           for _ in $(seq 1 30); do
-            if docker compose exec -T app node --input-type=module -e "import { readFileSync } from 'node:fs'; import { AppDatabase } from './dist/database.js'; const db=new AppDatabase('/data'); const id=readFileSync('/data/smoke-job','utf8'); const status=db.connection.prepare('SELECT status FROM jobs WHERE id = ?').get(id)?.status; db.close(); process.exit(status==='succeeded'?0:1)"; then
+            if docker compose exec -T app node --input-type=module -e "import { readFileSync } from 'node:fs'; import { AppDatabase } from './dist/database.js'; const db=new AppDatabase('/data'); const {jobId,userId}=JSON.parse(readFileSync('/data/smoke-job','utf8')); const status=db.getJob(jobId,userId)?.status; db.close(); process.exit(status==='succeeded'?0:1)"; then
               job_complete=true
               break
             fi

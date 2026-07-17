@@ -9,6 +9,7 @@ export class AppError extends Error {
     readonly code: string,
     message: string,
     readonly status: ContentfulStatusCode,
+    readonly headers?: Readonly<Record<string, string>>,
   ) {
     super(message);
   }
@@ -40,7 +41,7 @@ export function corsPolicy(config: AppConfig): MiddlewareHandler {
     }
     if (c.req.method === 'OPTIONS') {
       c.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-      c.header('Access-Control-Allow-Headers', 'Content-Type, X-CSRF-Token');
+      c.header('Access-Control-Allow-Headers', 'Content-Type, X-CSRF-Token, X-Captcha-Response');
       return c.body(null, 204);
     }
     await next();
@@ -63,6 +64,7 @@ export function assertCsrfToken(actual: string | undefined, expected: string): v
 export function jsonError(c: Context<{ Variables: AppVariables }>, error: unknown) {
   const requestId = c.get('requestId') || randomUUID();
   if (error instanceof AppError) {
+    for (const [name, value] of Object.entries(error.headers ?? {})) c.header(name, value);
     return c.json({ error: { code: error.code, message: error.message, requestId } }, error.status);
   }
 

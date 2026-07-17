@@ -78,4 +78,4 @@ docker compose up --build -d
 
 The published image is `ghcr.io/eastsun5566/vibelog-app:beta`.
 
-For a Render demo, create one Web Service from that existing image, leave Docker Command empty, use `/health` as the health check, and set `HOST=0.0.0.0`, `PORT=10000`, and `DATA_ROOT=/data`. Render storage is ephemeral unless you attach a paid disk at `/data`; keep a separate preview custom domain for `PREVIEW_ORIGIN`. See the [app deployment guide](packages/app/README.md#render-demo) for the required OIDC and origin settings.
+For a Render demo, create one Web Service from that existing image, leave Docker Command empty, use `/health` as the health check, and set `HOST=0.0.0.0`, `PORT=10000`, and `DATA_ROOT=/data`. Render storage is ephemeral unless you attach a paid disk at `/data`; keep a separate preview custom domain for `PREVIEW_ORIGIN`. Public username registration is self-contained through Better Auth and SQLite. See the [app deployment guide](packages/app/README.md#render-demo) for the required auth and origin settings.

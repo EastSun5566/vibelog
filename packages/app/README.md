@@ -5,7 +5,7 @@ Single-node Hono service for authenticated VibeLog projects. The default runtime
 ## Runtime
 
 - Node.js >=24.0.0
-- OIDC Authorization Code + PKCE
+- Better Auth username/password accounts backed by SQLite
 - SQLite (`DATA_ROOT/vibelog.sqlite`)
 - isolated preview origin
 - Wrangler Direct Upload for Cloudflare Pages
@@ -27,15 +27,20 @@ DATA_ROOT=/var/lib/vibelog
 APP_ORIGIN=https://app.example.com
 PREVIEW_ORIGIN=https://preview.example.com
 APP_ENCRYPTION_KEY=<base64-encoded 32-byte key>
-OIDC_ISSUER=https://issuer.example.com
-OIDC_CLIENT_ID=...
-OIDC_CLIENT_SECRET=...
-OIDC_REDIRECT_URI=https://app.example.com/auth/callback
+BETTER_AUTH_SECRET=<openssl rand -base64 32>
+VIBELOG_AI_USER_DAILY_LIMIT=20
+VIBELOG_AI_GLOBAL_DAILY_LIMIT=200
 VIBELOG_AI_PROVIDER=openai
 VIBELOG_AI_MODEL=gpt-4o-mini
 ```
 
 `APP_ALLOWED_ORIGINS` may contain a comma-separated explicit allowlist. It is empty by default; same-origin requests remain allowed.
+
+Users register at `/auth/register` with a username and password and are signed in immediately. Email is neither collected nor verified; an internal synthetic address exists only to satisfy Better Auth's schema and is never returned. Users can change their password while signed in, but a forgotten password cannot be recovered. `BETTER_AUTH_SECRET` signs auth state and derives the business CSRF token; rotating it invalidates current sessions. It is infrastructure configuration, not a login password. Passwords are hashed by Better Auth and are never stored directly.
+
+Signup, login, and password changes are rate-limited in SQLite. This limits basic abuse but is not equivalent to CAPTCHA, so this setup is intended for a single-instance demo rather than a high-risk public SaaS. The per-user and global AI daily limits cap provider usage.
+
+This release uses a fresh Drizzle baseline and does not migrate older OIDC or shared-password databases. Delete the existing SQLite volume before upgrading.
 
 AI provider and model IDs use the pi-ai catalog. Google uses `GEMINI_API_KEY`; `GOOGLE_GENERATIVE_AI_API_KEY` remains a legacy fallback. Groq uses `GROQ_API_KEY` with `https://api.groq.com/openai/v1`, hosted NVIDIA NIM uses `NVIDIA_API_KEY` with `https://integrate.api.nvidia.com/v1`, Mistral uses `MISTRAL_API_KEY` with `https://api.mistral.ai`, and xAI uses `XAI_API_KEY` with `https://api.x.ai/v1`. These providers support the tool-calling flow used by VibeLog ([Groq](https://console.groq.com/docs/tool-use/local-tool-calling), [NVIDIA NIM](https://docs.nvidia.com/nim/large-language-models/latest/api-reference.html), [Mistral](https://docs.mistral.ai/studio-api/conversations/function-calling), [xAI](https://docs.x.ai/developers/tools/function-calling)). Ollama accepts any model ID and uses `OLLAMA_BASE_URL` (default `http://localhost:11434/v1`).
 
@@ -87,7 +92,7 @@ XAI_API_KEY=...
 
 Set only the provider configuration you use. The fat container's built-in worker receives the same Render environment automatically.
 
-Use the service's HTTPS URL for `APP_ORIGIN`, register `${APP_ORIGIN}/auth/callback` with the OIDC provider, and point a separate preview custom domain at the same Render service for `PREVIEW_ORIGIN`. Generate `APP_ENCRYPTION_KEY` once with `openssl rand -base64 32` and keep it stable.
+Use the service's HTTPS URL for `APP_ORIGIN` and point a separate preview custom domain at the same Render service for `PREVIEW_ORIGIN`. Generate both `BETTER_AUTH_SECRET` and `APP_ENCRYPTION_KEY` once with `openssl rand -base64 32`, then keep them in Render's secret environment variables. No email or CAPTCHA provider key is required. Changing `BETTER_AUTH_SECRET` invalidates existing sessions; changing `APP_ENCRYPTION_KEY` makes stored credentials unreadable.
 
 The demo can use Render's ephemeral filesystem, in which case projects disappear after a redeploy or instance replacement. Attach a paid persistent disk at `/data` only when the demo needs durable data. A disk cannot be shared by separate Render services, which is why the default image runs the app and worker together. See [Render persistent disks](https://render.com/docs/disks).
 
@@ -95,7 +100,7 @@ Image-backed services do not redeploy automatically when the `beta` tag moves. A
 
 ## API contract
 
-All `/api/*` routes require the session cookie. Mutations also require the exact app `Origin` and the `X-CSRF-Token` returned by `GET /api/session`.
+Better Auth is used only behind VibeLog's server-rendered auth forms; `/api/auth/*` is not public. Every `/api/*` route requires its session cookie. Mutations also require the exact app `Origin` and the `X-CSRF-Token` returned by `GET /api/session`. Style jobs are limited per UTC day by the user and global quota variables; rejected requests return `429 ai_quota_exceeded` with `Retry-After`.
 
 - `POST /api/projects` accepts `{ name, source }`, where `source` is `{ type: "hackmd", username }` or `{ type: "notion", databaseId, credentialId }`.
 - `POST /api/projects/:id/{sync|build|style|deploy|delete}` returns `202 { jobId, status: "queued" }`.

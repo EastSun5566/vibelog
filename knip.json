@@ -31,8 +31,8 @@
       "project": ["src/**/*.ts"]
     },
     "packages/app": {
-      "entry": ["src/main.ts", "src/server.tsx", "src/worker.ts", "tests/**/*.test.ts"],
-      "project": ["src/**/*.{ts,tsx}", "tests/**/*.ts"]
+      "entry": ["src/main.ts", "src/server.tsx", "src/worker.ts", "tests/**/*.test.ts", "drizzle.config.ts"],
+      "project": ["src/**/*.{ts,tsx}", "tests/**/*.ts", "drizzle.config.ts"]
     }
   }
 }

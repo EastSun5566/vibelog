@@ -16,7 +16,8 @@
     "lint": "pnpm --filter @vibelog/core build && oxlint --type-aware --deny-warnings .",
     "lint:fix": "pnpm --filter @vibelog/core build && oxlint --type-aware --fix .",
     "knip": "knip --no-config-hints --include files,dependencies,devDependencies,unlisted,binaries",
-    "check": "pnpm lint && pnpm knip && pnpm typecheck && pnpm test",
+    "db:check": "pnpm --filter @vibelog/app db:check",
+    "check": "pnpm lint && pnpm knip && pnpm db:check && pnpm typecheck && pnpm test",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs"
   },
