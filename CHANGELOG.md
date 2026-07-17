@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.4.1-beta.8](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.7...v0.4.1-beta.8) (2026-07-17)
+
+
+### Features
+
+* support more providers ([479fa71](https://github.com/EastSun5566/vibe/commit/479fa719185a539256dbfa57db55f0aca3134665))
+* turn to basic auth ([bf22d57](https://github.com/EastSun5566/vibe/commit/bf22d57ad6c1ce7903c11e62df752a91dc066f95))
+
 ## [0.4.1-beta.7](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.6...v0.4.1-beta.7) (2026-07-15)
 
 
