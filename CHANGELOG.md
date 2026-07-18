@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.5.0-beta.1](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.9...v0.5.0-beta.1) (2026-07-18)
+
+### ⚠ BREAKING CHANGES
+
+* rebuild VibeLog as hosted AI theme editor
+
+### Features
+
+* rebuild VibeLog as hosted AI theme editor ([8114d99](https://github.com/EastSun5566/vibe/commit/8114d997d439b9a070ff495d7a0febf86e1dcf46))
+
+### Bug Fixes
+
+* use wildcard localhost domain for local preview ([9f8f285](https://github.com/EastSun5566/vibe/commit/9f8f2851b1ae6fbb6f712172cbf0ca60be174a08))
 ## [0.4.1-beta.9](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.8...v0.4.1-beta.9) (2026-07-18)
 
 ### Bug Fixes
