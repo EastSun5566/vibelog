@@ -8,7 +8,7 @@ import { createAuth, readSession, type AppVariables } from './auth.js';
 import { loadAppConfig, type AppConfig } from './config.js';
 import { AiQuotaExceededError, AppDatabase, type JobType, type ProjectRecord } from './database.js';
 import { listCloudflareDeployments } from './deploy/cloudflare.js';
-import { AppError, assertCsrfToken, assertMutationOrigin, corsPolicy, jsonError, requestContext } from './http.js';
+import { AppError, assertCsrfToken, assertMutationOrigin, corsPolicy, jsonError, requestContext, requestMatchesOrigin } from './http.js';
 import { decryptJson, encryptJson, hashToken, randomToken } from './security/crypto.js';
 import { assertNoSymlinkEscape, assertUuid, projectRoot, resolveRelativeWithin } from './security/path.js';
 
@@ -148,7 +148,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use('*', corsPolicy(config));
   app.use('*', async (c, next) => {
     await next();
-    if (new URL(c.req.url).origin === config.appOrigin && c.res.headers.get('content-type')?.includes('text/html')) {
+    if (requestMatchesOrigin(c.req.url, config.appOrigin) && c.res.headers.get('content-type')?.includes('text/html')) {
       c.header('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'nonce-${c.get('cspNonce')}'; img-src 'self' data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`);
     }
   });
@@ -425,7 +425,7 @@ export function createApp(options: CreateAppOptions = {}) {
     return c.json({ url: `${config.previewOrigin}/preview-access/${encodeURIComponent(token)}?project=${project.id}`, expiresIn: 300 });
   });
   app.get('/preview-access/:token', (c) => {
-    if (new URL(c.req.url).origin !== config.previewOrigin) throw new AppError('wrong_preview_origin', 'Preview access is only available on the preview origin', 404);
+    if (!requestMatchesOrigin(c.req.url, config.previewOrigin)) throw new AppError('wrong_preview_origin', 'Preview access is only available on the preview origin', 404);
     const token = c.req.param('token');
     const projectId = parseUuid(c.req.query('project') ?? '', 'project id');
     if (!database.getPreviewSession(hashToken(token), projectId)) throw new AppError('preview_access_denied', 'Preview access expired or invalid', 403);
@@ -433,7 +433,7 @@ export function createApp(options: CreateAppOptions = {}) {
     return c.redirect(`/preview/${projectId}/`);
   });
   app.get('/preview/:projectId/*', async (c) => {
-    if (new URL(c.req.url).origin !== config.previewOrigin) throw new AppError('wrong_preview_origin', 'Preview is only available on the preview origin', 404);
+    if (!requestMatchesOrigin(c.req.url, config.previewOrigin)) throw new AppError('wrong_preview_origin', 'Preview is only available on the preview origin', 404);
     const projectId = parseUuid(c.req.param('projectId'), 'project id');
     const token = getCookie(c, 'vibelog_preview');
     const session = token ? database.getPreviewSession(hashToken(token), projectId) : null;

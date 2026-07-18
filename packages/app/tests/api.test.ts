@@ -96,6 +96,8 @@ describe('SaaS security boundary', () => {
     expect(detail.status).toBe(200);
     expect(await detail.text()).toContain('id="job-status"');
     expect(detail.headers.get('content-security-policy')).toContain('script-src \'self\'');
+    const proxiedDetail = await instance.app.request(`http://app.test/projects/${created.project.id}`, { headers: { cookie } });
+    expect(proxiedDetail.headers.get('content-security-policy')).toContain('script-src \'self\'');
 
     const client = await instance.app.request(`${TEST_ORIGIN}/assets/app.js`);
     const clientSource = await client.text();
@@ -176,12 +178,13 @@ describe('SaaS security boundary', () => {
     const wrongOrigin = await instance.app.request(url.replace('preview.test', 'app.test'));
     expect(wrongOrigin.status).toBe(404);
 
-    const access = await instance.app.request(url);
+    const access = await instance.app.request(url.replace('https://', 'http://'));
     expect(access.status).toBe(302);
     const previewCookie = access.headers.get('set-cookie')?.split(';', 1)[0];
     if (!previewCookie) throw new Error('Preview grant did not set a cookie');
     expect(access.headers.get('set-cookie')).toContain(`/preview/${created.project.id}`);
-    const preview = await instance.app.request(`https://preview.test/preview/${created.project.id}/`, { headers: { cookie: previewCookie } });
+    expect(access.headers.get('set-cookie')).toContain('Secure');
+    const preview = await instance.app.request(`http://preview.test/preview/${created.project.id}/`, { headers: { cookie: previewCookie } });
     expect(preview.status).toBe(200);
     expect(await preview.text()).toContain('isolated preview');
     expect(preview.headers.get('content-security-policy')).toContain('script-src \'none\'');
