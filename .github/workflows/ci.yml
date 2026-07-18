@@ -18,31 +18,40 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
-      - name: Verify generated Drizzle migrations are current
+      - name: Verify Drizzle baseline is current
         run: |
           pnpm --filter @vibelog/app db:generate
           git diff --exit-code -- packages/app/src/drizzle
           test -z "$(git status --porcelain -- packages/app/src/drizzle)"
       - run: pnpm build
       - run: pnpm docs:build
-      - name: Smoke test packaged core and CLI
-        run: node .github/scripts/package-smoke.mjs
-      - name: Build and smoke test fat app container
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Build and smoke test the fat container
         env:
           VIBELOG_APP_IMAGE: vibelog-app:ci
           NODE_ENV: production
           APP_ORIGIN: http://localhost:34123
-          PREVIEW_ORIGIN: http://preview.localhost:34123
-          APP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           BETTER_AUTH_SECRET: vibelog-ci-secret-that-is-at-least-thirty-two-chars
+          BETA_INVITE_CODE: vibelog-ci-invite-that-is-at-least-twenty-four-chars
+          VIBELOG_AI_PROVIDER: openai
+          VIBELOG_AI_MODEL: gpt-4o-mini
           PORT: 34123
         run: |
           trap 'docker compose down --volumes' EXIT
           wait_for_app() {
-            for _ in $(seq 1 60); do
-              if node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(response=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"; then
-                return 0
-              fi
+            for _ in $(seq 1 90); do
+              if node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then return 0; fi
               sleep 1
             done
             docker compose logs app
@@ -52,20 +61,18 @@ jobs:
           wait_for_app
           test "$(docker image inspect "$VIBELOG_APP_IMAGE" --format '{{json .Config.Cmd}}')" = '["node","dist/main.js"]'
           test "$(docker compose exec -T app node -p 'process.getuid()')" != "0"
-          docker compose exec -T app node --input-type=module -e "import { randomUUID } from 'node:crypto'; import { writeFileSync } from 'node:fs'; import { AppDatabase } from './dist/database.js'; import { user } from './dist/schema.js'; const db=new AppDatabase('/data'); const userId=randomUUID(); const timestamp=new Date(); db.db.insert(user).values({id:userId,name:'smoke',email:'smoke@users.vibelog.invalid',emailVerified:false,username:'smoke',displayUsername:'smoke',createdAt:timestamp,updatedAt:timestamp}).run(); const project=db.createProject({userId,name:'smoke',slug:'smoke',sourceType:'hackmd',sourceConfig:{}}); const job=db.createJob(userId,project.id,'delete'); writeFileSync('/data/smoke-job',JSON.stringify({jobId:job.id,userId})); db.close()"
-          job_complete=false
+          docker compose exec -T app node --input-type=module -e "import{randomUUID}from'node:crypto';import{mkdirSync,writeFileSync}from'node:fs';import{AppDatabase}from'./dist/database.js';import{user}from'./dist/schema.js';const db=new AppDatabase('/data');const userId=randomUUID(),at=new Date();db.db.insert(user).values({id:userId,name:'smoke',email:'smoke@users.vibelog.invalid',emailVerified:false,username:'smoke',displayUsername:'smoke',createdAt:at,updatedAt:at}).run();const {blog,operation}=db.createBlog(userId,'smoke','smoke');db.completeOperation(operation.id);const draft='/data/smoke-draft';mkdirSync(draft,{recursive:true});writeFileSync(draft+'/index.html','<h1>Smoke published</h1>');db.completeSync(blog.id,{title:'Smoke',description:'Smoke',author:'Smoke',draftArtifact:draft});const publish=db.createOperation(userId,blog.id,'publish');writeFileSync('/data/smoke-operation',publish.id);db.close()"
+          complete=false
           for _ in $(seq 1 30); do
-            if docker compose exec -T app node --input-type=module -e "import { readFileSync } from 'node:fs'; import { AppDatabase } from './dist/database.js'; const db=new AppDatabase('/data'); const {jobId,userId}=JSON.parse(readFileSync('/data/smoke-job','utf8')); const status=db.getJob(jobId,userId)?.status; db.close(); process.exit(status==='succeeded'?0:1)"; then
-              job_complete=true
-              break
-            fi
+            if docker compose exec -T app node --input-type=module -e "import{readFileSync}from'node:fs';import{AppDatabase}from'./dist/database.js';const db=new AppDatabase('/data');const id=readFileSync('/data/smoke-operation','utf8');const row=db.connection.prepare('select status from operations where id=?').get(id);db.close();process.exit(row?.status==='succeeded'?0:1)"; then complete=true; break; fi
             sleep 1
           done
-          test "$job_complete" = true
+          test "$complete" = true
+          node -e "const http=require('node:http');const req=http.get({hostname:'127.0.0.1',port:process.env.PORT,headers:{host:'smoke.localhost:'+process.env.PORT}},r=>{let body='';r.on('data',c=>body+=c);r.on('end',()=>process.exit(r.statusCode===200&&body.includes('Smoke published')?0:1))});req.on('error',()=>process.exit(1))"
           docker compose exec -T app node -e "require('node:fs').writeFileSync('/data/persistence-smoke','ok')"
           docker compose restart app
           wait_for_app
           docker compose exec -T app node -e "if(require('node:fs').readFileSync('/data/persistence-smoke','utf8')!=='ok')process.exit(1)"
           container_id="$(docker compose ps --all --quiet app)"
-          docker compose stop --timeout 10 app
+          docker compose stop --timeout 30 app
           test "$(docker inspect "$container_id" --format '{{.State.ExitCode}}')" = "0"

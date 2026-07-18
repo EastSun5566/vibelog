@@ -1,17 +1,15 @@
-name: Publish
+name: Publish app image
 
 on:
   push:
     tags: "v*.*.*"
-  workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write
   packages: write
 
 concurrency:
-  group: publish
+  group: publish-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -20,53 +18,17 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
-      - name: Use npm latest
-        run: npm install --global npm@latest
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm check
-      - run: pnpm build
-      - run: pnpm docs:build
-      - name: Smoke test local package tarballs
-        run: node .github/scripts/package-smoke.mjs
-      - name: Check release state
-        id: preflight
-        run: node .github/scripts/release-preflight.mjs
-      - name: Pack core and CLI
-        run: |
-          mkdir -p "$RUNNER_TEMP/vibelog-packs"
-          pnpm --filter @vibelog/core pack --pack-destination "$RUNNER_TEMP/vibelog-packs"
-          pnpm --filter vibelog pack --pack-destination "$RUNNER_TEMP/vibelog-packs"
-      - name: Publish core
-        if: steps.preflight.outputs.core_exists != 'true'
-        run: npm publish "$RUNNER_TEMP/vibelog-packs/vibelog-core-${{ steps.preflight.outputs.version }}.tgz" --provenance --tag beta --access public
-      - name: Publish CLI
-        if: steps.preflight.outputs.cli_exists != 'true'
-        run: npm publish "$RUNNER_TEMP/vibelog-packs/vibelog-${{ steps.preflight.outputs.version }}.tgz" --provenance --tag beta
-      - name: Verify published packages and dist-tags
-        run: node .github/scripts/release-preflight.mjs --verify
-      - name: Smoke test packages installed from npm
-        run: node .github/scripts/package-smoke.mjs --registry-version "${{ steps.preflight.outputs.version }}"
-      - name: Set container version
-        if: startsWith(github.ref, 'refs/tags/')
-        id: image
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-qemu-action@v3
-        if: startsWith(github.ref, 'refs/tags/')
       - uses: docker/setup-buildx-action@v3
-        if: startsWith(github.ref, 'refs/tags/')
       - uses: docker/login-action@v3
-        if: startsWith(github.ref, 'refs/tags/')
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and publish app image
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Set image version
+        id: image
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Build and publish multi-arch image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -79,8 +41,7 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.image.outputs.version }}
-      - name: Verify anonymous GHCR pull
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Verify both architectures and anonymous pull
         run: |
           docker buildx imagetools inspect "ghcr.io/eastsun5566/vibelog-app:${{ steps.image.outputs.version }}" | grep --quiet 'linux/amd64'
           docker buildx imagetools inspect "ghcr.io/eastsun5566/vibelog-app:${{ steps.image.outputs.version }}" | grep --quiet 'linux/arm64'

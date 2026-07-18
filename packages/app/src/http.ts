@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Context, MiddlewareHandler } from 'hono';
+import type { Context, Input, MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { AppConfig } from './config.js';
 import type { AppVariables } from './auth.js';
@@ -34,30 +34,9 @@ export function requestMatchesOrigin(requestUrl: string, expectedOrigin: string)
   return request.protocol === 'http:' && expected.protocol === 'https:' && request.host === expected.host;
 }
 
-export function corsPolicy(config: AppConfig): MiddlewareHandler {
-  return async (c, next) => {
-    const origin = c.req.header('origin');
-    const requestOrigin = new URL(c.req.url).origin;
-    if (origin && origin !== requestOrigin && !config.allowedOrigins.has(origin)) {
-      throw new AppError('origin_not_allowed', 'Request origin is not allowed', 403);
-    }
-    if (origin && origin !== requestOrigin) {
-      c.header('Access-Control-Allow-Origin', origin);
-      c.header('Access-Control-Allow-Credentials', 'true');
-      c.header('Vary', 'Origin');
-    }
-    if (c.req.method === 'OPTIONS') {
-      c.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-      c.header('Access-Control-Allow-Headers', 'Content-Type, X-CSRF-Token, X-Captcha-Response');
-      return c.body(null, 204);
-    }
-    await next();
-  };
-}
-
 export function assertMutationOrigin(c: Context, config: AppConfig): void {
   const origin = c.req.header('origin');
-  if (!origin || !config.allowedOrigins.has(origin)) {
+  if (!origin || origin !== config.appOrigin) {
     throw new AppError('invalid_origin', 'A trusted Origin header is required', 403);
   }
 }
@@ -68,7 +47,7 @@ export function assertCsrfToken(actual: string | undefined, expected: string): v
   }
 }
 
-export function jsonError(c: Context<{ Variables: AppVariables }>, error: unknown) {
+export function jsonError<Path extends string, RequestInput extends Input>(c: Context<{ Variables: AppVariables }, Path, RequestInput>, error: unknown) {
   const requestId = c.get('requestId') || randomUUID();
   if (error instanceof AppError) {
     for (const [name, value] of Object.entries(error.headers ?? {})) c.header(name, value);

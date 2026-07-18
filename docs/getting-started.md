@@ -1,163 +1,28 @@
 # Getting Started
 
-VibeLog transforms any content source into a production-ready blog with AI-powered styling. Get up and running in minutes.
+VibeLog 0.5 is an invite-only hosted editor. You need a public HackMD profile with at least one published note.
 
-<div style="width: 100%; aspect-ratio: 16 / 9;">
-  <iframe width="100%" height="100%" src="https://www.youtube.com/embed/ojKU4krO5CE" title="Introducing VibeLog" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-</div>
+## Writer flow
 
-## Prerequisites
+1. Register with the shared beta code, a permanent username, and a password.
+2. Enter your public HackMD username.
+3. Wait for the first Astro draft and open the live preview.
+4. Describe a visual direction, such as “a quiet editorial journal with warm paper colors.”
+5. Switch between any saved theme revisions.
+6. Publish to `<username>.<APP_ORIGIN hostname>`.
 
-- Node.js >=24.0.0
-- AI provider API key (or use [Ollama](https://ollama.com/) without API key)
+Only notes that HackMD exposes as public and published are imported. Duplicate slugs, invalid dates, and an empty public profile stop the sync without replacing the last working draft.
 
-## Quick Start
+## Theme safety
 
-### 1. Create Your Blog Directory
+The AI receives the blog title, description, author, current theme, and your design request. It does not receive article bodies. It returns one `propose_theme` tool call containing:
 
-```sh
-mkdir your-blog && cd your-blog
-```
+- one of three presets: minimal, editorial, or notebook
+- light or dark appearance
+- six semantic colors
+- allowlisted system font stacks
+- fixed typography, width, density, and radius scales
 
-### 2. Preview Your Content
+VibeLog rejects unknown fields, remote fonts, arbitrary CSS, unsafe values, and colors that fail WCAG text/link contrast. A failed proposal never changes the active revision.
 
-Start the development server to preview your content and experiment with AI-powered styling:
-
-```sh
-# Set your OpenAI API key
-export OPENAI_API_KEY=<your_openai_api_key>
-
-# Start dev server with HackMD content
-npx vibelog dev --content hackmd@<your_username> --ai openai@gpt-4o-mini
-```
-
-Navigate to `http://localhost:5566` and use the vibelog panel to modify styles with AI prompts like:
-
-- "dark theme with pink accents"
-- "minimal design with green colors"
-- "corporate blue theme"
-
-### 3. Build Production Site
-
-Once you're happy with your design, build the production-ready site:
-
-```sh
-npx vibelog build --site-url https://your-blog.com
-```
-
-This generates a static site in the `dist` directory.
-
-### 4. Deploy
-
-Deploy your site using any static hosting service:
-
-```sh
-# Example with Surge
-npx surge dist
-
-# Or with Vercel
-npx vercel dist
-
-# Or with Netlify
-npx netlify deploy --prod --dir dist
-```
-
-## Content Sources
-
-VibeLog supports multiple content sources:
-
-### File System
-
-Use local markdown files:
-
-```sh
-vibelog dev --content fs@./my-content --ai ollama@qwen2.5-coder:3b
-```
-
-Your content directory should have this structure:
-
-```text
-my-content/
-├── blog/
-│   ├── post1.md
-│   ├── post2.md
-│   └── post3.md
-└── author.md
-```
-
-### HackMD
-
-Turn your [HackMD](https://hackmd.io/) workspace public notes into a blog:
-
-```sh
-vibelog dev --content hackmd@<your_username> --ai anthropic@claude-3-5-haiku-20241022
-```
-
-### Notion
-
-Transform your [Notion](https://www.notion.com/) database pages into a blog:
-
-```sh
-# Set your Notion integration token
-export NOTION_TOKEN=<your_notion_token>
-
-# Use Notion database as content source
-vibelog dev --content notion@<database_id> --ai openai@gpt-4o-mini
-```
-
-**Note**: Make sure your Notion integration has access to the database and the database ID is correct. VibeLog will provide helpful error messages if there are authentication or permission issues.
-
----
-
-> [!NOTE]
-> More content sources will be supported in the future
-
-## AI Providers
-
-VibeLog accepts every built-in provider and model in the [pi-ai catalog](https://github.com/earendil-works/pi/tree/main/packages/ai). Use the exact `provider@modelId` pair from that catalog. Authentication is non-interactive and uses provider environment variables or supported AWS/Google ambient credentials.
-
-```sh
-# OpenAI
-export OPENAI_API_KEY=<your_openai_api_key>
---ai openai@gpt-4o-mini
-
-# Anthropic
-export ANTHROPIC_API_KEY=<your_anthropic_api_key>
---ai anthropic@claude-3-5-haiku-20241022
-
-# Google
-export GEMINI_API_KEY=<your_google_api_key>
---ai google@gemini-2.5-flash
-
-# OpenRouter
-export OPENROUTER_API_KEY=<your_openrouter_api_key>
---ai openrouter@qwen/qwen-2.5-coder-32b-instruct:free
-
-# Groq
-export GROQ_API_KEY=<your_groq_api_key>
---ai groq@openai/gpt-oss-20b
-
-# NVIDIA NIM hosted API
-export NVIDIA_API_KEY=<your_nvidia_api_key>
---ai nvidia@nvidia/nemotron-3-super-120b-a12b
-
-# Mistral
-export MISTRAL_API_KEY=<your_mistral_api_key>
---ai mistral@devstral-medium-latest
-
-# xAI
-export XAI_API_KEY=<your_xai_api_key>
---ai xai@grok-code-fast-1
-
-# Ollama (local, no API key needed)
-export OLLAMA_BASE_URL=http://localhost:11434/v1
---ai ollama@qwen2.5-coder:3b
-```
-
-`GOOGLE_GENERATIVE_AI_API_KEY` remains accepted as a legacy, request-scoped fallback when `GEMINI_API_KEY` is not set. OAuth-only providers require credentials already available to pi-ai; VibeLog does not add interactive login or credential storage.
-
-## Next Steps
-
-- [CLI Reference](/cli-reference) - Complete command reference
-- [Content Structure](/content-structure) - Learn about content organization
-- [Styling Guide](/styling-guide) - Advanced styling techniques
+There is no password recovery in the self-contained beta. Keep your password safe; signed-in users can change it from the editor.

@@ -9,6 +9,11 @@ dist
 **/dist
 coverage
 **/coverage
+**/tests
+e2e
+test-results
+playwright-report
+docs
 .data
 *.sqlite
 *.sqlite-shm

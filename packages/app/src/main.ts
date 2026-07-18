@@ -1,14 +1,14 @@
 import { loadAppConfig } from './config.js';
 import { AppDatabase } from './database.js';
 import { createApp } from './index.js';
-import { JobWorker } from './jobs.js';
+import { OperationWorker } from './jobs.js';
 import { startCombinedRuntime } from './runtime.js';
 import { startHttpServer } from './server-runtime.js';
 
 const config = loadAppConfig();
 const database = new AppDatabase(config.dataRoot);
 const { app } = createApp({ config, database });
-const worker = new JobWorker(database, config);
+const worker = new OperationWorker(database, config);
 const server = startHttpServer(app.fetch);
 const runtime = startCombinedRuntime({ server, worker, database });
 

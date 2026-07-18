@@ -1,8 +1,8 @@
 {
   "name": "@vibelog/app",
-  "version": "0.1.0",
+  "version": "0.5.0-beta.1",
   "private": true,
-  "description": "VibeLog App - Web API for blog generation",
+  "description": "Hosted HackMD-to-Astro theme editor",
   "type": "module",
   "main": "dist/server.js",
   "files": [
@@ -30,7 +30,6 @@
     "better-auth": "1.6.23",
     "drizzle-orm": "0.45.2",
     "hono": "^4.12.30",
-    "wrangler": "^4.110.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

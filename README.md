@@ -2,80 +2,31 @@
 
 # VibeLog
 
-[![NPM Version](https://img.shields.io/npm/v/vibelog.svg?style=for-the-badge)](https://www.npmjs.com/package/vibelog)
-[![NPM Downloads](https://img.shields.io/npm/dt/vibelog.svg?style=for-the-badge)](https://www.npmjs.com/package/vibelog)
+> HackMD content → Astro blog → AI theme → VibeLog hosting
 
-> Bring your own content with some vibes
+VibeLog turns a public HackMD profile into a complete hosted blog. Writers keep HackMD's mature publishing workflow; VibeLog builds the site, lets AI choose safe design tokens and curated layouts, and publishes it on a username subdomain.
 
-Transform any content source into a production-ready blog with AI-powered styling.
+## What 0.5 includes
 
-## Philosophy
+- Invite-only username/password accounts
+- One public HackMD source and one blog per account
+- A real Astro preview beside simple theme controls
+- Immutable theme revisions for undo and redo
+- RSS, sitemap, canonical URLs, Open Graph, responsive typography, and code styles
+- One self-contained Node process with Hono, a SQLite operation worker, and hosted static releases
 
-- **Markdown as primitive** - Everything is markdown, including content & structure
-- **Modify, don't generate** - Transform existing mature frameworks instead of generating UI from scratch
-- **Pass the vibe check** - Good enough is perfect
+AI never writes arbitrary CSS or receives article bodies. It can only propose a validated theme schema; VibeLog checks allowed values and WCAG contrast before activating a revision.
 
-## Quick Start
-
-```sh
-mkdir your-blog && cd your-blog
-```
-
-### Preview your content
+## Run locally
 
 ```sh
-export OPENAI_API_KEY=<your_openai_api_key>
-
-# Start dev server
-npx vibelog dev --content hackmd@<your_username> --ai openai@gpt-4o-mini
-
-# Go to http://localhost:5566 and try prompts like: "dark theme with pink"
+cp .env.example .env
+# Fill BETTER_AUTH_SECRET, BETA_INVITE_CODE, provider/model, and its API key.
+docker compose up --build
 ```
 
-AI provider and model IDs come from the [pi-ai catalog](https://github.com/earendil-works/pi/tree/main/packages/ai). All built-in pi-ai providers are accepted; `ollama@<model>` also accepts any local model ID.
+Generate local secrets with `openssl rand -base64 32`. Open `http://localhost:3000`; draft previews use `preview.localhost`, and published blogs use `<username>.localhost`.
 
-### Build prod-ready blog
+The published image is `ghcr.io/eastsun5566/vibelog-app:beta`. VibeLog 0.5 requires a fresh `/data` volume and intentionally does not migrate 0.4 beta data.
 
-```sh
-# Build to `dist`
-npx vibelog build --site-url https://your-blog.com
-```
-
-### Deploy
-
-```sh
-npx surge dist
-
-# Or
-npx vercel deploy dist
-
-# Or
-npx netlify deploy --dir=dist
-
-# Or
-npx wrangler pages deploy dist
-```
-
-## Other commands
-
-```sh
-vibelog --help
-vibelog dev --help
-vibelog build --help
-```
-
-## Requirements
-
-- Node.js >=24.0.0
-
-## Self-host the app
-
-Copy `.env.example` to `.env`, fill the production settings, then start the fat container. One Node.js process hosts the web app and worker on the same SQLite database:
-
-```sh
-docker compose up --build -d
-```
-
-The published image is `ghcr.io/eastsun5566/vibelog-app:beta`.
-
-For a Render demo, create one Web Service from that existing image, leave Docker Command empty, use `/health` as the health check, and set `HOST=0.0.0.0`, `PORT=10000`, and `DATA_ROOT=/data`. Render storage is ephemeral unless you attach a paid disk at `/data`; keep a separate preview custom domain for `PREVIEW_ORIGIN`. Public username registration is self-contained through Better Auth and SQLite. See the [app deployment guide](packages/app/README.md#render-demo) for the required auth and origin settings.
+See [Getting Started](docs/getting-started.md) and the [deployment guide](packages/app/README.md).

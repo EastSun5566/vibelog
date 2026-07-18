@@ -9,26 +9,24 @@
   "workspaces": {
     ".": {
       "entry": [
-        ".github/scripts/*.mjs",
         "docs/.vitepress/config.ts",
-        "examples/*.ts",
-        "vitest.config.ts"
+        "vitest.config.ts",
+        "playwright.config.ts",
+        "e2e/fixture-server.ts",
+        "e2e/**/*.spec.ts"
       ],
       "project": [
-        ".github/scripts/*.mjs",
         "docs/.vitepress/**/*.ts",
-        "examples/*.ts",
-        "vitest.config.ts"
+        "vitest.config.ts",
+        "playwright.config.ts",
+        "e2e/tsconfig.json",
+        "e2e/**/*.ts"
       ]
     },
     "packages/core": {
       "entry": ["src/index.ts", "tests/**/*.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"],
       "ignoreDependencies": ["@astrojs/rss"]
-    },
-    "packages/cli": {
-      "entry": ["src/index.ts"],
-      "project": ["src/**/*.ts"]
     },
     "packages/app": {
       "entry": ["src/main.ts", "src/server.tsx", "src/worker.ts", "tests/**/*.test.ts", "drizzle.config.ts"],

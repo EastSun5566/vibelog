@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitepress';
 
 const TITLE = 'VibeLog';
-const DESCRIPTION = 'Bring your own content with some vibes ✨';
+const DESCRIPTION = 'Turn public HackMD writing into an AI-themed hosted Astro blog.';
 const DOCS_URL = 'https://vibelog.eastsun.me';
 
 const GA_ID = 'G-K826ZT9KZD';
@@ -41,16 +41,14 @@ export default defineConfig({
 
     nav: [
       { text: 'Getting Started', link: '/getting-started' },
-      { text: 'CLI Reference', link: '/cli-reference' },
+      { text: 'Deploy', link: '/deployment' },
     ],
 
     sidebar: [
       {
         items: [
           { text: 'Getting Started', link: '/getting-started' },
-          { text: 'Content Structure', link: '/content-structure' },
-          { text: 'Styling Guide', link: '/styling-guide' },
-          { text: 'CLI Reference', link: '/cli-reference' },
+          { text: 'Deploy', link: '/deployment' },
         ],
       },
     ],

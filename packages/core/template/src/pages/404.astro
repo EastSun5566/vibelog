@@ -1,0 +1,10 @@
+---
+import BaseHead from "../components/BaseHead.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import { SITE_DESCRIPTION, SITE_LANGUAGE, SITE_TITLE } from "../consts";
+---
+<html lang={SITE_LANGUAGE}>
+  <head><BaseHead title={`Page not found · ${SITE_TITLE}`} description={SITE_DESCRIPTION} /></head>
+  <body><Header /><main><h1>Page not found</h1><p><a href="/">Return home</a></p></main><Footer name={SITE_TITLE} /></body>
+</html>

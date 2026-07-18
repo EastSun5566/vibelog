@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { join, resolve, dirname, basename, isAbsolute, relative, sep, parse as parsePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -22,10 +22,6 @@ const postSchema = z.object({
   slug: z.string(),
   date: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid post date'),
 });
-
-function stableSuffix(value: string): string {
-  return createHash('sha256').update(value).digest('hex').slice(0, 8);
-}
 
 function isPathInside(root: string, target: string): boolean {
   const pathFromRoot = relative(root, target);
@@ -178,10 +174,8 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
         .split('\n')
         .find((line) => line.trim().length > 0) ?? '';
       const baseSlug = slugify(post.slug) || slugify(post.title) || slugify(post.id) || generateSlug();
-      const slug = usedSlugs.has(baseSlug) ? `${baseSlug}-${stableSuffix(post.id)}` : baseSlug;
-      if (usedSlugs.has(slug)) {
-        throw new Error(`Duplicate post slug after normalization: ${slug}`);
-      }
+      const slug = baseSlug;
+      if (usedSlugs.has(slug)) throw new Error(`Duplicate post slug after normalization: ${slug}`);
       usedSlugs.add(slug);
 
       const fileContent = matter.stringify(post.content, {
@@ -249,7 +243,7 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
   logger.info('Starting production build...');
 
   if (!await fs.exists(vibelogDir)) {
-    throw new Error('No ".vibelog" directory found. Please run "vibelog dev" first.');
+    throw new Error('The generated Astro draft is missing. Sync the HackMD content first.');
   }
 
   const siteUrl = new URL(site);

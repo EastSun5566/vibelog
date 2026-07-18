@@ -1,11 +1,11 @@
 import type { ServerType } from '@hono/node-server';
 import type { AppDatabase } from './database.js';
-import type { JobWorker } from './jobs.js';
+import type { OperationWorker } from './jobs.js';
 import { closeHttpServer } from './server-runtime.js';
 
 interface CombinedRuntimeOptions {
   server: ServerType;
-  worker: Pick<JobWorker, 'run' | 'stop'>;
+  worker: Pick<OperationWorker, 'run' | 'stop'>;
   database: Pick<AppDatabase, 'close'>;
   closeServer?: (server: ServerType) => Promise<void>;
 }

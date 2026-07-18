@@ -1,0 +1,8 @@
+{
+  "extends": "../packages/app/tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true
+  },
+  "include": ["./fixture-server.ts", "./editor.spec.ts", "../playwright.config.ts"]
+}

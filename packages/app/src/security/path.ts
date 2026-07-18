@@ -63,6 +63,6 @@ export async function assertNoSymlinkEscape(base: string, target: string): Promi
   }
 }
 
-export function projectRoot(dataRoot: string, userId: string, projectId: string): string {
-  return resolveWithin(resolve(dataRoot, 'projects'), assertUuid(userId, 'user id'), assertUuid(projectId, 'project id'));
+export function blogRoot(dataRoot: string, userId: string, blogId: string): string {
+  return resolveWithin(resolve(dataRoot, 'blogs'), assertUuid(userId, 'user id'), assertUuid(blogId, 'blog id'));
 }

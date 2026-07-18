@@ -22,84 +22,76 @@ CREATE TABLE `ai_daily_usage` (
 	`subject` text NOT NULL,
 	`count` integer DEFAULT 0 NOT NULL,
 	PRIMARY KEY(`usage_date`, `scope`, `subject`),
-	CONSTRAINT "ai_daily_usage_scope_check" CHECK("ai_daily_usage"."scope" in ('user', 'global')),
-	CONSTRAINT "ai_daily_usage_count_check" CHECK("ai_daily_usage"."count" >= 0)
+	CONSTRAINT "ai_usage_scope_check" CHECK("ai_daily_usage"."scope" in ('user','global')),
+	CONSTRAINT "ai_usage_count_check" CHECK("ai_daily_usage"."count" >= 0)
 );
 --> statement-breakpoint
-CREATE TABLE `credentials` (
+CREATE TABLE `app_meta` (
+	`key` text PRIMARY KEY NOT NULL,
+	`value` text NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `blogs` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
-	`type` text NOT NULL,
-	`label` text NOT NULL,
-	`metadata` text NOT NULL,
-	`ciphertext` text NOT NULL,
-	`nonce` text NOT NULL,
-	`tag` text NOT NULL,
-	`key_version` integer NOT NULL,
+	`username` text NOT NULL,
+	`hackmd_username` text NOT NULL,
+	`title` text,
+	`description` text,
+	`author` text,
+	`state` text NOT NULL,
+	`last_error` text,
+	`draft_artifact` text,
 	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL,
 	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade,
-	CONSTRAINT "credentials_type_check" CHECK("credentials"."type" in ('notion', 'cloudflare'))
+	CONSTRAINT "blogs_state_check" CHECK("blogs"."state" in ('syncing','ready','failed'))
 );
 --> statement-breakpoint
-CREATE TABLE `deployments` (
-	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
-	`provider` text NOT NULL,
-	`provider_deployment_id` text,
-	`url` text,
-	`environment` text,
-	`created_at` text NOT NULL,
-	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade
-);
---> statement-breakpoint
-CREATE TABLE `jobs` (
+CREATE UNIQUE INDEX `blogs_one_per_user` ON `blogs` (`user_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `blogs_username_unique` ON `blogs` (`username`);--> statement-breakpoint
+CREATE TABLE `operations` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
-	`project_id` text NOT NULL,
+	`blog_id` text NOT NULL,
 	`type` text NOT NULL,
 	`status` text NOT NULL,
 	`payload` text NOT NULL,
 	`result` text,
-	`error_code` text,
 	`error_message` text,
 	`attempts` integer DEFAULT 0 NOT NULL,
 	`created_at` text NOT NULL,
 	`updated_at` text NOT NULL,
 	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade,
-	CONSTRAINT "jobs_type_check" CHECK("jobs"."type" in ('sync', 'build', 'style', 'deploy', 'delete')),
-	CONSTRAINT "jobs_status_check" CHECK("jobs"."status" in ('queued', 'running', 'succeeded', 'failed'))
+	FOREIGN KEY (`blog_id`) REFERENCES `blogs`(`id`) ON UPDATE no action ON DELETE cascade,
+	CONSTRAINT "operations_type_check" CHECK("operations"."type" in ('sync','generate_theme','publish')),
+	CONSTRAINT "operations_status_check" CHECK("operations"."status" in ('queued','running','succeeded','failed'))
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `jobs_one_active_per_project` ON `jobs` (`project_id`) WHERE "jobs"."status" in ('queued', 'running');--> statement-breakpoint
+CREATE UNIQUE INDEX `operations_one_active_per_blog` ON `operations` (`blog_id`) WHERE "operations"."status" in ('queued','running');--> statement-breakpoint
 CREATE TABLE `preview_sessions` (
 	`token_hash` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
-	`project_id` text NOT NULL,
+	`blog_id` text NOT NULL,
 	`expires_at` text NOT NULL,
 	`created_at` text NOT NULL,
 	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade
+	FOREIGN KEY (`blog_id`) REFERENCES `blogs`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE TABLE `projects` (
+CREATE TABLE `published_releases` (
 	`id` text PRIMARY KEY NOT NULL,
-	`user_id` text NOT NULL,
-	`name` text NOT NULL,
-	`slug` text NOT NULL,
-	`source_type` text NOT NULL,
-	`source_config` text NOT NULL,
-	`state` text NOT NULL,
-	`last_error` text,
-	`deleted_at` text,
+	`blog_id` text NOT NULL,
+	`theme_revision_id` text NOT NULL,
+	`artifact` text NOT NULL,
+	`active` integer DEFAULT false NOT NULL,
 	`created_at` text NOT NULL,
-	`updated_at` text NOT NULL,
-	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade,
-	CONSTRAINT "projects_source_type_check" CHECK("projects"."source_type" in ('hackmd', 'notion')),
-	CONSTRAINT "projects_state_check" CHECK("projects"."state" in ('initializing', 'ready', 'building', 'failed', 'deleting'))
+	FOREIGN KEY (`blog_id`) REFERENCES `blogs`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`theme_revision_id`) REFERENCES `theme_revisions`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `projects_user_slug_unique` ON `projects` (`user_id`,`slug`);--> statement-breakpoint
+CREATE INDEX `published_releases_blog_idx` ON `published_releases` (`blog_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `published_releases_one_active` ON `published_releases` (`blog_id`) WHERE "published_releases"."active" = 1;--> statement-breakpoint
 CREATE TABLE `rate_limit` (
 	`id` text PRIMARY KEY NOT NULL,
 	`key` text NOT NULL,
@@ -122,6 +114,19 @@ CREATE TABLE `session` (
 --> statement-breakpoint
 CREATE UNIQUE INDEX `session_token_unique` ON `session` (`token`);--> statement-breakpoint
 CREATE INDEX `session_user_id_idx` ON `session` (`user_id`);--> statement-breakpoint
+CREATE TABLE `theme_revisions` (
+	`id` text PRIMARY KEY NOT NULL,
+	`blog_id` text NOT NULL,
+	`config` text NOT NULL,
+	`prompt` text,
+	`description` text NOT NULL,
+	`active` integer DEFAULT false NOT NULL,
+	`created_at` text NOT NULL,
+	FOREIGN KEY (`blog_id`) REFERENCES `blogs`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `theme_revisions_blog_idx` ON `theme_revisions` (`blog_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `theme_revisions_one_active` ON `theme_revisions` (`blog_id`) WHERE "theme_revisions"."active" = 1;--> statement-breakpoint
 CREATE TABLE `user` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,

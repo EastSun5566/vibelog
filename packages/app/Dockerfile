@@ -13,7 +13,6 @@ FROM base AS dependencies
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/core/package.json ./packages/core/package.json
-COPY packages/cli/package.json ./packages/cli/package.json
 COPY packages/app/package.json ./packages/app/package.json
 
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
@@ -30,7 +29,7 @@ RUN pnpm --filter @vibelog/core build \
 FROM node:24-slim AS runtime
 
 LABEL org.opencontainers.image.title="VibeLog App"
-LABEL org.opencontainers.image.description="Self-hosted VibeLog app and worker"
+LABEL org.opencontainers.image.description="Hosted HackMD-to-Astro AI theme editor"
 LABEL org.opencontainers.image.source="https://github.com/EastSun5566/vibelog"
 LABEL org.opencontainers.image.licenses="MIT"
 

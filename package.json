@@ -1,6 +1,6 @@
 {
   "name": "vibelog-monorepo",
-  "version": "0.4.1-beta.9",
+  "version": "0.5.0-beta.1",
   "private": true,
   "description": "Bring your own content with some vibes ✨",
   "type": "module",
@@ -9,9 +9,10 @@
   },
   "scripts": {
     "build": "pnpm -r --filter './packages/*' build",
-    "dev": "pnpm --filter vibelog dev",
-    "typecheck": "pnpm --filter @vibelog/core build && tsc -p tsconfig.json && pnpm -r --filter './packages/*' typecheck",
+    "dev": "pnpm --filter @vibelog/app dev",
+    "typecheck": "pnpm --filter @vibelog/core build && pnpm --filter @vibelog/app build && tsc -p tsconfig.json && tsc -p e2e/tsconfig.json && pnpm -r --filter './packages/*' typecheck",
     "test": "pnpm --filter @vibelog/core build && vitest run",
+    "test:e2e": "playwright test",
     "test:coverage": "pnpm --filter @vibelog/core build && vitest run --coverage",
     "lint": "pnpm --filter @vibelog/core build && oxlint --type-aware --deny-warnings .",
     "lint:fix": "pnpm --filter @vibelog/core build && oxlint --type-aware --fix .",
@@ -28,13 +29,15 @@
     "vibe",
     "ai",
     "styling",
-    "cli"
+    "hosting"
   ],
   "author": "Michael Wang <michael19920327@gmail.com>",
   "license": "MIT",
   "packageManager": "pnpm@10.12.1+sha512.f0dda8580f0ee9481c5c79a1d927b9164f2c478e90992ad268bbb2465a736984391d6333d2c327913578b2804af33474ca554ba29c04a8b13060a717675ae3ac",
   "devDependencies": {
+    "@playwright/test": "1.61.0",
     "@types/node": "^24.0.0",
+    "hono": "^4.12.30",
     "@vitest/coverage-v8": "^3.2.7",
     "knip": "6.26.0",
     "oxlint": "1.74.0",

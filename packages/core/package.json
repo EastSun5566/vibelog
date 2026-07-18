@@ -1,6 +1,7 @@
 {
   "name": "@vibelog/core",
-  "version": "0.4.1-beta.9",
+  "version": "0.5.0-beta.1",
+  "private": true,
   "description": "Bring your own content with some vibes ✨ - Core library",
   "repository": {
     "type": "git",
@@ -43,13 +44,10 @@
     "@astrojs/mdx": "^5.0.6",
     "@astrojs/rss": "^4.0.19",
     "@astrojs/sitemap": "^3.7.3",
-    "@notionhq/client": "^3.1.3",
     "astro": "6.4.8",
     "fs-extra": "^11.3.0",
     "gray-matter": "^4.0.3",
     "kleur": "^4.1.5",
-    "notion-to-md": "^3.1.9",
-    "postcss": "^8.5.4",
     "zod": "^3.25.55"
   },
   "devDependencies": {

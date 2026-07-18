@@ -4,6 +4,8 @@ import type { ContentSource } from '../../types.js';
 import { logger } from '../../core/index.js';
 import { ContentSourceName } from '../../consts.js';
 import { removeFirstH1IfMatchesTitle } from './utils.js';
+import { sanitizeMarkdown } from '../../markdown.js';
+import { slugify } from '../../core/utils.js';
 
 interface Note {
   id: string;
@@ -63,14 +65,24 @@ export class HackMdSource implements ContentSource {
         }
         const content = await response.text();
 
+        const date = new Date(note.publishedAt);
+        if (Number.isNaN(date.getTime())) throw new Error(`HackMD note has an invalid published date: ${note.title}`);
         return {
           id: note.id,
           title: note.title,
-          content: removeFirstH1IfMatchesTitle(content, note.title),
-          slug: note.permalink ?? note.title,
-          date: new Date(note.publishedAt).toISOString(),
+          content: sanitizeMarkdown(removeFirstH1IfMatchesTitle(content, note.title)),
+          slug: slugify(note.permalink ?? note.title),
+          date: date.toISOString(),
         };
       }));
+
+    if (posts.length === 0) throw new Error('No public published HackMD articles were found.');
+    const slugs = new Set<string>();
+    for (const post of posts) {
+      if (!post.slug) throw new Error(`HackMD note has no usable slug: ${post.title}`);
+      if (slugs.has(post.slug)) throw new Error(`Duplicate HackMD article slug: ${post.slug}`);
+      slugs.add(post.slug);
+    }
 
     return {
       posts,

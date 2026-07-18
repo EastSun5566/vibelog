@@ -10,10 +10,14 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx"
   },
   "include": [
-    "examples/**/*.ts",
+    "e2e/**/*.spec.ts",
+    "e2e/fixture-server.ts",
+    "playwright.config.ts",
     "docs/.vitepress/**/*.ts",
     "vitest.config.ts"
   ],

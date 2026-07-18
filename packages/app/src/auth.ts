@@ -32,7 +32,7 @@ export function createAuth(database: AppDatabase, config: AppConfig) {
     baseURL: config.appOrigin,
     basePath: '/api/auth',
     secret: config.betterAuthSecret,
-    trustedOrigins: [...config.allowedOrigins],
+    trustedOrigins: [config.appOrigin],
     disabledPaths: [
       '/sign-in/email',
       '/request-password-reset',

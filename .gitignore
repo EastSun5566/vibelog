@@ -5,6 +5,6 @@ dist/
 cache/
 coverage/
 .astro/
-
-# App package user projects (BYOC model)
+test-results/
+playwright-report/
 packages/app/projects/
