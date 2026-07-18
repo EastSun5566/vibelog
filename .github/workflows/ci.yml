@@ -32,11 +32,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: pnpm
       - name: Build and smoke test the fat container
         env:
           VIBELOG_APP_IMAGE: vibelog-app:ci
