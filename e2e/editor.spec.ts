@@ -22,8 +22,8 @@ test('invite signup to hosted publication', async ({ page }) => {
 
   await page.getByRole('button', { name: /發布到/ }).click();
   await expect(page.getByRole('link', { name: '查看已發布網站' })).toBeVisible({ timeout: 30_000 });
-  await page.goto('http://alice.app.vibelog.test:3100/');
+  await page.goto('http://alice.app.localtest.me:3100/');
   await expect(page.getByRole('heading', { name: 'Alice Writer', exact: true })).toBeVisible();
-  await page.goto('http://alice.app.vibelog.test:3100/blog/hello-vibelog/');
+  await page.goto('http://alice.app.localtest.me:3100/blog/hello-vibelog/');
   await expect(page.getByRole('heading', { name: 'Hello VibeLog' })).toBeVisible();
 });

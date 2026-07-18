@@ -41,7 +41,7 @@ jobs:
         env:
           VIBELOG_APP_IMAGE: vibelog-app:ci
           NODE_ENV: production
-          APP_ORIGIN: http://localhost:34123
+          APP_ORIGIN: http://app.localtest.me:34123
           BETTER_AUTH_SECRET: vibelog-ci-secret-that-is-at-least-thirty-two-chars
           BETA_INVITE_CODE: vibelog-ci-invite-that-is-at-least-twenty-four-chars
           VIBELOG_AI_PROVIDER: openai
@@ -68,7 +68,7 @@ jobs:
             sleep 1
           done
           test "$complete" = true
-          node -e "const http=require('node:http');const req=http.get({hostname:'127.0.0.1',port:process.env.PORT,headers:{host:'smoke.localhost:'+process.env.PORT}},r=>{let body='';r.on('data',c=>body+=c);r.on('end',()=>process.exit(r.statusCode===200&&body.includes('Smoke published')?0:1))});req.on('error',()=>process.exit(1))"
+          node -e "const http=require('node:http');const req=http.get({hostname:'127.0.0.1',port:process.env.PORT,headers:{host:'smoke.app.localtest.me:'+process.env.PORT}},r=>{let body='';r.on('data',c=>body+=c);r.on('end',()=>process.exit(r.statusCode===200&&body.includes('Smoke published')?0:1))});req.on('error',()=>process.exit(1))"
           docker compose exec -T app node -e "require('node:fs').writeFileSync('/data/persistence-smoke','ok')"
           docker compose restart app
           wait_for_app

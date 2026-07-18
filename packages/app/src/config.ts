@@ -11,7 +11,7 @@ function required(env: NodeJS.ProcessEnv, name: string): string { const value = 
 function parseOrigin(value: string): URL { const url = new URL(value); if (!['http:', 'https:'].includes(url.protocol) || url.pathname !== '/' || url.search || url.hash) throw new Error('APP_ORIGIN must be an http(s) origin without a path'); return url; }
 function positiveInteger(value: string | undefined, fallback: number, name: string): number { const parsed = Number(value ?? fallback); if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`${name} must be a positive integer`); return parsed; }
 export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const origin = parseOrigin(env.APP_ORIGIN ?? 'http://localhost:3000');
+  const origin = parseOrigin(env.APP_ORIGIN ?? 'http://app.localtest.me:3000');
   const betterAuthSecret = required(env, 'BETTER_AUTH_SECRET');
   if (betterAuthSecret.length < 32) throw new Error('BETTER_AUTH_SECRET must be at least 32 characters');
   const invite = required(env, 'BETA_INVITE_CODE');
