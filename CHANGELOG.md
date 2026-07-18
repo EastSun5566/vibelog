@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.4.1-beta.9](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.8...v0.4.1-beta.9) (2026-07-18)
+
+### Bug Fixes
+
+* preview origin mismatch ([19bde5a](https://github.com/EastSun5566/vibe/commit/19bde5ae00e1dfcf93c6df81f6a36586c9724093))
 ## [0.4.1-beta.8](https://github.com/EastSun5566/vibe/compare/v0.4.1-beta.7...v0.4.1-beta.8) (2026-07-17)
 
 

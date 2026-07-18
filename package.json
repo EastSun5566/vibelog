@@ -1,6 +1,6 @@
 {
   "name": "vibelog-monorepo",
-  "version": "0.4.1-beta.8",
+  "version": "0.4.1-beta.9",
   "private": true,
   "description": "Bring your own content with some vibes ✨",
   "type": "module",
