@@ -59,11 +59,35 @@ describe('AppDatabase 0.5 model', () => {
     const retry = database.retryInitialSync(blog.userId, 'correct-source');
     expect(database.getBlog(blog.id)).toMatchObject({ hackmdUsername: 'correct-source', state: 'syncing', lastError: null, contentVersion: 0 });
     database.completeOperation(retry.id);
-    database.completeSync(blog.id, { title: 'Carol', description: '', author: 'Carol', draftArtifact: '/tmp/draft' });
-    expect(database.getBlog(blog.id)?.contentVersion).toBe(1);
+    database.completeSync(blog.id, {
+      title: 'Carol', description: '', author: 'Carol', draftArtifact: '/tmp/draft', lastSyncedAt: '2026-07-19T12:00:00.000Z',
+      contentManifest: [
+        { title: 'Older', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z' },
+        { title: 'Newer', slug: 'newer', publishedAt: '2026-02-01T00:00:00.000Z' },
+      ],
+    });
+    expect(database.getBlog(blog.id)).toMatchObject({
+      contentVersion: 1,
+      lastSyncedAt: '2026-07-19T12:00:00.000Z',
+      contentManifest: [
+        { title: 'Newer', slug: 'newer', publishedAt: '2026-02-01T00:00:00.000Z' },
+        { title: 'Older', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z' },
+      ],
+    });
     expect(() => database.retryInitialSync(blog.userId, 'another-source')).toThrow('already has synced content');
     database.failSync(blog.id, 'temporary failure');
     expect(database.getBlog(blog.id)).toMatchObject({ contentVersion: 1, state: 'ready', lastError: 'temporary failure' });
+    database.close();
+  });
+  it('snapshots identity sync input and rejects unchanged or concurrent work', async () => {
+    const database = await subject(); addUser(database, '14141414-1414-4414-8414-141414141414', 'identity');
+    const { blog, operation } = database.createBlog('14141414-1414-4414-8414-141414141414', 'identity', 'identity');
+    database.completeOperation(operation.id);
+    database.completeSync(blog.id, { title: 'Current title', description: 'Current description', author: 'Writer', draftArtifact: '/tmp/identity-draft' });
+    expect(() => database.createSyncOperation(blog.userId, blog.id, { intent: 'identity', site: { title: 'Current title', description: 'Current description' } })).toThrow('Nothing to update');
+    const update = database.createSyncOperation(blog.userId, blog.id, { intent: 'identity', site: { title: 'New title', description: 'New description' } });
+    expect(update.payload).toEqual({ intent: 'identity', site: { title: 'New title', description: 'New description' } });
+    expect(() => database.createSyncOperation(blog.userId, blog.id, { intent: 'content' })).toThrow('active operation');
     database.close();
   });
   it('snapshots content and theme when publishing and rejects redundant work', async () => {
@@ -112,7 +136,7 @@ describe('AppDatabase 0.5 model', () => {
     legacy.prepare('INSERT INTO theme_revisions (id,blog_id,config,prompt,description,active,created_at) VALUES (?,?,?,?,?,?,?)').run('78787878-7878-4787-8787-787878787878', '77777777-7777-4777-8777-777777777777', JSON.stringify(DEFAULT_THEME), 'make it quiet', DEFAULT_THEME.description, 1, timestamp);
     legacy.close();
     const database = new AppDatabase(root, path);
-    expect(database.getBlogForUser('66666666-6666-4666-8666-666666666666')).toMatchObject({ username: 'erin', contentVersion: 1, draftArtifact: '/tmp/existing-draft' });
+    expect(database.getBlogForUser('66666666-6666-4666-8666-666666666666')).toMatchObject({ username: 'erin', contentVersion: 1, draftArtifact: '/tmp/existing-draft', contentManifest: null, lastSyncedAt: null });
     expect(database.getActiveTheme('77777777-7777-4777-8777-777777777777')?.source).toBe('ai');
     database.close();
   });

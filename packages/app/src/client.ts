@@ -13,6 +13,21 @@ const showStatus = (node, message, failed = false) => {
   if (failed) node.focus();
 };
 
+const syncAriaInvalid = (control) => {
+  if (!(control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)) return;
+  if (!control.checkValidity()) control.setAttribute('aria-invalid', 'true');
+  else control.removeAttribute('aria-invalid');
+};
+
+for (const form of document.forms) {
+  form.addEventListener('invalid', (event) => syncAriaInvalid(event.target), true);
+  form.addEventListener('blur', (event) => syncAriaInvalid(event.target), true);
+  form.addEventListener('input', (event) => syncAriaInvalid(event.target));
+  form.addEventListener('submit', () => {
+    for (const control of form.elements) syncAriaInvalid(control);
+  });
+}
+
 const unlockForm = (statusNode) => {
   const form = statusNode?.closest('form');
   form?.removeAttribute('aria-busy');

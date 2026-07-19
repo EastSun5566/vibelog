@@ -19,8 +19,17 @@ test('invite signup to hosted publication', async ({ page }) => {
   await page.getByRole('button', { name: '同步並建立預覽' }).click();
   await expect(page).toHaveURL(/\/editor$/, { timeout: 120_000 });
   await expect(page.getByText('尚未發布', { exact: true })).toBeVisible();
+  await expect(page.getByText('已匯入文章（1）')).toBeVisible();
+  await page.getByText('已匯入文章（1）').click();
+  await expect(page.getByText('Hello VibeLog', { exact: true })).toBeVisible();
   const preview = page.frameLocator('iframe[title*="即時預覽"]');
   await expect(preview.getByRole('heading', { name: 'Alice Writer', exact: true })).toBeVisible({ timeout: 30_000 });
+
+  await page.getByLabel('Blog 標題').fill('Alice’s Field Notes');
+  await page.getByLabel('Blog 描述').fill('Notes about humane software and careful tools.');
+  await page.getByRole('button', { name: '儲存並重建草稿' }).click();
+  await expect(page.getByRole('heading', { name: 'Alice’s Field Notes', exact: true })).toBeVisible({ timeout: 120_000 });
+  await expect(preview.getByRole('link', { name: 'Alice’s Field Notes', exact: true })).toBeVisible({ timeout: 30_000 });
 
   await page.getByText('手動微調安全樣式').click();
   await page.getByLabel('Editorial').check();
@@ -49,6 +58,11 @@ test('invite signup to hosted publication', async ({ page }) => {
   await expect(page.getByRole('link', { name: '查看已發布網站' })).toBeVisible({ timeout: 30_000 });
   await page.goto('http://alice.app.localtest.me:3100/');
   await expect(page.getByRole('heading', { name: 'Alice Writer', exact: true })).toBeVisible();
+  await expect(page).toHaveTitle('Alice’s Field Notes');
+  await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', 'Alice’s Field Notes');
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', 'Notes about humane software and careful tools.');
   await page.goto('http://alice.app.localtest.me:3100/blog/hello-vibelog/');
   await expect(page.getByRole('heading', { name: 'Hello VibeLog' })).toBeVisible();
+  const rss = await page.request.get('http://alice.app.localtest.me:3100/rss.xml');
+  expect(await rss.text()).toContain('<title>Alice’s Field Notes</title>');
 });

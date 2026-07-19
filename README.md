@@ -10,6 +10,7 @@ VibeLog turns a public HackMD profile into a complete hosted blog. Writers keep 
 
 - Invite-only username/password accounts
 - One public HackMD source and one blog per account
+- Editable blog identity and a clear summary of imported articles
 - A real Astro preview beside simple theme controls
 - Immutable theme revisions for undo and redo
 - RSS, sitemap, canonical URLs, Open Graph, responsive typography, and code styles

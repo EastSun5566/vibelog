@@ -8,6 +8,8 @@ The app is one Node.js process containing the Hono server and SQLite-backed oper
 
 Auth cookies are host-only and are never sent to preview or user blogs. Preview uses a separate short-lived token cookie. Published content is scriptless and receives a restrictive CSP.
 
+Each successful HackMD sync builds a versioned draft directory and switches the SQLite pointer only after the build is complete. Failed syncs therefore leave the previous blog identity, article summary, draft, and public release untouched.
+
 ## Runtime
 
 ```sh

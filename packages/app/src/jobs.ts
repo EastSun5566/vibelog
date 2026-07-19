@@ -1,8 +1,9 @@
 import { cp, mkdir, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { HackMdSource, buildFromVibelog, createAiProvider, createDevBuilder, renderThemeCss, validateThemeConfig } from '@vibelog/core';
 import type { AiProvider, ContentSource } from '@vibelog/core';
+import { parseSyncOperationPayload } from './blog-sync.js';
 import type { AppConfig } from './config.js';
 import type { AppDatabase, OperationRecord } from './database.js';
 import { blogRoot } from './security/path.js';
@@ -29,6 +30,16 @@ function publicOrigin(config: AppConfig, username: string): string {
   const host = `${username}.${app.hostname}${app.port ? `:${app.port}` : ''}`;
   return `${app.protocol}//${host}`;
 }
+async function removeReplacedDraft(root: string, previousDraft: string | null, nextDraft: string): Promise<void> {
+  if (!previousDraft || resolve(previousDraft) === resolve(nextDraft)) return;
+  const resolvedRoot = resolve(root);
+  const resolvedPrevious = resolve(previousDraft);
+  const pathFromDrafts = relative(resolve(root, 'drafts'), resolvedPrevious);
+  const isLegacyDraft = resolvedPrevious === resolve(resolvedRoot, 'draft');
+  const isVersionedDraft = Boolean(pathFromDrafts) && pathFromDrafts !== '..' && !pathFromDrafts.startsWith(`..${sep}`) && !isAbsolute(pathFromDrafts);
+  if (!isLegacyDraft && !isVersionedDraft) return;
+  await rm(previousDraft, { recursive: true, force: true });
+}
 
 export class OperationWorker {
   private stopped = false;
@@ -48,30 +59,46 @@ export class OperationWorker {
     switch (operation.type) {
     case 'sync': {
       const stagingRoot = join(root, `.sync-${randomUUID()}`);
+      let installedDraft: string | null = null;
       try {
         await mkdir(stagingRoot, { recursive: true, mode: 0o700 });
         const source = this.dependencies.contentSource?.(blog.hackmdUsername) ?? new HackMdSource(blog.hackmdUsername);
-        const author = await source.getAuthor();
-        await writeFile(join(stagingRoot, 'vibelog.config.json'), JSON.stringify({ site: { title: `${author.name}'s blog`, description: author.bio, language: 'zh-Hant' } }), { mode: 0o600 });
-        const builder = createDevBuilder({ root: stagingRoot, contentSource: source });
+        const [{ posts }, author] = await Promise.all([source.getPosts(), source.getAuthor()]);
+        const payload = parseSyncOperationPayload(operation.payload);
+        const site = payload.intent === 'identity'
+          ? payload.site
+          : { title: blog.title ?? `${author.name}'s blog`, description: blog.description ?? author.bio };
+        await writeFile(join(stagingRoot, 'vibelog.config.json'), JSON.stringify({ site: { ...site, language: 'zh-Hant' } }), { mode: 0o600 });
+        const snapshotSource: ContentSource = {
+          name: source.name,
+          getPosts: () => Promise.resolve({ posts }),
+          getAuthor: () => Promise.resolve(author),
+        };
+        const builder = createDevBuilder({ root: stagingRoot, contentSource: snapshotSource });
         await builder.prepare({ installDependencies: false });
-        await builder.fetchContent();
+        const summary = await builder.fetchContent();
         const output = join(stagingRoot, 'dist');
         await buildFromVibelog({ vibelogDir: join(stagingRoot, '.vibelog'), outDir: output, site: publicOrigin(this.config, blog.username) });
-        const draft = join(root, 'draft');
-        const backup = join(root, `.draft-backup-${randomUUID()}`);
-        await mkdir(root, { recursive: true, mode: 0o700 });
-        let backedUp = false;
-        try {
-          await rename(draft, backup); backedUp = true;
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        }
-        try { await rename(output, draft); if (backedUp) await rm(backup, { recursive: true, force: true }); }
-        catch (error) { if (backedUp) await rename(backup, draft); throw error; }
-        this.database.completeSync(blog.id, { title: `${author.name}'s blog`, description: author.bio, author: author.name, draftArtifact: draft });
-        return { message: '內容已同步' };
-      } finally { await rm(stagingRoot, { recursive: true, force: true }); }
+        const draftsRoot = join(root, 'drafts');
+        const draft = join(draftsRoot, randomUUID());
+        await mkdir(draftsRoot, { recursive: true, mode: 0o700 });
+        await rename(output, draft);
+        installedDraft = draft;
+        this.database.completeSync(blog.id, {
+          ...site,
+          author: summary.author.name,
+          draftArtifact: draft,
+          contentManifest: summary.posts,
+        });
+        installedDraft = null;
+        await removeReplacedDraft(root, blog.draftArtifact, draft).catch((error: unknown) => {
+          console.error(`[operation:${operation.id}] failed to remove replaced draft: ${safeTechnicalError(error, this.config)}`);
+        });
+        return { message: payload.intent === 'identity' ? 'Blog 資訊與內容已更新' : '內容已同步' };
+      } finally {
+        if (installedDraft) await rm(installedDraft, { recursive: true, force: true });
+        await rm(stagingRoot, { recursive: true, force: true });
+      }
     }
     case 'generate_theme': {
       const prompt = operation.payload.prompt;

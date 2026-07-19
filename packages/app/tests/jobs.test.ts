@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { DEFAULT_THEME } from '@vibelog/core';
-import type { AiProvider, ThemeConfig } from '@vibelog/core';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ContentSourceName, DEFAULT_THEME } from '@vibelog/core';
+import type { AiProvider, ContentSource, ThemeConfig } from '@vibelog/core';
 import type { AppConfig } from '../src/config.js';
 import { AppDatabase } from '../src/database.js';
 import { OperationWorker } from '../src/jobs.js';
@@ -13,6 +13,59 @@ const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
 describe('OperationWorker publication snapshots', () => {
+  it('reads the source once, preserves custom identity, and switches immutable drafts', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-sync-')); roots.push(root);
+    const database = new AppDatabase(root); const date = new Date();
+    database.db.insert(user).values({ id: '10101010-1010-4010-8010-101010101010', name: 'sync', email: 'sync@users.vibelog.invalid', emailVerified: false, username: 'sync', displayUsername: 'sync', createdAt: date, updatedAt: date }).run();
+    const { blog, operation: initial } = database.createBlog('10101010-1010-4010-8010-101010101010', 'sync', 'sync'); database.completeOperation(initial.id);
+    const oldDraft = join(root, 'blogs', blog.userId, blog.id, 'draft'); await mkdir(oldDraft, { recursive: true }); await writeFile(join(oldDraft, 'index.html'), '<h1>Old</h1>');
+    database.completeSync(blog.id, { title: 'Custom title', description: 'Custom description', author: 'Old Writer', draftArtifact: oldDraft });
+    const operation = database.createSyncOperation(blog.userId, blog.id, { intent: 'content' });
+    const getAuthor = vi.fn(() => Promise.resolve({ name: 'Writer', bio: 'Updated bio' }));
+    const getPosts = vi.fn(() => Promise.resolve({ posts: [
+      { id: 'older', title: 'Older', slug: 'older', date: '2026-01-01T00:00:00.000Z', content: 'Older article' },
+      { id: 'newer', title: 'Newer', slug: 'newer', date: '2026-02-01T00:00:00.000Z', content: 'Newer article' },
+    ] }));
+    const source: ContentSource = { name: ContentSourceName.HACKMD, getAuthor, getPosts };
+    const config = { dataRoot: root, appOrigin: 'http://app.localtest.me:3000' } as AppConfig;
+
+    await new OperationWorker(database, config, { contentSource: () => source }).execute(operation);
+
+    const synced = database.getBlog(blog.id); if (!synced?.draftArtifact) throw new Error('Draft missing');
+    expect(getAuthor).toHaveBeenCalledOnce(); expect(getPosts).toHaveBeenCalledOnce();
+    expect(synced).toMatchObject({
+      title: 'Custom title', description: 'Custom description', author: 'Writer', contentVersion: 2,
+      contentManifest: [
+        { title: 'Newer', slug: 'newer', publishedAt: '2026-02-01T00:00:00.000Z' },
+        { title: 'Older', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z' },
+      ],
+    });
+    expect(synced.draftArtifact).toMatch(/\/drafts\/[0-9a-f-]+$/);
+    expect(await readFile(join(synced.draftArtifact, 'index.html'), 'utf8')).toContain('Custom title');
+    await expect(readFile(join(oldDraft, 'index.html'), 'utf8')).rejects.toThrow();
+    database.close();
+  }, 30_000);
+
+  it('keeps the previous draft and metadata when the database switch fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-sync-failure-')); roots.push(root);
+    const database = new AppDatabase(root); const date = new Date();
+    database.db.insert(user).values({ id: '20202020-2020-4020-8020-202020202020', name: 'failure', email: 'failure@users.vibelog.invalid', emailVerified: false, username: 'failure', displayUsername: 'failure', createdAt: date, updatedAt: date }).run();
+    const { blog, operation: initial } = database.createBlog('20202020-2020-4020-8020-202020202020', 'failure', 'failure'); database.completeOperation(initial.id);
+    const oldDraft = join(root, 'blogs', blog.userId, blog.id, 'draft'); await mkdir(oldDraft, { recursive: true }); await writeFile(join(oldDraft, 'index.html'), '<h1>Still current</h1>');
+    database.completeSync(blog.id, { title: 'Current', description: 'Current description', author: 'Writer', draftArtifact: oldDraft, contentManifest: [{ title: 'Current post', slug: 'current', publishedAt: '2026-01-01T00:00:00.000Z' }] });
+    const operation = database.createSyncOperation(blog.userId, blog.id, { intent: 'identity', site: { title: 'Attempted', description: 'Attempted description' } });
+    const source: ContentSource = { name: ContentSourceName.HACKMD, getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Bio' }), getPosts: () => Promise.resolve({ posts: [{ id: 'post', title: 'Post', slug: 'post', date: '2026-02-01T00:00:00.000Z', content: 'Body' }] }) };
+    const config = { dataRoot: root, appOrigin: 'http://app.localtest.me:3000' } as AppConfig;
+    const completeSync = vi.spyOn(database, 'completeSync').mockImplementationOnce(() => { throw new Error('database switch failed'); });
+
+    await expect(new OperationWorker(database, config, { contentSource: () => source }).execute(operation)).rejects.toThrow('database switch failed');
+
+    expect(database.getBlog(blog.id)).toMatchObject({ title: 'Current', description: 'Current description', draftArtifact: oldDraft, contentVersion: 1, contentManifest: [{ title: 'Current post', slug: 'current', publishedAt: '2026-01-01T00:00:00.000Z' }] });
+    expect(await readFile(join(oldDraft, 'index.html'), 'utf8')).toContain('Still current');
+    expect(await readdir(join(root, 'blogs', blog.userId, blog.id, 'drafts')).catch(() => [])).toHaveLength(0);
+    completeSync.mockRestore(); database.close();
+  }, 30_000);
+
   it('uses the preview theme captured when AI work was enqueued', async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-ai-base-')); roots.push(root);
     const database = new AppDatabase(root); const date = new Date();

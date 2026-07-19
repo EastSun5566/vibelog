@@ -13,6 +13,7 @@ export const blogs = sqliteTable('blogs', {
   id: text('id').primaryKey(), userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }), username: text('username').notNull(),
   hackmdUsername: text('hackmd_username').notNull(), title: text('title'), description: text('description'), author: text('author'),
   state: text('state', { enum: ['syncing', 'ready', 'failed'] }).notNull(), lastError: text('last_error'), draftArtifact: text('draft_artifact'), contentVersion: integer('content_version').notNull().default(0),
+  contentManifest: text('content_manifest'), lastSyncedAt: text('last_synced_at'),
   createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull(),
 }, (table) => [uniqueIndex('blogs_one_per_user').on(table.userId), uniqueIndex('blogs_username_unique').on(table.username), check('blogs_state_check', sql`${table.state} in ('syncing','ready','failed')`)]);
 export const themeRevisions = sqliteTable('theme_revisions', {

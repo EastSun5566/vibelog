@@ -6,12 +6,14 @@ VibeLog 0.5 is an invite-only hosted editor. You need a public HackMD profile wi
 
 1. Register with the shared beta code, a permanent username, and a password.
 2. Enter your public HackMD username.
-3. Wait for the first Astro draft and open the live preview.
-4. Describe a visual direction, such as “a quiet editorial journal with warm paper colors.”
+3. Confirm the imported article titles and dates, then set the blog title and description.
+4. Open the live preview and describe a visual direction, such as “a quiet editorial journal with warm paper colors.”
 5. Switch between any saved theme revisions.
 6. Publish to `<username>.<APP_ORIGIN hostname>`.
 
 Only notes that HackMD exposes as public and published are imported. Duplicate slugs, invalid dates, and an empty public profile stop the sync without replacing the last working draft.
+
+The editor records the last successful sync and lists the imported article metadata without storing article bodies in SQLite. Saving the blog title or description also fetches the latest HackMD content and rebuilds a new draft. The previous identity, draft, and published site remain active if that rebuild fails. Later content syncs preserve the title and description you chose.
 
 ## Theme safety
 

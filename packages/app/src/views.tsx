@@ -1,6 +1,7 @@
 import type { AppSession } from './auth.js';
 import type { BlogRecord, OperationRecord, PublishedReleaseRecord, ThemeRevisionRecord } from './database.js';
-import { operationMessage, OPERATION_LABELS } from './operation-status.js';
+import { syncOperationIntent } from './blog-sync.js';
+import { operationLabel, operationMessage } from './operation-status.js';
 import { THEME_PALETTES, themeControlValues } from './theme-studio.js';
 
 const styles = `
@@ -38,6 +39,15 @@ button { cursor: pointer; min-height: 3rem; }
 form { display: grid; gap: .65rem; }
 input, textarea { width: 100%; min-height: 3rem; padding: .65rem; border: 1px solid #76736c; border-radius: .4rem; font-size: 1rem; }
 textarea { min-height: 7rem; resize: vertical; }
+input:user-invalid, textarea:user-invalid { border-color: #a12622; background: #fff5f5; box-shadow: 0 0 0 1px #a12622; }
+.validation-error { display: none; color: #a12622; font-size: .875rem; }
+input:user-invalid + .validation-error, textarea:user-invalid + .validation-error { display: block; }
+.field-hint { margin: -.35rem 0 0; color: #58666d; font-size: .875rem; }
+.content-summary { display: grid; gap: .65rem; }
+.content-summary p { margin: 0; }
+.content-list { display: grid; gap: .55rem; margin-block-end: 0; padding-inline-start: 1.25rem; }
+.content-list li { padding-inline-start: .2rem; }
+.content-list time { display: block; color: #58666d; font-size: .875rem; }
 a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible, output:focus-visible { outline: 3px solid #e59b19; outline-offset: 3px; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 .studio-card { border-top: .35rem solid #3157c8; padding: 1.1rem; }
@@ -236,6 +246,8 @@ export function editorPage(input: EditorPageInput) {
     ? { label: '尚未發布', className: 'pill pending' }
     : hasChanges ? { label: '有未發布變更', className: 'pill pending' } : { label: '已與線上版本同步', className: 'pill live' };
   const publishLabel = !published ? '發布第一版' : hasChanges ? '發布變更' : '已是最新版本';
+  const identityOperation = input.operation?.type === 'sync' && syncOperationIntent(input.operation.payload) === 'identity' ? input.operation : undefined;
+  const contentOperation = input.operation?.type === 'sync' && syncOperationIntent(input.operation.payload) === 'content' ? input.operation : undefined;
 
   return document('編輯 Blog', <div class="editor">
     <section class="controls" aria-label="Blog 控制">
@@ -253,11 +265,53 @@ export function editorPage(input: EditorPageInput) {
       </div>
 
       <section class="card">
+        <h2>Blog 資訊</h2>
+        <p class="muted">會顯示在網站標題、搜尋摘要、Open Graph 與 RSS。儲存時也會取得最新 HackMD 內容。</p>
+        <form method="post" action="/actions/blog/identity" data-operation aria-busy={identityOperation ? 'true' : undefined}>
+          <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
+          <label for="blogTitle">Blog 標題</label>
+          <input
+            id="blogTitle"
+            name="title"
+            required
+            minlength={1}
+            maxlength={80}
+            value={blog.title ?? ''}
+            aria-describedby="blog-title-help"
+            aria-errormessage="blog-title-error"
+          />
+          <span id="blog-title-error" class="validation-error"><span aria-hidden="true">!</span> 請輸入 1–80 字元的標題。</span>
+          <p id="blog-title-help" class="field-hint">最多 80 字元。</p>
+          <label for="blogDescription">Blog 描述</label>
+          <textarea id="blogDescription" name="description" maxlength={240} aria-describedby="blog-description-help">{blog.description ?? ''}</textarea>
+          <p id="blog-description-help" class="field-hint">最多 240 字元，可以留空。</p>
+          <button type="submit" disabled={busy}>儲存並重建草稿</button>
+          <OperationOutput operation={identityOperation}/>
+        </form>
+      </section>
+
+      <section class="card">
         <h2>同步內容</h2>
-        <form method="post" action="/actions/blog/sync" data-operation>
+        <div class="content-summary">
+          {blog.lastSyncedAt
+            ? <p class="muted">上次成功同步：<time datetime={blog.lastSyncedAt}>{new Date(blog.lastSyncedAt).toLocaleString('zh-TW')}</time></p>
+            : <p class="muted">尚無同步摘要；重新同步後會顯示文章清單。</p>}
+          {blog.contentManifest
+            ? <details>
+              <summary>已匯入文章（{blog.contentManifest.length}）</summary>
+              {blog.contentManifest.length > 0
+                ? <ol class="content-list">{blog.contentManifest.map((post) => <li>
+                  <span>{post.title}</span>
+                  <time datetime={post.publishedAt}>{new Date(post.publishedAt).toLocaleDateString('zh-TW')}</time>
+                </li>)}</ol>
+                : <p class="muted">這份摘要沒有文章。</p>}
+            </details>
+            : null}
+        </div>
+        <form method="post" action="/actions/blog/sync" data-operation aria-busy={contentOperation ? 'true' : undefined}>
           <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
           <button class="secondary" type="submit" disabled={busy}>重新同步 HackMD</button>
-          <OperationOutput operation={input.operation?.type === 'sync' ? input.operation : undefined}/>
+          <OperationOutput operation={contentOperation}/>
         </form>
       </section>
 
@@ -343,8 +397,9 @@ export function editorPage(input: EditorPageInput) {
 
 export function operationPage(nonce: string, session: AppSession, operation: OperationRecord, backUrl: string) {
   const pending = operation.status === 'queued' || operation.status === 'running';
-  return document(OPERATION_LABELS[operation.type], <section class="card stack">
-    <h1>{OPERATION_LABELS[operation.type]}</h1>
+  const label = operationLabel(operation);
+  return document(label, <section class="card stack">
+    <h1>{label}</h1>
     <output
       class={`status${operation.status === 'failed' ? ' error' : ''}`}
       aria-live="polite"

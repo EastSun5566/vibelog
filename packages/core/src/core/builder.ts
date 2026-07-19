@@ -47,6 +47,15 @@ export interface DevBuilderOptions {
   contentSource: ContentSource;
   baseDir?: string;
 }
+export interface BuildPostSummary {
+  title: string;
+  slug: string;
+  publishedAt: string;
+}
+export interface BuildContentSummary {
+  author: { name: string; bio: string };
+  posts: BuildPostSummary[];
+}
 export class DevBuilder {
   readonly root: string;
   readonly vibelogDir: string;
@@ -131,7 +140,7 @@ export class DevBuilder {
     await this.initVibelogDir({ installDependencies });
   }
 
-  async fetchContent() {
+  async fetchContent(): Promise<BuildContentSummary> {
     logger.info(`Fetching ${this.contentSource.name} content...`);
 
     const [{ posts: rawPosts }, author] = await Promise.all([
@@ -168,6 +177,7 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
 
     logger.info('Writing blog posts...');
     const usedSlugs = new Set<string>();
+    const summary: BuildPostSummary[] = [];
     for (const post of posts) {
       const title = post.title || 'Untitled';
       const excerpt = post.content
@@ -177,16 +187,18 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
       const slug = baseSlug;
       if (usedSlugs.has(slug)) throw new Error(`Duplicate post slug after normalization: ${slug}`);
       usedSlugs.add(slug);
+      const publishedAt = new Date(post.date).toISOString();
 
       const fileContent = matter.stringify(post.content, {
         title,
         description: excerpt.slice(0, 100),
-        date: new Date(post.date).toISOString(),
+        date: publishedAt,
         slug,
       });
 
       const filePath = join(blogDir, `${slug}.md`);
       await fs.writeFile(filePath, fileContent);
+      summary.push({ title, slug, publishedAt });
     }
 
     logger.info('Writing author profile...');
@@ -228,6 +240,10 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
     if (configBackedUp) await fs.remove(configBackupPath);
 
     logger.info('Content updated successfully');
+    return {
+      author,
+      posts: summary.sort((left, right) => right.publishedAt.localeCompare(left.publishedAt) || left.slug.localeCompare(right.slug)),
+    };
   }
 }
 export function createDevBuilder(options: DevBuilderOptions) {

@@ -6,6 +6,7 @@ import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { renderThemeCss } from '@vibelog/core';
 import { createAuth, readSession, type AppVariables } from './auth.js';
+import { blogIdentitySchema } from './blog-sync.js';
 import { CLIENT_SCRIPT } from './client.js';
 import { loadAppConfig, type AppConfig } from './config.js';
 import { AiQuotaExceededError, AppDatabase, type BlogRecord, type OperationType } from './database.js';
@@ -151,11 +152,12 @@ export function createApp(options: CreateAppOptions = {}) {
         { userDailyLimit: config.aiUserDailyLimit, globalDailyLimit: config.aiGlobalDailyLimit },
       ) : type === 'publish'
         ? database.createPublishOperation(blog.userId, blog.id, hashToken(String(payload.previewToken)))
-        : database.createOperation(blog.userId, blog.id, type, payload);
+        : database.createSyncOperation(blog.userId, blog.id, payload);
       return redirectOrJson(c, operation.id);
     } catch (error) {
       if (error instanceof AiQuotaExceededError) throw new AppError('ai_quota_exceeded', '今天的 AI 樣式額度已用完', 429, { 'Retry-After': String(error.retryAfter) });
       if (error instanceof Error && error.message === 'Nothing to publish') throw new AppError('nothing_to_publish', '目前沒有需要發布的變更', 409);
+      if (error instanceof Error && error.message === 'Nothing to update') throw new AppError('nothing_to_update', 'Blog 資訊沒有變更', 409);
       if (error instanceof Error && error.message === 'Blog has no synced content') throw new AppError('preview_not_ready', '請先完成內容同步', 409);
       if (error instanceof Error && error.message === 'Preview has unsaved theme changes') throw new AppError('unsaved_theme', '請先儲存目前的樣式，再進行發布', 409);
       if (error instanceof Error && error.message === 'Preview session expired or invalid') throw new AppError('preview_session_expired', '預覽已過期，請重新整理編輯器', 409);
@@ -180,7 +182,13 @@ export function createApp(options: CreateAppOptions = {}) {
       throw error;
     }
   });
-  app.post('/actions/blog/sync', async (c) => { await mutationBody(c); return enqueue(c, 'sync'); });
+  app.post('/actions/blog/sync', async (c) => { await mutationBody(c); return enqueue(c, 'sync', { intent: 'content' }); });
+  app.post('/actions/blog/identity', async (c) => {
+    const body = await mutationBody(c);
+    const input = blogIdentitySchema.safeParse({ title: formValue(body, 'title'), description: formValue(body, 'description') ?? '' });
+    if (!input.success) throw new AppError('invalid_blog_identity', 'Blog 標題必須是 1–80 字元，描述最多 240 字元', 400);
+    return enqueue(c, 'sync', { intent: 'identity', site: input.data });
+  });
   function themeFromBody(c: AppContext, body: Record<string, string | File>) {
     const blog = ownedBlog(c);
     const activeTheme = database.getActiveTheme(blog.id);

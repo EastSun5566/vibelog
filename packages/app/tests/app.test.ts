@@ -105,6 +105,45 @@ describe('hosted app boundaries', () => {
     database.close();
   });
 
+  it('validates Blog identity changes and renders the last successful content summary', async () => {
+    const { app, database } = await setup(); const auth = await register(app, 'identity');
+    const sessionResponse = await app.request('http://app.localtest.me:3000/api/session', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
+    const userId = String((await sessionResponse.json() as { user: { id: string } }).user.id);
+    const { blog, operation } = database.createBlog(userId, 'identity', 'identity-source'); database.completeOperation(operation.id);
+    database.completeSync(blog.id, {
+      title: 'Current title', description: 'Current description', author: 'Writer', draftArtifact: '/tmp/identity-draft', lastSyncedAt: '2026-07-20T10:00:00.000Z',
+      contentManifest: [
+        { title: 'Older article', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z' },
+        { title: 'Newest article', slug: 'newest', publishedAt: '2026-07-19T00:00:00.000Z' },
+      ],
+    });
+    const editor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
+    const html = await editor.text();
+    expect(html).toContain('Blog 資訊'); expect(html).toContain('已匯入文章（2）'); expect(html.indexOf('Newest article')).toBeLessThan(html.indexOf('Older article'));
+    expect(html).toContain('2026-07-20T10:00:00.000Z'); expect(html).not.toContain('private body');
+
+    const headers = { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', cookie: auth.cookie, accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' };
+    const invalid = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: '', description: 'Description' }) });
+    expect(invalid.status).toBe(400); expect(await invalid.json()).toMatchObject({ error: { code: 'invalid_blog_identity' } });
+    const invalidOrigin = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers: { ...headers, origin: 'http://evil.example' }, body: form({ csrfToken: auth.csrfToken, title: 'New title', description: 'New description' }) });
+    expect(invalidOrigin.status).toBe(403); expect(await invalidOrigin.json()).toMatchObject({ error: { code: 'invalid_origin' } });
+    const invalidCsrf = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: 'wrong', title: 'New title', description: 'New description' }) });
+    expect(invalidCsrf.status).toBe(403); expect(await invalidCsrf.json()).toMatchObject({ error: { code: 'invalid_csrf_token' } });
+
+    const accepted = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: '  New title  ', description: '  New description  ' }) });
+    expect(accepted.status).toBe(202);
+    const active = database.getActiveOperation(blog.id, blog.userId); if (!active) throw new Error('Identity operation missing');
+    expect(active.payload).toEqual({ intent: 'identity', site: { title: 'New title', description: 'New description' } });
+    expect((await (await app.request(`http://app.localtest.me:3000/api/operations/${active.id}`, { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } })).json() as { message: string }).message).toBe('正在等待更新 Blog 資訊…');
+    const concurrent = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: 'Another title', description: '' }) });
+    expect(concurrent.status).toBe(409); expect(await concurrent.json()).toMatchObject({ error: { code: 'operation_in_progress' } });
+    database.completeOperation(active.id);
+    database.completeSync(blog.id, { title: 'New title', description: 'New description', author: 'Writer', draftArtifact: '/tmp/new-identity-draft' });
+    const unchanged = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: 'New title', description: 'New description' }) });
+    expect(unchanged.status).toBe(409); expect(await unchanged.json()).toMatchObject({ error: { code: 'nothing_to_update' } });
+    database.close();
+  });
+
   it('previews curated controls without a revision, blocks unsaved publish, then saves one manual revision', async () => {
     const { app, database } = await setup(); const auth = await register(app, 'studio');
     const sessionResponse = await app.request('http://app.localtest.me:3000/api/session', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });

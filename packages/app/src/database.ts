@@ -8,6 +8,7 @@ import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3/driver';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import type { ThemeConfig } from '@vibelog/core';
 import { DEFAULT_THEME, validateThemeConfig } from '@vibelog/core';
+import { z } from 'zod';
 import { drizzleNodeSqlite } from './node-sqlite-drizzle.js';
 import * as schema from './schema.js';
 
@@ -15,7 +16,8 @@ export type BlogState = 'syncing' | 'ready' | 'failed';
 export type OperationType = 'sync' | 'generate_theme' | 'publish';
 export type OperationStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type ThemeRevisionSource = 'system' | 'ai' | 'manual';
-export interface BlogRecord { id: string; userId: string; username: string; hackmdUsername: string; title: string | null; description: string | null; author: string | null; state: BlogState; lastError: string | null; draftArtifact: string | null; contentVersion: number; createdAt: string; updatedAt: string }
+export interface SyncedPostSummary { title: string; slug: string; publishedAt: string }
+export interface BlogRecord { id: string; userId: string; username: string; hackmdUsername: string; title: string | null; description: string | null; author: string | null; state: BlogState; lastError: string | null; draftArtifact: string | null; contentVersion: number; contentManifest: SyncedPostSummary[] | null; lastSyncedAt: string | null; createdAt: string; updatedAt: string }
 export interface ThemeRevisionRecord { id: string; blogId: string; config: ThemeConfig; prompt: string | null; description: string; source: ThemeRevisionSource; active: boolean; createdAt: string }
 export interface OperationRecord { id: string; userId: string; blogId: string; type: OperationType; status: OperationStatus; payload: Record<string, unknown>; result: Record<string, unknown> | null; errorMessage: string | null; attempts: number; createdAt: string; updatedAt: string }
 export interface PublishedReleaseRecord { id: string; blogId: string; themeRevisionId: string; contentVersion: number; artifact: string; active: boolean; createdAt: string }
@@ -25,7 +27,13 @@ export class AiQuotaExceededError extends Error { constructor(readonly retryAfte
 
 const now = () => new Date().toISOString();
 const parseObject = (value: string) => JSON.parse(value) as Record<string, unknown>;
-const mapBlog = (row: typeof schema.blogs.$inferSelect): BlogRecord => row;
+const syncedPostSummarySchema = z.object({
+  title: z.string().min(1),
+  slug: z.string().min(1),
+  publishedAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid published date'),
+});
+const contentManifestSchema = z.array(syncedPostSummarySchema);
+const mapBlog = (row: typeof schema.blogs.$inferSelect): BlogRecord => ({ ...row, contentManifest: row.contentManifest ? contentManifestSchema.parse(JSON.parse(row.contentManifest)) : null });
 const mapTheme = (row: typeof schema.themeRevisions.$inferSelect): ThemeRevisionRecord => ({ ...row, config: validateThemeConfig(JSON.parse(row.config)) });
 const mapOperation = (row: typeof schema.operations.$inferSelect): OperationRecord => ({ ...row, payload: parseObject(row.payload), result: row.result ? parseObject(row.result) : null });
 const mapPreview = (row: typeof schema.previewSessions.$inferSelect): PreviewSessionRecord => ({ ...row, themeConfig: row.themeConfig ? validateThemeConfig(JSON.parse(row.themeConfig)) : null });
@@ -81,12 +89,12 @@ export class AppDatabase {
 
   createBlog(userId: string, username: string, hackmdUsername: string): { blog: BlogRecord; operation: OperationRecord } {
     const timestamp = now();
-    const blog: BlogRecord = { id: randomUUID(), userId, username, hackmdUsername, title: null, description: null, author: null, state: 'syncing', lastError: null, draftArtifact: null, contentVersion: 0, createdAt: timestamp, updatedAt: timestamp };
-    const operation = this.newOperation(userId, blog.id, 'sync', {});
+    const blog: BlogRecord = { id: randomUUID(), userId, username, hackmdUsername, title: null, description: null, author: null, state: 'syncing', lastError: null, draftArtifact: null, contentVersion: 0, contentManifest: null, lastSyncedAt: null, createdAt: timestamp, updatedAt: timestamp };
+    const operation = this.newOperation(userId, blog.id, 'sync', { intent: 'content' });
     return this.db.transaction((tx) => {
-      tx.insert(schema.blogs).values(blog).run();
+      tx.insert(schema.blogs).values({ ...blog, contentManifest: null }).run();
       tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId: blog.id, config: JSON.stringify(DEFAULT_THEME), prompt: null, description: DEFAULT_THEME.description, source: 'system', active: true, createdAt: timestamp }).run();
-      tx.insert(schema.operations).values({ ...operation, payload: '{}', result: null }).run();
+      tx.insert(schema.operations).values({ ...operation, payload: JSON.stringify(operation.payload), result: null }).run();
       return { blog, operation };
     }, { behavior: 'immediate' });
   }
@@ -100,13 +108,20 @@ export class AppDatabase {
       if (blog.draftArtifact) throw new Error('Blog already has synced content');
       const active = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blog.id), inArray(schema.operations.status, ['queued', 'running']))).get();
       if (active) throw new Error('Blog already has an active operation');
-      const operation = this.newOperation(userId, blog.id, 'sync', {});
+      const operation = this.newOperation(userId, blog.id, 'sync', { intent: 'content' });
       tx.update(schema.blogs).set({ hackmdUsername, state: 'syncing', lastError: null, updatedAt: now() }).where(eq(schema.blogs.id, blog.id)).run();
-      tx.insert(schema.operations).values({ ...operation, payload: '{}', result: null }).run();
+      tx.insert(schema.operations).values({ ...operation, payload: JSON.stringify(operation.payload), result: null }).run();
       return operation;
     }, { behavior: 'immediate' });
   }
-  completeSync(blogId: string, metadata: { title: string; description: string; author: string; draftArtifact: string }): void { this.db.update(schema.blogs).set({ ...metadata, contentVersion: sql`${schema.blogs.contentVersion} + 1`, state: 'ready', lastError: null, updatedAt: now() }).where(eq(schema.blogs.id, blogId)).run(); }
+  completeSync(blogId: string, metadata: { title: string; description: string; author: string; draftArtifact: string; contentManifest?: SyncedPostSummary[]; lastSyncedAt?: string }): void {
+    const timestamp = metadata.lastSyncedAt ?? now();
+    const contentManifest = contentManifestSchema.parse(metadata.contentManifest ?? [])
+      .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt) || left.slug.localeCompare(right.slug));
+    this.db.transaction((tx) => {
+      tx.update(schema.blogs).set({ ...metadata, contentManifest: JSON.stringify(contentManifest), lastSyncedAt: timestamp, contentVersion: sql`${schema.blogs.contentVersion} + 1`, state: 'ready', lastError: null, updatedAt: timestamp }).where(eq(schema.blogs.id, blogId)).run();
+    }, { behavior: 'immediate' });
+  }
   failSync(blogId: string, message: string): void { const blog = this.getBlog(blogId); this.db.update(schema.blogs).set({ state: blog?.draftArtifact ? 'ready' : 'failed', lastError: message, updatedAt: now() }).where(eq(schema.blogs.id, blogId)).run(); }
 
   listThemes(blogId: string): ThemeRevisionRecord[] { return this.db.select().from(schema.themeRevisions).where(eq(schema.themeRevisions.blogId, blogId)).orderBy(desc(schema.themeRevisions.createdAt)).all().map(mapTheme); }
@@ -133,7 +148,21 @@ export class AppDatabase {
   activateTheme(id: string, blogId: string): void { this.db.transaction((tx) => { const activeOperation = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get(); if (activeOperation) throw new Error('Blog already has an active operation'); const found = tx.select({ id: schema.themeRevisions.id }).from(schema.themeRevisions).where(and(eq(schema.themeRevisions.id, id), eq(schema.themeRevisions.blogId, blogId))).get(); if (!found) throw new Error('Theme revision not found'); tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, blogId)).run(); tx.update(schema.themeRevisions).set({ active: true }).where(eq(schema.themeRevisions.id, id)).run(); }, { behavior: 'immediate' }); }
 
   private newOperation(userId: string, blogId: string, type: OperationType, payload: Record<string, unknown>): OperationRecord { const timestamp = now(); return { id: randomUUID(), userId, blogId, type, status: 'queued', payload, result: null, errorMessage: null, attempts: 0, createdAt: timestamp, updatedAt: timestamp }; }
-  createOperation(userId: string, blogId: string, type: 'sync', payload: Record<string, unknown> = {}): OperationRecord { const op = this.newOperation(userId, blogId, type, payload); this.db.insert(schema.operations).values({ ...op, payload: JSON.stringify(payload), result: null }).run(); return op; }
+  createSyncOperation(userId: string, blogId: string, payload: Record<string, unknown>): OperationRecord {
+    return this.db.transaction((tx) => {
+      const blog = tx.select().from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId))).get();
+      if (!blog) throw new Error('Blog not found');
+      if (payload.intent === 'identity') {
+        const site = payload.site as { title?: unknown; description?: unknown } | undefined;
+        if (site?.title === blog.title && site.description === (blog.description ?? '')) throw new Error('Nothing to update');
+      }
+      const active = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get();
+      if (active) throw new Error('Blog already has an active operation');
+      const operation = this.newOperation(userId, blogId, 'sync', payload);
+      tx.insert(schema.operations).values({ ...operation, payload: JSON.stringify(payload), result: null }).run();
+      return operation;
+    }, { behavior: 'immediate' });
+  }
   createPublishOperation(userId: string, blogId: string, previewTokenHash: string): OperationRecord {
     return this.db.transaction((tx) => {
       const blog = tx.select().from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId))).get();
