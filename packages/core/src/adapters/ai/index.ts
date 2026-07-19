@@ -1,4 +1,4 @@
-import { Type, createModels, createProvider, validateToolCall, type Api, type Context, type Model, type Models, type MutableModels, type ProviderEnv, type Tool } from '@earendil-works/pi-ai';
+import { Type, createModels, createProvider, validateToolCall, type Api, type Context, type Model, type Models, type MutableModels, type ProviderEnv, type ProviderStreams, type SimpleStreamOptions, type Tool } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { builtinModels, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all';
 import type { AiProvider, ThemeConfig, ThemeProposalInput } from '../../types.js';
@@ -8,6 +8,7 @@ import { logger } from '../../core/index.js';
 const THEME_TOOL_NAME = 'propose_theme';
 const OLLAMA_PROVIDER = 'ollama';
 const OLLAMA_BASE_URL = 'http://localhost:11434/v1';
+const KEYLESS_OLLAMA_TRANSPORT_KEY = 'ollama-local';
 const enumType = <T extends string>(values: readonly T[]) => Type.Union(values.map((value) => Type.Literal(value)));
 const themeTool: Tool = {
   name: THEME_TOOL_NAME,
@@ -21,10 +22,26 @@ const themeTool: Tool = {
   }, { additionalProperties: false }),
 };
 
+function keylessOpenAICompletionsApi(): ProviderStreams {
+  const api = openAICompletionsApi();
+  const options = (input?: SimpleStreamOptions): SimpleStreamOptions => ({
+    ...input,
+    // pi-ai 0.80.7 requires a non-empty key to construct its OpenAI client,
+    // even for keyless local providers. Keep that compatibility value inside
+    // the transport and explicitly omit the corresponding HTTP auth header.
+    apiKey: input?.apiKey ?? KEYLESS_OLLAMA_TRANSPORT_KEY,
+    headers: { ...input?.headers, authorization: null },
+  });
+  return {
+    stream: (model, context, input) => api.stream(model, context, options(input)),
+    streamSimple: (model, context, input) => api.streamSimple(model, context, options(input)),
+  };
+}
+
 function createOllamaProvider(modelId: string) {
   const baseUrl = process.env.OLLAMA_BASE_URL ?? OLLAMA_BASE_URL;
   const model: Model<'openai-completions'> = { id: modelId, name: `${modelId} (Ollama)`, api: 'openai-completions', provider: OLLAMA_PROVIDER, baseUrl, reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128_000, maxTokens: 32_000, compat: { supportsDeveloperRole: false, supportsReasoningEffort: false } };
-  return createProvider({ id: OLLAMA_PROVIDER, name: 'Ollama', baseUrl, auth: { apiKey: { name: 'Ollama', resolve: () => Promise.resolve({ auth: {} }) } }, models: [model], api: openAICompletionsApi() });
+  return createProvider({ id: OLLAMA_PROVIDER, name: 'Ollama', baseUrl, auth: { apiKey: { name: 'Ollama', resolve: () => Promise.resolve({ auth: {} }) } }, models: [model], api: keylessOpenAICompletionsApi() });
 }
 function defaultModels(provider: string, modelId: string): MutableModels { const models = provider === OLLAMA_PROVIDER ? createModels() : builtinModels(); if (provider === OLLAMA_PROVIDER) models.setProvider(createOllamaProvider(modelId)); return models; }
 function requestEnv(provider: string): ProviderEnv | undefined { const legacy = process.env.GOOGLE_GENERATIVE_AI_API_KEY; return provider === 'google' && !process.env.GEMINI_API_KEY && legacy ? { GEMINI_API_KEY: legacy } : undefined; }
