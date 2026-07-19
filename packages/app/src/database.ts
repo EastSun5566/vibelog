@@ -203,6 +203,20 @@ export class AppDatabase {
 
   activateRelease(blogId: string, themeRevisionId: string, contentVersion: number, artifact: string): PublishedReleaseRecord { const record: PublishedReleaseRecord = { id: randomUUID(), blogId, themeRevisionId, contentVersion, artifact, active: true, createdAt: now() }; return this.db.transaction((tx) => { tx.update(schema.publishedReleases).set({ active: false }).where(eq(schema.publishedReleases.blogId, blogId)).run(); tx.insert(schema.publishedReleases).values(record).run(); return record; }, { behavior: 'immediate' }); }
   getActiveRelease(blogId: string): PublishedReleaseRecord | null { return this.db.select().from(schema.publishedReleases).where(and(eq(schema.publishedReleases.blogId, blogId), eq(schema.publishedReleases.active, true))).get() ?? null; }
+  listReleases(blogId: string): PublishedReleaseRecord[] { return this.db.select().from(schema.publishedReleases).where(eq(schema.publishedReleases.blogId, blogId)).orderBy(desc(schema.publishedReleases.createdAt)).all(); }
+  getRelease(id: string, blogId: string): PublishedReleaseRecord | null { return this.db.select().from(schema.publishedReleases).where(and(eq(schema.publishedReleases.id, id), eq(schema.publishedReleases.blogId, blogId))).get() ?? null; }
+  activateExistingRelease(id: string, blogId: string): PublishedReleaseRecord {
+    return this.db.transaction((tx) => {
+      const release = tx.select().from(schema.publishedReleases).where(and(eq(schema.publishedReleases.id, id), eq(schema.publishedReleases.blogId, blogId))).get();
+      if (!release) throw new Error('Release not found');
+      if (release.active) throw new Error('Release already active');
+      const activeOperation = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get();
+      if (activeOperation) throw new Error('Blog already has an active operation');
+      tx.update(schema.publishedReleases).set({ active: false }).where(eq(schema.publishedReleases.blogId, blogId)).run();
+      tx.update(schema.publishedReleases).set({ active: true }).where(and(eq(schema.publishedReleases.id, id), eq(schema.publishedReleases.blogId, blogId))).run();
+      return { ...release, active: true };
+    }, { behavior: 'immediate' });
+  }
   createPreviewSession(tokenHash: string, userId: string, blogId: string, expiresAt: string, themeConfig: ThemeConfig): void { const validated = validateThemeConfig(themeConfig); this.db.transaction((tx) => { tx.delete(schema.previewSessions).where(sql`${schema.previewSessions.expiresAt} <= ${now()}`).run(); tx.insert(schema.previewSessions).values({ tokenHash, userId, blogId, themeConfig: JSON.stringify(validated), expiresAt, createdAt: now() }).run(); }, { behavior: 'immediate' }); }
   getPreviewSession(tokenHash: string): PreviewSessionRecord | null { const row = this.db.select().from(schema.previewSessions).where(and(eq(schema.previewSessions.tokenHash, tokenHash), gt(schema.previewSessions.expiresAt, now()))).get(); return row ? mapPreview(row) : null; }
   updatePreviewTheme(tokenHash: string, userId: string, blogId: string, config: ThemeConfig): ThemeConfig {

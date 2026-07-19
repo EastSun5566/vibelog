@@ -10,6 +10,8 @@ Auth cookies are host-only and are never sent to preview or user blogs. Preview 
 
 Each successful HackMD sync builds a versioned draft directory and switches the SQLite pointer only after the build is complete. Failed syncs therefore leave the previous blog identity, article summary, draft, and public release untouched.
 
+Every successful publication also remains as an immutable release. Writers can restore an earlier live release from the Editor without changing their current draft or theme; public responses use release-aware ETags so the restored version is visible on the next load.
+
 ## Runtime
 
 ```sh

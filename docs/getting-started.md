@@ -10,6 +10,7 @@ VibeLog 0.5 is an invite-only hosted editor. You need a public HackMD profile wi
 4. Open the live preview and describe a visual direction, such as “a quiet editorial journal with warm paper colors.”
 5. Switch between any saved theme revisions.
 6. Publish to `<username>.<APP_ORIGIN hostname>`.
+7. If a later publication is not right, open the publication history and restore any earlier live version without changing the current draft.
 
 Only notes that HackMD exposes as public and published are imported. Duplicate slugs, invalid dates, and an empty public profile stop the sync without replacing the last working draft.
 
@@ -28,3 +29,7 @@ The AI receives the blog title, description, author, current theme, and your des
 VibeLog rejects unknown fields, remote fonts, arbitrary CSS, unsafe values, and colors that fail WCAG text/link contrast. A failed proposal never changes the active revision.
 
 There is no password recovery in the self-contained beta. Keep your password safe; signed-in users can change it from the editor.
+
+## Publication history
+
+Every successful publication is immutable and remains available from the Editor. Restoring an earlier publication changes only the public website; the current draft, imported content summary, and preview theme stay unchanged. When they differ from the restored site, the Editor shows “有未發布變更”, and publishing again restores the current draft to the live site.

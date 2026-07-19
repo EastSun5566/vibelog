@@ -105,6 +105,38 @@ describe('AppDatabase 0.5 model', () => {
     expect(database.createPublishOperation(blog.userId, blog.id, previewFor(database, blog, 'changed-preview')).payload).toEqual({ contentVersion: 1, themeRevisionId: secondTheme.id });
     database.close();
   });
+  it('lists immutable releases and atomically restores only the live pointer', async () => {
+    const database = await subject(); addUser(database, '56565656-5656-4656-8656-565656565656', 'release-history');
+    const { blog, operation } = database.createBlog('56565656-5656-4656-8656-565656565656', 'release-history', 'release-history'); database.completeOperation(operation.id);
+    database.completeSync(blog.id, { title: 'Draft A', description: '', author: 'Writer', draftArtifact: '/tmp/draft-a' });
+    const themeA = database.getActiveTheme(blog.id); if (!themeA) throw new Error('Initial theme missing');
+    const releaseA = database.activateRelease(blog.id, themeA.id, 1, '/tmp/release-a');
+    database.connection.prepare('UPDATE published_releases SET created_at = ? WHERE id = ?').run('2026-07-19T00:00:00.000Z', releaseA.id);
+    database.completeSync(blog.id, { title: 'Draft B', description: '', author: 'Writer', draftArtifact: '/tmp/draft-b' });
+    const themeB = database.createTheme(blog.id, { ...DEFAULT_THEME, radius: 'round', description: 'Second release theme' }, 'change');
+    const releaseB = database.activateRelease(blog.id, themeB.id, 2, '/tmp/release-b');
+    database.connection.prepare('UPDATE published_releases SET created_at = ? WHERE id = ?').run('2026-07-20T00:00:00.000Z', releaseB.id);
+
+    expect(database.listReleases(blog.id).map((release) => release.id)).toEqual([releaseB.id, releaseA.id]);
+    expect(database.getRelease(releaseA.id, blog.id)).toMatchObject({ id: releaseA.id, active: false });
+    expect(database.getRelease(releaseA.id, '00000000-0000-4000-8000-000000000000')).toBeNull();
+    expect(() => database.activateExistingRelease(releaseB.id, blog.id)).toThrow('already active');
+    expect(() => database.activateExistingRelease('00000000-0000-4000-8000-000000000000', blog.id)).toThrow('not found');
+
+    const activeOperation = database.createSyncOperation(blog.userId, blog.id, { intent: 'content' });
+    expect(() => database.activateExistingRelease(releaseA.id, blog.id)).toThrow('active operation');
+    expect(database.getActiveRelease(blog.id)?.id).toBe(releaseB.id);
+    database.completeOperation(activeOperation.id);
+
+    const draftBeforeRestore = database.getBlog(blog.id);
+    const themeBeforeRestore = database.getActiveTheme(blog.id);
+    expect(database.activateExistingRelease(releaseA.id, blog.id)).toMatchObject({ id: releaseA.id, active: true });
+    expect(database.listReleases(blog.id)).toHaveLength(2);
+    expect(database.listReleases(blog.id).filter((release) => release.active).map((release) => release.id)).toEqual([releaseA.id]);
+    expect(database.getBlog(blog.id)).toEqual(draftBeforeRestore);
+    expect(database.getActiveTheme(blog.id)).toEqual(themeBeforeRestore);
+    database.close();
+  });
   it('removes expired preview sessions while retaining valid access', async () => {
     const database = await subject(); addUser(database, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'helen');
     const { blog } = database.createBlog('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'helen', 'helen');

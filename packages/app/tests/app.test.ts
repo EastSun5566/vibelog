@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -64,6 +64,68 @@ describe('hosted app boundaries', () => {
     expect(await published.text()).toContain('Published');
     expect(published.headers.get('content-security-policy')).toContain("script-src 'none'");
     expect((await app.request('http://unknown.example/', { headers: { host: 'unknown.example' } })).status).toBe(404);
+    database.close();
+  });
+  it('renders release history, validates artifacts, and restores the live release with revalidation', async () => {
+    const { app, database, root } = await setup(); const auth = await register(app, 'rollback');
+    const session = await app.request('http://app.localtest.me:3000/api/session', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
+    const userId = String((await session.json() as { user: { id: string } }).user.id);
+    const { blog, operation } = database.createBlog(userId, 'rollback', 'rollback'); database.completeOperation(operation.id);
+    const draftA = join(root, 'blogs', userId, blog.id, 'drafts', 'draft-a'); await mkdir(draftA, { recursive: true }); await writeFile(join(draftA, 'index.html'), '<h1>Draft A</h1>');
+    database.completeSync(blog.id, { title: 'Draft A', description: '', author: 'Writer', draftArtifact: draftA });
+    const themeA = database.getActiveTheme(blog.id); if (!themeA) throw new Error('Initial theme missing');
+    const releasesRoot = join(root, 'blogs', userId, blog.id, 'releases');
+    const artifactA = join(releasesRoot, 'release-a'); await mkdir(artifactA, { recursive: true }); await writeFile(join(artifactA, 'index.html'), '<h1>Release A</h1>'); await writeFile(join(artifactA, 'about.html'), '<p>About A</p>');
+    const releaseA = database.activateRelease(blog.id, themeA.id, 1, artifactA);
+
+    const draftB = join(root, 'blogs', userId, blog.id, 'drafts', 'draft-b'); await mkdir(draftB, { recursive: true }); await writeFile(join(draftB, 'index.html'), '<h1>Draft B</h1>');
+    database.completeSync(blog.id, { title: 'Draft B', description: '', author: 'Writer', draftArtifact: draftB });
+    const themeB = database.createTheme(blog.id, { ...DEFAULT_THEME, radius: 'round', description: 'Second release theme' }, 'change');
+    const artifactB = join(releasesRoot, 'release-b'); await mkdir(artifactB, { recursive: true }); await writeFile(join(artifactB, 'index.html'), '<h1>Release B</h1>'); await writeFile(join(artifactB, 'about.html'), '<p>About B</p>');
+    const releaseB = database.activateRelease(blog.id, themeB.id, 2, artifactB);
+
+    const editor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
+    const editorHtml = await editor.text();
+    expect(editorHtml).toContain('發布紀錄（2）'); expect(editorHtml).toContain('Second release theme'); expect(editorHtml).toContain('目前線上'); expect(editorHtml).not.toContain(artifactA);
+
+    const publicB = await app.request('http://rollback.app.localtest.me:3000/', { headers: { host: 'rollback.app.localtest.me:3000' } });
+    const etagB = publicB.headers.get('etag'); if (!etagB) throw new Error('Release ETag missing');
+    expect(await publicB.text()).toContain('Release B'); expect(publicB.headers.get('cache-control')).toBe('public, no-cache');
+    const unchanged = await app.request('http://rollback.app.localtest.me:3000/', { headers: { host: 'rollback.app.localtest.me:3000', 'if-none-match': etagB } });
+    expect(unchanged.status).toBe(304); expect(await unchanged.text()).toBe(''); expect(unchanged.headers.get('content-security-policy')).toContain("script-src 'none'");
+    const otherPath = await app.request('http://rollback.app.localtest.me:3000/about.html', { headers: { host: 'rollback.app.localtest.me:3000' } });
+    expect(otherPath.headers.get('etag')).not.toBe(etagB);
+
+    const headers = { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', cookie: auth.cookie, 'content-type': 'application/x-www-form-urlencoded' };
+    const restore = (releaseId: string, requestHeaders = headers, csrfToken = auth.csrfToken) => app.request(`http://app.localtest.me:3000/actions/releases/${releaseId}/activate`, { method: 'POST', headers: requestHeaders, body: form({ csrfToken }) });
+    expect((await restore(releaseA.id, { ...headers, origin: 'http://evil.example' })).status).toBe(403);
+    expect((await restore(releaseA.id, headers, 'wrong')).status).toBe(403);
+    expect((await restore(releaseB.id)).status).toBe(409);
+
+    const activeOperation = database.createSyncOperation(blog.userId, blog.id, { intent: 'content' });
+    expect((await restore(releaseA.id)).status).toBe(409); expect(database.getActiveRelease(blog.id)?.id).toBe(releaseB.id);
+    database.completeOperation(activeOperation.id);
+
+    const missingRelease = database.activateRelease(blog.id, themeA.id, 1, join(releasesRoot, 'missing'));
+    database.activateExistingRelease(releaseB.id, blog.id);
+    const missing = await restore(missingRelease.id); expect(missing.status).toBe(409); expect(await missing.json()).toMatchObject({ error: { code: 'release_unavailable' } });
+    const outside = join(root, 'outside-release'); await mkdir(outside); await writeFile(join(outside, 'index.html'), '<h1>Outside</h1>');
+    const linkedArtifact = join(releasesRoot, 'linked'); await symlink(outside, linkedArtifact);
+    const linkedRelease = database.activateRelease(blog.id, themeA.id, 1, linkedArtifact);
+    database.activateExistingRelease(releaseB.id, blog.id);
+    const linked = await restore(linkedRelease.id); expect(linked.status).toBe(409); expect(await linked.json()).toMatchObject({ error: { code: 'release_unavailable' } });
+
+    const otherAuth = await register(app, 'release-outsider');
+    expect((await restore(releaseA.id, { ...headers, cookie: otherAuth.cookie }, otherAuth.csrfToken)).status).toBe(404);
+    const operationsBeforeRestore = database.connection.prepare('SELECT COUNT(*) AS count FROM operations').get() as { count: number };
+    expect((await restore(releaseA.id)).status).toBe(303);
+    expect(database.getActiveRelease(blog.id)?.id).toBe(releaseA.id);
+    expect((database.connection.prepare('SELECT COUNT(*) AS count FROM operations').get() as { count: number }).count).toBe(operationsBeforeRestore.count);
+    const publicA = await app.request('http://rollback.app.localtest.me:3000/', { headers: { host: 'rollback.app.localtest.me:3000', 'if-none-match': etagB } });
+    expect(publicA.status).toBe(200); expect(publicA.headers.get('etag')).not.toBe(etagB); expect(await publicA.text()).toContain('Release A');
+    const restoredEditor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
+    expect(await restoredEditor.text()).toContain('有未發布變更');
+    expect((await restore(releaseB.id)).status).toBe(303); expect(database.getActiveRelease(blog.id)?.id).toBe(releaseB.id);
     database.close();
   });
   it('lets a user repair the initial HackMD source but locks it after successful sync', async () => {

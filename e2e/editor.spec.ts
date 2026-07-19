@@ -56,6 +56,16 @@ test('invite signup to hosted publication', async ({ page }) => {
   await expect(page.getByText('已與線上版本同步', { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('button', { name: /已是最新版本/ })).toBeDisabled();
   await expect(page.getByRole('link', { name: '查看已發布網站' })).toBeVisible({ timeout: 30_000 });
+  const aiCss = await (await page.request.get('http://alice.app.localtest.me:3100/theme.css')).text();
+  await page.getByText('發布紀錄（2）', { exact: true }).click();
+  await expect(page.getByText('目前線上', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '還原為線上版本' }).click();
+  await expect(page.getByText('有未發布變更', { exact: true })).toBeVisible();
+  const restoredCss = await (await page.request.get('http://alice.app.localtest.me:3100/theme.css')).text();
+  expect(restoredCss).not.toBe(aiCss);
+  await page.getByText('發布紀錄（2）', { exact: true }).click();
+  await page.getByRole('button', { name: '還原為線上版本' }).click();
+  await expect(page.getByText('已與線上版本同步', { exact: true })).toBeVisible();
   await page.goto('http://alice.app.localtest.me:3100/');
   await expect(page.getByRole('heading', { name: 'Alice Writer', exact: true })).toBeVisible();
   await expect(page).toHaveTitle('Alice’s Field Notes');

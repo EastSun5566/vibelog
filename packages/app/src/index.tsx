@@ -12,7 +12,7 @@ import { loadAppConfig, type AppConfig } from './config.js';
 import { AiQuotaExceededError, AppDatabase, type BlogRecord, type OperationType } from './database.js';
 import { AppError, assertCsrfToken, assertMutationOrigin, jsonError, requestContext } from './http.js';
 import { hashToken, randomToken } from './security/crypto.js';
-import { assertNoSymlinkEscape, resolveRelativeWithin } from './security/path.js';
+import { assertNoSymlinkEscape, blogRoot, resolveRelativeWithin } from './security/path.js';
 import { operationMessage } from './operation-status.js';
 import { themeFromControls } from './theme-studio.js';
 import { changePasswordPage, editorPage, loginPage, onboardingPage, operationPage, registerPage } from './views.js';
@@ -35,9 +35,11 @@ function publicUsername(c: AppContext, config: AppConfig): string | null { const
 function contentType(path: string): string { const extension = path.split('.').at(-1)?.toLowerCase(); return ({ html: 'text/html; charset=utf-8', css: 'text/css; charset=utf-8', js: 'text/javascript; charset=utf-8', json: 'application/json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', ico: 'image/x-icon', xml: 'application/xml; charset=utf-8' } as Record<string, string>)[extension ?? ''] ?? 'application/octet-stream'; }
 function cookieValue(header: string | undefined, name: string): string | undefined { return header?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1); }
 function siteUrl(config: AppConfig, username: string): string { const origin = new URL(config.appOrigin); return `${origin.protocol}//${username}.${origin.hostname}${origin.port ? `:${origin.port}` : ''}`; }
+function releaseEtag(releaseId: string, requestPath: string): string { return `"${createHash('sha256').update(releaseId).update('\0').update(requestPath).digest('base64url')}"`; }
+function matchesEtag(value: string | undefined, etag: string): boolean { return value?.split(',').some((candidate) => { const tag = candidate.trim(); return tag === '*' || tag === etag || tag === `W/${etag}`; }) ?? false; }
 
 
-async function staticResponse(c: AppContext, root: string, requestPath: string, cache: string): Promise<Response> {
+async function staticResponse(c: AppContext, root: string, requestPath: string, cache: string, etag?: string): Promise<Response> {
   if (/%(?:2f|5c|2e)/i.test(requestPath)) throw new AppError('unsafe_path', 'Unsafe path', 400);
   const relative = decodeURIComponent(requestPath.replace(/^\/+/, '') || 'index.html');
   let target = resolveRelativeWithin(root, relative);
@@ -46,6 +48,10 @@ async function staticResponse(c: AppContext, root: string, requestPath: string, 
   await assertNoSymlinkEscape(root, target).catch(() => { throw new AppError('site_not_found', 'Page not found', 404); });
   c.header('Content-Type', contentType(basename(target)));
   c.header('Cache-Control', cache);
+  if (etag) {
+    c.header('ETag', etag);
+    if (matchesEtag(c.req.header('if-none-match'), etag)) return new Response(null, { status: 304, headers: c.res.headers });
+  }
   return new Response(new Uint8Array(await readFile(target)), { headers: c.res.headers });
 }
 
@@ -84,7 +90,7 @@ export function createApp(options: CreateAppOptions = {}) {
       const release = blog ? database.getActiveRelease(blog.id) : null;
       if (!release) throw new AppError('site_not_found', 'This blog has not been published yet', 404);
       c.header('Content-Security-Policy', "default-src 'self'; script-src 'none'; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
-      return staticResponse(c, release.artifact, c.req.path, 'public, max-age=60');
+      return staticResponse(c, release.artifact, c.req.path, 'public, no-cache', releaseEtag(release.id, c.req.path));
     }
     throw new AppError('unknown_host', 'Unknown VibeLog host', 404);
   });
@@ -224,6 +230,26 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post('/actions/theme/generate', async (c) => { const body = await mutationBody(c); const input = themeInput.safeParse({ prompt: formValue(body, 'prompt') }); if (!input.success) throw new AppError('invalid_theme_prompt', '請用 1–1000 字描述想要的樣式', 400); const { blog, theme } = themeFromBody(c, body); assertOwnedPreview(blog, readPreviewToken(body)); return enqueue(c, 'generate_theme', { ...input.data, baseTheme: theme }); });
   app.post('/actions/theme/:id/activate', async (c) => { await mutationBody(c); const blog = ownedBlog(c); const id = uuidInput.safeParse(c.req.param('id')); if (!id.success) throw new AppError('invalid_revision', '樣式版本不存在', 404); try { database.activateTheme(id.data, blog.id); } catch (error) { if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', '目前已有操作進行中', 409); throw error; } return c.redirect('/editor', 303); });
   app.post('/actions/publish', async (c) => { const body = await mutationBody(c); return enqueue(c, 'publish', { previewToken: readPreviewToken(body) }); });
+  app.post('/actions/releases/:id/activate', async (c) => {
+    await mutationBody(c);
+    const blog = ownedBlog(c);
+    const id = uuidInput.safeParse(c.req.param('id'));
+    if (!id.success) throw new AppError('release_not_found', '發布版本不存在', 404);
+    const release = database.getRelease(id.data, blog.id);
+    if (!release) throw new AppError('release_not_found', '發布版本不存在', 404);
+    const releasesRoot = join(blogRoot(config.dataRoot, blog.userId, blog.id), 'releases');
+    const artifact = await stat(release.artifact).catch(() => null);
+    if (!artifact?.isDirectory()) throw new AppError('release_unavailable', '這個發布版本的檔案已無法使用', 409);
+    await assertNoSymlinkEscape(releasesRoot, release.artifact).catch(() => { throw new AppError('release_unavailable', '這個發布版本的檔案已無法使用', 409); });
+    try { database.activateExistingRelease(release.id, blog.id); }
+    catch (error) {
+      if (error instanceof Error && error.message === 'Release not found') throw new AppError('release_not_found', '發布版本不存在', 404);
+      if (error instanceof Error && error.message === 'Release already active') throw new AppError('nothing_to_restore', '這個版本已經是目前的線上版本', 409);
+      if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', '目前已有操作進行中', 409);
+      throw error;
+    }
+    return c.redirect('/editor', 303);
+  });
 
   app.get('/editor', (c) => {
     const blog = database.getBlogForUser(c.get('session').user.id);
@@ -235,8 +261,9 @@ export function createApp(options: CreateAppOptions = {}) {
     database.createPreviewSession(hashToken(token), blog.userId, blog.id, new Date(Date.now() + 15 * 60_000).toISOString(), activeTheme.config);
     const previewUrl = `${config.previewOrigin}/preview-access/${encodeURIComponent(token)}`;
     const published = database.getActiveRelease(blog.id);
+    const releases = database.listReleases(blog.id);
     const operation = database.getActiveOperation(blog.id, blog.userId);
-    return c.html(editorPage({ nonce: c.get('cspNonce'), session: c.get('session'), blog, themes, activeTheme, published, previewUrl, previewToken: token, publicUrl: siteUrl(config, blog.username), appHostname: config.appHostname, operation }));
+    return c.html(editorPage({ nonce: c.get('cspNonce'), session: c.get('session'), blog, themes, activeTheme, published, releases, previewUrl, previewToken: token, publicUrl: siteUrl(config, blog.username), appHostname: config.appHostname, operation }));
   });
   app.get('/operations/:id', (c) => {
     const id = uuidInput.safeParse(c.req.param('id'));

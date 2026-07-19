@@ -208,6 +208,7 @@ interface EditorPageInput {
   themes: ThemeRevisionRecord[];
   activeTheme: ThemeRevisionRecord;
   published: PublishedReleaseRecord | null;
+  releases: PublishedReleaseRecord[];
   previewUrl: string | null;
   previewToken: string;
   publicUrl: string;
@@ -238,8 +239,9 @@ function ChoiceGroup({ legend, name, options, value }: { legend: string; name: s
 const SOURCE_LABEL = { system: '初始', ai: 'AI', manual: '手動' } as const;
 
 export function editorPage(input: EditorPageInput) {
-  const { blog, themes, activeTheme, published } = input;
+  const { blog, themes, activeTheme, published, releases } = input;
   const controls = themeControlValues(activeTheme.config);
+  const themesById = new Map(themes.map((theme) => [theme.id, theme]));
   const busy = Boolean(input.operation && (input.operation.status === 'queued' || input.operation.status === 'running'));
   const hasChanges = !published || published.contentVersion !== blog.contentVersion || published.themeRevisionId !== activeTheme.id;
   const publication = !published
@@ -383,6 +385,26 @@ export function editorPage(input: EditorPageInput) {
           <button type="submit" data-publish-button disabled={!blog.draftArtifact || !hasChanges || busy}>{publishLabel}到 {blog.username}.{input.appHostname}</button>
           <OperationOutput operation={input.operation?.type === 'publish' ? input.operation : undefined}/>
         </form>
+        {releases.length > 0 ? <details class="history">
+          <summary>發布紀錄（{releases.length}）</summary>
+          <div class="stack">{releases.map((release) => {
+            const theme = themesById.get(release.themeRevisionId);
+            return <div class="revision">
+              <div>
+                <strong>{theme?.description ?? '已發布樣式'}</strong>
+                <div class="markers">
+                  {theme ? <span class="marker">{SOURCE_LABEL[theme.source]}</span> : null}
+                  {release.active ? <span class="marker">目前線上</span> : null}
+                </div>
+                <small class="muted">{new Date(release.createdAt).toLocaleString('zh-TW')}</small>
+              </div>
+              {release.active ? null : <form method="post" action={`/actions/releases/${release.id}/activate`}>
+                <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
+                <button class="secondary" type="submit" disabled={busy}>還原為線上版本</button>
+              </form>}
+            </div>;
+          })}</div>
+        </details> : null}
       </section>
     </section>
 

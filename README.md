@@ -13,6 +13,7 @@ VibeLog turns a public HackMD profile into a complete hosted blog. Writers keep 
 - Editable blog identity and a clear summary of imported articles
 - A real Astro preview beside simple theme controls
 - Immutable theme revisions for undo and redo
+- Immutable publication history with one-click live rollback
 - RSS, sitemap, canonical URLs, Open Graph, responsive typography, and code styles
 - One self-contained Node process with Hono, a SQLite operation worker, and hosted static releases
 
