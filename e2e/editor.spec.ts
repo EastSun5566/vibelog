@@ -21,13 +21,26 @@ test('invite signup to hosted publication', async ({ page }) => {
   await expect(page.getByText('尚未發布', { exact: true })).toBeVisible();
   const preview = page.frameLocator('iframe[title*="即時預覽"]');
   await expect(preview.getByRole('heading', { name: 'Alice Writer', exact: true })).toBeVisible({ timeout: 30_000 });
+
+  await page.getByText('手動微調安全樣式').click();
+  await page.getByLabel('Editorial').check();
+  await page.getByLabel('Newsprint').check();
+  await expect(page.getByText('預覽已更新，尚未儲存', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('這些樣式尚未儲存；儲存後才能發布。')).toBeVisible();
+  await expect(page.getByRole('button', { name: /發布第一版到/ })).toBeDisabled();
+  await page.getByRole('button', { name: '儲存成新版本' }).click();
+  await expect(page).toHaveURL(/\/editor$/);
+  await page.getByText(/歷史樣式/).click();
+  await expect(page.getByText('Editorial · Newsprint · Sans / Sans · Medium')).toBeVisible();
+  await expect(page.getByText('手動', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /發布第一版到/ }).click();
   await expect(page.getByText('已與線上版本同步', { exact: true })).toBeVisible({ timeout: 30_000 });
 
   await page.getByLabel('描述你想要的感覺').fill('像一本溫暖而克制的獨立雜誌');
-  await page.getByRole('button', { name: '產生新樣式' }).click();
+  await page.getByRole('button', { name: '交給 AI 設計' }).click();
+  await expect(page.getByText('有未發布變更', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await page.getByText(/歷史樣式/).click();
   await expect(page.getByText('A warm editorial theme.')).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText('有未發布變更', { exact: true })).toBeVisible();
   await expect(page.getByText('預覽中', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: /發布變更到/ }).click();

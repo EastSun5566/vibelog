@@ -1,7 +1,7 @@
 import { cp, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { HackMdSource, buildFromVibelog, createAiProvider, createDevBuilder, renderThemeCss } from '@vibelog/core';
+import { HackMdSource, buildFromVibelog, createAiProvider, createDevBuilder, renderThemeCss, validateThemeConfig } from '@vibelog/core';
 import type { AiProvider, ContentSource } from '@vibelog/core';
 import type { AppConfig } from './config.js';
 import type { AppDatabase, OperationRecord } from './database.js';
@@ -78,8 +78,10 @@ export class OperationWorker {
       if (typeof prompt !== 'string') throw new Error('Theme description is required');
       const current = this.database.getActiveTheme(blog.id);
       if (!current) throw new Error('Active theme not found');
+      let baseTheme = current.config;
+      if (operation.payload.baseTheme) baseTheme = validateThemeConfig(operation.payload.baseTheme);
       const theme = await (this.dependencies.aiProvider?.() ?? createAiProvider(this.config.aiProvider, this.config.aiModel)).generate({
-        blog: { title: blog.title ?? blog.username, description: blog.description ?? '', author: blog.author ?? blog.username }, currentTheme: current.config, prompt,
+        blog: { title: blog.title ?? blog.username, description: blog.description ?? '', author: blog.author ?? blog.username }, currentTheme: baseTheme, prompt,
       });
       const revision = this.database.createTheme(blog.id, theme, prompt);
       return { message: '新樣式已準備好', revisionId: revision.id };

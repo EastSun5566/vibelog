@@ -1,47 +1,85 @@
 import type { AppSession } from './auth.js';
 import type { BlogRecord, OperationRecord, PublishedReleaseRecord, ThemeRevisionRecord } from './database.js';
 import { operationMessage, OPERATION_LABELS } from './operation-status.js';
+import { THEME_PALETTES, themeControlValues } from './theme-studio.js';
 
 const styles = `
-:root { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; color: #202124; background: #f6f5f2; line-height: 1.5; }
+:root { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; color: #182027; background: #f2f5f6; line-height: 1.5; accent-color: #3157c8; }
 * { box-sizing: border-box; }
 body { margin: 0; }
-a { color: #075985; }
+a { color: #2448b8; }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; min-height: 3rem; }
 .shell { max-width: 90rem; margin: auto; padding: 1rem; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: .5rem 1rem; }
 .topbar nav { display: flex; align-items: center; gap: .75rem; }
-.button, button { border: 1px solid #202124; border-radius: .45rem; background: #202124; color: #fff; padding: .65rem 1rem; text-decoration: none; }
-.secondary { background: transparent; color: #202124; }
+.button, button { border: 1px solid #182027; border-radius: .45rem; background: #182027; color: #fff; padding: .65rem 1rem; text-decoration: none; }
+.secondary { background: transparent; color: #182027; }
 .stack { display: grid; gap: 1rem; }
-.card { background: #fff; border: 1px solid #d8d5cd; border-radius: .75rem; padding: 1rem; }
-.editor { display: grid; grid-template-columns: minmax(18rem, 25rem) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.card { background: #fff; border: 1px solid #ced6da; border-radius: .75rem; padding: 1rem; }
+.editor { display: grid; grid-template-columns: minmax(21rem, 29rem) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
 .controls { display: grid; gap: 1rem; }
-.preview { min-height: 75vh; width: 100%; border: 1px solid #b8b4aa; border-radius: .75rem; background: #fff; }
-.muted { color: #62605b; }
+.preview-panel { position: sticky; top: 1rem; }
+.preview-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-block-end: .6rem; }
+.preview-heading h2 { margin: 0; font: 600 .875rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; text-transform: uppercase; }
+.preview { min-height: 78vh; width: 100%; border: 1px solid #9ba8ae; border-radius: .35rem; background: #fff; box-shadow: 0 .75rem 2rem rgb(30 44 52 / .1); }
+.muted { color: #58666d; }
 .error { color: #a12622; }
-.status { border-left: 4px solid #075985; padding: .5rem .75rem; }
+.status { border-left: 4px solid #3157c8; padding: .5rem .75rem; }
 .status:empty { display: none; }
 .status.error { border-left-color: #a12622; }
 .pill { display: inline-flex; align-items: center; border: 1px solid #8a877f; border-radius: 999px; padding: .2rem .65rem; font-size: .875rem; font-weight: 600; }
 .pill.pending { border-color: #9a6700; background: #fff8c5; }
 .pill.live { border-color: #1a7f37; background: #dafbe1; }
 .markers { display: flex; flex-wrap: wrap; gap: .35rem; }
-.marker { border: 1px solid #b8b4aa; border-radius: 999px; padding: .1rem .45rem; font-size: .75rem; }
+.marker { border: 1px solid #aeb9be; border-radius: 999px; padding: .1rem .45rem; font-size: .75rem; }
 .revision { display: flex; justify-content: space-between; gap: .75rem; align-items: center; }
 .revision > div:first-child { min-width: 0; }
 form { display: grid; gap: .65rem; }
 input, textarea { width: 100%; min-height: 3rem; padding: .65rem; border: 1px solid #76736c; border-radius: .4rem; font-size: 1rem; }
 textarea { min-height: 7rem; resize: vertical; }
-a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, output:focus-visible { outline: 3px solid #f59e0b; outline-offset: 3px; }
+a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible, output:focus-visible { outline: 3px solid #e59b19; outline-offset: 3px; }
 button:disabled { cursor: not-allowed; opacity: .55; }
+.studio-card { border-top: .35rem solid #3157c8; padding: 1.1rem; }
+.studio-card h2 { margin-block: 0; font-family: ui-serif, Georgia, serif; font-size: 1.6rem; }
+.studio-lede { margin-block-start: .25rem; }
+.prompt-starters { display: flex; flex-wrap: wrap; gap: .45rem; }
+.prompt-chip { min-height: 2.5rem; border-color: #a8b4ba; border-radius: 999px; background: #f4f7ff; color: #243763; padding: .45rem .75rem; text-align: left; }
+.studio-actions { display: grid; }
+.theme-controls { border-top: 1px solid #d8dfe2; padding-block-start: .8rem; }
+.theme-controls summary, .history summary { cursor: pointer; font-weight: 700; padding-block: .35rem; }
+.theme-control-stack { display: grid; gap: 1rem; padding-block-start: .85rem; }
+fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
+legend { margin-block-end: .45rem; font-weight: 650; }
+.choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .45rem; }
+.choice { display: flex; align-items: center; gap: .45rem; min-height: 2.75rem; border: 1px solid #c4cdd1; border-radius: .45rem; padding: .45rem .55rem; cursor: pointer; }
+.choice:has(input:checked) { border-color: #3157c8; background: #eef2ff; box-shadow: inset 0 0 0 1px #3157c8; }
+.choice input { width: 1rem; min-height: 1rem; margin: 0; }
+.palette-choice { align-items: flex-start; flex-direction: column; gap: .35rem; }
+.palette-label { display: flex; align-items: center; gap: .45rem; }
+.swatches { display: grid; grid-template-columns: repeat(3, 1rem); gap: .15rem; }
+.swatch { width: 1rem; height: 1rem; border: 1px solid rgb(0 0 0 / .18); border-radius: 50%; }
+.palette-paper .swatch:nth-child(1) { background: #fcfbf7; } .palette-paper .swatch:nth-child(2) { background: #24211c; } .palette-paper .swatch:nth-child(3) { background: #1f5d8f; }
+.palette-newsprint .swatch:nth-child(1) { background: #f5f0e6; } .palette-newsprint .swatch:nth-child(2) { background: #1f1b16; } .palette-newsprint .swatch:nth-child(3) { background: #8b2f2f; }
+.palette-mist .swatch:nth-child(1) { background: #f4f7f8; } .palette-mist .swatch:nth-child(2) { background: #17252d; } .palette-mist .swatch:nth-child(3) { background: #075985; }
+.palette-pine .swatch:nth-child(1) { background: #f4f7f2; } .palette-pine .swatch:nth-child(2) { background: #1d291c; } .palette-pine .swatch:nth-child(3) { background: #2f6b3c; }
+.palette-midnight .swatch:nth-child(1) { background: #111827; } .palette-midnight .swatch:nth-child(2) { background: #f3f4f6; } .palette-midnight .swatch:nth-child(3) { background: #7dd3fc; }
+.palette-charcoal .swatch:nth-child(1) { background: #181817; } .palette-charcoal .swatch:nth-child(2) { background: #f5f5f0; } .palette-charcoal .swatch:nth-child(3) { background: #f0b35b; }
+.unsaved-note { margin: 0; color: #785300; font-weight: 650; }
+.history[open] summary { margin-block-end: .8rem; }
 @media (max-width: 52rem) {
   .editor { grid-template-columns: 1fr; }
+  .preview-panel { position: static; }
   .preview { min-height: 65vh; }
   .topbar { align-items: flex-start; }
   .topbar nav { flex-wrap: wrap; justify-content: flex-end; }
 }
+@media (max-width: 30rem) {
+  .choice-grid { grid-template-columns: 1fr; }
+  .topbar { display: grid; grid-template-columns: 1fr; }
+  .topbar nav { justify-content: flex-start; }
+}
+@media (pointer: coarse) { .choice, .prompt-chip { min-height: 3rem; } }
 `;
 
 export function document(title: string, content: unknown, nonce: string, session?: AppSession, editor = false) {
@@ -66,7 +104,7 @@ export function document(title: string, content: unknown, nonce: string, session
         </header>
         <main>{content}</main>
       </div>
-      {editor ? <script type="module" src="/assets/client.js"></script> : null}
+      {editor ? <script type="module" src={`/assets/client.js?v=${nonce}`}></script> : null}
     </body>
   </html>;
 }
@@ -161,12 +199,38 @@ interface EditorPageInput {
   activeTheme: ThemeRevisionRecord;
   published: PublishedReleaseRecord | null;
   previewUrl: string | null;
+  previewToken: string;
   publicUrl: string;
   appHostname: string;
+  operation?: OperationRecord | null;
 }
+
+const CONTROL_OPTIONS = {
+  preset: [['minimal', 'Minimal'], ['editorial', 'Editorial'], ['notebook', 'Notebook']],
+  bodyFont: [['system-sans', 'Sans'], ['system-serif', 'Serif']],
+  headingFont: [['system-sans', 'Sans'], ['system-serif', 'Serif'], ['system-mono', 'Mono']],
+  scale: [['compact', 'Compact'], ['comfortable', 'Medium'], ['large', 'Large']],
+  contentWidth: [['narrow', 'Narrow'], ['medium', 'Medium'], ['wide', 'Wide']],
+  density: [['compact', 'Compact'], ['comfortable', 'Comfortable']],
+  radius: [['none', 'Square'], ['soft', 'Soft'], ['round', 'Round']],
+} as const;
+
+function ChoiceGroup({ legend, name, options, value }: { legend: string; name: string; options: readonly (readonly [string, string])[]; value: string }) {
+  return <fieldset>
+    <legend>{legend}</legend>
+    <div class="choice-grid">{options.map(([option, label]) => <label class="choice">
+      <input type="radio" name={name} value={option} checked={value === option} data-theme-control/>
+      <span>{label}</span>
+    </label>)}</div>
+  </fieldset>;
+}
+
+const SOURCE_LABEL = { system: '初始', ai: 'AI', manual: '手動' } as const;
 
 export function editorPage(input: EditorPageInput) {
   const { blog, themes, activeTheme, published } = input;
+  const controls = themeControlValues(activeTheme.config);
+  const busy = Boolean(input.operation && (input.operation.status === 'queued' || input.operation.status === 'running'));
   const hasChanges = !published || published.contentVersion !== blog.contentVersion || published.themeRevisionId !== activeTheme.id;
   const publication = !published
     ? { label: '尚未發布', className: 'pill pending' }
@@ -192,28 +256,58 @@ export function editorPage(input: EditorPageInput) {
         <h2>同步內容</h2>
         <form method="post" action="/actions/blog/sync" data-operation>
           <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
-          <button class="secondary" type="submit">重新同步 HackMD</button>
-          <OperationOutput/>
+          <button class="secondary" type="submit" disabled={busy}>重新同步 HackMD</button>
+          <OperationOutput operation={input.operation?.type === 'sync' ? input.operation : undefined}/>
         </form>
       </section>
 
-      <section class="card">
-        <h2>設計樣式</h2>
-        <form method="post" action="/actions/theme/generate" data-operation>
+      <section class="card studio-card">
+        <form method="post" action="/actions/theme/apply" data-operation data-mixed-actions data-theme-studio>
           <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
+          <input type="hidden" name="previewToken" value={input.previewToken}/>
+          <h2>Theme Studio</h2>
+          <p class="muted studio-lede">先說你想要的閱讀感受，再用安全選項微調。AI 不會改文章或寫入任意 CSS。</p>
           <label for="prompt">描述你想要的感覺</label>
-          <textarea id="prompt" name="prompt" maxlength={1000} required placeholder="例如：像安靜的獨立雜誌，奶油色背景、深藍連結"></textarea>
-          <button type="submit">產生新樣式</button>
-          <OperationOutput/>
+          <textarea id="prompt" name="prompt" maxlength={1000} placeholder="例如：讓長文章讀起來像一本克制的獨立雜誌"></textarea>
+          <div class="prompt-starters" aria-label="描述建議">
+            {['更像一本克制的獨立雜誌', '提高長文閱讀舒適度', '保留極簡，但增加一點個性', '改成適合夜間閱讀的深色設計'].map((prompt) => <button class="prompt-chip" type="button" data-prompt-starter={prompt} aria-controls="prompt">{prompt}</button>)}
+          </div>
+          <button type="submit" formaction="/actions/theme/generate" data-operation-submit disabled={busy}>交給 AI 設計</button>
+
+          <details class="theme-controls">
+            <summary>手動微調安全樣式</summary>
+            <div class="theme-control-stack">
+              <ChoiceGroup legend="版面" name="preset" options={CONTROL_OPTIONS.preset} value={controls.preset}/>
+              <fieldset>
+                <legend>配色</legend>
+                {!controls.palette ? <p class="muted">目前使用 AI 配色；選擇以下配色才會覆蓋。</p> : null}
+                <div class="choice-grid">{Object.entries(THEME_PALETTES).map(([name, palette]) => <label class={`choice palette-choice palette-${name}`}>
+                  <span class="palette-label"><input type="radio" name="palette" value={name} checked={controls.palette === name} data-theme-control/> {palette.label}</span>
+                  <span class="swatches" aria-hidden="true"><span class="swatch"></span><span class="swatch"></span><span class="swatch"></span></span>
+                </label>)}</div>
+              </fieldset>
+              <ChoiceGroup legend="內文字體" name="bodyFont" options={CONTROL_OPTIONS.bodyFont} value={controls.bodyFont}/>
+              <ChoiceGroup legend="標題字體" name="headingFont" options={CONTROL_OPTIONS.headingFont} value={controls.headingFont}/>
+              <ChoiceGroup legend="字級" name="scale" options={CONTROL_OPTIONS.scale} value={controls.scale}/>
+              <ChoiceGroup legend="內容寬度" name="contentWidth" options={CONTROL_OPTIONS.contentWidth} value={controls.contentWidth}/>
+              <ChoiceGroup legend="留白" name="density" options={CONTROL_OPTIONS.density} value={controls.density}/>
+              <ChoiceGroup legend="圓角" name="radius" options={CONTROL_OPTIONS.radius} value={controls.radius}/>
+            </div>
+          </details>
+          <div class="studio-actions"><button class="secondary" type="submit" disabled={busy}>儲存成新版本</button></div>
+          <p class="unsaved-note" data-unsaved-note hidden>這些樣式尚未儲存；儲存後才能發布。</p>
+          <OperationOutput operation={input.operation?.type === 'generate_theme' ? input.operation : undefined}/>
         </form>
       </section>
 
       <section class="card">
-        <h2>歷史樣式</h2>
+        <details class="history">
+        <summary>歷史樣式（{themes.length}）</summary>
         <div class="stack">{themes.map((theme) => <div class="revision">
           <div>
             <strong>{theme.description}</strong>
             <div class="markers">
+              <span class="marker">{SOURCE_LABEL[theme.source]}</span>
               {theme.active ? <span class="marker">預覽中</span> : null}
               {published?.themeRevisionId === theme.id ? <span class="marker">線上版本</span> : null}
             </div>
@@ -221,9 +315,9 @@ export function editorPage(input: EditorPageInput) {
           </div>
           {theme.active ? null : <form method="post" action={`/actions/theme/${theme.id}/activate`}>
             <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
-            <button class="secondary" type="submit">切換預覽</button>
+            <button class="secondary" type="submit" disabled={busy}>切換預覽</button>
           </form>}
-        </div>)}</div>
+        </div>)}</div></details>
       </section>
 
       <section class="card">
@@ -231,14 +325,17 @@ export function editorPage(input: EditorPageInput) {
         <p class="muted">發布會固定目前的內容與樣式，線上版本在下一次發布前不會改變。</p>
         <form method="post" action="/actions/publish" data-operation>
           <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
-          <button type="submit" disabled={!blog.draftArtifact || !hasChanges}>{publishLabel}到 {blog.username}.{input.appHostname}</button>
-          <OperationOutput/>
+          <input type="hidden" name="previewToken" value={input.previewToken}/>
+          <button type="submit" data-publish-button disabled={!blog.draftArtifact || !hasChanges || busy}>{publishLabel}到 {blog.username}.{input.appHostname}</button>
+          <OperationOutput operation={input.operation?.type === 'publish' ? input.operation : undefined}/>
         </form>
       </section>
     </section>
 
-    <section aria-label="Blog 預覽">{input.previewUrl
-      ? <iframe class="preview" src={input.previewUrl} title={`${blog.title ?? blog.username} 的即時預覽`} sandbox="allow-same-origin"></iframe>
+    <section class="preview-panel" aria-label="Blog 預覽">
+      <div class="preview-heading"><h2>Draft preview</h2><small class="muted">只更新樣式，不重建內容</small></div>
+      {input.previewUrl
+      ? <iframe class="preview" src={input.previewUrl} data-preview-url={input.previewUrl} title={`${blog.title ?? blog.username} 的即時預覽`} sandbox="allow-same-origin"></iframe>
       : <div class="preview card"><p>內容同步完成後，預覽會出現在這裡。</p></div>}
     </section>
   </div>, input.nonce, input.session, true);

@@ -15,6 +15,13 @@
       "when": 1784468650874,
       "tag": "0001_fat_reavers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784473047963,
+      "tag": "0002_shallow_ultron",
+      "breakpoints": true
     }
   ]
 }

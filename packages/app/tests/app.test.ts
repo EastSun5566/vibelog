@@ -17,6 +17,12 @@ async function setup() {
 }
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 const form = (values: Record<string, string>) => new URLSearchParams(values);
+const studioControls = { preset: 'editorial', palette: 'newsprint', bodyFont: 'system-serif', headingFont: 'system-sans', scale: 'large', contentWidth: 'wide', density: 'compact', radius: 'none' };
+function previewToken(html: string): string {
+  const token = /name="previewToken" value="([^"]+)"/.exec(html)?.[1];
+  if (!token) throw new Error('Editor did not include a preview token');
+  return token;
+}
 async function register(app: ReturnType<typeof createApp>['app'], username: string) {
   const response = await app.request('http://app.localtest.me:3000/auth/register', { method: 'POST', headers: { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', 'x-forwarded-for': '9.9.9.9', 'content-type': 'application/x-www-form-urlencoded' }, body: form({ inviteCode: 'invite-code-with-24-characters', username, password: 'long-enough-password' }) });
   const cookie = response.headers.get('set-cookie')?.match(/vibelog[^=]*=[^;]+/)?.[0];
@@ -90,12 +96,55 @@ describe('hosted app boundaries', () => {
     const syncedBlog = database.getBlog(blog.id); const liveTheme = database.getActiveTheme(blog.id); if (!syncedBlog || !liveTheme) throw new Error('Synced fixture missing');
     database.activateRelease(blog.id, liveTheme.id, syncedBlog.contentVersion, '/tmp/release');
     const live = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
-    expect(await live.text()).toContain('已與線上版本同步');
-    const redundant = await app.request('http://app.localtest.me:3000/actions/publish', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken }) });
+    const liveHtml = await live.text(); expect(liveHtml).toContain('已與線上版本同步');
+    const redundant = await app.request('http://app.localtest.me:3000/actions/publish', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, previewToken: previewToken(liveHtml) }) });
     expect(redundant.status).toBe(409); expect(await redundant.json()).toMatchObject({ error: { code: 'nothing_to_publish' } });
     database.createTheme(blog.id, { ...DEFAULT_THEME, description: 'Unpublished theme' }, 'change');
     const pending = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
     expect(await pending.text()).toContain('有未發布變更');
+    database.close();
+  });
+
+  it('previews curated controls without a revision, blocks unsaved publish, then saves one manual revision', async () => {
+    const { app, database } = await setup(); const auth = await register(app, 'studio');
+    const sessionResponse = await app.request('http://app.localtest.me:3000/api/session', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
+    const userId = String((await sessionResponse.json() as { user: { id: string } }).user.id);
+    const { blog, operation } = database.createBlog(userId, 'studio', 'studio'); database.completeOperation(operation.id);
+    database.completeSync(blog.id, { title: 'Studio', description: '', author: 'Studio', draftArtifact: '/tmp/studio-draft' });
+    const editor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
+    const html = await editor.text(); const token = previewToken(html);
+    expect(html).toContain('Theme Studio'); expect(html).toContain('更像一本克制的獨立雜誌'); expect(html.match(/name="palette"/g)).toHaveLength(6);
+    const headers = { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', cookie: auth.cookie, accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' };
+    const values = { csrfToken: auth.csrfToken, previewToken: token, ...studioControls };
+    const preview = await app.request('http://app.localtest.me:3000/api/theme/preview', { method: 'POST', headers, body: form(values) });
+    expect(preview.status).toBe(200); expect(await preview.json()).toMatchObject({ status: 'succeeded', message: '預覽已更新，尚未儲存' });
+    expect(database.listThemes(blog.id)).toHaveLength(1);
+    const access = await app.request(`http://preview.app.localtest.me:3000/preview-access/${token}`, { headers: { host: 'preview.app.localtest.me:3000' } });
+    const previewCookie = access.headers.get('set-cookie')?.match(/vibelog_preview=[^;]+/)?.[0]; if (!previewCookie) throw new Error('Preview cookie missing');
+    const css = await app.request('http://preview.app.localtest.me:3000/theme.css', { headers: { host: 'preview.app.localtest.me:3000', cookie: previewCookie } });
+    expect(await css.text()).toContain('--theme-background: #f5f0e6');
+    const blocked = await app.request('http://app.localtest.me:3000/actions/publish', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, previewToken: token }) });
+    expect(blocked.status).toBe(409); expect(await blocked.json()).toMatchObject({ error: { code: 'unsaved_theme' } });
+    const saved = await app.request('http://app.localtest.me:3000/actions/theme/apply', { method: 'POST', headers, body: form(values) });
+    expect(saved.status).toBe(303);
+    expect(database.listThemes(blog.id)).toHaveLength(2);
+    expect(database.getActiveTheme(blog.id)).toMatchObject({ source: 'manual', description: 'Editorial · Newsprint · Serif / Sans · Large' });
+    const invalidOrigin = await app.request('http://app.localtest.me:3000/api/theme/preview', { method: 'POST', headers: { ...headers, origin: 'http://evil.example' }, body: form(values) });
+    expect(invalidOrigin.status).toBe(403); expect(await invalidOrigin.json()).toMatchObject({ error: { code: 'invalid_origin' } });
+    const invalidCsrf = await app.request('http://app.localtest.me:3000/api/theme/preview', { method: 'POST', headers, body: form({ ...values, csrfToken: 'wrong' }) });
+    expect(invalidCsrf.status).toBe(403); expect(await invalidCsrf.json()).toMatchObject({ error: { code: 'invalid_csrf_token' } });
+    const invalidControl = await app.request('http://app.localtest.me:3000/api/theme/preview', { method: 'POST', headers, body: form({ ...values, preset: 'unknown' }) });
+    expect(invalidControl.status).toBe(400); expect(await invalidControl.json()).toMatchObject({ error: { code: 'invalid_theme_controls' } });
+    const expired = await app.request('http://app.localtest.me:3000/api/theme/preview', { method: 'POST', headers, body: form({ ...values, previewToken: 'x'.repeat(43) }) });
+    expect(expired.status).toBe(409); expect(await expired.json()).toMatchObject({ error: { code: 'preview_session_expired' } });
+
+    const otherAuth = await register(app, 'outsider');
+    const otherSession = await app.request('http://app.localtest.me:3000/api/session', { headers: { host: 'app.localtest.me:3000', cookie: otherAuth.cookie } });
+    const otherUserId = String((await otherSession.json() as { user: { id: string } }).user.id);
+    const otherBlog = database.createBlog(otherUserId, 'outsider', 'outsider'); database.completeOperation(otherBlog.operation.id);
+    database.completeSync(otherBlog.blog.id, { title: 'Other', description: '', author: 'Other', draftArtifact: '/tmp/other-draft' });
+    const crossUser = await app.request('http://app.localtest.me:3000/api/theme/preview', { method: 'POST', headers: { ...headers, cookie: otherAuth.cookie }, body: form({ ...values, csrfToken: otherAuth.csrfToken }) });
+    expect(crossUser.status).toBe(409); expect(await crossUser.json()).toMatchObject({ error: { code: 'preview_session_expired' } });
     database.close();
   });
 });

@@ -14,10 +14,12 @@ import * as schema from './schema.js';
 export type BlogState = 'syncing' | 'ready' | 'failed';
 export type OperationType = 'sync' | 'generate_theme' | 'publish';
 export type OperationStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+export type ThemeRevisionSource = 'system' | 'ai' | 'manual';
 export interface BlogRecord { id: string; userId: string; username: string; hackmdUsername: string; title: string | null; description: string | null; author: string | null; state: BlogState; lastError: string | null; draftArtifact: string | null; contentVersion: number; createdAt: string; updatedAt: string }
-export interface ThemeRevisionRecord { id: string; blogId: string; config: ThemeConfig; prompt: string | null; description: string; active: boolean; createdAt: string }
+export interface ThemeRevisionRecord { id: string; blogId: string; config: ThemeConfig; prompt: string | null; description: string; source: ThemeRevisionSource; active: boolean; createdAt: string }
 export interface OperationRecord { id: string; userId: string; blogId: string; type: OperationType; status: OperationStatus; payload: Record<string, unknown>; result: Record<string, unknown> | null; errorMessage: string | null; attempts: number; createdAt: string; updatedAt: string }
 export interface PublishedReleaseRecord { id: string; blogId: string; themeRevisionId: string; contentVersion: number; artifact: string; active: boolean; createdAt: string }
+export interface PreviewSessionRecord { tokenHash: string; userId: string; blogId: string; themeConfig: ThemeConfig | null; expiresAt: string }
 export interface AiQuotaLimits { userDailyLimit: number; globalDailyLimit: number; at?: Date }
 export class AiQuotaExceededError extends Error { constructor(readonly retryAfter: number) { super('AI daily quota exceeded'); this.name = 'AiQuotaExceededError'; } }
 
@@ -26,6 +28,7 @@ const parseObject = (value: string) => JSON.parse(value) as Record<string, unkno
 const mapBlog = (row: typeof schema.blogs.$inferSelect): BlogRecord => row;
 const mapTheme = (row: typeof schema.themeRevisions.$inferSelect): ThemeRevisionRecord => ({ ...row, config: validateThemeConfig(JSON.parse(row.config)) });
 const mapOperation = (row: typeof schema.operations.$inferSelect): OperationRecord => ({ ...row, payload: parseObject(row.payload), result: row.result ? parseObject(row.result) : null });
+const mapPreview = (row: typeof schema.previewSessions.$inferSelect): PreviewSessionRecord => ({ ...row, themeConfig: row.themeConfig ? validateThemeConfig(JSON.parse(row.themeConfig)) : null });
 function quotaWindow(at: Date): { date: string; retryAfter: number } { const next = Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate() + 1); return { date: at.toISOString().slice(0, 10), retryAfter: Math.max(1, Math.ceil((next - at.getTime()) / 1000)) }; }
 
 function refuseLegacyDatabase(connection: DatabaseSync): void {
@@ -82,7 +85,7 @@ export class AppDatabase {
     const operation = this.newOperation(userId, blog.id, 'sync', {});
     return this.db.transaction((tx) => {
       tx.insert(schema.blogs).values(blog).run();
-      tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId: blog.id, config: JSON.stringify(DEFAULT_THEME), prompt: null, description: DEFAULT_THEME.description, active: true, createdAt: timestamp }).run();
+      tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId: blog.id, config: JSON.stringify(DEFAULT_THEME), prompt: null, description: DEFAULT_THEME.description, source: 'system', active: true, createdAt: timestamp }).run();
       tx.insert(schema.operations).values({ ...operation, payload: '{}', result: null }).run();
       return { blog, operation };
     }, { behavior: 'immediate' });
@@ -111,19 +114,35 @@ export class AppDatabase {
   getActiveTheme(blogId: string): ThemeRevisionRecord | null { const row = this.db.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.blogId, blogId), eq(schema.themeRevisions.active, true))).get(); return row ? mapTheme(row) : null; }
   createTheme(blogId: string, config: ThemeConfig, prompt: string): ThemeRevisionRecord {
     const validated = validateThemeConfig(config);
-    const record: ThemeRevisionRecord = { id: randomUUID(), blogId, config: validated, prompt, description: validated.description, active: true, createdAt: now() };
+    const record: ThemeRevisionRecord = { id: randomUUID(), blogId, config: validated, prompt, description: validated.description, source: 'ai', active: true, createdAt: now() };
     return this.db.transaction((tx) => { tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, blogId)).run(); tx.insert(schema.themeRevisions).values({ ...record, config: JSON.stringify(validated) }).run(); return record; }, { behavior: 'immediate' });
   }
-  activateTheme(id: string, blogId: string): void { this.db.transaction((tx) => { const found = tx.select({ id: schema.themeRevisions.id }).from(schema.themeRevisions).where(and(eq(schema.themeRevisions.id, id), eq(schema.themeRevisions.blogId, blogId))).get(); if (!found) throw new Error('Theme revision not found'); tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, blogId)).run(); tx.update(schema.themeRevisions).set({ active: true }).where(eq(schema.themeRevisions.id, id)).run(); }, { behavior: 'immediate' }); }
+  createManualTheme(userId: string, blogId: string, config: ThemeConfig): ThemeRevisionRecord {
+    const validated = validateThemeConfig(config);
+    const record: ThemeRevisionRecord = { id: randomUUID(), blogId, config: validated, prompt: null, description: validated.description, source: 'manual', active: true, createdAt: now() };
+    return this.db.transaction((tx) => {
+      const blog = tx.select({ id: schema.blogs.id }).from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId))).get();
+      if (!blog) throw new Error('Blog not found');
+      const activeOperation = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get();
+      if (activeOperation) throw new Error('Blog already has an active operation');
+      tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, blogId)).run();
+      tx.insert(schema.themeRevisions).values({ ...record, config: JSON.stringify(validated) }).run();
+      return record;
+    }, { behavior: 'immediate' });
+  }
+  activateTheme(id: string, blogId: string): void { this.db.transaction((tx) => { const activeOperation = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get(); if (activeOperation) throw new Error('Blog already has an active operation'); const found = tx.select({ id: schema.themeRevisions.id }).from(schema.themeRevisions).where(and(eq(schema.themeRevisions.id, id), eq(schema.themeRevisions.blogId, blogId))).get(); if (!found) throw new Error('Theme revision not found'); tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, blogId)).run(); tx.update(schema.themeRevisions).set({ active: true }).where(eq(schema.themeRevisions.id, id)).run(); }, { behavior: 'immediate' }); }
 
   private newOperation(userId: string, blogId: string, type: OperationType, payload: Record<string, unknown>): OperationRecord { const timestamp = now(); return { id: randomUUID(), userId, blogId, type, status: 'queued', payload, result: null, errorMessage: null, attempts: 0, createdAt: timestamp, updatedAt: timestamp }; }
   createOperation(userId: string, blogId: string, type: 'sync', payload: Record<string, unknown> = {}): OperationRecord { const op = this.newOperation(userId, blogId, type, payload); this.db.insert(schema.operations).values({ ...op, payload: JSON.stringify(payload), result: null }).run(); return op; }
-  createPublishOperation(userId: string, blogId: string): OperationRecord {
+  createPublishOperation(userId: string, blogId: string, previewTokenHash: string): OperationRecord {
     return this.db.transaction((tx) => {
       const blog = tx.select().from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId))).get();
       if (!blog?.draftArtifact) throw new Error('Blog has no synced content');
       const theme = tx.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.blogId, blogId), eq(schema.themeRevisions.active, true))).get();
       if (!theme) throw new Error('Active theme not found');
+      const preview = tx.select().from(schema.previewSessions).where(and(eq(schema.previewSessions.tokenHash, previewTokenHash), eq(schema.previewSessions.userId, userId), eq(schema.previewSessions.blogId, blogId), gt(schema.previewSessions.expiresAt, now()))).get();
+      if (!preview) throw new Error('Preview session expired or invalid');
+      if (preview.themeConfig && JSON.stringify(validateThemeConfig(JSON.parse(preview.themeConfig))) !== JSON.stringify(validateThemeConfig(JSON.parse(theme.config)))) throw new Error('Preview has unsaved theme changes');
       const release = tx.select().from(schema.publishedReleases).where(and(eq(schema.publishedReleases.blogId, blogId), eq(schema.publishedReleases.active, true))).get();
       if (release?.contentVersion === blog.contentVersion && release.themeRevisionId === theme.id) throw new Error('Nothing to publish');
       const active = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get();
@@ -133,8 +152,9 @@ export class AppDatabase {
       return operation;
     }, { behavior: 'immediate' });
   }
-  createThemeOperation(userId: string, blogId: string, prompt: string, limits: AiQuotaLimits): OperationRecord {
-    const at = limits.at ?? new Date(); const window = quotaWindow(at); const op = this.newOperation(userId, blogId, 'generate_theme', { prompt });
+  createThemeOperation(userId: string, blogId: string, prompt: string, baseTheme: unknown, limits: AiQuotaLimits): OperationRecord {
+    const validatedBase = validateThemeConfig(baseTheme);
+    const at = limits.at ?? new Date(); const window = quotaWindow(at); const op = this.newOperation(userId, blogId, 'generate_theme', { prompt, baseTheme: validatedBase });
     return this.db.transaction((tx) => {
       const active = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get();
       if (active) throw new Error('Blog already has an active operation');
@@ -154,6 +174,15 @@ export class AppDatabase {
 
   activateRelease(blogId: string, themeRevisionId: string, contentVersion: number, artifact: string): PublishedReleaseRecord { const record: PublishedReleaseRecord = { id: randomUUID(), blogId, themeRevisionId, contentVersion, artifact, active: true, createdAt: now() }; return this.db.transaction((tx) => { tx.update(schema.publishedReleases).set({ active: false }).where(eq(schema.publishedReleases.blogId, blogId)).run(); tx.insert(schema.publishedReleases).values(record).run(); return record; }, { behavior: 'immediate' }); }
   getActiveRelease(blogId: string): PublishedReleaseRecord | null { return this.db.select().from(schema.publishedReleases).where(and(eq(schema.publishedReleases.blogId, blogId), eq(schema.publishedReleases.active, true))).get() ?? null; }
-  createPreviewSession(tokenHash: string, userId: string, blogId: string, expiresAt: string): void { this.db.transaction((tx) => { tx.delete(schema.previewSessions).where(sql`${schema.previewSessions.expiresAt} <= ${now()}`).run(); tx.insert(schema.previewSessions).values({ tokenHash, userId, blogId, expiresAt, createdAt: now() }).run(); }, { behavior: 'immediate' }); }
-  getPreviewSession(tokenHash: string): { userId: string; blogId: string } | null { return this.db.select({ userId: schema.previewSessions.userId, blogId: schema.previewSessions.blogId }).from(schema.previewSessions).where(and(eq(schema.previewSessions.tokenHash, tokenHash), gt(schema.previewSessions.expiresAt, now()))).get() ?? null; }
+  createPreviewSession(tokenHash: string, userId: string, blogId: string, expiresAt: string, themeConfig: ThemeConfig): void { const validated = validateThemeConfig(themeConfig); this.db.transaction((tx) => { tx.delete(schema.previewSessions).where(sql`${schema.previewSessions.expiresAt} <= ${now()}`).run(); tx.insert(schema.previewSessions).values({ tokenHash, userId, blogId, themeConfig: JSON.stringify(validated), expiresAt, createdAt: now() }).run(); }, { behavior: 'immediate' }); }
+  getPreviewSession(tokenHash: string): PreviewSessionRecord | null { const row = this.db.select().from(schema.previewSessions).where(and(eq(schema.previewSessions.tokenHash, tokenHash), gt(schema.previewSessions.expiresAt, now()))).get(); return row ? mapPreview(row) : null; }
+  updatePreviewTheme(tokenHash: string, userId: string, blogId: string, config: ThemeConfig): ThemeConfig {
+    const validated = validateThemeConfig(config);
+    return this.db.transaction((tx) => {
+      const preview = tx.select({ tokenHash: schema.previewSessions.tokenHash }).from(schema.previewSessions).where(and(eq(schema.previewSessions.tokenHash, tokenHash), eq(schema.previewSessions.userId, userId), eq(schema.previewSessions.blogId, blogId), gt(schema.previewSessions.expiresAt, now()))).get();
+      if (!preview) throw new Error('Preview session expired or invalid');
+      tx.update(schema.previewSessions).set({ themeConfig: JSON.stringify(validated) }).where(eq(schema.previewSessions.tokenHash, tokenHash)).run();
+      return validated;
+    }, { behavior: 'immediate' });
+  }
 }

@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { ContentSourceName, DEFAULT_THEME } from '../packages/core/src/index.js';
+import { ContentSourceName } from '../packages/core/src/index.js';
 import type { AiProvider, ContentSource } from '../packages/core/src/index.js';
 import { AppDatabase } from '../packages/app/src/database.js';
 import type { AppConfig } from '../packages/app/src/config.js';
@@ -28,7 +28,10 @@ const missingContent: ContentSource = {
 };
 const ai: AiProvider = {
   name: 'fake', modelId: 'fake',
-  generate() { return Promise.resolve({ ...DEFAULT_THEME, preset: 'editorial', colors: { ...DEFAULT_THEME.colors, background: '#fffaf0', surface: '#f5ead7' }, description: 'A warm editorial theme.' }); },
+  generate(input) {
+    if (input.currentTheme.preset !== 'editorial' || input.currentTheme.colors.background !== '#f5f0e6') throw new Error('AI did not receive the current Theme Studio preview');
+    return Promise.resolve({ ...input.currentTheme, colors: { ...input.currentTheme.colors, background: '#fffaf0', surface: '#f5ead7' }, description: 'A warm editorial theme.' });
+  },
 };
 const database = new AppDatabase(dataRoot);
 const { app } = createApp({ config, database });

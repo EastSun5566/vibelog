@@ -13,6 +13,7 @@ import { AppError, assertCsrfToken, assertMutationOrigin, jsonError, requestCont
 import { hashToken, randomToken } from './security/crypto.js';
 import { assertNoSymlinkEscape, resolveRelativeWithin } from './security/path.js';
 import { operationMessage } from './operation-status.js';
+import { themeFromControls } from './theme-studio.js';
 import { changePasswordPage, editorPage, loginPage, onboardingPage, operationPage, registerPage } from './views.js';
 
 const RESERVED = new Set(['preview', 'www', 'api', 'admin', 'assets']);
@@ -21,6 +22,7 @@ const loginInput = z.object({ username: z.string().trim().min(3).max(32), passwo
 const changePasswordInput = z.object({ currentPassword: z.string().min(1).max(128), newPassword: z.string().min(12).max(128) });
 const hackmdInput = z.object({ hackmdUsername: z.string().trim().min(1).max(100).regex(/^[\p{L}\p{N}_.-]+$/u) });
 const themeInput = z.object({ prompt: z.string().trim().min(1).max(1000) });
+const previewTokenInput = z.string().min(32).max(512);
 const uuidInput = z.uuid();
 
 interface AppEnv { Variables: AppVariables }
@@ -71,7 +73,7 @@ export function createApp(options: CreateAppOptions = {}) {
         const theme = database.getActiveTheme(blog.id);
         if (!theme) throw new AppError('theme_not_found', 'Theme not found', 404);
         c.header('Content-Type', 'text/css; charset=utf-8'); c.header('Cache-Control', 'private, no-store');
-        return c.body(renderThemeCss(theme.config));
+        return c.body(renderThemeCss(preview.themeConfig ?? theme.config));
       }
       return staticResponse(c, blog.draftArtifact, c.req.path, 'private, no-store');
     }
@@ -87,7 +89,7 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   app.use('*', async (c, next) => { await next(); if (c.res.headers.get('content-type')?.includes('text/html')) c.header('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'nonce-${c.get('cspNonce')}'; img-src 'self' data:; connect-src 'self'; frame-src ${config.previewOrigin}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`); });
 
-  app.get('/assets/client.js', (c) => { c.header('Content-Type', 'text/javascript; charset=utf-8'); c.header('Cache-Control', 'public, max-age=3600'); return c.body(CLIENT_SCRIPT); });
+  app.get('/assets/client.js', (c) => { c.header('Content-Type', 'text/javascript; charset=utf-8'); c.header('Cache-Control', 'no-store'); return c.body(CLIENT_SCRIPT); });
   const internalAuthPost = async (c: AppContext, path: string, body: Record<string, unknown>) => {
     const headers = new Headers({ 'content-type': 'application/json', origin: config.appOrigin });
     const cookie = c.req.header('cookie'); if (cookie) headers.set('cookie', cookie);
@@ -145,15 +147,18 @@ export function createApp(options: CreateAppOptions = {}) {
         blog.userId,
         blog.id,
         String(payload.prompt),
+        payload.baseTheme,
         { userDailyLimit: config.aiUserDailyLimit, globalDailyLimit: config.aiGlobalDailyLimit },
       ) : type === 'publish'
-        ? database.createPublishOperation(blog.userId, blog.id)
+        ? database.createPublishOperation(blog.userId, blog.id, hashToken(String(payload.previewToken)))
         : database.createOperation(blog.userId, blog.id, type, payload);
       return redirectOrJson(c, operation.id);
     } catch (error) {
       if (error instanceof AiQuotaExceededError) throw new AppError('ai_quota_exceeded', '今天的 AI 樣式額度已用完', 429, { 'Retry-After': String(error.retryAfter) });
       if (error instanceof Error && error.message === 'Nothing to publish') throw new AppError('nothing_to_publish', '目前沒有需要發布的變更', 409);
       if (error instanceof Error && error.message === 'Blog has no synced content') throw new AppError('preview_not_ready', '請先完成內容同步', 409);
+      if (error instanceof Error && error.message === 'Preview has unsaved theme changes') throw new AppError('unsaved_theme', '請先儲存目前的樣式，再進行發布', 409);
+      if (error instanceof Error && error.message === 'Preview session expired or invalid') throw new AppError('preview_session_expired', '預覽已過期，請重新整理編輯器', 409);
       if (error instanceof Error && (error.message.includes('UNIQUE constraint') || error.message.includes('active operation'))) throw new AppError('operation_in_progress', '目前已有操作進行中', 409);
       throw error;
     }
@@ -176,9 +181,41 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
   app.post('/actions/blog/sync', async (c) => { await mutationBody(c); return enqueue(c, 'sync'); });
-  app.post('/actions/theme/generate', async (c) => { const body = await mutationBody(c); const input = themeInput.safeParse({ prompt: formValue(body, 'prompt') }); if (!input.success) throw new AppError('invalid_theme_prompt', '請用 1–1000 字描述想要的樣式', 400); return enqueue(c, 'generate_theme', input.data); });
-  app.post('/actions/theme/:id/activate', async (c) => { await mutationBody(c); const blog = ownedBlog(c); const id = uuidInput.safeParse(c.req.param('id')); if (!id.success) throw new AppError('invalid_revision', '樣式版本不存在', 404); database.activateTheme(id.data, blog.id); return c.redirect('/editor', 303); });
-  app.post('/actions/publish', async (c) => { await mutationBody(c); return enqueue(c, 'publish'); });
+  function themeFromBody(c: AppContext, body: Record<string, string | File>) {
+    const blog = ownedBlog(c);
+    const activeTheme = database.getActiveTheme(blog.id);
+    if (!activeTheme) throw new AppError('theme_not_found', 'Theme not found', 404);
+    try { return { blog, theme: themeFromControls(activeTheme.config, body) }; }
+    catch { throw new AppError('invalid_theme_controls', '樣式選項無效，請重新整理後再試一次', 400); }
+  }
+  function readPreviewToken(body: Record<string, string | File>): string {
+    const token = previewTokenInput.safeParse(formValue(body, 'previewToken'));
+    if (!token.success) throw new AppError('preview_session_expired', '預覽已過期，請重新整理編輯器', 409);
+    return token.data;
+  }
+  function assertOwnedPreview(blog: BlogRecord, token: string): void {
+    const preview = database.getPreviewSession(hashToken(token));
+    if (!preview || preview.userId !== blog.userId || preview.blogId !== blog.id) throw new AppError('preview_session_expired', '預覽已過期，請重新整理編輯器', 409);
+  }
+  app.post('/api/theme/preview', async (c) => {
+    const body = await mutationBody(c);
+    const token = readPreviewToken(body);
+    const { blog, theme } = themeFromBody(c, body);
+    try { database.updatePreviewTheme(hashToken(token), blog.userId, blog.id, theme); }
+    catch (error) { if (error instanceof Error && error.message === 'Preview session expired or invalid') throw new AppError('preview_session_expired', '預覽已過期，請重新整理編輯器', 409); throw error; }
+    return c.json({ status: 'succeeded', message: '預覽已更新，尚未儲存' });
+  });
+  app.post('/actions/theme/apply', async (c) => {
+    const body = await mutationBody(c);
+    const { blog, theme } = themeFromBody(c, body);
+    assertOwnedPreview(blog, readPreviewToken(body));
+    try { database.createManualTheme(blog.userId, blog.id, theme); }
+    catch (error) { if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', '目前已有操作進行中', 409); throw error; }
+    return c.redirect('/editor', 303);
+  });
+  app.post('/actions/theme/generate', async (c) => { const body = await mutationBody(c); const input = themeInput.safeParse({ prompt: formValue(body, 'prompt') }); if (!input.success) throw new AppError('invalid_theme_prompt', '請用 1–1000 字描述想要的樣式', 400); const { blog, theme } = themeFromBody(c, body); assertOwnedPreview(blog, readPreviewToken(body)); return enqueue(c, 'generate_theme', { ...input.data, baseTheme: theme }); });
+  app.post('/actions/theme/:id/activate', async (c) => { await mutationBody(c); const blog = ownedBlog(c); const id = uuidInput.safeParse(c.req.param('id')); if (!id.success) throw new AppError('invalid_revision', '樣式版本不存在', 404); try { database.activateTheme(id.data, blog.id); } catch (error) { if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', '目前已有操作進行中', 409); throw error; } return c.redirect('/editor', 303); });
+  app.post('/actions/publish', async (c) => { const body = await mutationBody(c); return enqueue(c, 'publish', { previewToken: readPreviewToken(body) }); });
 
   app.get('/editor', (c) => {
     const blog = database.getBlogForUser(c.get('session').user.id);
@@ -187,10 +224,11 @@ export function createApp(options: CreateAppOptions = {}) {
     const activeTheme = themes.find((theme) => theme.active);
     if (!activeTheme) throw new AppError('theme_not_found', 'Theme not found', 404);
     const token = randomToken();
-    database.createPreviewSession(hashToken(token), blog.userId, blog.id, new Date(Date.now() + 15 * 60_000).toISOString());
+    database.createPreviewSession(hashToken(token), blog.userId, blog.id, new Date(Date.now() + 15 * 60_000).toISOString(), activeTheme.config);
     const previewUrl = `${config.previewOrigin}/preview-access/${encodeURIComponent(token)}`;
     const published = database.getActiveRelease(blog.id);
-    return c.html(editorPage({ nonce: c.get('cspNonce'), session: c.get('session'), blog, themes, activeTheme, published, previewUrl, publicUrl: siteUrl(config, blog.username), appHostname: config.appHostname }));
+    const operation = database.getActiveOperation(blog.id, blog.userId);
+    return c.html(editorPage({ nonce: c.get('cspNonce'), session: c.get('session'), blog, themes, activeTheme, published, previewUrl, previewToken: token, publicUrl: siteUrl(config, blog.username), appHostname: config.appHostname, operation }));
   });
   app.get('/operations/:id', (c) => {
     const id = uuidInput.safeParse(c.req.param('id'));
