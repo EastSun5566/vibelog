@@ -21,13 +21,18 @@ const content: ContentSource = {
   getAuthor() { return Promise.resolve({ name: 'Alice Writer', bio: 'Notes about building humane software.' }); },
   getPosts() { return Promise.resolve({ posts: [{ id: 'hello', title: 'Hello VibeLog', slug: 'hello-vibelog', date: '2026-07-19T00:00:00.000Z', content: 'This is a public HackMD article.' }] }); },
 };
+const missingContent: ContentSource = {
+  name: ContentSourceName.HACKMD,
+  getAuthor() { return Promise.reject(new Error('Failed to fetch HackMD profile: Not Found')); },
+  getPosts() { return Promise.reject(new Error('Failed to fetch HackMD content: Not Found')); },
+};
 const ai: AiProvider = {
   name: 'fake', modelId: 'fake',
   generate() { return Promise.resolve({ ...DEFAULT_THEME, preset: 'editorial', colors: { ...DEFAULT_THEME.colors, background: '#fffaf0', surface: '#f5ead7' }, description: 'A warm editorial theme.' }); },
 };
 const database = new AppDatabase(dataRoot);
 const { app } = createApp({ config, database });
-const worker = new OperationWorker(database, config, { contentSource: () => content, aiProvider: () => ai });
+const worker = new OperationWorker(database, config, { contentSource: (username) => username === 'missing-hackmd' ? missingContent : content, aiProvider: () => ai });
 const server = startHttpServer(app.fetch, { ...process.env, HOST: '127.0.0.1', PORT: '3100' });
 const workerPromise = worker.run(50);
 async function shutdown(): Promise<void> { worker.stop(); await closeHttpServer(server); await workerPromise; database.close(); await rm(dataRoot, { recursive: true, force: true }); }

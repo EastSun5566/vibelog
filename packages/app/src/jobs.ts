@@ -7,10 +7,22 @@ import type { AppConfig } from './config.js';
 import type { AppDatabase, OperationRecord } from './database.js';
 import { blogRoot } from './security/path.js';
 
-function publicError(error: unknown, config: AppConfig): string {
-  const message = error instanceof Error ? error.message : 'Operation failed';
+function safeTechnicalError(error: unknown, config: AppConfig): string {
+  const message = error instanceof Error ? (error.stack ?? error.message) : 'Operation failed';
   const secrets = Object.entries(process.env).flatMap(([name, value]) => value && value.length >= 8 && /(?:token|secret|api.?key|password|invite)/i.test(name) ? [value] : []);
   return [config.dataRoot, ...secrets].reduce((output, secret) => output.replaceAll(secret, '[REDACTED]'), message).replaceAll(/(?:sk-|Bearer\s+)[A-Za-z0-9._-]+/gi, '[REDACTED]').slice(0, 500);
+}
+function publicError(type: OperationRecord['type'], error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  if (type === 'sync') {
+    if (/Failed to fetch HackMD (?:profile|content): Not Found/.test(message)) return '找不到這個公開 HackMD 使用者，請確認 username 後再試一次。';
+    if (message.includes('No public published HackMD articles')) return '這個 HackMD 帳號目前沒有公開發布的文章。';
+    if (message.includes('Duplicate') && message.includes('slug')) return '有多篇文章會產生相同網址，請先調整 HackMD 文章的 permalink。';
+    if (message.includes('invalid published date')) return '有 HackMD 文章的發布日期無效，請修正後再同步。';
+    return '同步失敗，請確認 HackMD 內容可以公開讀取後再試一次。';
+  }
+  if (type === 'generate_theme') return 'AI 暫時無法產生可用樣式，原本的設計沒有變更，請調整描述後再試一次。';
+  return '發布失敗，草稿與目前的線上版本都沒有變更，請再試一次。';
 }
 function publicOrigin(config: AppConfig, username: string): string {
   const app = new URL(config.appOrigin);
@@ -74,7 +86,10 @@ export class OperationWorker {
     }
     case 'publish': {
       if (!blog.draftArtifact) throw new Error('Sync content before publishing');
-      const theme = this.database.getActiveTheme(blog.id);
+      const { contentVersion, themeRevisionId } = operation.payload;
+      if (!Number.isInteger(contentVersion) || typeof themeRevisionId !== 'string') throw new Error('Publish snapshot is invalid');
+      if (blog.contentVersion !== contentVersion) throw new Error('Draft changed before publishing');
+      const theme = this.database.getTheme(themeRevisionId, blog.id);
       if (!theme) throw new Error('Active theme not found');
       const releasesRoot = join(root, 'releases');
       const releaseId = randomUUID();
@@ -85,7 +100,7 @@ export class OperationWorker {
         await cp(blog.draftArtifact, staging, { recursive: true, errorOnExist: true });
         await writeFile(join(staging, 'theme.css'), renderThemeCss(theme.config), { mode: 0o644 });
         await rename(staging, release);
-        this.database.activateRelease(blog.id, theme.id, release);
+        this.database.activateRelease(blog.id, theme.id, contentVersion, release);
         return { message: '網站已發布', url: publicOrigin(this.config, blog.username) };
       } catch (error) { await rm(staging, { recursive: true, force: true }); throw error; }
     }
@@ -97,7 +112,8 @@ export class OperationWorker {
     if (!operation) return false;
     try { this.database.completeOperation(operation.id, await this.execute(operation)); }
     catch (error) {
-      const message = publicError(error, this.config);
+      console.error(`[operation:${operation.id}] ${operation.type} failed: ${safeTechnicalError(error, this.config)}`);
+      const message = publicError(operation.type, error);
       this.database.failOperation(operation.id, message);
       if (operation.type === 'sync') this.database.failSync(operation.blogId, message);
     }
