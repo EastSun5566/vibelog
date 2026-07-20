@@ -94,9 +94,14 @@ export function createApp(options: CreateAppOptions = {}) {
     }
     throw new AppError('unknown_host', 'Unknown VibeLog host', 404);
   });
-  app.use('*', async (c, next) => { await next(); if (c.res.headers.get('content-type')?.includes('text/html')) c.header('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'nonce-${c.get('cspNonce')}'; img-src 'self' data:; connect-src 'self'; frame-src ${config.previewOrigin}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`); });
+  app.use('*', async (c, next) => { await next(); if (c.res.headers.get('content-type')?.includes('text/html')) c.header('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src ${config.previewOrigin}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`); });
 
   app.get('/assets/client.js', (c) => { c.header('Content-Type', 'text/javascript; charset=utf-8'); c.header('Cache-Control', 'no-store'); return c.body(CLIENT_SCRIPT); });
+  app.get('/assets/app.css', async (c) => {
+    c.header('Content-Type', 'text/css; charset=utf-8');
+    c.header('Cache-Control', 'no-cache');
+    return c.body(new Uint8Array(await readFile(new URL('../dist/assets/app.css', import.meta.url))));
+  });
   const internalAuthPost = async (c: AppContext, path: string, body: Record<string, unknown>) => {
     const headers = new Headers({ 'content-type': 'application/json', origin: config.appOrigin });
     const cookie = c.req.header('cookie'); if (cookie) headers.set('cookie', cookie);
@@ -105,35 +110,35 @@ export function createApp(options: CreateAppOptions = {}) {
   };
   const copyCookies = (c: AppContext, response: Response) => { for (const cookie of response.headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true }); };
 
-  app.get('/auth/login', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(loginPage(c.get('cspNonce'))));
+  app.get('/auth/login', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(loginPage()));
   app.post('/auth/login', async (c) => {
     assertMutationOrigin(c, config); const body = await c.req.parseBody().catch(() => ({}));
     const input = loginInput.safeParse({ username: formValue(body, 'username'), password: formValue(body, 'password') });
-    if (!input.success) return c.html(loginPage(c.get('cspNonce'), 'Username 或密碼錯誤'), 401);
+    if (!input.success) return c.html(loginPage('Username 或密碼錯誤'), 401);
     const response = await internalAuthPost(c, '/sign-in/username', { username: input.data.username.toLowerCase(), password: input.data.password });
-    if (!response.ok) return c.html(loginPage(c.get('cspNonce'), response.status === 429 ? '嘗試次數過多，請稍後再試' : 'Username 或密碼錯誤'), response.status === 429 ? 429 : 401);
+    if (!response.ok) return c.html(loginPage(response.status === 429 ? '嘗試次數過多，請稍後再試' : 'Username 或密碼錯誤'), response.status === 429 ? 429 : 401);
     copyCookies(c, response); return c.redirect('/editor', 303);
   });
-  app.get('/auth/register', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(registerPage(c.get('cspNonce'))));
+  app.get('/auth/register', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(registerPage()));
   app.post('/auth/register', async (c) => {
     assertMutationOrigin(c, config); const body = await c.req.parseBody().catch(() => ({}));
     const input = registerInput.safeParse({ inviteCode: formValue(body, 'inviteCode'), username: formValue(body, 'username'), password: formValue(body, 'password') });
-    if (!input.success) return c.html(registerPage(c.get('cspNonce'), '請檢查邀請碼、username 與密碼格式'), 400);
+    if (!input.success) return c.html(registerPage('請檢查邀請碼、username 與密碼格式'), 400);
     const username = input.data.username.toLowerCase();
-    if (RESERVED.has(username)) return c.html(registerPage(c.get('cspNonce'), '這個 username 無法使用'), 400);
+    if (RESERVED.has(username)) return c.html(registerPage('這個 username 無法使用'), 400);
     const ip = ((c.req.header('x-forwarded-for') ?? 'unknown').split(',')[0] ?? 'unknown').trim();
-    if (!database.consumeInviteAttempt(ip)) return c.html(registerPage(c.get('cspNonce'), '嘗試次數過多，請稍後再試'), 429);
+    if (!database.consumeInviteAttempt(ip)) return c.html(registerPage('嘗試次數過多，請稍後再試'), 429);
     const digest = createHash('sha256').update(input.data.inviteCode).digest();
-    if (!timingSafeEqual(digest, config.betaInviteDigest)) return c.html(registerPage(c.get('cspNonce'), '邀請碼無效'), 401);
+    if (!timingSafeEqual(digest, config.betaInviteDigest)) return c.html(registerPage('邀請碼無效'), 401);
     const response = await internalAuthPost(c, '/sign-up/email', { email: `${username}@users.vibelog.invalid`, username, displayUsername: username, name: username, password: input.data.password });
-    if (!response.ok) return c.html(registerPage(c.get('cspNonce'), response.status === 429 ? '嘗試次數過多，請稍後再試' : '這個 username 無法使用'), response.status === 429 ? 429 : 400);
+    if (!response.ok) return c.html(registerPage(response.status === 429 ? '嘗試次數過多，請稍後再試' : '這個 username 無法使用'), response.status === 429 ? 429 : 400);
     copyCookies(c, response); return c.redirect('/onboarding', 303);
   });
 
   const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => { const session = await readSession(c, auth, config); if (!session) return c.redirect('/auth/login'); c.set('session', session); await next(); };
   app.use('/editor', requireSession); app.use('/onboarding', requireSession); app.use('/operations/*', requireSession); app.use('/actions/*', requireSession); app.use('/api/*', requireSession); app.use('/auth/change-password', requireSession); app.use('/auth/logout', requireSession);
   app.post('/auth/logout', async (c) => { const body = await c.req.parseBody(); assertMutationOrigin(c, config); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); const response = await internalAuthPost(c, '/sign-out', {}); copyCookies(c, response); return c.redirect('/auth/login', 303); });
-  app.get('/auth/change-password', (c) => c.html(changePasswordPage(c.get('cspNonce'), c.get('session'))));
+  app.get('/auth/change-password', (c) => c.html(changePasswordPage(c.get('session'))));
   app.post('/auth/change-password', async (c) => { const body = await c.req.parseBody(); assertMutationOrigin(c, config); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); const input = changePasswordInput.safeParse({ currentPassword: formValue(body, 'currentPassword'), newPassword: formValue(body, 'newPassword') }); if (!input.success) throw new AppError('invalid_password', '新密碼必須是 12–128 字元', 400); const response = await internalAuthPost(c, '/change-password', { ...input.data, revokeOtherSessions: true }); if (!response.ok) throw new AppError('password_change_failed', response.status === 429 ? '嘗試次數過多，請稍後再試' : '目前密碼錯誤', response.status === 429 ? 429 : 400); copyCookies(c, response); return c.redirect('/editor', 303); });
 
   app.get('/', async (c) => c.redirect(await readSession(c, auth, config) ? '/editor' : '/auth/login'));
@@ -141,7 +146,7 @@ export function createApp(options: CreateAppOptions = {}) {
     const blog = database.getBlogForUser(c.get('session').user.id);
     if (blog?.draftArtifact) return c.redirect('/editor');
     const operation = blog ? database.getActiveOperation(blog.id, blog.userId) : null;
-    return c.html(onboardingPage(c.get('cspNonce'), c.get('session'), blog, operation));
+    return c.html(onboardingPage(c.get('session'), blog, operation));
   });
 
   function ownedBlog(c: AppContext): BlogRecord { const blog = database.getBlogForUser(c.get('session').user.id); if (!blog) throw new AppError('blog_not_found', '請先連接 HackMD', 404); return blog; }
@@ -283,14 +288,14 @@ export function createApp(options: CreateAppOptions = {}) {
     const published = database.getActiveRelease(blog.id);
     const releases = database.listReleases(blog.id);
     const operation = database.getActiveOperation(blog.id, blog.userId);
-    return c.html(editorPage({ nonce: c.get('cspNonce'), session: c.get('session'), blog, themes, activeTheme, published, releases, previewUrl, previewToken: token, publicUrl: siteUrl(config, blog.username), appHostname: config.appHostname, operation }));
+    return c.html(editorPage({ session: c.get('session'), blog, themes, activeTheme, published, releases, previewUrl, previewToken: token, publicUrl: siteUrl(config, blog.username), appHostname: config.appHostname, operation }));
   });
   app.get('/operations/:id', (c) => {
     const id = uuidInput.safeParse(c.req.param('id'));
     const operation = id.success ? database.getOperation(id.data, c.get('session').user.id) : null;
     if (!operation) throw new AppError('operation_not_found', '操作不存在', 404);
     const blog = database.getBlog(operation.blogId);
-    return c.html(operationPage(c.get('cspNonce'), c.get('session'), operation, blog?.draftArtifact ? '/editor' : '/onboarding'));
+    return c.html(operationPage(c.get('session'), operation, blog?.draftArtifact ? '/editor' : '/onboarding'));
   });
   app.get('/api/session', (c) => c.json({ user: c.get('session').user, csrfToken: c.get('session').csrfToken }));
   app.get('/api/operations/:id', (c) => {

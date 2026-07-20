@@ -34,6 +34,9 @@ export type {
   ThemeConfig,
   ThemeProposalInput,
   ThemeColors,
+  ThemeHeaderStyle,
+  ThemePostListStyle,
+  ThemeCodeBlockStyle,
   AiProvider,
 } from './types.js';
 

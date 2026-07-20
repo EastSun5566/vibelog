@@ -18,7 +18,6 @@ export class AppError extends Error {
 export function requestContext(): MiddlewareHandler<{ Variables: AppVariables }> {
   return async (c, next) => {
     c.set('requestId', randomUUID());
-    c.set('cspNonce', randomUUID().replaceAll('-', ''));
     c.header('X-Content-Type-Options', 'nosniff');
     c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
     c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');

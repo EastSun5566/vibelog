@@ -37,7 +37,7 @@ const missingContent: ContentSource = {
 const ai: AiProvider = {
   name: 'fake', modelId: 'fake',
   generate(input) {
-    if (input.currentTheme.preset !== 'editorial' || input.currentTheme.colors.background !== '#f5f0e6') throw new Error('AI did not receive the current Theme Studio preview');
+    if (input.currentTheme.preset !== 'editorial' || input.currentTheme.colors.background !== '#f5f0e6' || input.currentTheme.headerStyle !== 'centered' || input.currentTheme.postListStyle !== 'numbered' || input.currentTheme.codeBlockStyle !== 'panel') throw new Error('AI did not receive the current Theme Studio preview');
     return Promise.resolve({ ...input.currentTheme, colors: { ...input.currentTheme.colors, background: '#fffaf0', surface: '#f5ead7' }, description: 'A warm editorial theme.' });
   },
 };

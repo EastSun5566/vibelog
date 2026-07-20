@@ -9,7 +9,8 @@ const readPayload = async (response) => {
 const showStatus = (node, message, failed = false) => {
   if (!node) return;
   node.textContent = message;
-  node.classList.toggle('error', failed);
+  if (failed) node.dataset.variant = 'destructive';
+  else delete node.dataset.variant;
   if (failed) node.focus();
 };
 

@@ -23,7 +23,6 @@ export interface AppSession {
 export interface AppVariables {
   requestId: string;
   session: AppSession;
-  cspNonce: string;
 }
 
 export function createAuth(database: AppDatabase, config: AppConfig) {

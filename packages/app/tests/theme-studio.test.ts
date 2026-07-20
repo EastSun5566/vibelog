@@ -5,6 +5,7 @@ import { describeTheme, paletteForTheme, THEME_PALETTES, themeFromControls, them
 const controls = {
   preset: 'editorial', palette: 'newsprint', bodyFont: 'system-serif', headingFont: 'system-sans',
   scale: 'large', contentWidth: 'wide', density: 'compact', radius: 'none',
+  headerStyle: 'centered', postListStyle: 'numbered', codeBlockStyle: 'panel',
 };
 
 describe('Theme Studio controls', () => {
@@ -13,7 +14,8 @@ describe('Theme Studio controls', () => {
     expect(theme).toMatchObject({
       preset: 'editorial', appearance: 'light', colors: THEME_PALETTES.newsprint.colors,
       bodyFont: 'system-serif', headingFont: 'system-sans', scale: 'large', contentWidth: 'wide', density: 'compact', radius: 'none',
-      description: 'Editorial · Newsprint · Serif / Sans · Large',
+      headerStyle: 'centered', postListStyle: 'numbered', codeBlockStyle: 'panel',
+      description: 'Editorial · Newsprint · Serif / Sans · Large · Centered header · Numbered list · Code panel',
     });
     expect(paletteForTheme(theme)).toBe('newsprint');
     expect(describeTheme(theme)).toBe(theme.description);

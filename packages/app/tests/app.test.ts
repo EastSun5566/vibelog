@@ -17,7 +17,7 @@ async function setup() {
 }
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 const form = (values: Record<string, string>) => new URLSearchParams(values);
-const studioControls = { preset: 'editorial', palette: 'newsprint', bodyFont: 'system-serif', headingFont: 'system-sans', scale: 'large', contentWidth: 'wide', density: 'compact', radius: 'none' };
+const studioControls = { preset: 'editorial', palette: 'newsprint', bodyFont: 'system-serif', headingFont: 'system-sans', scale: 'large', contentWidth: 'wide', density: 'compact', radius: 'none', headerStyle: 'centered', postListStyle: 'numbered', codeBlockStyle: 'panel' };
 function previewToken(html: string): string {
   const token = /name="previewToken" value="([^"]+)"/.exec(html)?.[1];
   if (!token) throw new Error('Editor did not include a preview token');
@@ -32,6 +32,22 @@ async function register(app: ReturnType<typeof createApp>['app'], username: stri
 }
 
 describe('hosted app boundaries', () => {
+  it('serves the compiled admin stylesheet under a strict self-only CSP', async () => {
+    const { app, database } = await setup();
+    const page = await app.request('http://app.localtest.me:3000/auth/login', { headers: { host: 'app.localtest.me:3000' } });
+    const html = await page.text();
+    expect(html).toContain('<link rel="stylesheet" href="/assets/app.css"');
+    expect(html).not.toContain('<style');
+    expect(page.headers.get('content-security-policy')).toContain("style-src 'self'");
+    expect(page.headers.get('content-security-policy')).not.toContain('nonce-');
+    const stylesheet = await app.request('http://app.localtest.me:3000/assets/app.css', { headers: { host: 'app.localtest.me:3000' } });
+    expect(stylesheet.status).toBe(200);
+    expect(stylesheet.headers.get('content-type')).toBe('text/css; charset=utf-8');
+    expect(stylesheet.headers.get('cache-control')).toBe('no-cache');
+    expect(await stylesheet.text()).toContain('.preview-frame');
+    database.close();
+  });
+
   it('uses a wildcard localhost domain by default', () => {
     const config = loadAppConfig({ BETTER_AUTH_SECRET: 'a'.repeat(32), BETA_INVITE_CODE: 'invite-code-with-24-characters' });
     expect(config.appOrigin).toBe('http://app.localtest.me:3000');
@@ -254,6 +270,7 @@ describe('hosted app boundaries', () => {
     const editor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
     const html = await editor.text(); const token = previewToken(html);
     expect(html).toContain('Theme Studio'); expect(html).toContain('更像一本克制的獨立雜誌'); expect(html.match(/name="palette"/g)).toHaveLength(6);
+    expect(html).toContain('name="headerStyle"'); expect(html).toContain('name="postListStyle"'); expect(html).toContain('name="codeBlockStyle"');
     const headers = { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', cookie: auth.cookie, accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' };
     const values = { csrfToken: auth.csrfToken, previewToken: token, ...studioControls };
     const preview = await app.request('http://app.localtest.me:3000/api/theme/preview', { method: 'POST', headers, body: form(values) });
@@ -268,7 +285,7 @@ describe('hosted app boundaries', () => {
     const saved = await app.request('http://app.localtest.me:3000/actions/theme/apply', { method: 'POST', headers, body: form(values) });
     expect(saved.status).toBe(303);
     expect(database.listThemes(blog.id)).toHaveLength(2);
-    expect(database.getActiveTheme(blog.id)).toMatchObject({ source: 'manual', description: 'Editorial · Newsprint · Serif / Sans · Large' });
+    expect(database.getActiveTheme(blog.id)).toMatchObject({ source: 'manual', description: 'Editorial · Newsprint · Serif / Sans · Large · Centered header · Numbered list · Code panel' });
     const invalidOrigin = await app.request('http://app.localtest.me:3000/api/theme/preview', { method: 'POST', headers: { ...headers, origin: 'http://evil.example' }, body: form(values) });
     expect(invalidOrigin.status).toBe(403); expect(await invalidOrigin.json()).toMatchObject({ error: { code: 'invalid_origin' } });
     const invalidCsrf = await app.request('http://app.localtest.me:3000/api/theme/preview', { method: 'POST', headers, body: form({ ...values, csrfToken: 'wrong' }) });

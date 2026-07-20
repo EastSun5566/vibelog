@@ -17,10 +17,11 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "tsx --env-file=../../.env src/main.ts",
-    "dev:server": "tsx --env-file=../../.env src/server.tsx",
+    "dev": "pnpm css:build && tsx --env-file=../../.env src/main.ts",
+    "dev:server": "pnpm css:build && tsx --env-file=../../.env src/server.tsx",
     "worker": "tsx --env-file=../../.env src/worker.ts",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -R src/drizzle dist/drizzle",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -R src/drizzle dist/drizzle && pnpm css:build --minify",
+    "css:build": "tailwindcss -i src/styles/app.css -o dist/assets/app.css",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:check": "drizzle-kit check --config drizzle.config.ts",
     "start": "node dist/main.js",
@@ -38,8 +39,11 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
     "@types/node": "^24.0.0",
+    "basecoat-css": "1.0.2",
     "drizzle-kit": "0.31.10",
+    "tailwindcss": "4.3.3",
     "tsx": "^4.19.4",
     "typescript": "7.0.2"
   }

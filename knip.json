@@ -29,8 +29,8 @@
       "ignoreDependencies": ["@astrojs/rss"]
     },
     "packages/app": {
-      "entry": ["src/main.ts", "src/server.tsx", "src/worker.ts", "tests/**/*.test.ts", "drizzle.config.ts"],
-      "project": ["src/**/*.{ts,tsx}", "tests/**/*.ts", "drizzle.config.ts"]
+      "entry": ["src/main.ts", "src/server.tsx", "src/worker.ts", "src/styles/app.css", "tests/**/*.test.ts", "drizzle.config.ts"],
+      "project": ["src/**/*.{ts,tsx,css}", "tests/**/*.ts", "drizzle.config.ts"]
     }
   }
 }

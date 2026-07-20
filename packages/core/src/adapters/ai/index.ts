@@ -18,6 +18,7 @@ const themeTool: Tool = {
     colors: Type.Object({ background: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), surface: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), text: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), muted: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), accent: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), border: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }) }, { additionalProperties: false }),
     bodyFont: enumType(['system-sans', 'system-serif']), headingFont: enumType(['system-sans', 'system-serif', 'system-mono']),
     scale: enumType(['compact', 'comfortable', 'large']), contentWidth: enumType(['narrow', 'medium', 'wide']), density: enumType(['compact', 'comfortable']), radius: enumType(['none', 'soft', 'round']),
+    headerStyle: enumType(['compact', 'centered']), postListStyle: enumType(['divided', 'cards', 'numbered']), codeBlockStyle: enumType(['plain', 'panel']),
     description: Type.String({ minLength: 1, maxLength: 240 }),
   }, { additionalProperties: false }),
 };
@@ -63,7 +64,7 @@ export class PiAiProvider implements AiProvider {
   }
   private async generateOnce(input: ThemeProposalInput, previousError?: string): Promise<ThemeConfig> {
     const context: Context = {
-      systemPrompt: `You are VibeLog's theme designer. Call ${THEME_TOOL_NAME} exactly once. Never return CSS, HTML, fonts, URLs, or plain text. Ensure text and accent colors each have WCAG AA contrast against the background.${previousError ? ` Previous proposal error: ${previousError}. Correct it.` : ''}`,
+      systemPrompt: `You are VibeLog's theme designer. Call ${THEME_TOOL_NAME} exactly once with a complete theme, including headerStyle, postListStyle, and codeBlockStyle. Never return CSS, HTML, fonts, URLs, or plain text. Ensure text and accent colors each have WCAG AA contrast against the background.${previousError ? ` Previous proposal error: ${previousError}. Correct it.` : ''}`,
       messages: [{ role: 'user', content: JSON.stringify(input), timestamp: Date.now() }], tools: [themeTool],
     };
     let response;

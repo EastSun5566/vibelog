@@ -40,6 +40,9 @@ export type ThemeScale = 'compact' | 'comfortable' | 'large';
 export type ThemeContentWidth = 'narrow' | 'medium' | 'wide';
 export type ThemeDensity = 'compact' | 'comfortable';
 export type ThemeRadius = 'none' | 'soft' | 'round';
+export type ThemeHeaderStyle = 'compact' | 'centered';
+export type ThemePostListStyle = 'divided' | 'cards' | 'numbered';
+export type ThemeCodeBlockStyle = 'plain' | 'panel';
 
 export interface ThemeColors {
   background: string;
@@ -60,6 +63,9 @@ export interface ThemeConfig {
   contentWidth: ThemeContentWidth;
   density: ThemeDensity;
   radius: ThemeRadius;
+  headerStyle: ThemeHeaderStyle;
+  postListStyle: ThemePostListStyle;
+  codeBlockStyle: ThemeCodeBlockStyle;
   description: string;
 }
 

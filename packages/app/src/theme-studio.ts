@@ -8,6 +8,9 @@ type ThemeScale = ThemeConfig['scale'];
 type ThemeContentWidth = ThemeConfig['contentWidth'];
 type ThemeDensity = ThemeConfig['density'];
 type ThemeRadius = ThemeConfig['radius'];
+type ThemeHeaderStyle = ThemeConfig['headerStyle'];
+type ThemePostListStyle = ThemeConfig['postListStyle'];
+type ThemeCodeBlockStyle = ThemeConfig['codeBlockStyle'];
 
 export const THEME_PALETTES = {
   paper: {
@@ -46,6 +49,9 @@ export interface ThemeControlValues {
   contentWidth: ThemeContentWidth;
   density: ThemeDensity;
   radius: ThemeRadius;
+  headerStyle: ThemeHeaderStyle;
+  postListStyle: ThemePostListStyle;
+  codeBlockStyle: ThemeCodeBlockStyle;
 }
 
 const OPTIONS = {
@@ -56,6 +62,9 @@ const OPTIONS = {
   contentWidth: ['narrow', 'medium', 'wide'],
   density: ['compact', 'comfortable'],
   radius: ['none', 'soft', 'round'],
+  headerStyle: ['compact', 'centered'],
+  postListStyle: ['divided', 'cards', 'numbered'],
+  codeBlockStyle: ['plain', 'panel'],
 } as const;
 
 function exactColors(first: ThemeColors, second: ThemeColors): boolean {
@@ -79,6 +88,9 @@ export function themeControlValues(theme: ThemeConfig): ThemeControlValues {
     contentWidth: theme.contentWidth,
     density: theme.density,
     radius: theme.radius,
+    headerStyle: theme.headerStyle,
+    postListStyle: theme.postListStyle,
+    codeBlockStyle: theme.codeBlockStyle,
   };
 }
 
@@ -97,11 +109,14 @@ const LABELS = {
   bodyFont: { 'system-sans': 'Sans', 'system-serif': 'Serif' },
   headingFont: { 'system-sans': 'Sans', 'system-serif': 'Serif', 'system-mono': 'Mono' },
   scale: { compact: 'Compact', comfortable: 'Medium', large: 'Large' },
+  headerStyle: { compact: 'Compact header', centered: 'Centered header' },
+  postListStyle: { divided: 'Divided list', cards: 'Cards', numbered: 'Numbered list' },
+  codeBlockStyle: { plain: 'Plain code', panel: 'Code panel' },
 } as const;
 
 export function describeTheme(theme: ThemeConfig): string {
   const palette = paletteForTheme(theme);
-  return `${LABELS.preset[theme.preset]} · ${palette ? THEME_PALETTES[palette].label : 'AI palette'} · ${LABELS.bodyFont[theme.bodyFont]} / ${LABELS.headingFont[theme.headingFont]} · ${LABELS.scale[theme.scale]}`;
+  return `${LABELS.preset[theme.preset]} · ${palette ? THEME_PALETTES[palette].label : 'AI palette'} · ${LABELS.bodyFont[theme.bodyFont]} / ${LABELS.headingFont[theme.headingFont]} · ${LABELS.scale[theme.scale]} · ${LABELS.headerStyle[theme.headerStyle]} · ${LABELS.postListStyle[theme.postListStyle]} · ${LABELS.codeBlockStyle[theme.codeBlockStyle]}`;
 }
 
 export function themeFromControls(baseTheme: ThemeConfig, input: Record<string, unknown>): ThemeConfig {
@@ -119,6 +134,9 @@ export function themeFromControls(baseTheme: ThemeConfig, input: Record<string, 
     contentWidth: enumValue(input, 'contentWidth', OPTIONS.contentWidth),
     density: enumValue(input, 'density', OPTIONS.density),
     radius: enumValue(input, 'radius', OPTIONS.radius),
+    headerStyle: enumValue(input, 'headerStyle', OPTIONS.headerStyle),
+    postListStyle: enumValue(input, 'postListStyle', OPTIONS.postListStyle),
+    codeBlockStyle: enumValue(input, 'codeBlockStyle', OPTIONS.codeBlockStyle),
     description: '',
   };
   next.description = describeTheme(next);

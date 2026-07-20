@@ -6,14 +6,22 @@ const ENUMS = {
   bodyFont: ['system-sans', 'system-serif'], headingFont: ['system-sans', 'system-serif', 'system-mono'],
   scale: ['compact', 'comfortable', 'large'], contentWidth: ['narrow', 'medium', 'wide'],
   density: ['compact', 'comfortable'], radius: ['none', 'soft', 'round'],
+  headerStyle: ['compact', 'centered'], postListStyle: ['divided', 'cards', 'numbered'], codeBlockStyle: ['plain', 'panel'],
 } as const;
 const CONFIG_KEYS = [...Object.keys(ENUMS), 'colors', 'description'].sort();
 const COLOR_KEYS = ['accent', 'background', 'border', 'muted', 'surface', 'text'];
+const V2_KEYS = ['headerStyle', 'postListStyle', 'codeBlockStyle'] as const;
+const LEGACY_VARIANTS = {
+  minimal: { headerStyle: 'compact', postListStyle: 'divided', codeBlockStyle: 'plain' },
+  editorial: { headerStyle: 'centered', postListStyle: 'numbered', codeBlockStyle: 'panel' },
+  notebook: { headerStyle: 'compact', postListStyle: 'cards', codeBlockStyle: 'panel' },
+} as const;
 
 export const DEFAULT_THEME: ThemeConfig = {
   preset: 'minimal', appearance: 'light',
   colors: { background: '#ffffff', surface: '#f7f7f5', text: '#1f2328', muted: '#59636e', accent: '#075985', border: '#d0d7de' },
   bodyFont: 'system-sans', headingFont: 'system-sans', scale: 'comfortable', contentWidth: 'medium', density: 'comfortable', radius: 'soft',
+  headerStyle: 'compact', postListStyle: 'divided', codeBlockStyle: 'plain',
   description: 'A clear, quiet theme that keeps the writing first.',
 };
 
@@ -42,7 +50,13 @@ export function contrastRatio(foreground: string, background: string): number {
 
 export function validateThemeConfig(input: unknown): ThemeConfig {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Theme must be an object');
-  const value = input as Record<string, unknown>;
+  const inputValue = input as Record<string, unknown>;
+  const variantCount = V2_KEYS.filter((key) => Object.hasOwn(inputValue, key)).length;
+  if (variantCount !== 0 && variantCount !== V2_KEYS.length) throw new Error('Theme contains an incomplete V2 variant set');
+  if (!ENUMS.preset.includes(inputValue.preset as never)) throw new Error('Invalid theme preset');
+  const value: Record<string, unknown> = variantCount === 0
+    ? { ...inputValue, ...LEGACY_VARIANTS[inputValue.preset as keyof typeof LEGACY_VARIANTS] }
+    : inputValue;
   assertExactKeys(value, CONFIG_KEYS, 'Theme');
   for (const [key, allowed] of Object.entries(ENUMS)) if (!allowed.includes(value[key] as never)) throw new Error(`Invalid theme ${key}`);
   if (!value.colors || typeof value.colors !== 'object' || Array.isArray(value.colors)) throw new Error('Theme colors must be an object');
@@ -52,7 +66,7 @@ export function validateThemeConfig(input: unknown): ThemeConfig {
   if (typeof value.description !== 'string' || value.description.trim().length < 1 || value.description.length > 240) throw new Error('Theme description must be between 1 and 240 characters');
   if (contrastRatio(colors.text as string, colors.background as string) < 4.5) throw new Error('Theme text does not have enough contrast against the background');
   if (contrastRatio(colors.accent as string, colors.background as string) < 4.5) throw new Error('Theme links do not have enough contrast against the background');
-  return structuredClone(input) as ThemeConfig;
+  return structuredClone(value) as unknown as ThemeConfig;
 }
 
 const FONT_STACKS = {
@@ -66,20 +80,11 @@ const DENSITY = { compact: '1rem', comfortable: '1.5rem' };
 const RADIUS = { none: '0', soft: '0.5rem', round: '1rem' };
 const PRESETS = {
   minimal: `/* Preset: minimal */
-.blog-list-item {
-  border-bottom: 1px solid var(--theme-border);
-  padding-block: calc(var(--theme-space) * 1.15);
-}
-.blog-list-item:first-child { border-top: 1px solid var(--theme-border); }
+.home-hero, .page-heading { max-width: 40rem; }
 .article-navigation-link { border-top: 1px solid var(--theme-border); }`,
   editorial: `/* Preset: editorial */
 h1, h2, h3 { letter-spacing: -0.045em; }
 .site-header { border-bottom: 3px double var(--theme-border); }
-.blog-list { gap: var(--theme-space); }
-.blog-list-item {
-  border-top: 1px solid var(--theme-border);
-  padding-block: calc(var(--theme-space) * 1.25);
-}
 .blog-list-item:first-child .blog-item-title { font-size: clamp(1.75rem, 4vw, 2.8rem); }
 .article-navigation-link { border-top: 3px double var(--theme-border); }
 @media (min-width: 48rem) {
@@ -93,8 +98,6 @@ body {
   background-size: 100% 1.75rem;
 }
 .site-header nav, main, .site-footer, footer { background: var(--theme-background); }
-.blog-list { gap: var(--theme-space); }
-.blog-list-item,
 .article-navigation-link {
   background: var(--theme-surface);
   border: 1px solid var(--theme-border);
@@ -102,6 +105,34 @@ body {
   padding: var(--theme-space);
 }
 .blog-item-link { min-height: 6rem; }`,
+};
+const HEADER_STYLES = {
+  compact: `/* Header: compact */
+.site-header nav { min-height: 4rem; }`,
+  centered: `/* Header: centered */
+.site-header nav { flex-direction: column; justify-content: center; padding-block: calc(var(--theme-space) * 1.15); text-align: center; }
+.site-title { font-size: clamp(1.2rem, 3vw, 1.65rem); }
+.site-nav-links { justify-content: center; }`,
+};
+const POST_LIST_STYLES = {
+  divided: `/* Post list: divided */
+.blog-list { gap: 0; }
+.blog-list-item { background: transparent; border: 0; border-bottom: 1px solid var(--theme-border); border-radius: 0; padding: var(--theme-space) 0; }
+.blog-list-item:first-child { border-top: 1px solid var(--theme-border); }`,
+  cards: `/* Post list: cards */
+.blog-list { gap: var(--theme-space); }
+.blog-list-item { background: var(--theme-surface); border: 1px solid var(--theme-border); border-radius: var(--theme-radius); padding: var(--theme-space); }`,
+  numbered: `/* Post list: numbered */
+.blog-list { counter-reset: vibelog-posts; }
+.blog-list-item { align-items: start; background: transparent; border: 0; border-bottom: 1px solid var(--theme-border); border-radius: 0; counter-increment: vibelog-posts; display: grid; gap: var(--theme-space); grid-template-columns: 2.5rem minmax(0, 1fr); padding: var(--theme-space) 0; }
+.blog-list-item::before { color: var(--theme-muted); content: counter(vibelog-posts, decimal-leading-zero); font-family: var(--theme-heading-font); font-size: 0.8rem; padding-block-start: 0.2rem; }`,
+};
+const CODE_BLOCK_STYLES = {
+  plain: `/* Code blocks: plain */
+.prose pre { background: transparent; border-color: transparent; border-inline-start: 0.2rem solid var(--theme-border); border-radius: 0; }
+.prose pre code { background: transparent; }`,
+  panel: `/* Code blocks: panel */
+.prose pre { background: var(--theme-surface); border: 1px solid var(--theme-border); border-radius: var(--theme-radius); box-shadow: 0 0.4rem 1.2rem rgb(0 0 0 / 0.06); }`,
 };
 
 export function renderThemeCss(input: ThemeConfig): string {
@@ -134,5 +165,8 @@ small, time, .muted, .eyebrow, .blog-item-date, .blog-post-date, .blog-post-upda
 pre, code, blockquote, .prose th, .prose td { background: var(--theme-surface); border-color: var(--theme-border); border-radius: var(--theme-radius); }
 .skip-link { background: var(--theme-text); color: var(--theme-background); border-radius: var(--theme-radius); }
 ${PRESETS[theme.preset]}
+${HEADER_STYLES[theme.headerStyle]}
+${POST_LIST_STYLES[theme.postListStyle]}
+${CODE_BLOCK_STYLES[theme.codeBlockStyle]}
 `;
 }

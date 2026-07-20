@@ -33,5 +33,27 @@ describe('theme contract', () => {
     expect(() => validateThemeConfig({ ...DEFAULT_THEME, colors: { ...DEFAULT_THEME.colors, accent: 'url(https://example.com)' } })).toThrow('accent');
     expect(() => validateThemeConfig({ ...DEFAULT_THEME, colors: { ...DEFAULT_THEME.colors, text: '#eeeeee' } })).toThrow('contrast');
   });
+  it('normalizes complete legacy themes and rejects partial V2 themes', () => {
+    const { headerStyle: _header, postListStyle: _list, codeBlockStyle: _code, ...legacy } = DEFAULT_THEME;
+    expect(validateThemeConfig(legacy)).toMatchObject({ headerStyle: 'compact', postListStyle: 'divided', codeBlockStyle: 'plain' });
+    expect(validateThemeConfig({ ...legacy, preset: 'editorial' })).toMatchObject({ headerStyle: 'centered', postListStyle: 'numbered', codeBlockStyle: 'panel' });
+    expect(validateThemeConfig({ ...legacy, preset: 'notebook' })).toMatchObject({ headerStyle: 'compact', postListStyle: 'cards', codeBlockStyle: 'panel' });
+    expect(() => validateThemeConfig({ ...legacy, headerStyle: 'compact' })).toThrow('incomplete');
+  });
+  it('renders every V2 presentation variant deterministically', () => {
+    const variants = [
+      ['headerStyle', [['compact', 'Header: compact'], ['centered', 'Header: centered']]],
+      ['postListStyle', [['divided', 'Post list: divided'], ['cards', 'Post list: cards'], ['numbered', 'Post list: numbered']]],
+      ['codeBlockStyle', [['plain', 'Code blocks: plain'], ['panel', 'Code blocks: panel']]],
+    ] as const;
+    for (const [field, values] of variants) {
+      for (const [value, marker] of values) {
+        const theme = { ...DEFAULT_THEME, [field]: value };
+        const css = renderThemeCss(theme);
+        expect(css).toBe(renderThemeCss(theme));
+        expect(css).toContain(marker);
+      }
+    }
+  });
   it('calculates WCAG contrast ratios', () => { expect(contrastRatio('#000000', '#ffffff')).toBe(21); });
 });
