@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.5.0-beta.2](https://github.com/EastSun5566/vibelog/compare/v0.5.0-beta.1...v0.5.0-beta.2) (2026-07-20)
+
+### Features
+
+* add AI-first theme studio ([92bbf8a](https://github.com/EastSun5566/vibelog/commit/92bbf8a58983a5ad98db239210bc266cd4363e2b))
+* add article curation ([41b95d9](https://github.com/EastSun5566/vibelog/commit/41b95d9e0153282a3157d72ec8c4e6bb03d4816a))
+* add blog identity and content sync details ([7f351d1](https://github.com/EastSun5566/vibelog/commit/7f351d19a92e1c141a966781cdb91cf73ee4d2b6))
+* add publication history and rollback ([fade362](https://github.com/EastSun5566/vibelog/commit/fade36246b6b0093f7c84931c30c414ea41d08ee))
+* improve activation and publishing flow ([1642a64](https://github.com/EastSun5566/vibelog/commit/1642a64ff27af4ffe840f5ed51f99b821192b51a))
+
+### Bug Fixes
+
+* avoid empty pnpm cache in container CI ([69605fd](https://github.com/EastSun5566/vibelog/commit/69605fd90a2e77cbf7a7412cfba418bcf7519813))
+* support keyless Ollama requests ([923ca4b](https://github.com/EastSun5566/vibelog/commit/923ca4b7172339681552c38a6d648d7e8c315482))
 ## [0.5.0-beta.1](https://github.com/EastSun5566/vibelog/compare/v0.4.1-beta.9...v0.5.0-beta.1) (2026-07-18)
 
 ### ⚠ BREAKING CHANGES

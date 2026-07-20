@@ -1,6 +1,6 @@
 {
   "name": "@vibelog/app",
-  "version": "0.5.0-beta.1",
+  "version": "0.5.0-beta.2",
   "private": true,
   "description": "Hosted HackMD-to-Astro theme editor",
   "repository": {
