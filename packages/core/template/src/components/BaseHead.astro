@@ -7,12 +7,13 @@ import { SITE_TITLE } from "../consts";
 interface Props {
   title: string;
   description: string;
-  image?: string;
+  kind?: "website" | "article";
+  publishedAt?: Date;
 }
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 
-const { title, description, image } = Astro.props;
+const { title, description, kind = "website", publishedAt } = Astro.props;
 ---
 
 <!-- Global Metadata -->
@@ -25,7 +26,7 @@ const { title, description, image } = Astro.props;
   rel="alternate"
   type="application/rss+xml"
   title={SITE_TITLE}
-  href={new URL("rss.xml", Astro.site)}
+  href={new URL("/rss.xml", Astro.site)}
 />
 <meta name="generator" content={Astro.generator} />
 
@@ -38,15 +39,17 @@ const { title, description, image } = Astro.props;
 <meta name="description" content={description} />
 
 <!-- Open Graph / Facebook -->
-<meta property="og:type" content="website" />
-<meta property="og:url" content={Astro.url} />
+<meta property="og:type" content={kind} />
+<meta property="og:url" content={canonicalURL} />
 <meta property="og:title" content={title} />
 <meta property="og:description" content={description} />
-{image && <meta property="og:image" content={new URL(image, Astro.url)} />}
+{
+  kind === "article" && publishedAt && (
+    <meta property="article:published_time" content={publishedAt.toISOString()} />
+  )
+}
 
 <!-- Twitter -->
-<meta property="twitter:card" content={image ? "summary_large_image" : "summary"} />
-<meta property="twitter:url" content={Astro.url} />
-<meta property="twitter:title" content={title} />
-<meta property="twitter:description" content={description} />
-{image && <meta property="twitter:image" content={new URL(image, Astro.url)} />}
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={description} />

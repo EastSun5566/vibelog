@@ -65,9 +65,43 @@ const WIDTH = { narrow: '42rem', medium: '52rem', wide: '66rem' };
 const DENSITY = { compact: '1rem', comfortable: '1.5rem' };
 const RADIUS = { none: '0', soft: '0.5rem', round: '1rem' };
 const PRESETS = {
-  minimal: '.site-header { border-bottom: 1px solid var(--theme-border); }\n.post-list article { border-bottom: 1px solid var(--theme-border); padding-block: var(--theme-space); }',
-  editorial: 'h1, h2, h3 { letter-spacing: -0.035em; }\n.site-header { border-bottom: 3px double var(--theme-border); }\n.post-list article { border-bottom: 1px solid var(--theme-border); padding-block: calc(var(--theme-space) * 1.25); }',
-  notebook: 'body { background-image: linear-gradient(var(--theme-border) 1px, transparent 1px); background-size: 100% 1.75rem; }\nmain, .site-header, .site-footer { background: var(--theme-background); }\n.post-list article { background: var(--theme-surface); border: 1px solid var(--theme-border); border-radius: var(--theme-radius); margin-block: var(--theme-space); padding: var(--theme-space); }',
+  minimal: `/* Preset: minimal */
+.blog-list-item {
+  border-bottom: 1px solid var(--theme-border);
+  padding-block: calc(var(--theme-space) * 1.15);
+}
+.blog-list-item:first-child { border-top: 1px solid var(--theme-border); }
+.article-navigation-link { border-top: 1px solid var(--theme-border); }`,
+  editorial: `/* Preset: editorial */
+h1, h2, h3 { letter-spacing: -0.045em; }
+.site-header { border-bottom: 3px double var(--theme-border); }
+.blog-list { gap: var(--theme-space); }
+.blog-list-item {
+  border-top: 1px solid var(--theme-border);
+  padding-block: calc(var(--theme-space) * 1.25);
+}
+.blog-list-item:first-child .blog-item-title { font-size: clamp(1.75rem, 4vw, 2.8rem); }
+.article-navigation-link { border-top: 3px double var(--theme-border); }
+@media (min-width: 48rem) {
+  .blog-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .blog-list-item:first-child { grid-column: 1 / -1; }
+  .blog-list-item:first-child .blog-item-link { min-height: 8rem; }
+}`,
+  notebook: `/* Preset: notebook */
+body {
+  background-image: linear-gradient(var(--theme-border) 1px, transparent 1px);
+  background-size: 100% 1.75rem;
+}
+.site-header nav, main, .site-footer, footer { background: var(--theme-background); }
+.blog-list { gap: var(--theme-space); }
+.blog-list-item,
+.article-navigation-link {
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border);
+  border-radius: var(--theme-radius);
+  padding: var(--theme-space);
+}
+.blog-item-link { min-height: 6rem; }`,
 };
 
 export function renderThemeCss(input: ThemeConfig): string {
@@ -91,9 +125,14 @@ export function renderThemeCss(input: ThemeConfig): string {
 body { background: var(--theme-background); color: var(--theme-text); font-family: var(--theme-body-font); font-size: var(--theme-font-size); }
 h1, h2, h3, h4, h5, h6 { color: var(--theme-text); font-family: var(--theme-heading-font); }
 a { color: var(--theme-accent); }
-main, .site-header, .site-footer { box-sizing: border-box; margin-inline: auto; max-width: var(--theme-content-width); padding-inline: var(--theme-space); }
-small, time, .muted { color: var(--theme-muted); }
-pre, code, blockquote { background: var(--theme-surface); border-color: var(--theme-border); border-radius: var(--theme-radius); }
+.site-header, .site-footer, footer { background: var(--theme-background); border-color: var(--theme-border); }
+.site-header nav, main, .site-footer, footer { box-sizing: border-box; margin-inline: auto; max-width: var(--theme-content-width); padding-inline: var(--theme-space); }
+.site-title, .site-header h2 a, .site-nav-links a { color: var(--theme-text); }
+.site-nav-links a:hover, .site-nav-links a.active, .site-nav-links a[aria-current="page"] { color: var(--theme-accent); }
+small, time, .muted, .eyebrow, .blog-item-date, .blog-post-date, .blog-post-update, .article-navigation-link span { color: var(--theme-muted); }
+.blog-list-item, .blog-post, .article-navigation-link { border-color: var(--theme-border); }
+pre, code, blockquote, .prose th, .prose td { background: var(--theme-surface); border-color: var(--theme-border); border-radius: var(--theme-radius); }
+.skip-link { background: var(--theme-text); color: var(--theme-background); border-radius: var(--theme-radius); }
 ${PRESETS[theme.preset]}
 `;
 }

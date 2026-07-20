@@ -14,7 +14,7 @@ import { logger } from './logger.js';
 import type { ContentSource } from '../types.js';
 import { loadConfig } from './config.js';
 
-const TEMPLATE_VERSION = 1;
+const TEMPLATE_VERSION = 2;
 const postSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
@@ -93,10 +93,6 @@ export class DevBuilder {
     const backupDir = join(this.root, `.vibelog-backup-${randomUUID()}`);
     await fs.copy(templateDir, stagingDir);
 
-    const currentCss = join(this.vibelogDir, 'src', 'styles', 'global.css');
-    if (await fs.exists(currentCss)) {
-      await fs.copy(currentCss, join(stagingDir, 'src', 'styles', 'global.css'));
-    }
     await fs.writeJson(join(stagingDir, '.vibelog-state.json'), { templateVersion: TEMPLATE_VERSION });
 
     if (installDependencies) {
@@ -157,7 +153,7 @@ export class DevBuilder {
     const config = await loadConfig(this.root);
     const siteTitle = config.site.title ?? basename(this.root);
     const siteDescription = config.site.description ?? author.bio;
-    const siteLanguage = config.site.language ?? 'en';
+    const siteLanguage = config.site.language ?? 'zh-Hant';
 
     const configContent = `// Auto-generated site configuration
 export const SITE_TITLE = ${JSON.stringify(siteTitle)};

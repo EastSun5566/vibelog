@@ -16,6 +16,10 @@ Only notes that HackMD exposes as public and published are imported. Duplicate s
 
 The editor records the last successful sync and lists the imported article metadata without storing article bodies in SQLite. Saving the blog title or description also fetches the latest HackMD content and rebuilds a new draft. The previous identity, draft, and published site remain active if that rebuild fails. Later content syncs preserve the title and description you chose.
 
+The public homepage shows the blog identity, author bio, and five newest selected articles. `/blog` contains the complete selected archive, while article pages link to the adjacent newer and older posts. RSS, sitemap, canonical URLs, and Open Graph metadata are generated from the same content snapshot.
+
+VibeLog keeps published releases immutable. When a template update becomes available, run **重新同步 HackMD**, review the new draft in Preview, and publish it explicitly. Existing live releases do not change during the upgrade.
+
 ## Theme safety
 
 The AI receives the blog title, description, author, current theme, and your design request. It does not receive article bodies. It returns one `propose_theme` tool call containing:

@@ -1,0 +1,50 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`theme contract > renders each repository-owned preset deterministically 1`] = `
+"/* Preset: minimal */
+.blog-list-item {
+  border-bottom: 1px solid var(--theme-border);
+  padding-block: calc(var(--theme-space) * 1.15);
+}
+.blog-list-item:first-child { border-top: 1px solid var(--theme-border); }
+.article-navigation-link { border-top: 1px solid var(--theme-border); }
+"
+`;
+
+exports[`theme contract > renders each repository-owned preset deterministically 2`] = `
+"/* Preset: editorial */
+h1, h2, h3 { letter-spacing: -0.045em; }
+.site-header { border-bottom: 3px double var(--theme-border); }
+.blog-list { gap: var(--theme-space); }
+.blog-list-item {
+  border-top: 1px solid var(--theme-border);
+  padding-block: calc(var(--theme-space) * 1.25);
+}
+.blog-list-item:first-child .blog-item-title { font-size: clamp(1.75rem, 4vw, 2.8rem); }
+.article-navigation-link { border-top: 3px double var(--theme-border); }
+@media (min-width: 48rem) {
+  .blog-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .blog-list-item:first-child { grid-column: 1 / -1; }
+  .blog-list-item:first-child .blog-item-link { min-height: 8rem; }
+}
+"
+`;
+
+exports[`theme contract > renders each repository-owned preset deterministically 3`] = `
+"/* Preset: notebook */
+body {
+  background-image: linear-gradient(var(--theme-border) 1px, transparent 1px);
+  background-size: 100% 1.75rem;
+}
+.site-header nav, main, .site-footer, footer { background: var(--theme-background); }
+.blog-list { gap: var(--theme-space); }
+.blog-list-item,
+.article-navigation-link {
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border);
+  border-radius: var(--theme-radius);
+  padding: var(--theme-space);
+}
+.blog-item-link { min-height: 6rem; }
+"
+`;

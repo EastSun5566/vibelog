@@ -1,0 +1,33 @@
+---
+import { getCollection } from "astro:content";
+
+import BaseHead from "../components/BaseHead.astro";
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import { SITE_LANGUAGE } from "../consts";
+
+interface Props {
+  title: string;
+  description: string;
+  kind?: "website" | "article";
+  publishedAt?: Date;
+}
+
+const { title, description, kind = "website", publishedAt } = Astro.props;
+const [author] = await getCollection("author");
+---
+
+<!doctype html>
+<html lang={SITE_LANGUAGE}>
+  <head>
+    <BaseHead {title} {description} {kind} {publishedAt} />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">跳至主要內容</a>
+    <Header />
+    <main id="main-content" tabindex="-1">
+      <slot />
+    </main>
+    <Footer name={author.data.name} />
+  </body>
+</html>

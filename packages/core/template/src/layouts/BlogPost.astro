@@ -1,47 +1,61 @@
 ---
-import { getCollection, type CollectionEntry } from "astro:content";
-import BaseHead from "../components/BaseHead.astro";
-import Header from "../components/Header.astro";
-import Footer from "../components/Footer.astro";
+import type { CollectionEntry } from "astro:content";
+
 import FormattedDate from "../components/FormattedDate.astro";
-import { SITE_LANGUAGE } from "../consts";
+import SiteLayout from "./SiteLayout.astro";
+import { SITE_TITLE } from "../consts";
 
-type Props = CollectionEntry<"blog">["data"];
+type Props = CollectionEntry<"blog">["data"] & {
+  newerPost?: CollectionEntry<"blog">;
+  olderPost?: CollectionEntry<"blog">;
+};
 
-const { title, description, date, updatedDate } = Astro.props;
-
-const [author] = await getCollection("author");
+const { title, description, date, updatedDate, newerPost, olderPost } = Astro.props;
 ---
 
-<html lang={SITE_LANGUAGE}>
-  <head>
-    <BaseHead title={title} description={description} />
-  </head>
+<SiteLayout
+  title={`${title} · ${SITE_TITLE}`}
+  {description}
+  kind="article"
+  publishedAt={date}
+>
+  <article class="blog-post">
+    <div class="blog-post-content">
+      <header class="blog-post-header">
+        <p class="blog-post-date"><FormattedDate date={date} /></p>
+        <h1 class="blog-post-title">{title}</h1>
+        {
+          updatedDate && (
+            <p class="blog-post-update">
+              更新於 <FormattedDate date={updatedDate} />
+            </p>
+          )
+        }
+      </header>
+      <div class="prose">
+        <slot />
+      </div>
+    </div>
+  </article>
 
-  <body>
-    <Header />
-    <main>
-      <article class="blog-post">
-        <div class="blog-post-content">
-          <header class="blog-post-header">
-            <div class="blog-post-date">
-              <FormattedDate date={date} />
-            </div>
-            <h1 class="blog-post-title">{title}</h1>
-            {
-              updatedDate && (
-                <div class="blog-post-update">
-                  Last updated on <FormattedDate date={updatedDate} />
-                </div>
-              )
-            }
-          </header>
-          <div class="prose">
-            <slot />
-          </div>
-        </div>
-      </article>
-    </main>
-    <Footer name={author.data.name} />
-  </body>
-</html>
+  {
+    (newerPost || olderPost) && (
+      <nav class="article-navigation" aria-label="文章導覽">
+        {newerPost ? (
+          <a class="article-navigation-link newer" href={`/blog/${newerPost.id}/`}>
+            <span>較新文章</span>
+            <strong>{newerPost.data.title}</strong>
+          </a>
+        ) : (
+          <span />
+        )}
+        {olderPost && (
+          <a class="article-navigation-link older" href={`/blog/${olderPost.id}/`}>
+            <span>較舊文章</span>
+            <strong>{olderPost.data.title}</strong>
+          </a>
+        )}
+      </nav>
+    )
+  }
+</SiteLayout>

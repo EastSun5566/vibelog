@@ -1,0 +1,30 @@
+---
+import type { CollectionEntry } from "astro:content";
+
+import FormattedDate from "./FormattedDate.astro";
+
+interface Props {
+  posts: CollectionEntry<"blog">[];
+  headingLevel?: "h2" | "h3";
+}
+
+const { posts, headingLevel = "h2" } = Astro.props;
+const Heading = headingLevel;
+---
+
+<ol class="blog-list" role="list">
+  {
+    posts.map((post) => (
+      <li class="blog-list-item">
+        <article>
+          <a href={`/blog/${post.id}/`} class="blog-item-link">
+            <Heading class="blog-item-title">{post.data.title}</Heading>
+            <p class="blog-item-date">
+              <FormattedDate date={post.data.date} />
+            </p>
+          </a>
+        </article>
+      </li>
+    ))
+  }
+</ol>
