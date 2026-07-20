@@ -16,10 +16,18 @@ const config: AppConfig = {
   betterAuthSecret: 'e2e-secret-that-is-at-least-thirty-two-characters', betaInviteDigest: createHash('sha256').update('vibelog-e2e-beta-invite-code').digest(),
   aiUserDailyLimit: 20, aiGlobalDailyLimit: 200, aiProvider: 'fake', aiModel: 'fake', secureCookies: false,
 };
+let successfulSyncs = 0;
 const content: ContentSource = {
   name: ContentSourceName.HACKMD,
   getAuthor() { return Promise.resolve({ name: 'Alice Writer', bio: 'Notes about building humane software.' }); },
-  getPosts() { return Promise.resolve({ posts: [{ id: 'hello', title: 'Hello VibeLog', slug: 'hello-vibelog', date: '2026-07-19T00:00:00.000Z', content: 'This is a public HackMD article.' }] }); },
+  getPosts() {
+    successfulSyncs += 1;
+    return Promise.resolve({ posts: [
+      { id: 'hello', title: 'Hello VibeLog', slug: 'hello-vibelog', date: '2026-07-19T00:00:00.000Z', content: 'This is a public HackMD article.' },
+      { id: 'archive', title: 'Archive Note', slug: 'archive-note', date: '2026-07-18T00:00:00.000Z', content: 'This article can be excluded.' },
+      ...(successfulSyncs >= 4 ? [{ id: 'new', title: 'Newly Synced Note', slug: 'newly-synced-note', date: '2026-07-20T00:00:00.000Z', content: 'This article appeared in a later sync.' }] : []),
+    ] });
+  },
 };
 const missingContent: ContentSource = {
   name: ContentSourceName.HACKMD,

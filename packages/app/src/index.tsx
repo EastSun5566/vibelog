@@ -163,7 +163,11 @@ export function createApp(options: CreateAppOptions = {}) {
     } catch (error) {
       if (error instanceof AiQuotaExceededError) throw new AppError('ai_quota_exceeded', '今天的 AI 樣式額度已用完', 429, { 'Retry-After': String(error.retryAfter) });
       if (error instanceof Error && error.message === 'Nothing to publish') throw new AppError('nothing_to_publish', '目前沒有需要發布的變更', 409);
+      if (error instanceof Error && error.message === 'Nothing to update article selection') throw new AppError('nothing_to_update', '文章選擇沒有變更', 409);
       if (error instanceof Error && error.message === 'Nothing to update') throw new AppError('nothing_to_update', 'Blog 資訊沒有變更', 409);
+      if (error instanceof Error && error.message === 'No articles selected') throw new AppError('no_articles_selected', '至少要選取一篇文章', 400);
+      if (error instanceof Error && error.message === 'Unknown article selection') throw new AppError('invalid_article_selection', '文章選擇已過期，請重新整理後再試一次', 409);
+      if (error instanceof Error && error.message === 'Article selection unavailable') throw new AppError('article_selection_unavailable', '請先完成內容同步', 409);
       if (error instanceof Error && error.message === 'Blog has no synced content') throw new AppError('preview_not_ready', '請先完成內容同步', 409);
       if (error instanceof Error && error.message === 'Preview has unsaved theme changes') throw new AppError('unsaved_theme', '請先儲存目前的樣式，再進行發布', 409);
       if (error instanceof Error && error.message === 'Preview session expired or invalid') throw new AppError('preview_session_expired', '預覽已過期，請重新整理編輯器', 409);
@@ -194,6 +198,22 @@ export function createApp(options: CreateAppOptions = {}) {
     const input = blogIdentitySchema.safeParse({ title: formValue(body, 'title'), description: formValue(body, 'description') ?? '' });
     if (!input.success) throw new AppError('invalid_blog_identity', 'Blog 標題必須是 1–80 字元，描述最多 240 字元', 400);
     return enqueue(c, 'sync', { intent: 'identity', site: input.data });
+  });
+  app.post('/actions/blog/selection', async (c) => {
+    const body = await mutationBody(c);
+    const blog = ownedBlog(c);
+    if (!blog.contentManifest?.length) throw new AppError('article_selection_unavailable', '請先完成內容同步', 409);
+    const prefix = 'article:';
+    const includedSlugs = Object.entries(body)
+      .filter(([name, value]) => name.startsWith(prefix) && value === 'included')
+      .map(([name]) => name.slice(prefix.length));
+    const knownSlugs = new Set(blog.contentManifest.map((post) => post.slug));
+    if (includedSlugs.some((slug) => !knownSlugs.has(slug))) {
+      throw new AppError('invalid_article_selection', '文章選擇無效，請重新整理後再試一次', 400);
+    }
+    const included = new Set(includedSlugs);
+    const excludedSlugs = blog.contentManifest.filter((post) => !included.has(post.slug)).map((post) => post.slug);
+    return enqueue(c, 'sync', { intent: 'selection', excludedSlugs });
   });
   function themeFromBody(c: AppContext, body: Record<string, string | File>) {
     const blog = ownedBlog(c);

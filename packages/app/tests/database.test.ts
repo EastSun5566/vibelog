@@ -62,16 +62,16 @@ describe('AppDatabase 0.5 model', () => {
     database.completeSync(blog.id, {
       title: 'Carol', description: '', author: 'Carol', draftArtifact: '/tmp/draft', lastSyncedAt: '2026-07-19T12:00:00.000Z',
       contentManifest: [
-        { title: 'Older', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z' },
-        { title: 'Newer', slug: 'newer', publishedAt: '2026-02-01T00:00:00.000Z' },
+        { title: 'Older', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z', included: true },
+        { title: 'Newer', slug: 'newer', publishedAt: '2026-02-01T00:00:00.000Z', included: true },
       ],
     });
     expect(database.getBlog(blog.id)).toMatchObject({
       contentVersion: 1,
       lastSyncedAt: '2026-07-19T12:00:00.000Z',
       contentManifest: [
-        { title: 'Newer', slug: 'newer', publishedAt: '2026-02-01T00:00:00.000Z' },
-        { title: 'Older', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z' },
+        { title: 'Newer', slug: 'newer', publishedAt: '2026-02-01T00:00:00.000Z', included: true },
+        { title: 'Older', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z', included: true },
       ],
     });
     expect(() => database.retryInitialSync(blog.userId, 'another-source')).toThrow('already has synced content');
@@ -86,8 +86,42 @@ describe('AppDatabase 0.5 model', () => {
     database.completeSync(blog.id, { title: 'Current title', description: 'Current description', author: 'Writer', draftArtifact: '/tmp/identity-draft' });
     expect(() => database.createSyncOperation(blog.userId, blog.id, { intent: 'identity', site: { title: 'Current title', description: 'Current description' } })).toThrow('Nothing to update');
     const update = database.createSyncOperation(blog.userId, blog.id, { intent: 'identity', site: { title: 'New title', description: 'New description' } });
-    expect(update.payload).toEqual({ intent: 'identity', site: { title: 'New title', description: 'New description' } });
+    expect(update.payload).toEqual({ intent: 'identity', site: { title: 'New title', description: 'New description' }, excludedSlugs: [] });
     expect(() => database.createSyncOperation(blog.userId, blog.id, { intent: 'content' })).toThrow('active operation');
+    database.close();
+  });
+  it('preserves article exclusions in sync snapshots and accepts legacy manifests', async () => {
+    const database = await subject(); addUser(database, '15151515-1515-4515-8515-151515151515', 'selection');
+    const { blog, operation } = database.createBlog('15151515-1515-4515-8515-151515151515', 'selection', 'selection'); database.completeOperation(operation.id);
+    database.completeSync(blog.id, {
+      title: 'Selection', description: '', author: 'Writer', draftArtifact: '/tmp/selection-draft',
+      contentManifest: [
+        { title: 'Included', slug: 'included', publishedAt: '2026-02-01T00:00:00.000Z', included: true },
+        { title: 'Excluded', slug: 'excluded', publishedAt: '2026-01-01T00:00:00.000Z', included: false },
+      ],
+    });
+
+    const content = database.createSyncOperation(blog.userId, blog.id, { intent: 'content' });
+    expect(content.payload).toEqual({ intent: 'content', excludedSlugs: ['excluded'] });
+    database.completeOperation(content.id);
+    const identity = database.createSyncOperation(blog.userId, blog.id, { intent: 'identity', site: { title: 'Updated', description: '' } });
+    expect(identity.payload).toEqual({ intent: 'identity', site: { title: 'Updated', description: '' }, excludedSlugs: ['excluded'] });
+    database.completeOperation(identity.id);
+
+    expect(() => database.createSyncOperation(blog.userId, blog.id, { intent: 'selection', excludedSlugs: ['excluded'] })).toThrow('Nothing to update article selection');
+    expect(() => database.createSyncOperation(blog.userId, blog.id, { intent: 'selection', excludedSlugs: ['missing'] })).toThrow('Unknown article selection');
+    expect(() => database.createSyncOperation(blog.userId, blog.id, { intent: 'selection', excludedSlugs: ['included', 'excluded'] })).toThrow('No articles selected');
+    const selectAll = database.createSyncOperation(blog.userId, blog.id, { intent: 'selection', excludedSlugs: [] });
+    expect(selectAll.payload).toEqual({ intent: 'selection', excludedSlugs: [] });
+    expect(() => database.createSyncOperation(blog.userId, blog.id, { intent: 'content' })).toThrow('active operation');
+    database.completeOperation(selectAll.id);
+
+    database.connection.prepare('UPDATE blogs SET content_manifest = ? WHERE id = ?').run(JSON.stringify([
+      { title: 'Legacy', slug: 'legacy', publishedAt: '2025-01-01T00:00:00.000Z' },
+    ]), blog.id);
+    expect(database.getBlog(blog.id)?.contentManifest).toEqual([
+      { title: 'Legacy', slug: 'legacy', publishedAt: '2025-01-01T00:00:00.000Z', included: true },
+    ]);
     database.close();
   });
   it('snapshots content and theme when publishing and rejects redundant work', async () => {

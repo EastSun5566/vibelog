@@ -19,7 +19,10 @@ describe('OperationWorker publication snapshots', () => {
     database.db.insert(user).values({ id: '10101010-1010-4010-8010-101010101010', name: 'sync', email: 'sync@users.vibelog.invalid', emailVerified: false, username: 'sync', displayUsername: 'sync', createdAt: date, updatedAt: date }).run();
     const { blog, operation: initial } = database.createBlog('10101010-1010-4010-8010-101010101010', 'sync', 'sync'); database.completeOperation(initial.id);
     const oldDraft = join(root, 'blogs', blog.userId, blog.id, 'draft'); await mkdir(oldDraft, { recursive: true }); await writeFile(join(oldDraft, 'index.html'), '<h1>Old</h1>');
-    database.completeSync(blog.id, { title: 'Custom title', description: 'Custom description', author: 'Old Writer', draftArtifact: oldDraft });
+    database.completeSync(blog.id, {
+      title: 'Custom title', description: 'Custom description', author: 'Old Writer', draftArtifact: oldDraft,
+      contentManifest: [{ title: 'Older', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z', included: false }],
+    });
     const operation = database.createSyncOperation(blog.userId, blog.id, { intent: 'content' });
     const getAuthor = vi.fn(() => Promise.resolve({ name: 'Writer', bio: 'Updated bio' }));
     const getPosts = vi.fn(() => Promise.resolve({ posts: [
@@ -36,12 +39,14 @@ describe('OperationWorker publication snapshots', () => {
     expect(synced).toMatchObject({
       title: 'Custom title', description: 'Custom description', author: 'Writer', contentVersion: 2,
       contentManifest: [
-        { title: 'Newer', slug: 'newer', publishedAt: '2026-02-01T00:00:00.000Z' },
-        { title: 'Older', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z' },
+        { title: 'Newer', slug: 'newer', publishedAt: '2026-02-01T00:00:00.000Z', included: true },
+        { title: 'Older', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z', included: false },
       ],
     });
     expect(synced.draftArtifact).toMatch(/\/drafts\/[0-9a-f-]+$/);
     expect(await readFile(join(synced.draftArtifact, 'index.html'), 'utf8')).toContain('Custom title');
+    await expect(readFile(join(synced.draftArtifact, 'blog', 'older', 'index.html'), 'utf8')).rejects.toThrow();
+    expect(await readFile(join(synced.draftArtifact, 'blog', 'newer', 'index.html'), 'utf8')).toContain('Newer');
     await expect(readFile(join(oldDraft, 'index.html'), 'utf8')).rejects.toThrow();
     database.close();
   }, 30_000);
@@ -52,7 +57,7 @@ describe('OperationWorker publication snapshots', () => {
     database.db.insert(user).values({ id: '20202020-2020-4020-8020-202020202020', name: 'failure', email: 'failure@users.vibelog.invalid', emailVerified: false, username: 'failure', displayUsername: 'failure', createdAt: date, updatedAt: date }).run();
     const { blog, operation: initial } = database.createBlog('20202020-2020-4020-8020-202020202020', 'failure', 'failure'); database.completeOperation(initial.id);
     const oldDraft = join(root, 'blogs', blog.userId, blog.id, 'draft'); await mkdir(oldDraft, { recursive: true }); await writeFile(join(oldDraft, 'index.html'), '<h1>Still current</h1>');
-    database.completeSync(blog.id, { title: 'Current', description: 'Current description', author: 'Writer', draftArtifact: oldDraft, contentManifest: [{ title: 'Current post', slug: 'current', publishedAt: '2026-01-01T00:00:00.000Z' }] });
+    database.completeSync(blog.id, { title: 'Current', description: 'Current description', author: 'Writer', draftArtifact: oldDraft, contentManifest: [{ title: 'Current post', slug: 'current', publishedAt: '2026-01-01T00:00:00.000Z', included: true }] });
     const operation = database.createSyncOperation(blog.userId, blog.id, { intent: 'identity', site: { title: 'Attempted', description: 'Attempted description' } });
     const source: ContentSource = { name: ContentSourceName.HACKMD, getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Bio' }), getPosts: () => Promise.resolve({ posts: [{ id: 'post', title: 'Post', slug: 'post', date: '2026-02-01T00:00:00.000Z', content: 'Body' }] }) };
     const config = { dataRoot: root, appOrigin: 'http://app.localtest.me:3000' } as AppConfig;
@@ -60,7 +65,7 @@ describe('OperationWorker publication snapshots', () => {
 
     await expect(new OperationWorker(database, config, { contentSource: () => source }).execute(operation)).rejects.toThrow('database switch failed');
 
-    expect(database.getBlog(blog.id)).toMatchObject({ title: 'Current', description: 'Current description', draftArtifact: oldDraft, contentVersion: 1, contentManifest: [{ title: 'Current post', slug: 'current', publishedAt: '2026-01-01T00:00:00.000Z' }] });
+    expect(database.getBlog(blog.id)).toMatchObject({ title: 'Current', description: 'Current description', draftArtifact: oldDraft, contentVersion: 1, contentManifest: [{ title: 'Current post', slug: 'current', publishedAt: '2026-01-01T00:00:00.000Z', included: true }] });
     expect(await readFile(join(oldDraft, 'index.html'), 'utf8')).toContain('Still current');
     expect(await readdir(join(root, 'blogs', blog.userId, blog.id, 'drafts')).catch(() => [])).toHaveLength(0);
     completeSync.mockRestore(); database.close();

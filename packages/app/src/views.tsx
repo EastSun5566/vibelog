@@ -45,9 +45,11 @@ input:user-invalid + .validation-error, textarea:user-invalid + .validation-erro
 .field-hint { margin: -.35rem 0 0; color: #58666d; font-size: .875rem; }
 .content-summary { display: grid; gap: .65rem; }
 .content-summary p { margin: 0; }
-.content-list { display: grid; gap: .55rem; margin-block-end: 0; padding-inline-start: 1.25rem; }
-.content-list li { padding-inline-start: .2rem; }
-.content-list time { display: block; color: #58666d; font-size: .875rem; }
+.content-list { display: grid; gap: .55rem; padding-block-start: .75rem; }
+.content-choice { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: .15rem .65rem; min-height: 3rem; border: 1px solid #d8dfe2; border-radius: .45rem; padding: .55rem .65rem; cursor: pointer; }
+.content-choice:has(input:checked) { border-color: #8294c9; background: #f5f7ff; }
+.content-choice input { grid-row: 1 / span 2; width: 1.15rem; min-height: 1.15rem; margin: .2rem 0 0; }
+.content-choice time { color: #58666d; font-size: .875rem; }
 a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible, output:focus-visible { outline: 3px solid #e59b19; outline-offset: 3px; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 .studio-card { border-top: .35rem solid #3157c8; padding: 1.1rem; }
@@ -250,6 +252,8 @@ export function editorPage(input: EditorPageInput) {
   const publishLabel = !published ? '發布第一版' : hasChanges ? '發布變更' : '已是最新版本';
   const identityOperation = input.operation?.type === 'sync' && syncOperationIntent(input.operation.payload) === 'identity' ? input.operation : undefined;
   const contentOperation = input.operation?.type === 'sync' && syncOperationIntent(input.operation.payload) === 'content' ? input.operation : undefined;
+  const selectionOperation = input.operation?.type === 'sync' && syncOperationIntent(input.operation.payload) === 'selection' ? input.operation : undefined;
+  const includedPosts = blog.contentManifest?.filter((post) => post.included).length ?? 0;
 
   return document('編輯 Blog', <div class="editor">
     <section class="controls" aria-label="Blog 控制">
@@ -298,17 +302,23 @@ export function editorPage(input: EditorPageInput) {
           {blog.lastSyncedAt
             ? <p class="muted">上次成功同步：<time datetime={blog.lastSyncedAt}>{new Date(blog.lastSyncedAt).toLocaleString('zh-TW')}</time></p>
             : <p class="muted">尚無同步摘要；重新同步後會顯示文章清單。</p>}
-          {blog.contentManifest
-            ? <details>
-              <summary>已匯入文章（{blog.contentManifest.length}）</summary>
-              {blog.contentManifest.length > 0
-                ? <ol class="content-list">{blog.contentManifest.map((post) => <li>
+          {blog.contentManifest ? <form method="post" action="/actions/blog/selection" data-operation aria-busy={selectionOperation ? 'true' : undefined}>
+            <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
+            <details>
+              <summary>已匯入文章（{blog.contentManifest.length}） · 已選取 {includedPosts}</summary>
+              {blog.contentManifest.length > 0 ? <fieldset class="content-list">
+                <legend>選擇要收錄到 Blog 的文章</legend>
+                {blog.contentManifest.map((post) => <label class="content-choice">
+                  <input type="checkbox" name={`article:${post.slug}`} value="included" checked={post.included}/>
                   <span>{post.title}</span>
                   <time datetime={post.publishedAt}>{new Date(post.publishedAt).toLocaleDateString('zh-TW')}</time>
-                </li>)}</ol>
-                : <p class="muted">這份摘要沒有文章。</p>}
+                </label>)}
+              </fieldset> : <p class="muted">這份摘要沒有文章。</p>}
             </details>
-            : null}
+            <p class="field-hint">新同步到的公開文章會預設選取；變更只會更新草稿，發布後才會上線。</p>
+            <button type="submit" disabled={busy || blog.contentManifest.length === 0}>儲存文章選擇並重建草稿</button>
+            <OperationOutput operation={selectionOperation}/>
+          </form> : null}
         </div>
         <form method="post" action="/actions/blog/sync" data-operation aria-busy={contentOperation ? 'true' : undefined}>
           <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>

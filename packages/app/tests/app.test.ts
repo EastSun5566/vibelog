@@ -175,8 +175,8 @@ describe('hosted app boundaries', () => {
     database.completeSync(blog.id, {
       title: 'Current title', description: 'Current description', author: 'Writer', draftArtifact: '/tmp/identity-draft', lastSyncedAt: '2026-07-20T10:00:00.000Z',
       contentManifest: [
-        { title: 'Older article', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z' },
-        { title: 'Newest article', slug: 'newest', publishedAt: '2026-07-19T00:00:00.000Z' },
+        { title: 'Older article', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z', included: true },
+        { title: 'Newest article', slug: 'newest', publishedAt: '2026-07-19T00:00:00.000Z', included: true },
       ],
     });
     const editor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
@@ -195,7 +195,7 @@ describe('hosted app boundaries', () => {
     const accepted = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: '  New title  ', description: '  New description  ' }) });
     expect(accepted.status).toBe(202);
     const active = database.getActiveOperation(blog.id, blog.userId); if (!active) throw new Error('Identity operation missing');
-    expect(active.payload).toEqual({ intent: 'identity', site: { title: 'New title', description: 'New description' } });
+    expect(active.payload).toEqual({ intent: 'identity', site: { title: 'New title', description: 'New description' }, excludedSlugs: [] });
     expect((await (await app.request(`http://app.localtest.me:3000/api/operations/${active.id}`, { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } })).json() as { message: string }).message).toBe('正在等待更新 Blog 資訊…');
     const concurrent = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: 'Another title', description: '' }) });
     expect(concurrent.status).toBe(409); expect(await concurrent.json()).toMatchObject({ error: { code: 'operation_in_progress' } });
@@ -203,6 +203,45 @@ describe('hosted app boundaries', () => {
     database.completeSync(blog.id, { title: 'New title', description: 'New description', author: 'Writer', draftArtifact: '/tmp/new-identity-draft' });
     const unchanged = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: 'New title', description: 'New description' }) });
     expect(unchanged.status).toBe(409); expect(await unchanged.json()).toMatchObject({ error: { code: 'nothing_to_update' } });
+    database.close();
+  });
+
+  it('validates article selection and enqueues an immutable sync snapshot', async () => {
+    const { app, database } = await setup(); const auth = await register(app, 'curate');
+    const sessionResponse = await app.request('http://app.localtest.me:3000/api/session', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
+    const userId = String((await sessionResponse.json() as { user: { id: string } }).user.id);
+    const { blog, operation } = database.createBlog(userId, 'curate', 'curate-source'); database.completeOperation(operation.id);
+    database.completeSync(blog.id, {
+      title: 'Curated Blog', description: '', author: 'Writer', draftArtifact: '/tmp/curate-draft',
+      contentManifest: [
+        { title: 'Older article', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z', included: true },
+        { title: 'Newest article', slug: 'newest', publishedAt: '2026-07-19T00:00:00.000Z', included: true },
+      ],
+    });
+    const editor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
+    const html = await editor.text();
+    expect(html).toContain('已匯入文章（2） · 已選取 2');
+    expect(html).toContain('action="/actions/blog/selection"');
+    expect(html).toContain('name="article:newest"');
+
+    const headers = { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', cookie: auth.cookie, accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' };
+    const selected = { csrfToken: auth.csrfToken, 'article:older': 'included', 'article:newest': 'included' };
+    const invalidOrigin = await app.request('http://app.localtest.me:3000/actions/blog/selection', { method: 'POST', headers: { ...headers, origin: 'http://evil.example' }, body: form(selected) });
+    expect(invalidOrigin.status).toBe(403);
+    const invalidCsrf = await app.request('http://app.localtest.me:3000/actions/blog/selection', { method: 'POST', headers, body: form({ ...selected, csrfToken: 'wrong' }) });
+    expect(invalidCsrf.status).toBe(403);
+    const unknown = await app.request('http://app.localtest.me:3000/actions/blog/selection', { method: 'POST', headers, body: form({ ...selected, 'article:missing': 'included' }) });
+    expect(unknown.status).toBe(400); expect(await unknown.json()).toMatchObject({ error: { code: 'invalid_article_selection' } });
+    const empty = await app.request('http://app.localtest.me:3000/actions/blog/selection', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken }) });
+    expect(empty.status).toBe(400); expect(await empty.json()).toMatchObject({ error: { code: 'no_articles_selected' } });
+    const unchanged = await app.request('http://app.localtest.me:3000/actions/blog/selection', { method: 'POST', headers, body: form(selected) });
+    expect(unchanged.status).toBe(409); expect(await unchanged.json()).toMatchObject({ error: { code: 'nothing_to_update' } });
+
+    const accepted = await app.request('http://app.localtest.me:3000/actions/blog/selection', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, 'article:newest': 'included' }) });
+    expect(accepted.status).toBe(202);
+    const active = database.getActiveOperation(blog.id, blog.userId); if (!active) throw new Error('Selection operation missing');
+    expect(active.payload).toEqual({ intent: 'selection', excludedSlugs: ['older'] });
+    expect((await (await app.request(`http://app.localtest.me:3000/api/operations/${active.id}`, { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } })).json() as { message: string }).message).toBe('正在等待更新文章選擇…');
     database.close();
   });
 

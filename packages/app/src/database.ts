@@ -10,13 +10,14 @@ import type { ThemeConfig } from '@vibelog/core';
 import { DEFAULT_THEME, validateThemeConfig } from '@vibelog/core';
 import { z } from 'zod';
 import { drizzleNodeSqlite } from './node-sqlite-drizzle.js';
+import { parseSyncOperationPayload } from './blog-sync.js';
 import * as schema from './schema.js';
 
 export type BlogState = 'syncing' | 'ready' | 'failed';
 export type OperationType = 'sync' | 'generate_theme' | 'publish';
 export type OperationStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type ThemeRevisionSource = 'system' | 'ai' | 'manual';
-export interface SyncedPostSummary { title: string; slug: string; publishedAt: string }
+export interface SyncedPostSummary { title: string; slug: string; publishedAt: string; included: boolean }
 export interface BlogRecord { id: string; userId: string; username: string; hackmdUsername: string; title: string | null; description: string | null; author: string | null; state: BlogState; lastError: string | null; draftArtifact: string | null; contentVersion: number; contentManifest: SyncedPostSummary[] | null; lastSyncedAt: string | null; createdAt: string; updatedAt: string }
 export interface ThemeRevisionRecord { id: string; blogId: string; config: ThemeConfig; prompt: string | null; description: string; source: ThemeRevisionSource; active: boolean; createdAt: string }
 export interface OperationRecord { id: string; userId: string; blogId: string; type: OperationType; status: OperationStatus; payload: Record<string, unknown>; result: Record<string, unknown> | null; errorMessage: string | null; attempts: number; createdAt: string; updatedAt: string }
@@ -31,6 +32,7 @@ const syncedPostSummarySchema = z.object({
   title: z.string().min(1),
   slug: z.string().min(1),
   publishedAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid published date'),
+  included: z.boolean().default(true),
 });
 const contentManifestSchema = z.array(syncedPostSummarySchema);
 const mapBlog = (row: typeof schema.blogs.$inferSelect): BlogRecord => ({ ...row, contentManifest: row.contentManifest ? contentManifestSchema.parse(JSON.parse(row.contentManifest)) : null });
@@ -90,7 +92,7 @@ export class AppDatabase {
   createBlog(userId: string, username: string, hackmdUsername: string): { blog: BlogRecord; operation: OperationRecord } {
     const timestamp = now();
     const blog: BlogRecord = { id: randomUUID(), userId, username, hackmdUsername, title: null, description: null, author: null, state: 'syncing', lastError: null, draftArtifact: null, contentVersion: 0, contentManifest: null, lastSyncedAt: null, createdAt: timestamp, updatedAt: timestamp };
-    const operation = this.newOperation(userId, blog.id, 'sync', { intent: 'content' });
+    const operation = this.newOperation(userId, blog.id, 'sync', { intent: 'content', excludedSlugs: [] });
     return this.db.transaction((tx) => {
       tx.insert(schema.blogs).values({ ...blog, contentManifest: null }).run();
       tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId: blog.id, config: JSON.stringify(DEFAULT_THEME), prompt: null, description: DEFAULT_THEME.description, source: 'system', active: true, createdAt: timestamp }).run();
@@ -108,7 +110,7 @@ export class AppDatabase {
       if (blog.draftArtifact) throw new Error('Blog already has synced content');
       const active = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blog.id), inArray(schema.operations.status, ['queued', 'running']))).get();
       if (active) throw new Error('Blog already has an active operation');
-      const operation = this.newOperation(userId, blog.id, 'sync', { intent: 'content' });
+      const operation = this.newOperation(userId, blog.id, 'sync', { intent: 'content', excludedSlugs: [] });
       tx.update(schema.blogs).set({ hackmdUsername, state: 'syncing', lastError: null, updatedAt: now() }).where(eq(schema.blogs.id, blog.id)).run();
       tx.insert(schema.operations).values({ ...operation, payload: JSON.stringify(operation.payload), result: null }).run();
       return operation;
@@ -152,14 +154,29 @@ export class AppDatabase {
     return this.db.transaction((tx) => {
       const blog = tx.select().from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId))).get();
       if (!blog) throw new Error('Blog not found');
-      if (payload.intent === 'identity') {
-        const site = payload.site as { title?: unknown; description?: unknown } | undefined;
+      const parsed = parseSyncOperationPayload(payload);
+      const manifest = blog.contentManifest ? contentManifestSchema.parse(JSON.parse(blog.contentManifest)) : null;
+      const currentExcluded = manifest?.filter((post) => !post.included).map((post) => post.slug) ?? [];
+      const sortedCurrentExcluded = [...currentExcluded].sort();
+      const excludedSlugs = [...new Set(parsed.excludedSlugs ?? currentExcluded)].sort();
+      const normalizedPayload = { ...parsed, excludedSlugs };
+      if (parsed.intent === 'identity') {
+        const site = parsed.site;
         if (site?.title === blog.title && site.description === (blog.description ?? '')) throw new Error('Nothing to update');
+      }
+      if (parsed.intent === 'selection') {
+        if (!manifest?.length) throw new Error('Article selection unavailable');
+        const knownSlugs = new Set(manifest.map((post) => post.slug));
+        if (excludedSlugs.some((slug) => !knownSlugs.has(slug))) throw new Error('Unknown article selection');
+        if (excludedSlugs.length === manifest.length) throw new Error('No articles selected');
+        if (excludedSlugs.length === sortedCurrentExcluded.length && excludedSlugs.every((slug, index) => slug === sortedCurrentExcluded[index])) {
+          throw new Error('Nothing to update article selection');
+        }
       }
       const active = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get();
       if (active) throw new Error('Blog already has an active operation');
-      const operation = this.newOperation(userId, blogId, 'sync', payload);
-      tx.insert(schema.operations).values({ ...operation, payload: JSON.stringify(payload), result: null }).run();
+      const operation = this.newOperation(userId, blogId, 'sync', normalizedPayload);
+      tx.insert(schema.operations).values({ ...operation, payload: JSON.stringify(normalizedPayload), result: null }).run();
       return operation;
     }, { behavior: 'immediate' });
   }

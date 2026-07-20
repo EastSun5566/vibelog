@@ -19,17 +19,27 @@ test('invite signup to hosted publication', async ({ page }) => {
   await page.getByRole('button', { name: '同步並建立預覽' }).click();
   await expect(page).toHaveURL(/\/editor$/, { timeout: 120_000 });
   await expect(page.getByText('尚未發布', { exact: true })).toBeVisible();
-  await expect(page.getByText('已匯入文章（1）')).toBeVisible();
-  await page.getByText('已匯入文章（1）').click();
+  await expect(page.getByText('已匯入文章（2） · 已選取 2')).toBeVisible();
+  await page.getByText('已匯入文章（2） · 已選取 2').click();
   await expect(page.getByText('Hello VibeLog', { exact: true })).toBeVisible();
+  await page.getByLabel('Archive Note').uncheck();
+  await page.getByRole('button', { name: '儲存文章選擇並重建草稿' }).click();
+  await expect(page.getByText('已匯入文章（2） · 已選取 1')).toBeVisible({ timeout: 120_000 });
   const preview = page.frameLocator('iframe[title*="即時預覽"]');
   await expect(preview.getByRole('heading', { name: 'Alice Writer', exact: true })).toBeVisible({ timeout: 30_000 });
+  expect((await page.request.get('http://preview.app.localtest.me:3100/blog/archive-note/')).status()).toBe(404);
 
   await page.getByLabel('Blog 標題').fill('Alice’s Field Notes');
   await page.getByLabel('Blog 描述').fill('Notes about humane software and careful tools.');
   await page.getByRole('button', { name: '儲存並重建草稿' }).click();
   await expect(page.getByRole('heading', { name: 'Alice’s Field Notes', exact: true })).toBeVisible({ timeout: 120_000 });
   await expect(preview.getByRole('link', { name: 'Alice’s Field Notes', exact: true })).toBeVisible({ timeout: 30_000 });
+
+  await page.getByRole('button', { name: '重新同步 HackMD' }).click();
+  await expect(page.getByText('已匯入文章（3） · 已選取 2')).toBeVisible({ timeout: 120_000 });
+  await page.getByText('已匯入文章（3） · 已選取 2').click();
+  await expect(page.getByLabel('Archive Note')).not.toBeChecked();
+  await expect(page.getByLabel('Newly Synced Note')).toBeChecked();
 
   await page.getByText('手動微調安全樣式').click();
   await page.getByLabel('Editorial').check();
@@ -73,6 +83,24 @@ test('invite signup to hosted publication', async ({ page }) => {
   await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', 'Notes about humane software and careful tools.');
   await page.goto('http://alice.app.localtest.me:3100/blog/hello-vibelog/');
   await expect(page.getByRole('heading', { name: 'Hello VibeLog' })).toBeVisible();
+  expect((await page.request.get('http://alice.app.localtest.me:3100/blog/archive-note/')).status()).toBe(404);
+  expect((await page.request.get('http://alice.app.localtest.me:3100/blog/newly-synced-note/')).status()).toBe(200);
   const rss = await page.request.get('http://alice.app.localtest.me:3100/rss.xml');
-  expect(await rss.text()).toContain('<title>Alice’s Field Notes</title>');
+  const rssText = await rss.text();
+  expect(rssText).toContain('<title>Alice’s Field Notes</title>');
+  expect(rssText).not.toContain('Archive Note');
+  expect(rssText).toContain('Newly Synced Note');
+  const sitemap = await (await page.request.get('http://alice.app.localtest.me:3100/sitemap-0.xml')).text();
+  expect(sitemap).not.toContain('/blog/archive-note/');
+  expect(sitemap).toContain('/blog/newly-synced-note/');
+
+  await page.goto('http://app.localtest.me:3100/editor');
+  await page.getByText('已匯入文章（3） · 已選取 2').click();
+  await page.getByLabel('Archive Note').check();
+  await page.getByRole('button', { name: '儲存文章選擇並重建草稿' }).click();
+  await expect(page.getByText('有未發布變更', { exact: true })).toBeVisible({ timeout: 120_000 });
+  await page.getByRole('button', { name: /發布變更到/ }).click();
+  await expect(page.getByText('已與線上版本同步', { exact: true })).toBeVisible({ timeout: 30_000 });
+  expect((await page.request.get('http://alice.app.localtest.me:3100/blog/archive-note/')).status()).toBe(200);
+  expect(await (await page.request.get('http://alice.app.localtest.me:3100/rss.xml')).text()).toContain('Archive Note');
 });

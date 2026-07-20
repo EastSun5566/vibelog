@@ -51,6 +51,7 @@ export interface BuildPostSummary {
   title: string;
   slug: string;
   publishedAt: string;
+  included: boolean;
 }
 export interface BuildContentSummary {
   author: { name: string; bio: string };
@@ -140,7 +141,7 @@ export class DevBuilder {
     await this.initVibelogDir({ installDependencies });
   }
 
-  async fetchContent(): Promise<BuildContentSummary> {
+  async fetchContent({ excludedSlugs = [] }: { excludedSlugs?: Iterable<string> } = {}): Promise<BuildContentSummary> {
     logger.info(`Fetching ${this.contentSource.name} content...`);
 
     const [{ posts: rawPosts }, author] = await Promise.all([
@@ -175,30 +176,34 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
     const blogDir = join(stagedContentDir, 'blog');
     await fs.ensureDir(blogDir);
 
-    logger.info('Writing blog posts...');
+    const excluded = new Set(excludedSlugs);
     const usedSlugs = new Set<string>();
-    const summary: BuildPostSummary[] = [];
-    for (const post of posts) {
+    const normalizedPosts = posts.map((post) => {
       const title = post.title || 'Untitled';
-      const excerpt = post.content
-        .split('\n')
-        .find((line) => line.trim().length > 0) ?? '';
       const baseSlug = slugify(post.slug) || slugify(post.title) || slugify(post.id) || generateSlug();
       const slug = baseSlug;
       if (usedSlugs.has(slug)) throw new Error(`Duplicate post slug after normalization: ${slug}`);
       usedSlugs.add(slug);
       const publishedAt = new Date(post.date).toISOString();
+      return { ...post, title, slug, publishedAt, included: !excluded.has(slug) };
+    });
+    if (!normalizedPosts.some((post) => post.included)) throw new Error('No articles selected');
 
+    logger.info('Writing selected blog posts...');
+    for (const post of normalizedPosts) {
+      if (!post.included) continue;
+      const excerpt = post.content
+        .split('\n')
+        .find((line) => line.trim().length > 0) ?? '';
       const fileContent = matter.stringify(post.content, {
-        title,
+        title: post.title,
         description: excerpt.slice(0, 100),
-        date: publishedAt,
-        slug,
+        date: post.publishedAt,
+        slug: post.slug,
       });
 
-      const filePath = join(blogDir, `${slug}.md`);
+      const filePath = join(blogDir, `${post.slug}.md`);
       await fs.writeFile(filePath, fileContent);
-      summary.push({ title, slug, publishedAt });
     }
 
     logger.info('Writing author profile...');
@@ -242,7 +247,9 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
     logger.info('Content updated successfully');
     return {
       author,
-      posts: summary.sort((left, right) => right.publishedAt.localeCompare(left.publishedAt) || left.slug.localeCompare(right.slug)),
+      posts: normalizedPosts
+        .map(({ title, slug, publishedAt, included }) => ({ title, slug, publishedAt, included }))
+        .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt) || left.slug.localeCompare(right.slug)),
     };
   }
 }

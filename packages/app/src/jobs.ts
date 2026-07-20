@@ -20,6 +20,7 @@ function publicError(type: OperationRecord['type'], error: unknown): string {
     if (message.includes('No public published HackMD articles')) return '這個 HackMD 帳號目前沒有公開發布的文章。';
     if (message.includes('Duplicate') && message.includes('slug')) return '有多篇文章會產生相同網址，請先調整 HackMD 文章的 permalink。';
     if (message.includes('invalid published date')) return '有 HackMD 文章的發布日期無效，請修正後再同步。';
+    if (message.includes('No articles selected')) return '至少要選取一篇文章，才能建立 Blog 草稿。';
     return '同步失敗，請確認 HackMD 內容可以公開讀取後再試一次。';
   }
   if (type === 'generate_theme') return 'AI 暫時無法產生可用樣式，原本的設計沒有變更，請調整描述後再試一次。';
@@ -76,7 +77,10 @@ export class OperationWorker {
         };
         const builder = createDevBuilder({ root: stagingRoot, contentSource: snapshotSource });
         await builder.prepare({ installDependencies: false });
-        const summary = await builder.fetchContent();
+        const excludedSlugs = payload.excludedSlugs
+          ?? blog.contentManifest?.filter((post) => !post.included).map((post) => post.slug)
+          ?? [];
+        const summary = await builder.fetchContent({ excludedSlugs });
         const output = join(stagingRoot, 'dist');
         await buildFromVibelog({ vibelogDir: join(stagingRoot, '.vibelog'), outDir: output, site: publicOrigin(this.config, blog.username) });
         const draftsRoot = join(root, 'drafts');
@@ -94,7 +98,10 @@ export class OperationWorker {
         await removeReplacedDraft(root, blog.draftArtifact, draft).catch((error: unknown) => {
           console.error(`[operation:${operation.id}] failed to remove replaced draft: ${safeTechnicalError(error, this.config)}`);
         });
-        return { message: payload.intent === 'identity' ? 'Blog 資訊與內容已更新' : '內容已同步' };
+        const message = payload.intent === 'identity'
+          ? 'Blog 資訊與內容已更新'
+          : payload.intent === 'selection' ? '文章選擇與草稿已更新' : '內容已同步';
+        return { message };
       } finally {
         if (installedDraft) await rm(installedDraft, { recursive: true, force: true });
         await rm(stagingRoot, { recursive: true, force: true });

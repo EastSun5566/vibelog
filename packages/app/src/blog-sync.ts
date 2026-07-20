@@ -5,13 +5,15 @@ export const blogIdentitySchema = z.object({
   description: z.string().trim().max(240),
 });
 
+const excludedSlugsSchema = z.array(z.string().min(1)).optional();
 const syncOperationPayloadSchema = z.discriminatedUnion('intent', [
-  z.object({ intent: z.literal('content') }),
-  z.object({ intent: z.literal('identity'), site: blogIdentitySchema }),
+  z.object({ intent: z.literal('content'), excludedSlugs: excludedSlugsSchema }),
+  z.object({ intent: z.literal('identity'), site: blogIdentitySchema, excludedSlugs: excludedSlugsSchema }),
+  z.object({ intent: z.literal('selection'), excludedSlugs: z.array(z.string().min(1)) }),
 ]);
 
 export type BlogIdentity = z.infer<typeof blogIdentitySchema>;
-export type SyncOperationIntent = 'content' | 'identity';
+export type SyncOperationIntent = 'content' | 'identity' | 'selection';
 
 export function parseSyncOperationPayload(payload: Record<string, unknown>) {
   return Object.keys(payload).length === 0
@@ -20,5 +22,6 @@ export function parseSyncOperationPayload(payload: Record<string, unknown>) {
 }
 
 export function syncOperationIntent(payload: Record<string, unknown>): SyncOperationIntent {
-  return payload.intent === 'identity' ? 'identity' : 'content';
+  if (payload.intent === 'identity' || payload.intent === 'selection') return payload.intent;
+  return 'content';
 }

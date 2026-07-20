@@ -14,16 +14,21 @@ const PENDING_MESSAGES: Record<OperationRecord['type'], Record<'queued' | 'runni
 };
 
 export function operationLabel(operation: OperationRecord): string {
-  return operation.type === 'sync' && syncOperationIntent(operation.payload) === 'identity'
-    ? '更新 Blog 資訊'
-    : OPERATION_LABELS[operation.type];
+  if (operation.type === 'sync') {
+    const intent = syncOperationIntent(operation.payload);
+    if (intent === 'identity') return '更新 Blog 資訊';
+    if (intent === 'selection') return '更新文章選擇';
+  }
+  return OPERATION_LABELS[operation.type];
 }
 
 export function operationMessage(operation: OperationRecord): string {
   if (operation.status === 'failed') return operation.errorMessage ?? '操作失敗，請再試一次。';
   if (operation.status === 'succeeded') return typeof operation.result?.message === 'string' ? operation.result.message : '完成';
-  if (operation.type === 'sync' && syncOperationIntent(operation.payload) === 'identity') {
-    return operation.status === 'queued' ? '正在等待更新 Blog 資訊…' : '正在讀取 HackMD 並重建草稿…';
+  if (operation.type === 'sync') {
+    const intent = syncOperationIntent(operation.payload);
+    if (intent === 'identity') return operation.status === 'queued' ? '正在等待更新 Blog 資訊…' : '正在讀取 HackMD 並重建草稿…';
+    if (intent === 'selection') return operation.status === 'queued' ? '正在等待更新文章選擇…' : '正在依文章選擇重建草稿…';
   }
   return PENDING_MESSAGES[operation.type][operation.status];
 }
