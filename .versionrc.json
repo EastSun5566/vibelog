@@ -2,11 +2,11 @@
   "packageFiles": [
     "package.json",
     "packages/core/package.json",
-    "packages/cli/package.json"
+    "packages/app/package.json"
   ],
   "bumpFiles": [
     "package.json",
     "packages/core/package.json",
-    "packages/cli/package.json"
+    "packages/app/package.json"
   ]
 }
