@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.5.0-beta.3](https://github.com/EastSun5566/vibelog/compare/v0.5.0-beta.2...v0.5.0-beta.3) (2026-07-20)
+
+### Features
+
+* add Theme Quality V2 and polish app UI ([c2c8ca6](https://github.com/EastSun5566/vibelog/commit/c2c8ca62cef08f357e0d321c05bf78c64a7db08d))
+* improve public blog reading experience ([458d3c6](https://github.com/EastSun5566/vibelog/commit/458d3c681670a716f18872198a181a299ad52b9b))
 ## [0.5.0-beta.2](https://github.com/EastSun5566/vibelog/compare/v0.5.0-beta.1...v0.5.0-beta.2) (2026-07-20)
 
 ### Features
