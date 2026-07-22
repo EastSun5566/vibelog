@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import matter from 'gray-matter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildFromVibelog, ContentSourceName, createDevBuilder } from '../src/index.js';
 import type { ContentSource } from '../src/index.js';
@@ -32,6 +33,7 @@ describe('DevBuilder content summary', () => {
       ],
     });
     expect(JSON.stringify(summary)).not.toContain('private body');
+    expect(summary.posts.every((post) => !Object.hasOwn(post, 'description'))).toBe(true);
   });
 
   it('writes only selected posts while retaining the full manifest', async () => {
@@ -76,11 +78,11 @@ describe('DevBuilder content summary', () => {
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 3 });
+    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 4 });
     expect(await readFile(join(root, '.vibelog', 'src', 'styles', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
   });
 
-  it('builds the V3 reading experience, tag navigation, metadata, feeds, and post navigation', { timeout: 20_000 }, async () => {
+  it('builds the V4 reading experience with reliable shared descriptions', { timeout: 20_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-public-')); roots.push(root);
     const posts = Array.from({ length: 6 }, (_, index) => {
       const number = index + 1;
@@ -91,7 +93,9 @@ describe('DevBuilder content summary', () => {
         date: `2026-01-0${String(number)}T00:00:00Z`,
         updatedAt: number === 4 ? '2026-01-08T12:00:00Z' : number === 5 ? '2026-01-05T12:00:00Z' : undefined,
         tags: number <= 3 ? ['Notes'] : ['Writing', number % 2 === 0 ? 'Even' : 'Odd'],
-        content: `Body for article ${String(number)}.`,
+        content: number === 6
+          ? `![Private image](https://images.example.com/private.png)\n\n# Ignored heading\n\nA **reliable** summary with [readable text](https://example.com/hidden) and \`code\`.\n\nBody for article ${String(number)}.`
+          : `Body for article ${String(number)}.`,
       };
     });
     const source: ContentSource = {
@@ -106,6 +110,12 @@ describe('DevBuilder content summary', () => {
     }));
     await builder.fetchContent();
 
+    const generatedPost = matter(await readFile(join(root, '.vibelog', 'src', 'content', 'blog', 'article-6.md'), 'utf8'));
+    const expectedDescription = 'A reliable summary with readable text and code.';
+    expect(generatedPost.data.description).toBe(expectedDescription);
+    expect(generatedPost.data.description).not.toMatch(/https?:|[*`![\]]/u);
+    expect(generatedPost.content).toContain('https://images.example.com/private.png');
+
     const output = join(root, 'public');
     await buildFromVibelog({
       vibelogDir: join(root, '.vibelog'),
@@ -119,12 +129,15 @@ describe('DevBuilder content summary', () => {
     expect(home).not.toContain('<script');
     for (const number of [6, 5, 4, 3, 2]) expect(home).toContain(`Article ${String(number)}`);
     expect(home).not.toContain('Article 1');
+    expect(home).toContain(expectedDescription);
+    expect(home).not.toContain('images.example.com');
 
     const archive = await readFile(join(output, 'blog', 'index.html'), 'utf8');
     for (const number of [6, 5, 4, 3, 2, 1]) expect(archive).toContain(`Article ${String(number)}`);
     expect(archive.indexOf('Article 6')).toBeLessThan(archive.indexOf('Article 5'));
     expect(archive.indexOf('Article 2')).toBeLessThan(archive.indexOf('Article 1'));
     expect(archive).toContain('Writing');
+    expect(archive).toContain(expectedDescription);
 
     const article = await readFile(join(output, 'blog', 'article-4', 'index.html'), 'utf8');
     expect(article).toContain('<title>Article 4 · Writer Journal</title>');
@@ -139,6 +152,7 @@ describe('DevBuilder content summary', () => {
     expect(article).toContain('Article 5');
     expect(article).toContain('較舊文章');
     expect(article).toContain('Article 3');
+    expect(article).not.toContain('blog-item-description');
     expect(article).not.toContain('<script');
     const sameDayArticle = await readFile(join(output, 'blog', 'article-5', 'index.html'), 'utf8');
     expect(sameDayArticle).toContain('<meta property="article:modified_time" content="2026-01-05T12:00:00.000Z">');
@@ -152,10 +166,18 @@ describe('DevBuilder content summary', () => {
     expect(writingTag).toContain('<title>主題：Writing · Writer Journal</title>');
     expect(writingTag.indexOf('Article 6')).toBeLessThan(writingTag.indexOf('Article 5'));
     expect(writingTag).not.toContain('Article 3');
+    expect(writingTag).toContain(expectedDescription);
 
     const feed = await readFile(join(output, 'rss.xml'), 'utf8');
     expect(feed).toContain('<pubDate>Tue, 06 Jan 2026 00:00:00 GMT</pubDate>');
     expect(feed).toContain('<category>Writing</category>');
+    expect(feed).toContain(`<description>${expectedDescription}</description>`);
+    expect(feed).not.toContain('images.example.com');
+    const summarizedArticle = await readFile(join(output, 'blog', 'article-6', 'index.html'), 'utf8');
+    expect(summarizedArticle).toContain(`<meta name="description" content="${expectedDescription}">`);
+    expect(summarizedArticle).toContain(`<meta property="og:description" content="${expectedDescription}">`);
+    expect(summarizedArticle).toContain(`<meta name="twitter:description" content="${expectedDescription}">`);
+    expect(summarizedArticle).not.toContain('class="blog-item-description"');
     expect(feed.indexOf('Article 6')).toBeLessThan(feed.indexOf('Article 5'));
     const sitemap = await readFile(join(output, 'sitemap-0.xml'), 'utf8');
     expect(sitemap).toContain('https://writer.example.com/blog/article-1/');

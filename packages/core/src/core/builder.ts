@@ -9,12 +9,13 @@ import fs from 'fs-extra';
 import matter from 'gray-matter';
 import { z } from 'zod';
 
+import { extractPostDescription } from '../description.js';
 import { generateSlug, slugify } from './utils.js';
 import { logger } from './logger.js';
 import type { ContentSource } from '../types.js';
 import { loadConfig } from './config.js';
 
-const TEMPLATE_VERSION = 3;
+const TEMPLATE_VERSION = 4;
 const postSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
@@ -258,12 +259,9 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
     logger.info('Writing selected blog posts...');
     for (const post of normalizedPosts) {
       if (!post.included) continue;
-      const excerpt = post.content
-        .split('\n')
-        .find((line) => line.trim().length > 0) ?? '';
       const fileContent = matter.stringify(post.content, {
         title: post.title,
-        description: excerpt.slice(0, 100),
+        description: extractPostDescription(post.content, post.title),
         date: post.publishedAt,
         slug: post.slug,
         ...(post.updatedAt ? { updatedDate: post.updatedAt } : {}),

@@ -221,7 +221,15 @@ h3 {
 }
 
 .blog-item-title {
-  margin-block-end: 0.75rem;
+  margin-block-end: 0.6rem;
+}
+
+.blog-item-description {
+  font-size: clamp(0.95rem, 0.9rem + 0.25vw, 1.05rem);
+  line-height: 1.6;
+  margin-block-end: 1rem;
+  max-width: 65ch;
+  text-wrap: pretty;
 }
 
 .blog-item-date,

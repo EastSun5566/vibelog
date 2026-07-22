@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 
 test('invite signup to hosted publication', async ({ page }) => {
+  const articleDescription = 'This is reliable public prose with readable text and code.';
+  await page.route('https://images.example.com/**', (route) => route.abort());
   await page.goto('/auth/register');
   await page.getByLabel('Beta 邀請碼').fill('vibelog-e2e-beta-invite-code');
   await page.getByLabel('Username').fill('alice');
@@ -37,6 +39,7 @@ test('invite signup to hosted publication', async ({ page }) => {
   await expect(page.getByText('已匯入文章（2） · 已選取 1')).toBeVisible({ timeout: 120_000 });
   const preview = page.frameLocator('iframe[title*="即時預覽"]');
   await expect(preview.getByRole('heading', { name: "Alice Writer's blog", exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(preview.getByText(articleDescription, { exact: true })).toBeVisible();
   expect((await page.request.get('http://preview.app.localtest.me:3100/blog/archive-note/')).status()).toBe(404);
 
   await page.getByLabel('Blog 標題').fill('Alice’s Field Notes');
@@ -101,6 +104,7 @@ test('invite signup to hosted publication', async ({ page }) => {
   await expect(page.getByText('Alice Writer', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: '最新文章' })).toBeVisible();
   await expect(page.getByRole('link', { name: '查看所有文章' })).toBeVisible();
+  await expect(page.getByText(articleDescription, { exact: true })).toBeVisible();
   await expect(page).toHaveTitle('Alice’s Field Notes');
   await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', 'Alice’s Field Notes');
   await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', 'Notes about humane software and careful tools.');
@@ -108,6 +112,8 @@ test('invite signup to hosted publication', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Hello VibeLog' })).toBeVisible();
   await expect(page).toHaveTitle('Hello VibeLog · Alice’s Field Notes');
   await expect(page.locator('meta[property="og:type"]')).toHaveAttribute('content', 'article');
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', articleDescription);
+  await expect(page.locator('meta[property="og:description"]')).toHaveAttribute('content', articleDescription);
   await expect(page.locator('meta[property="article:published_time"]')).toHaveAttribute('content', '2026-07-19T00:00:00.000Z');
   await expect(page.locator('meta[property="article:modified_time"]')).toHaveAttribute('content', '2026-07-21T12:00:00.000Z');
   await expect(page.locator('meta[property="article:tag"]')).toHaveCount(2);
@@ -122,6 +128,8 @@ test('invite signup to hosted publication', async ({ page }) => {
   expect(rssText).toContain('Newly Synced Note');
   expect(rssText).toContain('<pubDate>Mon, 20 Jul 2026 00:00:00 GMT</pubDate>');
   expect(rssText).toContain('<category>Product</category>');
+  expect(rssText).toContain(`<description>${articleDescription}</description>`);
+  expect(rssText).not.toContain('images.example.com');
   const sitemap = await (await page.request.get('http://alice.app.localtest.me:3100/sitemap-0.xml')).text();
   expect(sitemap).not.toContain('/blog/archive-note/');
   expect(sitemap).toContain('/blog/newly-synced-note/');
@@ -130,6 +138,7 @@ test('invite signup to hosted publication', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Product' })).toBeVisible();
   await expect(page.getByRole('link', { name: /Newly Synced Note/ })).toBeVisible();
   await expect(page.getByRole('link', { name: /Hello VibeLog/ })).toBeVisible();
+  await expect(page.getByText(articleDescription, { exact: true })).toBeVisible();
 
   await page.goto('http://app.localtest.me:3100/editor');
   await page.getByText('已匯入文章（3） · 已選取 2').click();

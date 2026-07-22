@@ -20,6 +20,7 @@ const Heading = headingLevel;
         <article>
           <a href={`/blog/${post.id}/`} class="blog-item-link">
             <Heading class="blog-item-title">{post.data.title}</Heading>
+            <p class="blog-item-description">{post.data.description}</p>
             <p class="blog-item-date">
               <FormattedDate date={post.data.date} />
             </p>

@@ -40,18 +40,20 @@
   "author": "Michael Wang <michael19920327@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@earendil-works/pi-ai": "0.80.7",
     "@astrojs/mdx": "^5.0.6",
     "@astrojs/rss": "^4.0.19",
     "@astrojs/sitemap": "^3.7.3",
+    "@earendil-works/pi-ai": "0.80.7",
     "astro": "6.4.8",
     "fs-extra": "^11.3.0",
     "gray-matter": "^4.0.3",
     "kleur": "^4.1.5",
+    "mdast-util-from-markdown": "2.0.2",
     "zod": "^3.25.55"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
+    "@types/mdast": "4.0.4",
     "@types/node": "^24.0.0",
     "typescript": "7.0.2"
   }
