@@ -11,7 +11,7 @@ WORKDIR /app
 
 FROM base AS dependencies
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 COPY packages/core/package.json ./packages/core/package.json
 COPY packages/app/package.json ./packages/app/package.json
 
@@ -24,7 +24,7 @@ COPY . .
 
 RUN pnpm --filter @vibelog/core build \
   && pnpm --filter @vibelog/app build \
-  && pnpm --filter @vibelog/app deploy --prod --legacy /runtime
+  && pnpm --filter @vibelog/app deploy --prod /runtime
 
 FROM node:24-slim AS runtime
 
