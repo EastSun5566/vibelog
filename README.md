@@ -10,11 +10,11 @@ VibeLog turns a public HackMD profile into a complete hosted blog. Writers keep 
 
 - Invite-only username/password accounts
 - One public HackMD source and one blog per account
-- Editable blog identity and a clear summary of imported articles
+- Editable blog identity and a clear summary of imported articles, HackMD tags, and modification dates
 - A real Astro preview beside simple theme controls
 - Immutable theme revisions for undo and redo
 - Immutable publication history with one-click live rollback
-- A reader-first homepage, complete article archive, adjacent-post navigation, RSS, sitemap, canonical URLs, Open Graph, responsive typography, and code styles
+- A reader-first homepage, complete article archive, tag index and topic pages, adjacent-post navigation, RSS, sitemap, canonical URLs, Open Graph, responsive typography, and code styles
 - One self-contained Node process with Hono, a SQLite operation worker, and hosted static releases
 
 AI never writes arbitrary CSS or receives article bodies. It can only propose a validated theme schema; VibeLog checks allowed values and WCAG contrast before activating a revision.

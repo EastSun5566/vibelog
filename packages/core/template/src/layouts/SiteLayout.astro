@@ -11,20 +11,27 @@ interface Props {
   description: string;
   kind?: "website" | "article";
   publishedAt?: Date;
+  modifiedAt?: Date;
+  tags?: string[];
 }
 
-const { title, description, kind = "website", publishedAt } = Astro.props;
-const [author] = await getCollection("author");
+const { title, description, kind = "website", publishedAt, modifiedAt, tags } = Astro.props;
+const [authors, posts] = await Promise.all([
+  getCollection("author"),
+  getCollection("blog"),
+]);
+const [author] = authors;
+const hasTags = posts.some((post) => post.data.tags.length > 0);
 ---
 
 <!doctype html>
 <html lang={SITE_LANGUAGE}>
   <head>
-    <BaseHead {title} {description} {kind} {publishedAt} />
+    <BaseHead {title} {description} {kind} {publishedAt} {modifiedAt} {tags} />
   </head>
   <body>
     <a class="skip-link" href="#main-content">跳至主要內容</a>
-    <Header />
+    <Header {hasTags} />
     <main id="main-content" tabindex="-1">
       <slot />
     </main>

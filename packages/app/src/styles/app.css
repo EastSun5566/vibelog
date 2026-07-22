@@ -130,8 +130,11 @@ textarea { resize: vertical; }
 .content-list { display: grid; gap: 0.45rem; padding-block-start: 0.75rem; }
 .content-choice { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 0.12rem 0.6rem; min-height: 3rem; padding: 0.55rem 0.65rem; cursor: pointer; border: 1px solid var(--border); border-radius: var(--radius); }
 .content-choice:has(input:checked) { border-color: #9aaae4; background: #f4f6ff; }
-.content-choice input { grid-row: 1 / span 2; width: 1.05rem; height: 1.05rem; margin: 0.18rem 0 0; accent-color: var(--primary); }
-.content-choice time { color: var(--muted-foreground); font-size: 0.78rem; }
+.content-choice input { width: 1.05rem; height: 1.05rem; margin: 0.18rem 0 0; accent-color: var(--primary); }
+.content-choice-main { display: grid; gap: 0.28rem; min-width: 0; }
+.content-dates { color: var(--muted-foreground); font-size: 0.78rem; }
+.content-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.content-tags .badge { font-size: 0.7rem; }
 
 .revision-list { display: grid; gap: 0; }
 .revision { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding-block: 0.75rem; border-bottom: 1px solid var(--border); }

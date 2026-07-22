@@ -15,6 +15,8 @@ export interface Post {
   content: string
   slug: string
   date: string
+  tags?: string[]
+  updatedAt?: string
 }
 export interface PostsResponse {
   posts: Post[];

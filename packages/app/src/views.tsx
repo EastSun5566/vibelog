@@ -149,6 +149,12 @@ function ChoiceGroup({ legend, name, options, value }: { legend: string; name: s
 
 const SOURCE_LABEL = { system: '初始', ai: 'AI', manual: '手動' } as const;
 
+function isUpdatedOnAnotherUtcDate(publishedAt: string, updatedAt?: string): updatedAt is string {
+  return Boolean(updatedAt
+    && Date.parse(updatedAt) > Date.parse(publishedAt)
+    && updatedAt.slice(0, 10) !== publishedAt.slice(0, 10));
+}
+
 export function editorPage(input: EditorPageInput) {
   const { blog, themes, activeTheme, published, releases } = input;
   const controls = themeControlValues(activeTheme.config);
@@ -208,8 +214,18 @@ export function editorPage(input: EditorPageInput) {
                 <legend>選擇要收錄到 Blog 的文章</legend>
                 {blog.contentManifest.map((post) => <label class="content-choice">
                   <input type="checkbox" name={`article:${post.slug}`} value="included" checked={post.included}/>
-                  <span>{post.title}</span>
-                  <time datetime={post.publishedAt}>{new Date(post.publishedAt).toLocaleDateString('zh-TW')}</time>
+                  <span class="content-choice-main">
+                    <span>{post.title}</span>
+                    <span class="content-dates">
+                      發布於 <time datetime={post.publishedAt}>{new Date(post.publishedAt).toLocaleDateString('zh-TW')}</time>
+                      {isUpdatedOnAnotherUtcDate(post.publishedAt, post.updatedAt)
+                        ? <> · 更新於 <time datetime={post.updatedAt}>{new Date(post.updatedAt).toLocaleDateString('zh-TW')}</time></>
+                        : null}
+                    </span>
+                    {(post.tags?.length ?? 0) > 0 ? <span class="content-tags" aria-label="文章主題">
+                      {post.tags?.map((tag) => <span class="badge" data-variant="neutral">{tag.name}</span>)}
+                    </span> : null}
+                  </span>
                 </label>)}
               </fieldset> : <p class="muted">這份摘要沒有文章。</p>}
             </details>

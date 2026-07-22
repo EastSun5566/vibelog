@@ -20,12 +20,14 @@ describe('theme contract', () => {
       '../template/src/components/Header.astro',
       '../template/src/components/Footer.astro',
       '../template/src/components/PostList.astro',
+      '../template/src/components/TagList.astro',
       '../template/src/layouts/BlogPost.astro',
     ].map((path) => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n');
-    for (const selector of ['.site-header', '.site-footer', '.blog-list-item', '.blog-post', '.prose']) {
+    for (const selector of ['.site-header', '.site-footer', '.blog-list-item', '.blog-post', '.prose', '.tag-link']) {
       expect(css).toContain(selector);
       expect(template).toContain(`class="${selector.slice(1)}`);
     }
+    expect(css).toContain('.tag-index-link');
     expect(css).toContain('footer');
   });
   it('rejects unknown fields, unsafe values, and insufficient contrast', () => {

@@ -63,15 +63,15 @@ describe('AppDatabase 0.5 model', () => {
       title: 'Carol', description: '', author: 'Carol', draftArtifact: '/tmp/draft', lastSyncedAt: '2026-07-19T12:00:00.000Z',
       contentManifest: [
         { title: 'Older', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z', included: true },
-        { title: 'Newer', slug: 'newer', publishedAt: '2026-02-01T00:00:00.000Z', included: true },
+        { title: 'Newer', slug: 'newer', publishedAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-02-03T12:00:00.000Z', included: true, tags: [{ name: 'Writing', slug: 'writing' }] },
       ],
     });
     expect(database.getBlog(blog.id)).toMatchObject({
       contentVersion: 1,
       lastSyncedAt: '2026-07-19T12:00:00.000Z',
       contentManifest: [
-        { title: 'Newer', slug: 'newer', publishedAt: '2026-02-01T00:00:00.000Z', included: true },
-        { title: 'Older', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z', included: true },
+        { title: 'Newer', slug: 'newer', publishedAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-02-03T12:00:00.000Z', included: true, tags: [{ name: 'Writing', slug: 'writing' }] },
+        { title: 'Older', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z', included: true, tags: [] },
       ],
     });
     expect(() => database.retryInitialSync(blog.userId, 'another-source')).toThrow('already has synced content');
@@ -120,7 +120,7 @@ describe('AppDatabase 0.5 model', () => {
       { title: 'Legacy', slug: 'legacy', publishedAt: '2025-01-01T00:00:00.000Z' },
     ]), blog.id);
     expect(database.getBlog(blog.id)?.contentManifest).toEqual([
-      { title: 'Legacy', slug: 'legacy', publishedAt: '2025-01-01T00:00:00.000Z', included: true },
+      { title: 'Legacy', slug: 'legacy', publishedAt: '2025-01-01T00:00:00.000Z', included: true, tags: [] },
     ]);
     database.close();
   });

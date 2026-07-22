@@ -28,6 +28,8 @@ try {
           title: 'Runtime article',
           slug: 'runtime-article',
           date: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-03T12:00:00Z',
+          tags: ['Runtime'],
           content: 'Built inside the production dependency tree.',
         }],
       }),
@@ -46,6 +48,11 @@ try {
   const home = await readFile(join(outDir, 'index.html'), 'utf8');
   if (!home.includes('Runtime article')) {
     throw new Error('Production runtime could not build the Astro template');
+  }
+  const article = await readFile(join(outDir, 'blog', 'runtime-article', 'index.html'), 'utf8');
+  const tagPage = await readFile(join(outDir, 'tags', 'runtime', 'index.html'), 'utf8');
+  if (!article.includes('article:modified_time') || !tagPage.includes('Runtime article')) {
+    throw new Error('Production runtime omitted synchronized article metadata');
   }
 } finally {
   await rm(root, { recursive: true, force: true });

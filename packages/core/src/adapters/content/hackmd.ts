@@ -67,12 +67,20 @@ export class HackMdSource implements ContentSource {
 
         const date = new Date(note.publishedAt);
         if (Number.isNaN(date.getTime())) throw new Error(`HackMD note has an invalid published date: ${note.title}`);
+        let updatedAt: string | undefined;
+        if (note.lastchangeAt) {
+          const modifiedDate = new Date(note.lastchangeAt);
+          if (Number.isNaN(modifiedDate.getTime())) throw new Error(`HackMD note has an invalid modified date: ${note.title}`);
+          if (modifiedDate.getTime() > date.getTime()) updatedAt = modifiedDate.toISOString();
+        }
         return {
           id: note.id,
           title: note.title,
           content: sanitizeMarkdown(removeFirstH1IfMatchesTitle(content, note.title)),
           slug: slugify(note.permalink ?? note.title),
           date: date.toISOString(),
+          tags: Array.isArray(note.tags) ? note.tags : [],
+          ...(updatedAt ? { updatedAt } : {}),
         };
       }));
 

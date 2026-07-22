@@ -6,19 +6,19 @@ VibeLog 0.5 is an invite-only hosted editor. You need a public HackMD profile wi
 
 1. Register with the shared beta code, a permanent username, and a password.
 2. Enter your public HackMD username.
-3. Confirm the imported article titles and dates, then set the blog title and description.
+3. Confirm the imported article titles, dates, and HackMD tags, then set the blog title and description.
 4. Open the live preview and describe a visual direction, such as “a quiet editorial journal with warm paper colors.”
 5. Switch between any saved theme revisions.
 6. Publish to `<username>.<APP_ORIGIN hostname>`.
 7. If a later publication is not right, open the publication history and restore any earlier live version without changing the current draft.
 
-Only notes that HackMD exposes as public and published are imported. Duplicate slugs, invalid dates, and an empty public profile stop the sync without replacing the last working draft.
+Only notes that HackMD exposes as public and published are imported. Tags and the last-modified time come directly from HackMD and cannot be edited in VibeLog. Duplicate slugs, invalid dates, and an empty public profile stop the sync without replacing the last working draft.
 
 The editor records the last successful sync and lists the imported article metadata without storing article bodies in SQLite. Saving the blog title or description also fetches the latest HackMD content and rebuilds a new draft. The previous identity, draft, and published site remain active if that rebuild fails. Later content syncs preserve the title and description you chose.
 
-The public homepage shows the blog identity, author bio, and five newest selected articles. `/blog` contains the complete selected archive, while article pages link to the adjacent newer and older posts. RSS, sitemap, canonical URLs, and Open Graph metadata are generated from the same content snapshot.
+The public homepage shows the blog identity, author bio, and five newest selected articles. `/blog` contains the complete selected archive, `/tags` lists its HackMD topics, and `/tags/<slug>` groups selected articles under each topic. Article pages link to the adjacent newer and older posts. RSS categories, sitemap, canonical URLs, modification time, and Open Graph article tags are generated from the same content snapshot.
 
-VibeLog keeps published releases immutable. When a template update becomes available, run **重新同步 HackMD**, review the new draft in Preview, and publish it explicitly. Existing live releases do not change during the upgrade.
+VibeLog keeps published releases immutable. When a template update or new HackMD metadata becomes available, run **重新同步 HackMD**, review the new draft in Preview, and publish it explicitly. Existing live releases do not change during the upgrade, so older sites only gain tag pages after this sync-preview-publish flow.
 
 ## Theme safety
 

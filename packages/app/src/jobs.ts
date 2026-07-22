@@ -20,6 +20,7 @@ function publicError(type: OperationRecord['type'], error: unknown): string {
     if (message.includes('No public published HackMD articles')) return '這個 HackMD 帳號目前沒有公開發布的文章。';
     if (message.includes('Duplicate') && message.includes('slug')) return '有多篇文章會產生相同網址，請先調整 HackMD 文章的 permalink。';
     if (message.includes('invalid published date')) return '有 HackMD 文章的發布日期無效，請修正後再同步。';
+    if (message.includes('invalid modified date')) return '有 HackMD 文章的最後修改日期無效，請修正後再同步。';
     if (message.includes('No articles selected')) return '至少要選取一篇文章，才能建立 Blog 草稿。';
     return '同步失敗，請確認 HackMD 內容可以公開讀取後再試一次。';
   }

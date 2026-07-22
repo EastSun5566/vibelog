@@ -13,7 +13,7 @@ hero:
       link: /deployment
 features:
   - title: Mature content workflow
-    details: Import public published HackMD articles into an Astro blog with RSS, sitemap, canonical metadata, and reliable static output.
+    details: Import public HackMD articles, tags, and modification dates into an Astro blog with topic pages, RSS, sitemap, canonical metadata, and reliable static output.
   - title: Safe AI themes
     details: AI chooses validated tokens and repository-owned presets instead of editing arbitrary CSS or layout code.
   - title: Direct hosting

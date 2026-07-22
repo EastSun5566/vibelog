@@ -17,7 +17,8 @@ export type BlogState = 'syncing' | 'ready' | 'failed';
 export type OperationType = 'sync' | 'generate_theme' | 'publish';
 export type OperationStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type ThemeRevisionSource = 'system' | 'ai' | 'manual';
-export interface SyncedPostSummary { title: string; slug: string; publishedAt: string; included: boolean }
+export interface SyncedPostTag { name: string; slug: string }
+export interface SyncedPostSummary { title: string; slug: string; publishedAt: string; included: boolean; tags?: SyncedPostTag[]; updatedAt?: string }
 export interface BlogRecord { id: string; userId: string; username: string; hackmdUsername: string; title: string | null; description: string | null; author: string | null; state: BlogState; lastError: string | null; draftArtifact: string | null; contentVersion: number; contentManifest: SyncedPostSummary[] | null; lastSyncedAt: string | null; createdAt: string; updatedAt: string }
 export interface ThemeRevisionRecord { id: string; blogId: string; config: ThemeConfig; prompt: string | null; description: string; source: ThemeRevisionSource; active: boolean; createdAt: string }
 export interface OperationRecord { id: string; userId: string; blogId: string; type: OperationType; status: OperationStatus; payload: Record<string, unknown>; result: Record<string, unknown> | null; errorMessage: string | null; attempts: number; createdAt: string; updatedAt: string }
@@ -33,6 +34,8 @@ const syncedPostSummarySchema = z.object({
   slug: z.string().min(1),
   publishedAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid published date'),
   included: z.boolean().default(true),
+  tags: z.array(z.object({ name: z.string().min(1), slug: z.string().min(1) })).default([]),
+  updatedAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid modified date').optional(),
 });
 const contentManifestSchema = z.array(syncedPostSummarySchema);
 const mapBlog = (row: typeof schema.blogs.$inferSelect): BlogRecord => ({ ...row, contentManifest: row.contentManifest ? contentManifestSchema.parse(JSON.parse(row.contentManifest)) : null });

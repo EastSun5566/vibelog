@@ -2,6 +2,7 @@
 import type { CollectionEntry } from "astro:content";
 
 import FormattedDate from "../components/FormattedDate.astro";
+import TagList from "../components/TagList.astro";
 import SiteLayout from "./SiteLayout.astro";
 import { SITE_TITLE } from "../consts";
 
@@ -10,7 +11,10 @@ type Props = CollectionEntry<"blog">["data"] & {
   olderPost?: CollectionEntry<"blog">;
 };
 
-const { title, description, date, updatedDate, newerPost, olderPost } = Astro.props;
+const { title, description, date, updatedDate, tags, newerPost, olderPost } = Astro.props;
+const showUpdatedDate = updatedDate
+  && updatedDate > date
+  && updatedDate.toISOString().slice(0, 10) !== date.toISOString().slice(0, 10);
 ---
 
 <SiteLayout
@@ -18,14 +22,17 @@ const { title, description, date, updatedDate, newerPost, olderPost } = Astro.pr
   {description}
   kind="article"
   publishedAt={date}
+  modifiedAt={updatedDate}
+  tags={tags.map((tag) => tag.name)}
 >
   <article class="blog-post">
     <div class="blog-post-content">
       <header class="blog-post-header">
         <p class="blog-post-date"><FormattedDate date={date} /></p>
         <h1 class="blog-post-title">{title}</h1>
+        <TagList {tags} />
         {
-          updatedDate && (
+          showUpdatedDate && (
             <p class="blog-post-update">
               更新於 <FormattedDate date={updatedDate} />
             </p>

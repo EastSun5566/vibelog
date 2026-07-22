@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { join, resolve, dirname, basename, isAbsolute, relative, sep, parse as parsePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -14,14 +14,67 @@ import { logger } from './logger.js';
 import type { ContentSource } from '../types.js';
 import { loadConfig } from './config.js';
 
-const TEMPLATE_VERSION = 2;
+const TEMPLATE_VERSION = 3;
 const postSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
   content: z.string(),
   slug: z.string(),
   date: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid post date'),
+  tags: z.array(z.string()).optional().default([]),
+  updatedAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid post modified date').optional(),
 });
+
+function normalizeTagName(value: string): string {
+  return value.normalize('NFKC').trim().replace(/\s+/gu, ' ');
+}
+
+function tagKey(value: string): string {
+  return value.toLocaleLowerCase('und');
+}
+
+function tagHash(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 8);
+}
+
+function normalizePostTags(posts: z.infer<typeof postSchema>[]): BuildPostTag[][] {
+  const displayNames = new Map<string, string>();
+  const postKeys: string[][] = [];
+  for (const post of posts) {
+    const seen = new Set<string>();
+    const keys: string[] = [];
+    for (const rawTag of post.tags) {
+      const name = normalizeTagName(rawTag);
+      if (!name) continue;
+      const key = tagKey(name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      keys.push(key);
+      if (!displayNames.has(key)) displayNames.set(key, name);
+    }
+    postKeys.push(keys);
+  }
+
+  const keysByBaseSlug = new Map<string, string[]>();
+  for (const [key, name] of displayNames) {
+    const baseSlug = slugify(name);
+    const keys = keysByBaseSlug.get(baseSlug) ?? [];
+    keys.push(key);
+    keysByBaseSlug.set(baseSlug, keys);
+  }
+  const tagsByKey = new Map<string, BuildPostTag>();
+  for (const [key, name] of displayNames) {
+    const baseSlug = slugify(name);
+    const collides = (keysByBaseSlug.get(baseSlug)?.length ?? 0) > 1;
+    const slug = !baseSlug || collides ? `${baseSlug || 'tag'}-${tagHash(key)}` : baseSlug;
+    tagsByKey.set(key, { name, slug });
+  }
+
+  return postKeys.map((keys) => keys
+    .map((key) => tagsByKey.get(key))
+    .filter((tag): tag is BuildPostTag => Boolean(tag))
+    .sort((left, right) => left.name.localeCompare(right.name, 'zh-Hant')));
+}
 
 function isPathInside(root: string, target: string): boolean {
   const pathFromRoot = relative(root, target);
@@ -52,7 +105,10 @@ export interface BuildPostSummary {
   slug: string;
   publishedAt: string;
   included: boolean;
+  tags: BuildPostTag[];
+  updatedAt?: string;
 }
+export interface BuildPostTag { name: string; slug: string }
 export interface BuildContentSummary {
   author: { name: string; bio: string };
   posts: BuildPostSummary[];
@@ -174,14 +230,28 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
 
     const excluded = new Set(excludedSlugs);
     const usedSlugs = new Set<string>();
-    const normalizedPosts = posts.map((post) => {
+    const tagsByPost = normalizePostTags(posts);
+    const normalizedPosts = posts.map((post, index) => {
       const title = post.title || 'Untitled';
       const baseSlug = slugify(post.slug) || slugify(post.title) || slugify(post.id) || generateSlug();
       const slug = baseSlug;
       if (usedSlugs.has(slug)) throw new Error(`Duplicate post slug after normalization: ${slug}`);
       usedSlugs.add(slug);
       const publishedAt = new Date(post.date).toISOString();
-      return { ...post, title, slug, publishedAt, included: !excluded.has(slug) };
+      let updatedAt: string | undefined;
+      if (post.updatedAt) {
+        const modified = new Date(post.updatedAt);
+        if (modified.getTime() > new Date(publishedAt).getTime()) updatedAt = modified.toISOString();
+      }
+      return {
+        ...post,
+        title,
+        slug,
+        publishedAt,
+        tags: tagsByPost[index] ?? [],
+        ...(updatedAt ? { updatedAt } : {}),
+        included: !excluded.has(slug),
+      };
     });
     if (!normalizedPosts.some((post) => post.included)) throw new Error('No articles selected');
 
@@ -196,6 +266,8 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
         description: excerpt.slice(0, 100),
         date: post.publishedAt,
         slug: post.slug,
+        ...(post.updatedAt ? { updatedDate: post.updatedAt } : {}),
+        tags: post.tags,
       });
 
       const filePath = join(blogDir, `${post.slug}.md`);
@@ -244,7 +316,14 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
     return {
       author,
       posts: normalizedPosts
-        .map(({ title, slug, publishedAt, included }) => ({ title, slug, publishedAt, included }))
+        .map(({ title, slug, publishedAt, included, tags, updatedAt }) => ({
+          title,
+          slug,
+          publishedAt,
+          included,
+          tags,
+          ...(updatedAt ? { updatedAt } : {}),
+        }))
         .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt) || left.slug.localeCompare(right.slug)),
     };
   }

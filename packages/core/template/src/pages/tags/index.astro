@@ -1,0 +1,42 @@
+---
+import { getCollection } from "astro:content";
+
+import SiteLayout from "../../layouts/SiteLayout.astro";
+import { SITE_TITLE } from "../../consts";
+
+const posts = await getCollection("blog");
+const tags = Array.from(posts.reduce((index, post) => {
+  for (const tag of post.data.tags) {
+    const existing = index.get(tag.slug);
+    index.set(tag.slug, { ...tag, count: (existing?.count ?? 0) + 1 });
+  }
+  return index;
+}, new Map<string, { name: string; slug: string; count: number }>()).values()).sort(
+  (left, right) => right.count - left.count || left.name.localeCompare(right.name, "zh-Hant"),
+);
+const description = `瀏覽 ${SITE_TITLE} 的文章主題。`;
+---
+
+<SiteLayout title={`主題 · ${SITE_TITLE}`} {description}>
+  <header class="page-heading">
+    <p class="eyebrow">{SITE_TITLE}</p>
+    <h1>主題</h1>
+    <p>依主題瀏覽文章。</p>
+  </header>
+  {
+    tags.length > 0 ? (
+      <ul class="tag-index" role="list">
+        {tags.map((tag) => (
+          <li>
+            <a class="tag-index-link" href={`/tags/${tag.slug}/`}>
+              <span>{tag.name}</span>
+              <span class="tag-count">{tag.count} 篇</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p class="empty-state">目前沒有文章主題。</p>
+    )
+  }
+</SiteLayout>

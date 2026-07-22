@@ -1,6 +1,6 @@
 // Core builders
 export { DevBuilder, createDevBuilder, buildFromVibelog } from './core/builder.js';
-export type { DevBuilderOptions, BuildOptions, BuildContentSummary, BuildPostSummary } from './core/builder.js';
+export type { DevBuilderOptions, BuildOptions, BuildContentSummary, BuildPostSummary, BuildPostTag } from './core/builder.js';
 
 // Configuration
 export { loadConfig } from './core/config.js';

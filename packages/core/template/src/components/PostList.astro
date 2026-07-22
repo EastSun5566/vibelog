@@ -2,6 +2,7 @@
 import type { CollectionEntry } from "astro:content";
 
 import FormattedDate from "./FormattedDate.astro";
+import TagList from "./TagList.astro";
 
 interface Props {
   posts: CollectionEntry<"blog">[];
@@ -23,6 +24,7 @@ const Heading = headingLevel;
               <FormattedDate date={post.data.date} />
             </p>
           </a>
+          <TagList tags={post.data.tags} />
         </article>
       </li>
     ))

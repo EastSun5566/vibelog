@@ -192,13 +192,14 @@ describe('hosted app boundaries', () => {
       title: 'Current title', description: 'Current description', author: 'Writer', draftArtifact: '/tmp/identity-draft', lastSyncedAt: '2026-07-20T10:00:00.000Z',
       contentManifest: [
         { title: 'Older article', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z', included: true },
-        { title: 'Newest article', slug: 'newest', publishedAt: '2026-07-19T00:00:00.000Z', included: true },
+        { title: 'Newest article', slug: 'newest', publishedAt: '2026-07-19T00:00:00.000Z', updatedAt: '2026-07-21T12:00:00.000Z', included: true, tags: [{ name: 'Writing', slug: 'writing' }] },
       ],
     });
     const editor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
     const html = await editor.text();
     expect(html).toContain('Blog 資訊'); expect(html).toContain('已匯入文章（2）'); expect(html.indexOf('Newest article')).toBeLessThan(html.indexOf('Older article'));
-    expect(html).toContain('2026-07-20T10:00:00.000Z'); expect(html).not.toContain('private body');
+    expect(html).toContain('2026-07-20T10:00:00.000Z'); expect(html).toContain('Writing'); expect(html).toContain('更新於'); expect(html).not.toContain('private body');
+    expect(html).not.toContain('name="tags"');
 
     const headers = { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', cookie: auth.cookie, accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' };
     const invalid = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: '', description: 'Description' }) });

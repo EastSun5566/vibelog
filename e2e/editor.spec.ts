@@ -30,6 +30,8 @@ test('invite signup to hosted publication', async ({ page }) => {
   await expect(page.getByText('已匯入文章（2） · 已選取 2')).toBeVisible();
   await page.getByText('已匯入文章（2） · 已選取 2').click();
   await expect(page.getByText('Hello VibeLog', { exact: true })).toBeVisible();
+  await expect(page.getByText('Product', { exact: true })).toBeVisible();
+  await expect(page.locator('.content-choice', { hasText: 'Hello VibeLog' })).toContainText('更新於');
   await page.getByLabel('Archive Note').uncheck();
   await page.getByRole('button', { name: '儲存文章選擇並重建草稿' }).click();
   await expect(page.getByText('已匯入文章（2） · 已選取 1')).toBeVisible({ timeout: 120_000 });
@@ -42,6 +44,9 @@ test('invite signup to hosted publication', async ({ page }) => {
   await page.getByRole('button', { name: '儲存並重建草稿' }).click();
   await expect(page.getByRole('heading', { name: 'Alice’s Field Notes', exact: true })).toBeVisible({ timeout: 120_000 });
   await expect(preview.getByRole('link', { name: 'Alice’s Field Notes', exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(preview.getByRole('link', { name: '主題', exact: true })).toBeVisible();
+  expect((await page.request.get('http://preview.app.localtest.me:3100/tags/product/')).status()).toBe(200);
+  expect((await page.request.get('http://preview.app.localtest.me:3100/tags/archive/')).status()).toBe(404);
 
   await page.getByRole('button', { name: '重新同步 HackMD' }).click();
   await expect(page.getByText('已匯入文章（3） · 已選取 2')).toBeVisible({ timeout: 120_000 });
@@ -104,6 +109,9 @@ test('invite signup to hosted publication', async ({ page }) => {
   await expect(page).toHaveTitle('Hello VibeLog · Alice’s Field Notes');
   await expect(page.locator('meta[property="og:type"]')).toHaveAttribute('content', 'article');
   await expect(page.locator('meta[property="article:published_time"]')).toHaveAttribute('content', '2026-07-19T00:00:00.000Z');
+  await expect(page.locator('meta[property="article:modified_time"]')).toHaveAttribute('content', '2026-07-21T12:00:00.000Z');
+  await expect(page.locator('meta[property="article:tag"]')).toHaveCount(2);
+  await expect(page.locator('.blog-post-update')).toContainText('更新於');
   await expect(page.getByRole('link', { name: /較新文章 Newly Synced Note/ })).toBeVisible();
   expect((await page.request.get('http://alice.app.localtest.me:3100/blog/archive-note/')).status()).toBe(404);
   expect((await page.request.get('http://alice.app.localtest.me:3100/blog/newly-synced-note/')).status()).toBe(200);
@@ -113,9 +121,15 @@ test('invite signup to hosted publication', async ({ page }) => {
   expect(rssText).not.toContain('Archive Note');
   expect(rssText).toContain('Newly Synced Note');
   expect(rssText).toContain('<pubDate>Mon, 20 Jul 2026 00:00:00 GMT</pubDate>');
+  expect(rssText).toContain('<category>Product</category>');
   const sitemap = await (await page.request.get('http://alice.app.localtest.me:3100/sitemap-0.xml')).text();
   expect(sitemap).not.toContain('/blog/archive-note/');
   expect(sitemap).toContain('/blog/newly-synced-note/');
+  expect(sitemap).toContain('/tags/product/');
+  await page.goto('http://alice.app.localtest.me:3100/tags/product/');
+  await expect(page.getByRole('heading', { name: 'Product' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Newly Synced Note/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Hello VibeLog/ })).toBeVisible();
 
   await page.goto('http://app.localtest.me:3100/editor');
   await page.getByText('已匯入文章（3） · 已選取 2').click();
