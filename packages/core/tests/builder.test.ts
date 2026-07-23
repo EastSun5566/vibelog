@@ -78,11 +78,11 @@ describe('DevBuilder content summary', () => {
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 4 });
+    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 5 });
     expect(await readFile(join(root, '.vibelog', 'src', 'styles', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
   });
 
-  it('builds the V4 reading experience with reliable shared descriptions', { timeout: 20_000 }, async () => {
+  it('builds the V5 reading experience with reliable descriptions and long-form navigation', { timeout: 20_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-public-')); roots.push(root);
     const posts = Array.from({ length: 6 }, (_, index) => {
       const number = index + 1;
@@ -94,8 +94,10 @@ describe('DevBuilder content summary', () => {
         updatedAt: number === 4 ? '2026-01-08T12:00:00Z' : number === 5 ? '2026-01-05T12:00:00Z' : undefined,
         tags: number <= 3 ? ['Notes'] : ['Writing', number % 2 === 0 ? 'Even' : 'Odd'],
         content: number === 6
-          ? `![Private image](https://images.example.com/private.png)\n\n# Ignored heading\n\nA **reliable** summary with [readable text](https://example.com/hidden) and \`code\`.\n\nBody for article ${String(number)}.`
-          : `Body for article ${String(number)}.`,
+          ? `![Private image](https://images.example.com/private.png)\n\n# Ignored heading\n\n### Preface details\n\nA **reliable** summary with [readable text](https://example.com/hidden) and \`code\`.\n\n## Main section\n\nBody for article ${String(number)}.\n\n### Implementation details\n\nMore details.\n\n#### Ignored nested heading\n\nClosing note.`
+          : number === 5
+            ? `Body for article ${String(number)}.\n\n## Only section\n\nA single section does not need a table of contents.`
+            : `Body for article ${String(number)}.`,
       };
     });
     const source: ContentSource = {
@@ -178,6 +180,24 @@ describe('DevBuilder content summary', () => {
     expect(summarizedArticle).toContain(`<meta property="og:description" content="${expectedDescription}">`);
     expect(summarizedArticle).toContain(`<meta name="twitter:description" content="${expectedDescription}">`);
     expect(summarizedArticle).not.toContain('class="blog-item-description"');
+    const tableOfContents = /<nav class="table-of-contents" aria-label="文章目錄">[\s\S]*?<\/nav>/u.exec(summarizedArticle)?.[0];
+    expect(tableOfContents).toBeDefined();
+    expect(summarizedArticle.match(/aria-label="文章目錄"/gu)).toHaveLength(1);
+    expect(tableOfContents).toContain('<details open>');
+    expect(tableOfContents).toContain('href="#preface-details"');
+    expect(tableOfContents).toContain('href="#main-section"');
+    expect(tableOfContents).toContain('href="#implementation-details"');
+    expect(tableOfContents).not.toContain('Ignored heading');
+    expect(tableOfContents).not.toContain('Ignored nested heading');
+    expect(tableOfContents).toMatch(/href="#main-section"[^]*<ol>[^]*href="#implementation-details"/u);
+    expect(summarizedArticle).toContain('id="preface-details"');
+    expect(summarizedArticle).toContain('id="main-section"');
+    expect(summarizedArticle).toContain('id="implementation-details"');
+    expect(summarizedArticle).toContain('<a class="article-back-to-start" href="#article-start">回到文章開頭</a>');
+    const singleHeadingArticle = await readFile(join(output, 'blog', 'article-5', 'index.html'), 'utf8');
+    expect(singleHeadingArticle).toContain('id="only-section"');
+    expect(singleHeadingArticle).not.toContain('aria-label="文章目錄"');
+    expect(singleHeadingArticle).not.toContain('article-back-to-start');
     expect(feed.indexOf('Article 6')).toBeLessThan(feed.indexOf('Article 5'));
     const sitemap = await readFile(join(output, 'sitemap-0.xml'), 'utf8');
     expect(sitemap).toContain('https://writer.example.com/blog/article-1/');

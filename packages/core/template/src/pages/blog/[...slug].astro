@@ -24,9 +24,10 @@ interface Props {
 }
 
 const { post, newerPost, olderPost } = Astro.props;
-const { Content } = await render(post);
+const { Content, headings } = await render(post);
+const tableOfContents = headings.filter(({ depth }) => depth === 2 || depth === 3);
 ---
 
-<BlogPost {...post.data} {newerPost} {olderPost}>
+<BlogPost {...post.data} {newerPost} {olderPost} headings={tableOfContents}>
   <Content />
 </BlogPost>

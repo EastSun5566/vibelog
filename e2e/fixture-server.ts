@@ -25,7 +25,7 @@ const content: ContentSource = {
     return Promise.resolve({ posts: [
       {
         id: 'hello', title: 'Hello VibeLog', slug: 'hello-vibelog', date: '2026-07-19T00:00:00.000Z', updatedAt: '2026-07-21T12:00:00.000Z', tags: ['Product', 'Writing'],
-        content: '![Private image](https://images.example.com/private.png)\n\n# Intro heading\n\nThis is **reliable** public prose with [readable text](https://example.com/hidden) and `code`.',
+        content: '![Private image](https://images.example.com/private.png)\n\n# Intro heading\n\nThis is **reliable** public prose with [readable text](https://example.com/hidden) and `code`.\n\n## Design choices\n\nThe design keeps the writing first.\n\n### Implementation details\n\nThe published article stays static and scriptless.',
       },
       { id: 'archive', title: 'Archive Note', slug: 'archive-note', date: '2026-07-18T00:00:00.000Z', tags: ['Archive'], content: 'This article can be excluded.' },
       ...(successfulSyncs >= 4 ? [{ id: 'new', title: 'Newly Synced Note', slug: 'newly-synced-note', date: '2026-07-20T00:00:00.000Z', tags: ['Product'], content: 'This article appeared in a later sync.' }] : []),

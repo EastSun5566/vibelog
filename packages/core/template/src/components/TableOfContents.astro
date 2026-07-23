@@ -1,0 +1,57 @@
+---
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface TocItem {
+  heading: Heading;
+  children: Heading[];
+}
+
+interface Props {
+  headings: Heading[];
+}
+
+const { headings } = Astro.props;
+const items: TocItem[] = [];
+let currentSection: TocItem | undefined;
+
+for (const heading of headings) {
+  if (heading.depth === 2) {
+    currentSection = { heading, children: [] };
+    items.push(currentSection);
+  } else if (heading.depth === 3 && currentSection) {
+    currentSection.children.push(heading);
+  } else if (heading.depth === 3) {
+    items.push({ heading, children: [] });
+  }
+}
+---
+
+<nav class="table-of-contents" aria-label="文章目錄">
+  <details open>
+    <summary>文章目錄</summary>
+    <ol class="table-of-contents-list">
+      {
+        items.map(({ heading, children }) => (
+          <li>
+            <a class="table-of-contents-link" href={`#${heading.slug}`}>{heading.text}</a>
+            {
+              children.length > 0 && (
+                <ol>
+                  {children.map((child) => (
+                    <li>
+                      <a class="table-of-contents-link" href={`#${child.slug}`}>{child.text}</a>
+                    </li>
+                  ))}
+                </ol>
+              )
+            }
+          </li>
+        ))
+      }
+    </ol>
+  </details>
+</nav>

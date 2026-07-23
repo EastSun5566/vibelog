@@ -3,18 +3,27 @@ import type { CollectionEntry } from "astro:content";
 
 import FormattedDate from "../components/FormattedDate.astro";
 import TagList from "../components/TagList.astro";
+import TableOfContents from "../components/TableOfContents.astro";
 import SiteLayout from "./SiteLayout.astro";
 import { SITE_TITLE } from "../consts";
+
+interface TocHeading {
+  depth: number;
+  slug: string;
+  text: string;
+}
 
 type Props = CollectionEntry<"blog">["data"] & {
   newerPost?: CollectionEntry<"blog">;
   olderPost?: CollectionEntry<"blog">;
+  headings?: TocHeading[];
 };
 
-const { title, description, date, updatedDate, tags, newerPost, olderPost } = Astro.props;
+const { title, description, date, updatedDate, tags, newerPost, olderPost, headings = [] } = Astro.props;
 const showUpdatedDate = updatedDate
   && updatedDate > date
   && updatedDate.toISOString().slice(0, 10) !== date.toISOString().slice(0, 10);
+const showTableOfContents = headings.length >= 2;
 ---
 
 <SiteLayout
@@ -27,7 +36,7 @@ const showUpdatedDate = updatedDate
 >
   <article class="blog-post">
     <div class="blog-post-content">
-      <header class="blog-post-header">
+      <header class="blog-post-header" id="article-start">
         <p class="blog-post-date"><FormattedDate date={date} /></p>
         <h1 class="blog-post-title">{title}</h1>
         <TagList {tags} />
@@ -39,9 +48,15 @@ const showUpdatedDate = updatedDate
           )
         }
       </header>
+      {showTableOfContents && <TableOfContents {headings} />}
       <div class="prose">
         <slot />
       </div>
+      {
+        showTableOfContents && (
+          <a class="article-back-to-start" href="#article-start">回到文章開頭</a>
+        )
+      }
     </div>
   </article>
 

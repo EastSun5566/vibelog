@@ -15,7 +15,7 @@ import { logger } from './logger.js';
 import type { ContentSource } from '../types.js';
 import { loadConfig } from './config.js';
 
-const TEMPLATE_VERSION = 4;
+const TEMPLATE_VERSION = 5;
 const postSchema = z.object({
   id: z.string().min(1),
   title: z.string(),

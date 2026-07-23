@@ -21,9 +21,10 @@ describe('theme contract', () => {
       '../template/src/components/Footer.astro',
       '../template/src/components/PostList.astro',
       '../template/src/components/TagList.astro',
+      '../template/src/components/TableOfContents.astro',
       '../template/src/layouts/BlogPost.astro',
     ].map((path) => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n');
-    for (const selector of ['.site-header', '.site-footer', '.blog-list-item', '.blog-post', '.prose', '.tag-link']) {
+    for (const selector of ['.site-header', '.site-footer', '.blog-list-item', '.blog-post', '.prose', '.tag-link', '.table-of-contents', '.article-back-to-start']) {
       expect(css).toContain(selector);
       expect(template).toContain(`class="${selector.slice(1)}`);
     }

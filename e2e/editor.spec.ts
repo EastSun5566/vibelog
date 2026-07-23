@@ -41,6 +41,11 @@ test('invite signup to hosted publication', async ({ page }) => {
   await expect(preview.getByRole('heading', { name: "Alice Writer's blog", exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(preview.getByText(articleDescription, { exact: true })).toBeVisible();
   expect((await page.request.get('http://preview.app.localtest.me:3100/blog/archive-note/')).status()).toBe(404);
+  const previewArticle = await page.request.get('http://preview.app.localtest.me:3100/blog/hello-vibelog/');
+  expect(previewArticle.status()).toBe(200);
+  const previewArticleHtml = await previewArticle.text();
+  expect(previewArticleHtml).toContain('aria-label="文章目錄"');
+  expect(previewArticleHtml).toContain('href="#implementation-details"');
 
   await page.getByLabel('Blog 標題').fill('Alice’s Field Notes');
   await page.getByLabel('Blog 描述').fill('Notes about humane software and careful tools.');
@@ -119,6 +124,21 @@ test('invite signup to hosted publication', async ({ page }) => {
   await expect(page.locator('meta[property="article:tag"]')).toHaveCount(2);
   await expect(page.locator('.blog-post-update')).toContainText('更新於');
   await expect(page.getByRole('link', { name: /較新文章 Newly Synced Note/ })).toBeVisible();
+  const tableOfContents = page.getByRole('navigation', { name: '文章目錄' });
+  await expect(tableOfContents).toBeVisible();
+  const disclosure = tableOfContents.locator('details');
+  const summary = tableOfContents.locator('summary');
+  await expect(disclosure).toHaveAttribute('open', '');
+  await summary.focus();
+  await page.keyboard.press('Space');
+  await expect(disclosure).not.toHaveAttribute('open', '');
+  await page.keyboard.press('Enter');
+  await expect(disclosure).toHaveAttribute('open', '');
+  await tableOfContents.getByRole('link', { name: 'Implementation details' }).click();
+  await expect(page).toHaveURL(/#implementation-details$/);
+  await expect(page.locator('#implementation-details')).toBeVisible();
+  await page.getByRole('link', { name: '回到文章開頭' }).click();
+  await expect(page).toHaveURL(/#article-start$/);
   expect((await page.request.get('http://alice.app.localtest.me:3100/blog/archive-note/')).status()).toBe(404);
   expect((await page.request.get('http://alice.app.localtest.me:3100/blog/newly-synced-note/')).status()).toBe(200);
   const rss = await page.request.get('http://alice.app.localtest.me:3100/rss.xml');

@@ -160,9 +160,12 @@ a { color: var(--theme-accent); }
 .site-header nav, main, .site-footer, footer { box-sizing: border-box; margin-inline: auto; max-width: var(--theme-content-width); padding-inline: var(--theme-space); }
 .site-title, .site-header h2 a, .site-nav-links a { color: var(--theme-text); }
 .site-nav-links a:hover, .site-nav-links a.active, .site-nav-links a[aria-current="page"] { color: var(--theme-accent); }
-small, time, .muted, .eyebrow, .blog-item-description, .blog-item-date, .blog-post-date, .blog-post-update, .article-navigation-link span, .tag-count { color: var(--theme-muted); }
-.blog-list-item, .blog-post, .article-navigation-link, .tag-link, .tag-index-link { border-color: var(--theme-border); }
+small, time, .muted, .eyebrow, .blog-item-description, .blog-item-date, .blog-post-date, .blog-post-update, .article-navigation-link span, .tag-count, .table-of-contents summary::marker { color: var(--theme-muted); }
+.blog-list-item, .blog-post, .article-navigation-link, .tag-link, .tag-index-link, .table-of-contents details { border-color: var(--theme-border); }
 .tag-link, .tag-index-link { background: var(--theme-surface); border-radius: var(--theme-radius); color: var(--theme-accent); }
+.table-of-contents details { background: var(--theme-surface); border-radius: var(--theme-radius); }
+.table-of-contents summary { color: var(--theme-text); font-family: var(--theme-heading-font); }
+.table-of-contents-link, .article-back-to-start { color: var(--theme-accent); }
 pre, code, blockquote, .prose th, .prose td { background: var(--theme-surface); border-color: var(--theme-border); border-radius: var(--theme-radius); }
 .skip-link { background: var(--theme-text); color: var(--theme-background); border-radius: var(--theme-radius); }
 ${PRESETS[theme.preset]}

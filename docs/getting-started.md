@@ -18,9 +18,9 @@ The editor records the last successful sync and lists the imported article metad
 
 The public homepage shows the blog identity, author bio, and five newest selected articles. VibeLog derives each article summary from the first useful body paragraph in HackMD, ignoring headings, images, code blocks, and other non-body introductions. The same plain-text summary appears in article lists, HTML metadata, Open Graph, and RSS. It cannot be edited separately in VibeLog.
 
-`/blog` contains the complete selected archive, `/tags` lists its HackMD topics, and `/tags/<slug>` groups selected articles under each topic. Article pages link to the adjacent newer and older posts. RSS categories, sitemap, canonical URLs, modification time, and Open Graph article tags are generated from the same content snapshot.
+`/blog` contains the complete selected archive, `/tags` lists its HackMD topics, and `/tags/<slug>` groups selected articles under each topic. Long articles with at least two level-two or level-three headings receive a static, collapsible table of contents. Article pages also link to the adjacent newer and older posts. RSS categories, sitemap, canonical URLs, modification time, and Open Graph article tags are generated from the same content snapshot.
 
-VibeLog keeps published releases immutable. When a template update or new HackMD metadata becomes available, run **重新同步 HackMD**, review the new draft in Preview, and publish it explicitly. Existing live releases do not change during the upgrade, so older sites only gain newer template features, including reliable article summaries, after this sync-preview-publish flow.
+VibeLog keeps published releases immutable. When a template update or new HackMD metadata becomes available, run **重新同步 HackMD**, review the new draft in Preview, and publish it explicitly. Existing live releases do not change during the upgrade, so older sites only gain newer template features, including reliable article summaries and long-form navigation, after this sync-preview-publish flow.
 
 ## Theme safety
 
