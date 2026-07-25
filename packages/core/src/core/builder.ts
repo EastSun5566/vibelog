@@ -108,6 +108,7 @@ export interface BuildPostSummary {
   included: boolean;
   tags: BuildPostTag[];
   updatedAt?: string;
+  contentHash?: string;
 }
 export interface BuildPostTag { name: string; slug: string }
 export interface BuildContentSummary {
@@ -249,6 +250,7 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
         title,
         slug,
         publishedAt,
+        contentHash: createHash('sha256').update(post.content, 'utf8').digest('hex'),
         tags: tagsByPost[index] ?? [],
         ...(updatedAt ? { updatedAt } : {}),
         included: !excluded.has(slug),
@@ -314,12 +316,13 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
     return {
       author,
       posts: normalizedPosts
-        .map(({ title, slug, publishedAt, included, tags, updatedAt }) => ({
+        .map(({ title, slug, publishedAt, included, tags, updatedAt, contentHash }) => ({
           title,
           slug,
           publishedAt,
           included,
           tags,
+          contentHash,
           ...(updatedAt ? { updatedAt } : {}),
         }))
         .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt) || left.slug.localeCompare(right.slug)),

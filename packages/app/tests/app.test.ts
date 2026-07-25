@@ -8,6 +8,7 @@ import type { AppConfig } from '../src/config.js';
 import { loadAppConfig } from '../src/config.js';
 import { AppDatabase } from '../src/database.js';
 import { createApp } from '../src/index.js';
+import { createReleaseSnapshot } from '../src/publication-diff.js';
 
 const roots: string[] = [];
 async function setup() {
@@ -22,6 +23,11 @@ function previewToken(html: string): string {
   const token = /name="previewToken" value="([^"]+)"/.exec(html)?.[1];
   if (!token) throw new Error('Editor did not include a preview token');
   return token;
+}
+function snapshotFor(database: AppDatabase, blogId: string) {
+  const blog = database.getBlog(blogId);
+  if (!blog) throw new Error('Blog snapshot fixture missing');
+  return createReleaseSnapshot(blog);
 }
 async function register(app: ReturnType<typeof createApp>['app'], username: string) {
   const response = await app.request('http://app.localtest.me:3000/auth/register', { method: 'POST', headers: { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', 'x-forwarded-for': '9.9.9.9', 'content-type': 'application/x-www-form-urlencoded' }, body: form({ inviteCode: 'invite-code-with-24-characters', username, password: 'long-enough-password' }) });
@@ -75,7 +81,7 @@ describe('hosted app boundaries', () => {
     await mkdir(release, { recursive: true }); await writeFile(join(release, 'index.html'), '<h1>Published</h1>');
     const theme = database.getActiveTheme(blog.id);
     if (!theme) throw new Error('Active theme missing');
-    database.activateRelease(blog.id, theme.id, blog.contentVersion, release);
+    database.activateRelease(blog.id, theme.id, blog.contentVersion, release, snapshotFor(database, blog.id));
     const published = await app.request('http://alice.app.localtest.me:3000/', { headers: { host: 'alice.app.localtest.me:3000' } });
     expect(await published.text()).toContain('Published');
     expect(published.headers.get('content-security-policy')).toContain("script-src 'none'");
@@ -92,17 +98,19 @@ describe('hosted app boundaries', () => {
     const themeA = database.getActiveTheme(blog.id); if (!themeA) throw new Error('Initial theme missing');
     const releasesRoot = join(root, 'blogs', userId, blog.id, 'releases');
     const artifactA = join(releasesRoot, 'release-a'); await mkdir(artifactA, { recursive: true }); await writeFile(join(artifactA, 'index.html'), '<h1>Release A</h1>'); await writeFile(join(artifactA, 'about.html'), '<p>About A</p>');
-    const releaseA = database.activateRelease(blog.id, themeA.id, 1, artifactA);
+    const releaseA = database.activateRelease(blog.id, themeA.id, 1, artifactA, snapshotFor(database, blog.id));
 
     const draftB = join(root, 'blogs', userId, blog.id, 'drafts', 'draft-b'); await mkdir(draftB, { recursive: true }); await writeFile(join(draftB, 'index.html'), '<h1>Draft B</h1>');
     database.completeSync(blog.id, { title: 'Draft B', description: '', author: 'Writer', draftArtifact: draftB });
     const themeB = database.createTheme(blog.id, { ...DEFAULT_THEME, radius: 'round', description: 'Second release theme' }, 'change');
     const artifactB = join(releasesRoot, 'release-b'); await mkdir(artifactB, { recursive: true }); await writeFile(join(artifactB, 'index.html'), '<h1>Release B</h1>'); await writeFile(join(artifactB, 'about.html'), '<p>About B</p>');
-    const releaseB = database.activateRelease(blog.id, themeB.id, 2, artifactB);
+    const releaseB = database.activateRelease(blog.id, themeB.id, 2, artifactB, snapshotFor(database, blog.id));
+    database.connection.prepare('UPDATE published_releases SET snapshot = NULL WHERE blog_id = ?').run(blog.id);
 
     const editor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
     const editorHtml = await editor.text();
     expect(editorHtml).toContain('發布紀錄（2）'); expect(editorHtml).toContain('Second release theme'); expect(editorHtml).toContain('目前線上'); expect(editorHtml).not.toContain(artifactA);
+    expect(editorHtml).toContain('此線上版本建立於差異追蹤前');
 
     const publicB = await app.request('http://rollback.app.localtest.me:3000/', { headers: { host: 'rollback.app.localtest.me:3000' } });
     const etagB = publicB.headers.get('etag'); if (!etagB) throw new Error('Release ETag missing');
@@ -122,12 +130,12 @@ describe('hosted app boundaries', () => {
     expect((await restore(releaseA.id)).status).toBe(409); expect(database.getActiveRelease(blog.id)?.id).toBe(releaseB.id);
     database.completeOperation(activeOperation.id);
 
-    const missingRelease = database.activateRelease(blog.id, themeA.id, 1, join(releasesRoot, 'missing'));
+    const missingRelease = database.activateRelease(blog.id, themeA.id, 2, join(releasesRoot, 'missing'), snapshotFor(database, blog.id));
     database.activateExistingRelease(releaseB.id, blog.id);
     const missing = await restore(missingRelease.id); expect(missing.status).toBe(409); expect(await missing.json()).toMatchObject({ error: { code: 'release_unavailable' } });
     const outside = join(root, 'outside-release'); await mkdir(outside); await writeFile(join(outside, 'index.html'), '<h1>Outside</h1>');
     const linkedArtifact = join(releasesRoot, 'linked'); await symlink(outside, linkedArtifact);
-    const linkedRelease = database.activateRelease(blog.id, themeA.id, 1, linkedArtifact);
+    const linkedRelease = database.activateRelease(blog.id, themeA.id, 2, linkedArtifact, snapshotFor(database, blog.id));
     database.activateExistingRelease(releaseB.id, blog.id);
     const linked = await restore(linkedRelease.id); expect(linked.status).toBe(409); expect(await linked.json()).toMatchObject({ error: { code: 'release_unavailable' } });
 
@@ -142,6 +150,52 @@ describe('hosted app boundaries', () => {
     const restoredEditor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
     expect(await restoredEditor.text()).toContain('有未發布變更');
     expect((await restore(releaseB.id)).status).toBe(303); expect(database.getActiveRelease(blog.id)?.id).toBe(releaseB.id);
+    database.close();
+  });
+  it('shows tracked article, identity and theme changes without exposing content digests', async () => {
+    const { app, database } = await setup(); const auth = await register(app, 'changes');
+    const session = await app.request('http://app.localtest.me:3000/api/session', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
+    const userId = String((await session.json() as { user: { id: string } }).user.id);
+    const { blog, operation } = database.createBlog(userId, 'changes', 'changes'); database.completeOperation(operation.id);
+    const oldDigest = 'a'.repeat(64); const newDigest = 'b'.repeat(64);
+    database.completeSync(blog.id, {
+      title: 'Old title', description: 'Old description', author: 'Old author', draftArtifact: '/tmp/old-draft',
+      contentManifest: [
+        { title: 'Changed article', slug: 'changed', publishedAt: '2026-02-01T00:00:00.000Z', included: true, tags: [{ name: 'One', slug: 'one' }], contentHash: oldDigest },
+        { title: 'Removed article', slug: 'removed', publishedAt: '2026-01-01T00:00:00.000Z', included: true, tags: [], contentHash: oldDigest },
+      ],
+    });
+    const firstDraft = database.getBlog(blog.id); const firstTheme = database.getActiveTheme(blog.id);
+    if (!firstDraft || !firstTheme) throw new Error('Publication fixture missing');
+    const oldRelease = database.activateRelease(blog.id, firstTheme.id, firstDraft.contentVersion, '/tmp/old-release', createReleaseSnapshot(firstDraft));
+    database.completeSync(blog.id, {
+      title: 'New title', description: 'New description', author: 'New author', draftArtifact: '/tmp/new-draft',
+      contentManifest: [
+        { title: 'Changed article', slug: 'changed', publishedAt: '2026-02-01T00:00:00.000Z', included: true, tags: [{ name: 'One', slug: 'one' }], contentHash: newDigest },
+        { title: 'Removed article', slug: 'removed', publishedAt: '2026-01-01T00:00:00.000Z', included: false, tags: [], contentHash: oldDigest },
+        { title: 'Added article', slug: 'added', publishedAt: '2026-03-01T00:00:00.000Z', included: true, tags: [], contentHash: newDigest },
+      ],
+    });
+    database.createTheme(blog.id, { ...DEFAULT_THEME, description: 'New theme' }, 'change');
+
+    const editor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
+    const html = await editor.text();
+    expect(html).toContain('這次會發布');
+    expect(html).toContain('新增 1'); expect(html).toContain('更新 1'); expect(html).toContain('移除 1');
+    expect(html).toContain('Blog 資訊：標題、描述、作者已變更');
+    expect(html).toContain('Changed article'); expect(html).toContain('Removed article'); expect(html).toContain('Added article');
+    expect(html).toContain(`${firstTheme.description} → New theme`);
+    expect(html).not.toContain(oldDigest); expect(html).not.toContain(newDigest);
+
+    const currentDraft = database.getBlog(blog.id); const currentTheme = database.getActiveTheme(blog.id);
+    if (!currentDraft || !currentTheme) throw new Error('Updated fixture missing');
+    const currentRelease = database.activateRelease(blog.id, currentTheme.id, currentDraft.contentVersion, '/tmp/new-release', createReleaseSnapshot(currentDraft));
+    const synced = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
+    expect(await synced.text()).toContain('目前沒有待發布變更');
+    database.activateExistingRelease(oldRelease.id, blog.id);
+    const rolledBack = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
+    expect(await rolledBack.text()).toContain('新增 1');
+    expect(database.getRelease(currentRelease.id, blog.id)?.snapshot?.site.title).toBe('New title');
     database.close();
   });
   it('lets a user repair the initial HackMD source but locks it after successful sync', async () => {
@@ -172,7 +226,7 @@ describe('hosted app boundaries', () => {
     const locked = await app.request('http://app.localtest.me:3000/actions/blog/connect', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, hackmdUsername: 'another-source' }) });
     expect(locked.status).toBe(409); expect(await locked.json()).toMatchObject({ error: { code: 'source_locked' } });
     const syncedBlog = database.getBlog(blog.id); const liveTheme = database.getActiveTheme(blog.id); if (!syncedBlog || !liveTheme) throw new Error('Synced fixture missing');
-    database.activateRelease(blog.id, liveTheme.id, syncedBlog.contentVersion, '/tmp/release');
+    database.activateRelease(blog.id, liveTheme.id, syncedBlog.contentVersion, '/tmp/release', snapshotFor(database, blog.id));
     const live = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
     const liveHtml = await live.text(); expect(liveHtml).toContain('已與線上版本同步');
     const redundant = await app.request('http://app.localtest.me:3000/actions/publish', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, previewToken: previewToken(liveHtml) }) });

@@ -1,7 +1,8 @@
 import type { AppSession } from './auth.js';
-import type { BlogRecord, OperationRecord, PublishedReleaseRecord, ThemeRevisionRecord } from './database.js';
+import type { BlogRecord, OperationRecord, PublishedReleaseRecord, SyncedPostSummary, ThemeRevisionRecord } from './database.js';
 import { syncOperationIntent } from './blog-sync.js';
 import { operationLabel, operationMessage } from './operation-status.js';
+import { calculatePublicationDiff } from './publication-diff.js';
 import { THEME_PALETTES, themeControlValues } from './theme-studio.js';
 
 export function document(title: string, content: unknown, session?: AppSession, editor = false) {
@@ -155,10 +156,67 @@ function isUpdatedOnAnotherUtcDate(publishedAt: string, updatedAt?: string): upd
     && updatedAt.slice(0, 10) !== publishedAt.slice(0, 10));
 }
 
+function PublicationArticles({ label, posts, variant }: { label: string; posts: SyncedPostSummary[]; variant: 'added' | 'updated' | 'removed' }) {
+  if (posts.length === 0) return null;
+  return <section class="publication-change-group">
+    <h4><span class="badge" data-variant={variant}>{label} {posts.length}</span></h4>
+    <ul>{posts.map((post) => <li>{post.title}</li>)}</ul>
+  </section>;
+}
+
+function PublicationSummary({ blog, activeTheme, published, liveTheme, hasChanges }: {
+  blog: BlogRecord;
+  activeTheme: ThemeRevisionRecord;
+  published: PublishedReleaseRecord | null;
+  liveTheme?: ThemeRevisionRecord;
+  hasChanges: boolean;
+}) {
+  const diff = calculatePublicationDiff(blog, activeTheme, published);
+  const articleChangeCount = diff.added.length + diff.updated.length + diff.removed.length;
+  const identityLabels = { title: '標題', description: '描述', author: '作者' } as const;
+
+  return <section class="publication-summary" aria-labelledby="publication-summary-title">
+    <h3 id="publication-summary-title">這次會發布</h3>
+    {diff.mode === 'first' ? <div class="publication-copy">
+      <p><strong>第一版</strong>會包含 {diff.includedCount} 篇文章。</p>
+      <p>樣式：{activeTheme.description}</p>
+    </div> : null}
+    {diff.mode === 'legacy' ? <div class="alert"><section>
+      <p>此線上版本建立於差異追蹤前；再次發布後即可顯示逐項差異。</p>
+      {diff.themeChanged ? <p>樣式：{liveTheme?.description ?? '舊版樣式'} → {activeTheme.description}</p> : null}
+      {diff.rebuilt ? <p>目前草稿已在上次發布後重新建立。</p> : null}
+    </section></div> : null}
+    {diff.mode === 'tracked' ? <>
+      {!hasChanges ? <p class="muted">目前沒有待發布變更。</p> : <>
+        <div class="publication-badges" aria-label="發布變更種類">
+          {diff.added.length ? <span class="badge" data-variant="added">新增 {diff.added.length}</span> : null}
+          {diff.updated.length ? <span class="badge" data-variant="updated">更新 {diff.updated.length}</span> : null}
+          {diff.removed.length ? <span class="badge" data-variant="removed">移除 {diff.removed.length}</span> : null}
+          {diff.identityChanges.length ? <span class="badge" data-variant="neutral">Blog 資訊</span> : null}
+          {diff.themeChanged ? <span class="badge" data-variant="neutral">樣式</span> : null}
+          {diff.rebuilt ? <span class="badge" data-variant="neutral">草稿重建</span> : null}
+        </div>
+        {diff.identityChanges.length ? <p>Blog 資訊：{diff.identityChanges.map((field) => identityLabels[field]).join('、')}已變更。</p> : null}
+        {diff.themeChanged ? <p>樣式：{liveTheme?.description ?? '已發布樣式'} → {activeTheme.description}</p> : null}
+        {diff.rebuilt ? <p>草稿已重新建立，包含 template 升級或輸出重建。</p> : null}
+        {articleChangeCount ? <details class="publication-details" open>
+          <summary>文章變更（{articleChangeCount}）</summary>
+          <div class="publication-change-list">
+            <PublicationArticles label="新增" posts={diff.added} variant="added"/>
+            <PublicationArticles label="更新" posts={diff.updated} variant="updated"/>
+            <PublicationArticles label="移除" posts={diff.removed} variant="removed"/>
+          </div>
+        </details> : null}
+      </>}
+    </> : null}
+  </section>;
+}
+
 export function editorPage(input: EditorPageInput) {
   const { blog, themes, activeTheme, published, releases } = input;
   const controls = themeControlValues(activeTheme.config);
   const themesById = new Map(themes.map((theme) => [theme.id, theme]));
+  const liveTheme = published ? themesById.get(published.themeRevisionId) : undefined;
   const busy = Boolean(input.operation && (input.operation.status === 'queued' || input.operation.status === 'running'));
   const hasChanges = !published || published.contentVersion !== blog.contentVersion || published.themeRevisionId !== activeTheme.id;
   const publication = !published
@@ -305,7 +363,8 @@ export function editorPage(input: EditorPageInput) {
 
       <section class="card section-card">
         <header><h2>發布</h2><p>發布會固定目前的內容與樣式，線上版本在下一次發布前不會改變。</p></header>
-        <section><form class="stack" method="post" action="/actions/publish" data-operation>
+        <section><PublicationSummary blog={blog} activeTheme={activeTheme} published={published} liveTheme={liveTheme} hasChanges={hasChanges}/>
+        <form class="stack" method="post" action="/actions/publish" data-operation>
           <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
           <input type="hidden" name="previewToken" value={input.previewToken}/>
           <button class="btn" type="submit" data-publish-button disabled={!blog.draftArtifact || !hasChanges || busy}>{publishLabel}到 {blog.username}.{input.appHostname}</button>

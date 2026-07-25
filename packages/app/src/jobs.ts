@@ -6,6 +6,7 @@ import type { AiProvider, ContentSource } from '@vibelog/core';
 import { parseSyncOperationPayload } from './blog-sync.js';
 import type { AppConfig } from './config.js';
 import type { AppDatabase, OperationRecord } from './database.js';
+import { createReleaseSnapshot } from './publication-diff.js';
 import { blogRoot } from './security/path.js';
 
 function safeTechnicalError(error: unknown, config: AppConfig): string {
@@ -137,9 +138,13 @@ export class OperationWorker {
         await cp(blog.draftArtifact, staging, { recursive: true, errorOnExist: true });
         await writeFile(join(staging, 'theme.css'), renderThemeCss(theme.config), { mode: 0o644 });
         await rename(staging, release);
-        this.database.activateRelease(blog.id, theme.id, contentVersion, release);
+        this.database.activateRelease(blog.id, theme.id, contentVersion, release, createReleaseSnapshot(blog));
         return { message: '網站已發布', url: publicOrigin(this.config, blog.username) };
-      } catch (error) { await rm(staging, { recursive: true, force: true }); throw error; }
+      } catch (error) {
+        await rm(staging, { recursive: true, force: true });
+        await rm(release, { recursive: true, force: true });
+        throw error;
+      }
     }
     }
   }

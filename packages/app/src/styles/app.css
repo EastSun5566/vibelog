@@ -85,6 +85,9 @@ textarea { resize: vertical; }
 .badge[data-variant="pending"] { border: 1px solid #d7a322; background: #fff8d8; color: #684a00; }
 .badge[data-variant="live"] { border: 1px solid #79b68b; background: #e8f7ec; color: #185c2d; }
 .badge[data-variant="neutral"] { border: 1px solid var(--border); background: var(--muted); color: var(--muted-foreground); }
+.badge[data-variant="added"] { border: 1px solid #79b68b; background: #e8f7ec; color: #185c2d; }
+.badge[data-variant="updated"] { border: 1px solid #d7a322; background: #fff8d8; color: #684a00; }
+.badge[data-variant="removed"] { border: 1px solid #efb4ae; background: #fff5f4; color: #8f1d16; }
 
 .alert { border: 1px solid var(--border); background: #f8faff; }
 .alert[data-variant="destructive"] { border-color: #efb4ae; background: #fff5f4; color: #8f1d16; }
@@ -141,6 +144,17 @@ textarea { resize: vertical; }
 .revision:last-child { border-bottom: 0; }
 .revision > div:first-child { min-width: 0; }
 .markers { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-block: 0.35rem; }
+
+.publication-summary { display: grid; gap: 0.75rem; margin-block-end: 1rem; padding-block-end: 1rem; border-bottom: 1px solid var(--border); }
+.publication-summary h3, .publication-summary h4, .publication-summary p { margin: 0; }
+.publication-summary h3 { font-size: 0.96rem; letter-spacing: -0.01em; }
+.publication-copy { display: grid; gap: 0.25rem; }
+.publication-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.publication-details { border: 1px solid var(--border); border-radius: var(--radius); background: #fafbfc; }
+.publication-details > summary { min-height: 2.75rem; padding: 0.65rem 0.75rem; cursor: pointer; font-size: 0.86rem; font-weight: 700; }
+.publication-change-list { display: grid; gap: 0.85rem; padding: 0 0.75rem 0.75rem; }
+.publication-change-group { display: grid; gap: 0.45rem; }
+.publication-change-group ul { display: grid; gap: 0.25rem; margin: 0; padding-inline-start: 1.35rem; color: var(--muted-foreground); font-size: 0.84rem; }
 
 .preview-panel { position: sticky; top: 1rem; min-width: 0; }
 .preview-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-block-end: 0.55rem; }

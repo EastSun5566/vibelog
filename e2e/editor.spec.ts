@@ -74,7 +74,7 @@ test('invite signup to hosted publication', async ({ page }) => {
   await page.getByRole('button', { name: '儲存成新版本' }).click();
   await expect(page).toHaveURL(/\/editor$/);
   await page.getByText(/歷史樣式/).click();
-  await expect(page.getByText('Editorial · Newsprint · Sans / Sans · Medium · Centered header · Numbered list · Code panel')).toBeVisible();
+  await expect(page.locator('.revision strong').getByText('Editorial · Newsprint · Sans / Sans · Medium · Centered header · Numbered list · Code panel', { exact: true })).toBeVisible();
   await expect(page.getByText('手動', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /發布第一版到/ }).click();
   await expect(page.getByText('已與線上版本同步', { exact: true })).toBeVisible({ timeout: 30_000 });
@@ -82,12 +82,14 @@ test('invite signup to hosted publication', async ({ page }) => {
   await page.getByLabel('描述你想要的感覺').fill('像一本溫暖而克制的獨立雜誌');
   await page.getByRole('button', { name: '交給 AI 設計' }).click();
   await expect(page.getByText('有未發布變更', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('.publication-summary').getByText('樣式', { exact: true })).toBeVisible();
   await page.getByText(/歷史樣式/).click();
-  await expect(page.getByText('A warm editorial theme.')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('.revision strong').getByText('A warm editorial theme.', { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('預覽中', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: /發布變更到/ }).click();
   await expect(page.getByText('已與線上版本同步', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('目前沒有待發布變更。', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /已是最新版本/ })).toBeDisabled();
   await expect(page.getByRole('link', { name: '查看已發布網站' })).toBeVisible({ timeout: 30_000 });
   const aiCss = await (await page.request.get('http://alice.app.localtest.me:3100/theme.css')).text();
@@ -161,12 +163,26 @@ test('invite signup to hosted publication', async ({ page }) => {
   await expect(page.getByText(articleDescription, { exact: true })).toBeVisible();
 
   await page.goto('http://app.localtest.me:3100/editor');
-  await page.getByText('已匯入文章（3） · 已選取 2').click();
-  await page.getByLabel('Archive Note').check();
+  await page.getByRole('button', { name: '重新同步 HackMD' }).click();
+  await expect(page.getByText('已匯入文章（4） · 已選取 3')).toBeVisible({ timeout: 120_000 });
+  const publicationSummary = page.locator('.publication-summary');
+  const publicationBadges = publicationSummary.locator('.publication-badges');
+  await expect(publicationBadges.getByText('新增 1', { exact: true })).toBeVisible();
+  await expect(publicationBadges.getByText('更新 1', { exact: true })).toBeVisible();
+  await page.getByText('已匯入文章（4） · 已選取 3').click();
+  await page.getByLabel('Newly Synced Note').uncheck();
   await page.getByRole('button', { name: '儲存文章選擇並重建草稿' }).click();
   await expect(page.getByText('有未發布變更', { exact: true })).toBeVisible({ timeout: 120_000 });
+  await expect(publicationBadges.getByText('新增 1', { exact: true })).toBeVisible();
+  await expect(publicationBadges.getByText('更新 1', { exact: true })).toBeVisible();
+  await expect(publicationBadges.getByText('移除 1', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /發布變更到/ }).click();
   await expect(page.getByText('已與線上版本同步', { exact: true })).toBeVisible({ timeout: 30_000 });
-  expect((await page.request.get('http://alice.app.localtest.me:3100/blog/archive-note/')).status()).toBe(200);
-  expect(await (await page.request.get('http://alice.app.localtest.me:3100/rss.xml')).text()).toContain('Archive Note');
+  await expect(page.getByText('目前沒有待發布變更。', { exact: true })).toBeVisible();
+  expect((await page.request.get('http://alice.app.localtest.me:3100/blog/archive-note/')).status()).toBe(404);
+  expect((await page.request.get('http://alice.app.localtest.me:3100/blog/newly-synced-note/')).status()).toBe(404);
+  expect((await page.request.get('http://alice.app.localtest.me:3100/blog/after-publish-note/')).status()).toBe(200);
+  const finalRss = await (await page.request.get('http://alice.app.localtest.me:3100/rss.xml')).text();
+  expect(finalRss).toContain('After Publish Note');
+  expect(finalRss).not.toContain('Newly Synced Note');
 });

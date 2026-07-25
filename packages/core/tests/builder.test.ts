@@ -1,12 +1,14 @@
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import matter from 'gray-matter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildFromVibelog, ContentSourceName, createDevBuilder } from '../src/index.js';
 import type { ContentSource } from '../src/index.js';
 
 const roots: string[] = [];
+const contentHash = (content: string) => createHash('sha256').update(content, 'utf8').digest('hex');
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
 describe('DevBuilder content summary', () => {
@@ -28,8 +30,8 @@ describe('DevBuilder content summary', () => {
     expect(summary).toEqual({
       author: { name: 'Writer', bio: 'Public notes' },
       posts: [
-        { title: 'Newer', slug: 'newer-post', publishedAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-02-03T00:00:00.000Z', included: true, tags: [{ name: '閱讀 筆記', slug: '閱讀-筆記' }, { name: 'AI', slug: 'ai' }] },
-        { title: 'Older', slug: 'older-post', publishedAt: '2026-01-01T00:00:00.000Z', included: true, tags: [] },
+        { title: 'Newer', slug: 'newer-post', publishedAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-02-03T00:00:00.000Z', included: true, tags: [{ name: '閱讀 筆記', slug: '閱讀-筆記' }, { name: 'AI', slug: 'ai' }], contentHash: contentHash('private body two') },
+        { title: 'Older', slug: 'older-post', publishedAt: '2026-01-01T00:00:00.000Z', included: true, tags: [], contentHash: contentHash('private body one') },
       ],
     });
     expect(JSON.stringify(summary)).not.toContain('private body');
@@ -52,14 +54,42 @@ describe('DevBuilder content summary', () => {
     const summary = await builder.fetchContent({ excludedSlugs: ['one'] });
 
     expect(summary.posts).toEqual([
-      { title: 'Two', slug: 'two', publishedAt: '2026-02-01T00:00:00.000Z', included: true, tags: [{ name: 'C#', slug: 'c-951a4d36' }] },
+      { title: 'Two', slug: 'two', publishedAt: '2026-02-01T00:00:00.000Z', included: true, tags: [{ name: 'C#', slug: 'c-951a4d36' }], contentHash: contentHash('Two body') },
       { title: 'One', slug: 'one', publishedAt: '2026-01-01T00:00:00.000Z', included: false, tags: [
         { name: '😀', slug: 'tag-f0443a34' },
         { name: 'C++', slug: 'c-cedb1bac' },
-      ] },
+      ], contentHash: contentHash('One body') },
     ]);
     expect(await readdir(join(root, '.vibelog', 'src', 'content', 'blog'))).toEqual(['two.md']);
+    const generatedPost = matter(await readFile(join(root, '.vibelog', 'src', 'content', 'blog', 'two.md'), 'utf8'));
+    expect(generatedPost.data).not.toHaveProperty('contentHash');
     await expect(builder.fetchContent({ excludedSlugs: ['one', 'two'] })).rejects.toThrow('No articles selected');
+  });
+
+  it('hashes only exact Markdown content, independently of title and tags', async () => {
+    const rootsForHashes = await Promise.all(['one', 'two', 'three'].map(async (name) => {
+      const root = await mkdtemp(join(tmpdir(), `vibelog-builder-hash-${name}-`)); roots.push(root); return root;
+    }));
+    const inputs = [
+      { title: 'First title', tags: ['One'], content: 'Same Markdown' },
+      { title: 'Changed title', tags: ['Different'], content: 'Same Markdown' },
+      { title: 'First title', tags: ['One'], content: 'Changed Markdown' },
+    ];
+    const hashes: (string | undefined)[] = [];
+    for (const [index, root] of rootsForHashes.entries()) {
+      const input = inputs[index];
+      if (!input) throw new Error('Missing hash fixture');
+      const builder = createDevBuilder({ root, contentSource: {
+        name: ContentSourceName.HACKMD,
+        getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
+        getPosts: () => Promise.resolve({ posts: [{ id: 'one', slug: 'one', date: '2026-01-01T00:00:00Z', ...input }] }),
+      } });
+      await builder.prepare({ installDependencies: false });
+      hashes.push((await builder.fetchContent()).posts[0]?.contentHash);
+    }
+    expect(hashes[0]).toBe(contentHash('Same Markdown'));
+    expect(hashes[1]).toBe(hashes[0]);
+    expect(hashes[2]).not.toBe(hashes[0]);
   });
 
   it('replaces repository-owned CSS when upgrading an older draft', async () => {

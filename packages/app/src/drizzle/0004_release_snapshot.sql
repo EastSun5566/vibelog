@@ -1,0 +1,1 @@
+ALTER TABLE `published_releases` ADD `snapshot` text;

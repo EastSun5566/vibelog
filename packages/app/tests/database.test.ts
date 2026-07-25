@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_THEME } from '@vibelog/core';
 import { AppDatabase, AiQuotaExceededError } from '../src/database.js';
+import { createReleaseSnapshot } from '../src/publication-diff.js';
 import { user } from '../src/schema.js';
 
 const roots: string[] = [];
@@ -14,6 +15,11 @@ function previewFor(database: AppDatabase, blog: { id: string; userId: string },
   const theme = database.getActiveTheme(blog.id); if (!theme) throw new Error('Theme missing');
   database.createPreviewSession(tokenHash, blog.userId, blog.id, '2099-01-01T00:00:00.000Z', theme.config);
   return tokenHash;
+}
+function snapshotFor(database: AppDatabase, blogId: string) {
+  const blog = database.getBlog(blogId);
+  if (!blog) throw new Error('Blog snapshot fixture missing');
+  return createReleaseSnapshot(blog);
 }
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
@@ -133,7 +139,14 @@ describe('AppDatabase 0.5 model', () => {
     const publish = database.createPublishOperation(blog.userId, blog.id, previewFor(database, blog, 'publish-preview'));
     expect(publish.payload).toEqual({ contentVersion: 1, themeRevisionId: theme.id });
     database.completeOperation(publish.id);
-    database.activateRelease(blog.id, theme.id, current.contentVersion, '/tmp/release');
+    const snapshot = {
+      site: { title: 'Dave', description: '', author: 'Dave' },
+      posts: [{ title: 'Post', slug: 'post', publishedAt: '2026-01-01T00:00:00.000Z', included: true, tags: [], contentHash: 'a'.repeat(64) }],
+    };
+    const release = database.activateRelease(blog.id, theme.id, current.contentVersion, '/tmp/release', snapshot);
+    expect(database.getActiveRelease(blog.id)).toMatchObject({ id: release.id, snapshot });
+    expect(() => database.activateRelease(blog.id, theme.id, current.contentVersion, '/tmp/invalid', { ...snapshot, posts: [{ ...snapshot.posts[0], contentHash: 'not-a-digest' }] })).toThrow('Invalid content digest');
+    expect(database.getActiveRelease(blog.id)?.id).toBe(release.id);
     expect(() => database.createPublishOperation(blog.userId, blog.id, previewFor(database, blog, 'redundant-preview'))).toThrow('Nothing to publish');
     const secondTheme = database.createTheme(blog.id, { ...DEFAULT_THEME, description: 'A new draft theme' }, 'change');
     expect(database.createPublishOperation(blog.userId, blog.id, previewFor(database, blog, 'changed-preview')).payload).toEqual({ contentVersion: 1, themeRevisionId: secondTheme.id });
@@ -144,11 +157,11 @@ describe('AppDatabase 0.5 model', () => {
     const { blog, operation } = database.createBlog('56565656-5656-4656-8656-565656565656', 'release-history', 'release-history'); database.completeOperation(operation.id);
     database.completeSync(blog.id, { title: 'Draft A', description: '', author: 'Writer', draftArtifact: '/tmp/draft-a' });
     const themeA = database.getActiveTheme(blog.id); if (!themeA) throw new Error('Initial theme missing');
-    const releaseA = database.activateRelease(blog.id, themeA.id, 1, '/tmp/release-a');
+    const releaseA = database.activateRelease(blog.id, themeA.id, 1, '/tmp/release-a', snapshotFor(database, blog.id));
     database.connection.prepare('UPDATE published_releases SET created_at = ? WHERE id = ?').run('2026-07-19T00:00:00.000Z', releaseA.id);
     database.completeSync(blog.id, { title: 'Draft B', description: '', author: 'Writer', draftArtifact: '/tmp/draft-b' });
     const themeB = database.createTheme(blog.id, { ...DEFAULT_THEME, radius: 'round', description: 'Second release theme' }, 'change');
-    const releaseB = database.activateRelease(blog.id, themeB.id, 2, '/tmp/release-b');
+    const releaseB = database.activateRelease(blog.id, themeB.id, 2, '/tmp/release-b', snapshotFor(database, blog.id));
     database.connection.prepare('UPDATE published_releases SET created_at = ? WHERE id = ?').run('2026-07-20T00:00:00.000Z', releaseB.id);
 
     expect(database.listReleases(blog.id).map((release) => release.id)).toEqual([releaseB.id, releaseA.id]);
@@ -165,6 +178,7 @@ describe('AppDatabase 0.5 model', () => {
     const draftBeforeRestore = database.getBlog(blog.id);
     const themeBeforeRestore = database.getActiveTheme(blog.id);
     expect(database.activateExistingRelease(releaseA.id, blog.id)).toMatchObject({ id: releaseA.id, active: true });
+    expect(database.getActiveRelease(blog.id)?.snapshot?.site.title).toBe('Draft A');
     expect(database.listReleases(blog.id)).toHaveLength(2);
     expect(database.listReleases(blog.id).filter((release) => release.active).map((release) => release.id)).toEqual([releaseA.id]);
     expect(database.getBlog(blog.id)).toEqual(draftBeforeRestore);
@@ -200,10 +214,13 @@ describe('AppDatabase 0.5 model', () => {
     legacy.prepare('INSERT INTO user (id,name,email,email_verified,username,display_username,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)').run('66666666-6666-4666-8666-666666666666', 'erin', 'erin@users.vibelog.invalid', 0, 'erin', 'erin', Date.now(), Date.now());
     legacy.prepare('INSERT INTO blogs (id,user_id,username,hackmd_username,state,draft_artifact,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)').run('77777777-7777-4777-8777-777777777777', '66666666-6666-4666-8666-666666666666', 'erin', 'erin-hackmd', 'ready', '/tmp/existing-draft', timestamp, timestamp);
     legacy.prepare('INSERT INTO theme_revisions (id,blog_id,config,prompt,description,active,created_at) VALUES (?,?,?,?,?,?,?)').run('78787878-7878-4787-8787-787878787878', '77777777-7777-4777-8777-777777777777', JSON.stringify(DEFAULT_THEME), 'make it quiet', DEFAULT_THEME.description, 1, timestamp);
+    legacy.prepare('INSERT INTO published_releases (id,blog_id,theme_revision_id,artifact,active,created_at) VALUES (?,?,?,?,?,?)').run('79797979-7979-4797-8797-797979797979', '77777777-7777-4777-8777-777777777777', '78787878-7878-4787-8787-787878787878', '/tmp/existing-release', 1, timestamp);
     legacy.close();
     const database = new AppDatabase(root, path);
     expect(database.getBlogForUser('66666666-6666-4666-8666-666666666666')).toMatchObject({ username: 'erin', contentVersion: 1, draftArtifact: '/tmp/existing-draft', contentManifest: null, lastSyncedAt: null });
     expect(database.getActiveTheme('77777777-7777-4777-8777-777777777777')?.source).toBe('ai');
+    expect(database.getActiveRelease('77777777-7777-4777-8777-777777777777')).toMatchObject({ id: '79797979-7979-4797-8797-797979797979', snapshot: null });
+    expect(database.connection.prepare("PRAGMA table_info('published_releases')").all().map((column) => column.name)).toContain('snapshot');
     database.close();
   });
   it('charges accepted AI work and rejects user/global quota without creating work', async () => {

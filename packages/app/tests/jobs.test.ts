@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ContentSourceName, DEFAULT_THEME } from '@vibelog/core';
 import type { AiProvider, ContentSource, ThemeConfig } from '@vibelog/core';
@@ -93,7 +94,10 @@ describe('OperationWorker publication snapshots', () => {
     database.db.insert(user).values({ id: '88888888-8888-4888-8888-888888888888', name: 'frank', email: 'frank@users.vibelog.invalid', emailVerified: false, username: 'frank', displayUsername: 'frank', createdAt: date, updatedAt: date }).run();
     const { blog, operation } = database.createBlog('88888888-8888-4888-8888-888888888888', 'frank', 'frank'); database.completeOperation(operation.id);
     const draft = join(root, 'draft'); await mkdir(draft); await writeFile(join(draft, 'index.html'), '<h1>Draft</h1>');
-    database.completeSync(blog.id, { title: 'Frank', description: '', author: 'Frank', draftArtifact: draft });
+    const digest = createHash('sha256').update('Published body').digest('hex');
+    database.completeSync(blog.id, { title: 'Frank', description: '', author: 'Frank', draftArtifact: draft, contentManifest: [
+      { title: 'Published post', slug: 'published-post', publishedAt: '2026-01-01T00:00:00.000Z', included: true, tags: [], contentHash: digest },
+    ] });
     const selectedTheme = database.getActiveTheme(blog.id); if (!selectedTheme) throw new Error('Theme missing');
     database.createPreviewSession('frank-preview', blog.userId, blog.id, '2099-01-01T00:00:00.000Z', selectedTheme.config);
     const publish = database.createPublishOperation(blog.userId, blog.id, 'frank-preview');
@@ -101,7 +105,14 @@ describe('OperationWorker publication snapshots', () => {
     const config = { dataRoot: root, appOrigin: 'http://app.localtest.me:3000' } as AppConfig;
     await new OperationWorker(database, config).execute(publish);
     const release = database.getActiveRelease(blog.id);
-    expect(release).toMatchObject({ themeRevisionId: selectedTheme.id, contentVersion: 1 });
+    expect(release).toMatchObject({
+      themeRevisionId: selectedTheme.id,
+      contentVersion: 1,
+      snapshot: {
+        site: { title: 'Frank', description: '', author: 'Frank' },
+        posts: [{ slug: 'published-post', contentHash: digest }],
+      },
+    });
     database.close();
   });
 
@@ -120,5 +131,24 @@ describe('OperationWorker publication snapshots', () => {
     await expect(new OperationWorker(database, config).execute(publish)).rejects.toThrow('Draft changed before publishing');
     expect(database.getActiveRelease(blog.id)).toBeNull();
     database.close();
+  });
+
+  it('removes the immutable artifact if the release transaction fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-publish-switch-failure-')); roots.push(root);
+    const database = new AppDatabase(root); const date = new Date();
+    database.db.insert(user).values({ id: '77777777-7777-4777-8777-777777777777', name: 'atomic', email: 'atomic@users.vibelog.invalid', emailVerified: false, username: 'atomic', displayUsername: 'atomic', createdAt: date, updatedAt: date }).run();
+    const { blog, operation } = database.createBlog('77777777-7777-4777-8777-777777777777', 'atomic', 'atomic'); database.completeOperation(operation.id);
+    const draft = join(root, 'draft'); await mkdir(draft); await writeFile(join(draft, 'index.html'), '<h1>Draft</h1>');
+    database.completeSync(blog.id, { title: 'Atomic', description: '', author: 'Atomic', draftArtifact: draft });
+    const theme = database.getActiveTheme(blog.id); if (!theme) throw new Error('Theme missing');
+    database.createPreviewSession('atomic-preview', blog.userId, blog.id, '2099-01-01T00:00:00.000Z', theme.config);
+    const publish = database.createPublishOperation(blog.userId, blog.id, 'atomic-preview');
+    const activate = vi.spyOn(database, 'activateRelease').mockImplementationOnce(() => { throw new Error('release transaction failed'); });
+
+    await expect(new OperationWorker(database, { dataRoot: root, appOrigin: 'http://app.localtest.me:3000' } as AppConfig).execute(publish)).rejects.toThrow('release transaction failed');
+
+    expect(database.getActiveRelease(blog.id)).toBeNull();
+    expect(await readdir(join(root, 'blogs', blog.userId, blog.id, 'releases'))).toEqual([]);
+    activate.mockRestore(); database.close();
   });
 });

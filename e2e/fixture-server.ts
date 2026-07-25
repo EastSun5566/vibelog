@@ -25,10 +25,23 @@ const content: ContentSource = {
     return Promise.resolve({ posts: [
       {
         id: 'hello', title: 'Hello VibeLog', slug: 'hello-vibelog', date: '2026-07-19T00:00:00.000Z', updatedAt: '2026-07-21T12:00:00.000Z', tags: ['Product', 'Writing'],
-        content: '![Private image](https://images.example.com/private.png)\n\n# Intro heading\n\nThis is **reliable** public prose with [readable text](https://example.com/hidden) and `code`.\n\n## Design choices\n\nThe design keeps the writing first.\n\n### Implementation details\n\nThe published article stays static and scriptless.',
+        content: `![Private image](https://images.example.com/private.png)
+
+# Intro heading
+
+This is **reliable** public prose with [readable text](https://example.com/hidden) and \`code\`.
+
+## Design choices
+
+The design keeps the writing first.
+
+### Implementation details
+
+The published article stays static and scriptless.${successfulSyncs >= 5 ? '\n\nThis paragraph was corrected after publication.' : ''}`,
       },
       { id: 'archive', title: 'Archive Note', slug: 'archive-note', date: '2026-07-18T00:00:00.000Z', tags: ['Archive'], content: 'This article can be excluded.' },
       ...(successfulSyncs >= 4 ? [{ id: 'new', title: 'Newly Synced Note', slug: 'newly-synced-note', date: '2026-07-20T00:00:00.000Z', tags: ['Product'], content: 'This article appeared in a later sync.' }] : []),
+      ...(successfulSyncs >= 5 ? [{ id: 'after-publish', title: 'After Publish Note', slug: 'after-publish-note', date: '2026-07-22T00:00:00.000Z', tags: ['Product'], content: 'This article appeared after the first live release.' }] : []),
     ] });
   },
 };

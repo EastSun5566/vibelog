@@ -29,6 +29,13 @@
       "when": 1784482978747,
       "tag": "0003_thankful_adam_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784776605523,
+      "tag": "0004_release_snapshot",
+      "breakpoints": true
     }
   ]
 }

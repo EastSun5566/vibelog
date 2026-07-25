@@ -38,4 +38,6 @@ There is no password recovery in the self-contained beta. Keep your password saf
 
 ## Publication history
 
-Every successful publication is immutable and remains available from the Editor. Restoring an earlier publication changes only the public website; the current draft, imported content summary, and preview theme stay unchanged. When they differ from the restored site, the Editor shows “有未發布變更”, and publishing again restores the current draft to the live site.
+Before publishing, the Editor lists articles that will be added, updated, or removed, and separately identifies blog identity, theme, and template-only rebuild changes. VibeLog detects body changes with a one-way SHA-256 digest: article Markdown is not stored in SQLite, and the digest is never rendered in the Editor, static site, logs, or AI input.
+
+Every successful publication is immutable and remains available from the Editor. Restoring an earlier publication changes only the public website; the current draft, imported content summary, and preview theme stay unchanged. The change summary is recalculated against the restored release, and publishing again restores the current draft to the live site. Releases created before change tracking show a compatibility notice; after the next publication, itemized comparisons become available.
