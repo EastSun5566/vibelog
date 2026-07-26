@@ -15,7 +15,10 @@ export { generateSlug, slugify } from './core/utils.js';
 // Adapters - Content
 export {
   HackMdSource,
+  HackMdSourceError,
+  isHackMdSourceError,
 } from './adapters/content/index.js';
+export type { HackMdSourceErrorCode } from './adapters/content/index.js';
 
 // Adapters - AI
 export {

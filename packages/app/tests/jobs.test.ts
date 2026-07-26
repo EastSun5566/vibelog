@@ -3,15 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ContentSourceName, DEFAULT_THEME } from '@vibelog/core';
+import { ContentSourceName, DEFAULT_THEME, HackMdSourceError } from '@vibelog/core';
 import type { AiProvider, ContentSource, ThemeConfig } from '@vibelog/core';
 import type { AppConfig } from '../src/config.js';
 import { AppDatabase } from '../src/database.js';
-import { OperationWorker } from '../src/jobs.js';
+import { OperationWorker, operationPublicError } from '../src/jobs.js';
 import { user } from '../src/schema.js';
 
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => { vi.restoreAllMocks(); await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
 describe('OperationWorker publication snapshots', () => {
   it('reads the source once, preserves custom identity, and switches immutable drafts', async () => {
@@ -71,6 +71,41 @@ describe('OperationWorker publication snapshots', () => {
     expect(await readdir(join(root, 'blogs', blog.userId, blog.id, 'drafts')).catch(() => [])).toHaveLength(0);
     completeSync.mockRestore(); database.close();
   }, 30_000);
+
+  it('keeps the previous draft and release when HackMD is temporarily unavailable', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-source-failure-')); roots.push(root);
+    const database = new AppDatabase(root); const date = new Date();
+    const userId = '30303030-3030-4030-8030-303030303030';
+    database.db.insert(user).values({ id: userId, name: 'source', email: 'source@users.vibelog.invalid', emailVerified: false, username: 'source', displayUsername: 'source', createdAt: date, updatedAt: date }).run();
+    const { blog, operation: initial } = database.createBlog(userId, 'source', 'source'); database.completeOperation(initial.id);
+    const oldDraft = join(root, 'old-draft'); await mkdir(oldDraft); await writeFile(join(oldDraft, 'index.html'), '<h1>Still current</h1>');
+    database.completeSync(blog.id, { title: 'Current', description: 'Current description', author: 'Writer', draftArtifact: oldDraft, contentManifest: [{ title: 'Current post', slug: 'current', publishedAt: '2026-01-01T00:00:00.000Z', included: true }] });
+    const theme = database.getActiveTheme(blog.id); if (!theme) throw new Error('Theme missing');
+    database.createPreviewSession('source-preview', userId, blog.id, '2099-01-01T00:00:00.000Z', theme.config);
+    const publish = database.createPublishOperation(userId, blog.id, 'source-preview');
+    await new OperationWorker(database, { dataRoot: root, appOrigin: 'http://app.localtest.me:3000' } as AppConfig).execute(publish);
+    database.completeOperation(publish.id);
+    const release = database.getActiveRelease(blog.id); if (!release) throw new Error('Release missing');
+    const sync = database.createSyncOperation(userId, blog.id, { intent: 'content' });
+    const source: ContentSource = {
+      name: ContentSourceName.HACKMD,
+      getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Bio' }),
+      getPosts: () => Promise.reject(new HackMdSourceError('rate_limited', 'HackMD rate limit exceeded')),
+    };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await new OperationWorker(database, { dataRoot: root, appOrigin: 'http://app.localtest.me:3000' } as AppConfig, { contentSource: () => source }).runOnce();
+
+    expect(database.getBlog(blog.id)).toMatchObject({
+      title: 'Current', description: 'Current description', author: 'Writer', draftArtifact: oldDraft, contentVersion: 1,
+      contentManifest: [{ title: 'Current post', slug: 'current', publishedAt: '2026-01-01T00:00:00.000Z', included: true }],
+    });
+    expect(database.getActiveRelease(blog.id)?.id).toBe(release.id);
+    expect(database.getOperation(sync.id, userId)).toMatchObject({ status: 'failed', errorMessage: 'HackMD 暫時限制同步請求，請稍後再試一次。' });
+    expect(await readFile(join(oldDraft, 'index.html'), 'utf8')).toContain('Still current');
+    expect(consoleError.mock.calls.flat().join(' ')).not.toContain('Current post');
+    database.close();
+  });
 
   it('uses the preview theme captured when AI work was enqueued', async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-ai-base-')); roots.push(root);
@@ -150,5 +185,25 @@ describe('OperationWorker publication snapshots', () => {
     expect(database.getActiveRelease(blog.id)).toBeNull();
     expect(await readdir(join(root, 'blogs', blog.userId, blog.id, 'releases'))).toEqual([]);
     activate.mockRestore(); database.close();
+  });
+});
+
+describe('operationPublicError', () => {
+  it('maps structured HackMD failures to actionable messages without echoing technical details', () => {
+    const messages = new Map([
+      ['profile_not_found', '找不到這個公開 HackMD 使用者，請確認 username 後再試一次。'],
+      ['article_not_found', '同步期間有公開文章消失或無法讀取，請重新整理 HackMD 後再試一次。'],
+      ['rate_limited', 'HackMD 暫時限制同步請求，請稍後再試一次。'],
+      ['request_timeout', 'HackMD 暫時無法穩定回應，請稍後再試一次。'],
+      ['invalid_response', 'HackMD 回應格式暫時無法辨識，請稍後再試一次。'],
+      ['too_many_articles', 'VibeLog 一次最多同步 200 篇公開文章。'],
+      ['article_too_large', '有 HackMD 文章超過 2 MiB，請縮短內容後再同步。'],
+      ['sync_too_large', '公開文章內容合計超過 32 MiB，請減少內容後再同步。'],
+    ] as const);
+    for (const [code, expected] of messages) {
+      const error = new HackMdSourceError(code, 'secret external response body');
+      expect(operationPublicError('sync', error)).toBe(expected);
+      expect(operationPublicError('sync', error)).not.toContain('secret');
+    }
   });
 });

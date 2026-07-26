@@ -1,7 +1,7 @@
 import { cp, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { HackMdSource, buildFromVibelog, createAiProvider, createDevBuilder, renderThemeCss, validateThemeConfig } from '@vibelog/core';
+import { HackMdSource, buildFromVibelog, createAiProvider, createDevBuilder, isHackMdSourceError, renderThemeCss, validateThemeConfig } from '@vibelog/core';
 import type { AiProvider, ContentSource } from '@vibelog/core';
 import { parseSyncOperationPayload } from './blog-sync.js';
 import type { AppConfig } from './config.js';
@@ -14,14 +14,28 @@ function safeTechnicalError(error: unknown, config: AppConfig): string {
   const secrets = Object.entries(process.env).flatMap(([name, value]) => value && value.length >= 8 && /(?:token|secret|api.?key|password|invite)/i.test(name) ? [value] : []);
   return [config.dataRoot, ...secrets].reduce((output, secret) => output.replaceAll(secret, '[REDACTED]'), message).replaceAll(/(?:sk-|Bearer\s+)[A-Za-z0-9._-]+/gi, '[REDACTED]').slice(0, 500);
 }
-function publicError(type: OperationRecord['type'], error: unknown): string {
+export function operationPublicError(type: OperationRecord['type'], error: unknown): string {
   const message = error instanceof Error ? error.message : '';
   if (type === 'sync') {
-    if (/Failed to fetch HackMD (?:profile|content): Not Found/.test(message)) return '找不到這個公開 HackMD 使用者，請確認 username 後再試一次。';
-    if (message.includes('No public published HackMD articles')) return '這個 HackMD 帳號目前沒有公開發布的文章。';
-    if (message.includes('Duplicate') && message.includes('slug')) return '有多篇文章會產生相同網址，請先調整 HackMD 文章的 permalink。';
-    if (message.includes('invalid published date')) return '有 HackMD 文章的發布日期無效，請修正後再同步。';
-    if (message.includes('invalid modified date')) return '有 HackMD 文章的最後修改日期無效，請修正後再同步。';
+    if (isHackMdSourceError(error)) {
+      switch (error.code) {
+      case 'profile_not_found': return '找不到這個公開 HackMD 使用者，請確認 username 後再試一次。';
+      case 'article_not_found': return '同步期間有公開文章消失或無法讀取，請重新整理 HackMD 後再試一次。';
+      case 'rate_limited': return 'HackMD 暫時限制同步請求，請稍後再試一次。';
+      case 'temporarily_unavailable': case 'request_timeout': return 'HackMD 暫時無法穩定回應，請稍後再試一次。';
+      case 'request_rejected': return 'HackMD 拒絕了同步請求，請確認內容仍為公開狀態。';
+      case 'invalid_response': return 'HackMD 回應格式暫時無法辨識，請稍後再試一次。';
+      case 'metadata_too_large': return 'HackMD 帳號資料超過同步上限，請減少公開內容後再試一次。';
+      case 'too_many_articles': return 'VibeLog 一次最多同步 200 篇公開文章。';
+      case 'article_too_large': return '有 HackMD 文章超過 2 MiB，請縮短內容後再同步。';
+      case 'sync_too_large': return '公開文章內容合計超過 32 MiB，請減少內容後再同步。';
+      case 'no_public_articles': return '這個 HackMD 帳號目前沒有公開發布的文章。';
+      case 'duplicate_slug': return '有多篇文章會產生相同網址，請先調整 HackMD 文章的 permalink。';
+      case 'invalid_published_date': return '有 HackMD 文章的發布日期無效，請修正後再同步。';
+      case 'invalid_modified_date': return '有 HackMD 文章的最後修改日期無效，請修正後再同步。';
+      case 'invalid_slug': return '有 HackMD 文章無法產生有效網址，請補上標題或 permalink。';
+      }
+    }
     if (message.includes('No articles selected')) return '至少要選取一篇文章，才能建立 Blog 草稿。';
     return '同步失敗，請確認 HackMD 內容可以公開讀取後再試一次。';
   }
@@ -155,7 +169,7 @@ export class OperationWorker {
     try { this.database.completeOperation(operation.id, await this.execute(operation)); }
     catch (error) {
       console.error(`[operation:${operation.id}] ${operation.type} failed: ${safeTechnicalError(error, this.config)}`);
-      const message = publicError(operation.type, error);
+      const message = operationPublicError(operation.type, error);
       this.database.failOperation(operation.id, message);
       if (operation.type === 'sync') this.database.failSync(operation.blogId, message);
     }

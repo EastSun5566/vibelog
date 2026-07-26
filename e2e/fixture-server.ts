@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { ContentSourceName } from '../packages/core/src/index.js';
+import { ContentSourceName, HackMdSourceError } from '../packages/core/src/index.js';
 import type { AiProvider, ContentSource } from '../packages/core/src/index.js';
 import { AppDatabase } from '../packages/app/src/database.js';
 import type { AppConfig } from '../packages/app/src/config.js';
@@ -47,8 +47,8 @@ The published article stays static and scriptless.${successfulSyncs >= 5 ? '\n\n
 };
 const missingContent: ContentSource = {
   name: ContentSourceName.HACKMD,
-  getAuthor() { return Promise.reject(new Error('Failed to fetch HackMD profile: Not Found')); },
-  getPosts() { return Promise.reject(new Error('Failed to fetch HackMD content: Not Found')); },
+  getAuthor() { return Promise.reject(new HackMdSourceError('profile_not_found', 'HackMD profile not found')); },
+  getPosts() { return Promise.reject(new HackMdSourceError('profile_not_found', 'HackMD profile not found')); },
 };
 const ai: AiProvider = {
   name: 'fake', modelId: 'fake',

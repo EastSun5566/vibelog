@@ -14,6 +14,8 @@ VibeLog 0.5 is an invite-only hosted editor. You need a public HackMD profile wi
 
 Only notes that HackMD exposes as public and published are imported. Tags and the last-modified time come directly from HackMD and cannot be edited in VibeLog. Duplicate slugs, invalid dates, and an empty public profile stop the sync without replacing the last working draft.
 
+HackMD sync uses bounded requests: at most four articles download concurrently, transient network failures are retried, and every request has a 15-second timeout. The self-contained beta accepts up to 200 public articles, 2 MiB per Markdown article, and 32 MiB of article text per sync. Exceeding a limit or receiving an invalid HackMD response leaves the current draft and live site unchanged and produces an actionable message in the Editor.
+
 The editor records the last successful sync and lists the imported article metadata without storing article bodies in SQLite. Saving the blog title or description also fetches the latest HackMD content and rebuilds a new draft. The previous identity, draft, and published site remain active if that rebuild fails. Later content syncs preserve the title and description you chose.
 
 The public homepage shows the blog identity, author bio, and five newest selected articles. VibeLog derives each article summary from the first useful body paragraph in HackMD, ignoring headings, images, code blocks, and other non-body introductions. The same plain-text summary appears in article lists, HTML metadata, Open Graph, and RSS. It cannot be edited separately in VibeLog.
