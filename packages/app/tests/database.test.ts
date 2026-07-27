@@ -165,6 +165,9 @@ describe('AppDatabase 0.5 model', () => {
     database.connection.prepare('UPDATE published_releases SET created_at = ? WHERE id = ?').run('2026-07-20T00:00:00.000Z', releaseB.id);
 
     expect(database.listReleases(blog.id).map((release) => release.id)).toEqual([releaseB.id, releaseA.id]);
+    expect(database.listStorageReferences()).toEqual([{
+      userId: blog.userId, blogId: blog.id, draftArtifact: '/tmp/draft-b', releaseArtifacts: ['/tmp/release-a', '/tmp/release-b'],
+    }]);
     expect(database.getRelease(releaseA.id, blog.id)).toMatchObject({ id: releaseA.id, active: false });
     expect(database.getRelease(releaseA.id, '00000000-0000-4000-8000-000000000000')).toBeNull();
     expect(() => database.activateExistingRelease(releaseB.id, blog.id)).toThrow('already active');
@@ -202,6 +205,66 @@ describe('AppDatabase 0.5 model', () => {
     previewFor(database, blog, 'unsaved-preview');
     database.updatePreviewTheme('unsaved-preview', blog.userId, blog.id, { ...DEFAULT_THEME, radius: 'round', description: 'Unsaved preview' });
     expect(() => database.createPublishOperation(blog.userId, blog.id, 'unsaved-preview')).toThrow('unsaved theme changes');
+    database.close();
+  });
+  it('atomically finalizes sync, theme, and publish operations', async () => {
+    const database = await subject(); addUser(database, '31313131-3131-4131-8131-313131313131', 'atomic-operations');
+    const { blog, operation: initial } = database.createBlog('31313131-3131-4131-8131-313131313131', 'atomic-operations', 'atomic-operations');
+    expect(database.claimNextOperation()?.id).toBe(initial.id);
+    database.completeSyncOperation(initial.id, { title: 'Atomic', description: '', author: 'Writer', draftArtifact: '/tmp/atomic-draft' }, { message: 'synced' });
+    expect(() => { database.completeSyncOperation(initial.id, { title: 'Duplicate', description: '', author: 'Writer', draftArtifact: '/tmp/duplicate-draft' }, { message: 'duplicate' }); }).toThrow('Active sync operation not found');
+    expect(database.getOperation(initial.id, blog.userId)).toMatchObject({ status: 'succeeded', result: { message: 'synced' } });
+    expect(database.getBlog(blog.id)).toMatchObject({ state: 'ready', contentVersion: 1, draftArtifact: '/tmp/atomic-draft' });
+
+    const themeOperation = database.createThemeOperation(blog.userId, blog.id, 'make it round', DEFAULT_THEME, { userDailyLimit: 20, globalDailyLimit: 200 });
+    expect(database.claimNextOperation()?.id).toBe(themeOperation.id);
+    const theme = database.completeThemeOperation(themeOperation.id, { ...DEFAULT_THEME, radius: 'round', description: 'Round' }, { message: 'themed' });
+    expect(() => database.completeThemeOperation(themeOperation.id, DEFAULT_THEME, { message: 'duplicate' })).toThrow('Active theme operation not found');
+    database.failOperation(themeOperation.id, 'must not overwrite success');
+    expect(database.getOperation(themeOperation.id, blog.userId)).toMatchObject({ status: 'succeeded', result: { message: 'themed', revisionId: theme.id } });
+    expect(database.getActiveTheme(blog.id)?.id).toBe(theme.id);
+
+    database.createPreviewSession('atomic-preview', blog.userId, blog.id, '2099-01-01T00:00:00.000Z', theme.config);
+    const publishOperation = database.createPublishOperation(blog.userId, blog.id, 'atomic-preview');
+    expect(database.claimNextOperation()?.id).toBe(publishOperation.id);
+    const release = database.completePublishOperation(publishOperation.id, '/tmp/atomic-release', snapshotFor(database, blog.id), { message: 'published' });
+    expect(() => database.completePublishOperation(publishOperation.id, '/tmp/duplicate-release', snapshotFor(database, blog.id), { message: 'duplicate' })).toThrow('Active publish operation not found');
+    expect(database.getOperation(publishOperation.id, blog.userId)).toMatchObject({ status: 'succeeded', result: { message: 'published' } });
+    expect(database.getActiveRelease(blog.id)?.id).toBe(release.id);
+    expect(database.listReleases(blog.id)).toHaveLength(1);
+    database.close();
+  });
+  it('requeues interrupted work up to three attempts and atomically exhausts it', async () => {
+    const database = await subject(); addUser(database, '41414141-4141-4141-8141-414141414141', 'recovery');
+    const { blog, operation } = database.createBlog('41414141-4141-4141-8141-414141414141', 'recovery', 'recovery');
+    expect(database.claimNextOperation()?.attempts).toBe(1);
+    database.connection.prepare("UPDATE operations SET status = 'queued' WHERE id = ?").run(operation.id);
+    expect(database.claimNextOperation()?.attempts).toBe(2);
+    const messages = {
+      sync: '同步多次中斷', generate_theme: '樣式多次中斷', publish: '發布多次中斷',
+    };
+    expect(database.recoverOperations(messages)).toEqual({ requeued: 1, exhausted: 0 });
+    expect(database.getOperation(operation.id, blog.userId)).toMatchObject({ status: 'queued', attempts: 2 });
+    expect(database.claimNextOperation()?.attempts).toBe(3);
+    expect(database.recoverOperations(messages)).toEqual({ requeued: 0, exhausted: 1 });
+    expect(database.getOperation(operation.id, blog.userId)).toMatchObject({ status: 'failed', attempts: 3, errorMessage: '同步多次中斷' });
+    expect(database.getBlog(blog.id)).toMatchObject({ state: 'failed', lastError: '同步多次中斷', contentVersion: 0 });
+    expect(database.claimNextOperation()).toBeNull();
+    database.close();
+  });
+  it('keeps the last usable draft when an interrupted sync exhausts its retries', async () => {
+    const database = await subject(); addUser(database, '51515151-5151-4151-8151-515151515151', 'recovery-ready');
+    const { blog, operation: initial } = database.createBlog('51515151-5151-4151-8151-515151515151', 'recovery-ready', 'recovery-ready');
+    database.completeOperation(initial.id);
+    database.completeSync(blog.id, { title: 'Ready', description: '', author: 'Writer', draftArtifact: '/tmp/recovery-ready-draft' });
+    const interrupted = database.createSyncOperation(blog.userId, blog.id, { intent: 'content' });
+    database.connection.prepare("UPDATE operations SET status = 'running', attempts = 3 WHERE id = ?").run(interrupted.id);
+    const message = '同步多次中斷';
+
+    expect(database.recoverOperations({ sync: message, generate_theme: '樣式多次中斷', publish: '發布多次中斷' })).toEqual({ requeued: 0, exhausted: 1 });
+
+    expect(database.getOperation(interrupted.id, blog.userId)).toMatchObject({ status: 'failed', errorMessage: message });
+    expect(database.getBlog(blog.id)).toMatchObject({ state: 'ready', lastError: message, contentVersion: 1, draftArtifact: '/tmp/recovery-ready-draft' });
     database.close();
   });
   it('migrates a 0.5.0-beta.1 database without losing its records', async () => {

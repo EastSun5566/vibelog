@@ -12,6 +12,8 @@ Each successful HackMD sync builds a versioned draft directory and switches the 
 
 Every successful publication also remains as an immutable release. Writers can restore an earlier live release from the Editor without changing their current draft or theme; public responses use release-aware ETags so the restored version is visible on the next load.
 
+The worker completes each sync, theme, or publish result in the same SQLite transaction that marks its operation successful. After an unexpected restart it retries interrupted work at most three times and removes only recognized staging or unreferenced artifact directories. Current drafts and every release recorded in SQLite are retained.
+
 ## Runtime
 
 ```sh

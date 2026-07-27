@@ -14,6 +14,27 @@ const roots: string[] = [];
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
 describe('OperationWorker publication snapshots', () => {
+  it('reconciles storage and recovers interrupted operations before polling', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-worker-startup-')); roots.push(root);
+    const database = new AppDatabase(root); const date = new Date();
+    const userId = '01010101-0101-4101-8101-010101010101';
+    database.db.insert(user).values({ id: userId, name: 'startup', email: 'startup@users.vibelog.invalid', emailVerified: false, username: 'startup', displayUsername: 'startup', createdAt: date, updatedAt: date }).run();
+    const { blog, operation } = database.createBlog(userId, 'startup', 'startup');
+    expect(database.claimNextOperation()?.id).toBe(operation.id);
+    const orphan = join(root, 'blogs', userId, blog.id, '.sync-02020202-0202-4202-8202-020202020202');
+    await mkdir(orphan, { recursive: true });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const worker = new OperationWorker(database, { dataRoot: root, appOrigin: 'http://app.localtest.me:3000' } as AppConfig);
+    worker.stop();
+
+    await worker.run(0);
+
+    expect(database.getOperation(operation.id, userId)).toMatchObject({ status: 'queued', attempts: 1 });
+    expect(await readdir(join(root, 'blogs', userId, blog.id))).not.toContain('.sync-02020202-0202-4202-8202-020202020202');
+    expect(log).toHaveBeenCalledWith('VibeLog worker ready: requeued=1 exhausted=0 removed=1 warnings=0');
+    database.close();
+  });
+
   it('reads the source once, preserves custom identity, and switches immutable drafts', async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-sync-')); roots.push(root);
     const database = new AppDatabase(root); const date = new Date();
@@ -62,7 +83,7 @@ describe('OperationWorker publication snapshots', () => {
     const operation = database.createSyncOperation(blog.userId, blog.id, { intent: 'identity', site: { title: 'Attempted', description: 'Attempted description' } });
     const source: ContentSource = { name: ContentSourceName.HACKMD, getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Bio' }), getPosts: () => Promise.resolve({ posts: [{ id: 'post', title: 'Post', slug: 'post', date: '2026-02-01T00:00:00.000Z', content: 'Body' }] }) };
     const config = { dataRoot: root, appOrigin: 'http://app.localtest.me:3000' } as AppConfig;
-    const completeSync = vi.spyOn(database, 'completeSync').mockImplementationOnce(() => { throw new Error('database switch failed'); });
+    const completeSync = vi.spyOn(database, 'completeSyncOperation').mockImplementationOnce(() => { throw new Error('database switch failed'); });
 
     await expect(new OperationWorker(database, config, { contentSource: () => source }).execute(operation)).rejects.toThrow('database switch failed');
 
@@ -178,7 +199,7 @@ describe('OperationWorker publication snapshots', () => {
     const theme = database.getActiveTheme(blog.id); if (!theme) throw new Error('Theme missing');
     database.createPreviewSession('atomic-preview', blog.userId, blog.id, '2099-01-01T00:00:00.000Z', theme.config);
     const publish = database.createPublishOperation(blog.userId, blog.id, 'atomic-preview');
-    const activate = vi.spyOn(database, 'activateRelease').mockImplementationOnce(() => { throw new Error('release transaction failed'); });
+    const activate = vi.spyOn(database, 'completePublishOperation').mockImplementationOnce(() => { throw new Error('release transaction failed'); });
 
     await expect(new OperationWorker(database, { dataRoot: root, appOrigin: 'http://app.localtest.me:3000' } as AppConfig).execute(publish)).rejects.toThrow('release transaction failed');
 

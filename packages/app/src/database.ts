@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, lt, sql } from 'drizzle-orm';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3/driver';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import type { ThemeConfig } from '@vibelog/core';
@@ -26,7 +26,11 @@ export interface ReleaseSnapshot { site: { title: string; description: string; a
 export interface PublishedReleaseRecord { id: string; blogId: string; themeRevisionId: string; contentVersion: number; snapshot: ReleaseSnapshot | null; artifact: string; active: boolean; createdAt: string }
 export interface PreviewSessionRecord { tokenHash: string; userId: string; blogId: string; themeConfig: ThemeConfig | null; expiresAt: string }
 export interface AiQuotaLimits { userDailyLimit: number; globalDailyLimit: number; at?: Date }
+export interface OperationRecoveryResult { requeued: number; exhausted: number }
+export interface BlogStorageReference { userId: string; blogId: string; draftArtifact: string | null; releaseArtifacts: string[] }
 export class AiQuotaExceededError extends Error { constructor(readonly retryAfter: number) { super('AI daily quota exceeded'); this.name = 'AiQuotaExceededError'; } }
+
+export const MAX_OPERATION_ATTEMPTS = 3;
 
 const now = () => new Date().toISOString();
 const parseObject = (value: string) => JSON.parse(value) as Record<string, unknown>;
@@ -49,6 +53,7 @@ const mapTheme = (row: typeof schema.themeRevisions.$inferSelect): ThemeRevision
 const mapOperation = (row: typeof schema.operations.$inferSelect): OperationRecord => ({ ...row, payload: parseObject(row.payload), result: row.result ? parseObject(row.result) : null });
 const mapPreview = (row: typeof schema.previewSessions.$inferSelect): PreviewSessionRecord => ({ ...row, themeConfig: row.themeConfig ? validateThemeConfig(JSON.parse(row.themeConfig)) : null });
 const mapRelease = (row: typeof schema.publishedReleases.$inferSelect): PublishedReleaseRecord => ({ ...row, snapshot: row.snapshot ? releaseSnapshotSchema.parse(JSON.parse(row.snapshot)) : null });
+const activeOperationStatuses: OperationStatus[] = ['queued', 'running'];
 function quotaWindow(at: Date): { date: string; retryAfter: number } { const next = Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate() + 1); return { date: at.toISOString().slice(0, 10), retryAfter: Math.max(1, Math.ceil((next - at.getTime()) / 1000)) }; }
 
 function refuseLegacyDatabase(connection: DatabaseSync): void {
@@ -136,6 +141,19 @@ export class AppDatabase {
   }
   failSync(blogId: string, message: string): void { const blog = this.getBlog(blogId); this.db.update(schema.blogs).set({ state: blog?.draftArtifact ? 'ready' : 'failed', lastError: message, updatedAt: now() }).where(eq(schema.blogs.id, blogId)).run(); }
 
+  completeSyncOperation(operationId: string, metadata: { title: string; description: string; author: string; draftArtifact: string; contentManifest?: SyncedPostSummary[]; lastSyncedAt?: string }, result: Record<string, unknown>): void {
+    const timestamp = metadata.lastSyncedAt ?? now();
+    const contentManifest = contentManifestSchema.parse(metadata.contentManifest ?? [])
+      .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt) || left.slug.localeCompare(right.slug));
+    this.db.transaction((tx) => {
+      const operation = tx.select().from(schema.operations).where(and(eq(schema.operations.id, operationId), eq(schema.operations.type, 'sync'), inArray(schema.operations.status, activeOperationStatuses))).get();
+      if (!operation) throw new Error('Active sync operation not found');
+      const updated = tx.update(schema.blogs).set({ ...metadata, contentManifest: JSON.stringify(contentManifest), lastSyncedAt: timestamp, contentVersion: sql`${schema.blogs.contentVersion} + 1`, state: 'ready', lastError: null, updatedAt: timestamp }).where(and(eq(schema.blogs.id, operation.blogId), eq(schema.blogs.userId, operation.userId))).run();
+      if (updated.changes !== 1) throw new Error('Blog not found');
+      tx.update(schema.operations).set({ status: 'succeeded', result: JSON.stringify(result), errorMessage: null, updatedAt: timestamp }).where(eq(schema.operations.id, operationId)).run();
+    }, { behavior: 'immediate' });
+  }
+
   listThemes(blogId: string): ThemeRevisionRecord[] { return this.db.select().from(schema.themeRevisions).where(eq(schema.themeRevisions.blogId, blogId)).orderBy(desc(schema.themeRevisions.createdAt)).all().map(mapTheme); }
   getTheme(id: string, blogId: string): ThemeRevisionRecord | null { const row = this.db.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.id, id), eq(schema.themeRevisions.blogId, blogId))).get(); return row ? mapTheme(row) : null; }
   getActiveTheme(blogId: string): ThemeRevisionRecord | null { const row = this.db.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.blogId, blogId), eq(schema.themeRevisions.active, true))).get(); return row ? mapTheme(row) : null; }
@@ -143,6 +161,21 @@ export class AppDatabase {
     const validated = validateThemeConfig(config);
     const record: ThemeRevisionRecord = { id: randomUUID(), blogId, config: validated, prompt, description: validated.description, source: 'ai', active: true, createdAt: now() };
     return this.db.transaction((tx) => { tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, blogId)).run(); tx.insert(schema.themeRevisions).values({ ...record, config: JSON.stringify(validated) }).run(); return record; }, { behavior: 'immediate' });
+  }
+  completeThemeOperation(operationId: string, config: ThemeConfig, result: Record<string, unknown>): ThemeRevisionRecord {
+    const validated = validateThemeConfig(config);
+    return this.db.transaction((tx) => {
+      const row = tx.select().from(schema.operations).where(and(eq(schema.operations.id, operationId), eq(schema.operations.type, 'generate_theme'), inArray(schema.operations.status, activeOperationStatuses))).get();
+      if (!row) throw new Error('Active theme operation not found');
+      const operation = mapOperation(row);
+      const prompt = operation.payload.prompt;
+      if (typeof prompt !== 'string') throw new Error('Theme description is required');
+      const record: ThemeRevisionRecord = { id: randomUUID(), blogId: operation.blogId, config: validated, prompt, description: validated.description, source: 'ai', active: true, createdAt: now() };
+      tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, operation.blogId)).run();
+      tx.insert(schema.themeRevisions).values({ ...record, config: JSON.stringify(validated) }).run();
+      tx.update(schema.operations).set({ status: 'succeeded', result: JSON.stringify({ ...result, revisionId: record.id }), errorMessage: null, updatedAt: now() }).where(eq(schema.operations.id, operationId)).run();
+      return record;
+    }, { behavior: 'immediate' });
   }
   createManualTheme(userId: string, blogId: string, config: ThemeConfig): ThemeRevisionRecord {
     const validated = validateThemeConfig(config);
@@ -223,10 +256,43 @@ export class AppDatabase {
   }
   getOperation(id: string, userId: string): OperationRecord | null { const row = this.db.select().from(schema.operations).where(and(eq(schema.operations.id, id), eq(schema.operations.userId, userId))).get(); return row ? mapOperation(row) : null; }
   getActiveOperation(blogId: string, userId: string): OperationRecord | null { const row = this.db.select().from(schema.operations).where(and(eq(schema.operations.blogId, blogId), eq(schema.operations.userId, userId), inArray(schema.operations.status, ['queued', 'running']))).get(); return row ? mapOperation(row) : null; }
-  claimNextOperation(): OperationRecord | null { return this.db.transaction((tx) => { const row = tx.select().from(schema.operations).where(eq(schema.operations.status, 'queued')).orderBy(asc(schema.operations.createdAt)).limit(1).get(); if (!row) return null; const updatedAt = now(); tx.update(schema.operations).set({ status: 'running', attempts: row.attempts + 1, updatedAt }).where(and(eq(schema.operations.id, row.id), eq(schema.operations.status, 'queued'))).run(); return mapOperation({ ...row, status: 'running', attempts: row.attempts + 1, updatedAt }); }, { behavior: 'immediate' }); }
-  recoverOperations(): void { this.db.update(schema.operations).set({ status: 'queued', updatedAt: now() }).where(eq(schema.operations.status, 'running')).run(); }
+  claimNextOperation(): OperationRecord | null { return this.db.transaction((tx) => { const row = tx.select().from(schema.operations).where(and(eq(schema.operations.status, 'queued'), lt(schema.operations.attempts, MAX_OPERATION_ATTEMPTS))).orderBy(asc(schema.operations.createdAt)).limit(1).get(); if (!row) return null; const updatedAt = now(); tx.update(schema.operations).set({ status: 'running', attempts: row.attempts + 1, updatedAt }).where(and(eq(schema.operations.id, row.id), eq(schema.operations.status, 'queued'))).run(); return mapOperation({ ...row, status: 'running', attempts: row.attempts + 1, updatedAt }); }, { behavior: 'immediate' }); }
+  recoverOperations(messages: Record<OperationType, string>): OperationRecoveryResult {
+    return this.db.transaction((tx) => {
+      const active = tx.select().from(schema.operations).where(inArray(schema.operations.status, activeOperationStatuses)).all();
+      let requeued = 0; let exhausted = 0; const timestamp = now();
+      for (const operation of active) {
+        if (operation.attempts < MAX_OPERATION_ATTEMPTS) {
+          if (operation.status === 'running') {
+            tx.update(schema.operations).set({ status: 'queued', updatedAt: timestamp }).where(eq(schema.operations.id, operation.id)).run();
+            requeued += 1;
+          }
+          continue;
+        }
+        const message = messages[operation.type];
+        tx.update(schema.operations).set({ status: 'failed', errorMessage: message, updatedAt: timestamp }).where(eq(schema.operations.id, operation.id)).run();
+        if (operation.type === 'sync') {
+          const blog = tx.select({ draftArtifact: schema.blogs.draftArtifact }).from(schema.blogs).where(eq(schema.blogs.id, operation.blogId)).get();
+          tx.update(schema.blogs).set({ state: blog?.draftArtifact ? 'ready' : 'failed', lastError: message, updatedAt: timestamp }).where(eq(schema.blogs.id, operation.blogId)).run();
+        }
+        exhausted += 1;
+      }
+      return { requeued, exhausted };
+    }, { behavior: 'immediate' });
+  }
   completeOperation(id: string, result: Record<string, unknown> = {}): void { this.db.update(schema.operations).set({ status: 'succeeded', result: JSON.stringify(result), errorMessage: null, updatedAt: now() }).where(eq(schema.operations.id, id)).run(); }
-  failOperation(id: string, message: string): void { this.db.update(schema.operations).set({ status: 'failed', errorMessage: message, updatedAt: now() }).where(eq(schema.operations.id, id)).run(); }
+  failOperation(id: string, message: string): void {
+    this.db.transaction((tx) => {
+      const operation = tx.select().from(schema.operations).where(and(eq(schema.operations.id, id), inArray(schema.operations.status, activeOperationStatuses))).get();
+      if (!operation) return;
+      const timestamp = now();
+      tx.update(schema.operations).set({ status: 'failed', errorMessage: message, updatedAt: timestamp }).where(eq(schema.operations.id, id)).run();
+      if (operation.type === 'sync') {
+        const blog = tx.select({ draftArtifact: schema.blogs.draftArtifact }).from(schema.blogs).where(eq(schema.blogs.id, operation.blogId)).get();
+        tx.update(schema.blogs).set({ state: blog?.draftArtifact ? 'ready' : 'failed', lastError: message, updatedAt: timestamp }).where(eq(schema.blogs.id, operation.blogId)).run();
+      }
+    }, { behavior: 'immediate' });
+  }
 
   activateRelease(blogId: string, themeRevisionId: string, contentVersion: number, artifact: string, snapshot: ReleaseSnapshot): PublishedReleaseRecord {
     const validatedSnapshot = releaseSnapshotSchema.parse(snapshot);
@@ -236,6 +302,23 @@ export class AppDatabase {
       if (!blog || blog.contentVersion !== contentVersion) throw new Error('Draft changed before publishing');
       tx.update(schema.publishedReleases).set({ active: false }).where(eq(schema.publishedReleases.blogId, blogId)).run();
       tx.insert(schema.publishedReleases).values({ ...record, snapshot: JSON.stringify(validatedSnapshot) }).run();
+      return record;
+    }, { behavior: 'immediate' });
+  }
+  completePublishOperation(operationId: string, artifact: string, snapshot: ReleaseSnapshot, result: Record<string, unknown>): PublishedReleaseRecord {
+    const validatedSnapshot = releaseSnapshotSchema.parse(snapshot);
+    return this.db.transaction((tx) => {
+      const row = tx.select().from(schema.operations).where(and(eq(schema.operations.id, operationId), eq(schema.operations.type, 'publish'), inArray(schema.operations.status, activeOperationStatuses))).get();
+      if (!row) throw new Error('Active publish operation not found');
+      const operation = mapOperation(row);
+      const { contentVersion, themeRevisionId } = operation.payload;
+      if (!Number.isInteger(contentVersion) || typeof themeRevisionId !== 'string') throw new Error('Publish snapshot is invalid');
+      const blog = tx.select({ contentVersion: schema.blogs.contentVersion }).from(schema.blogs).where(and(eq(schema.blogs.id, operation.blogId), eq(schema.blogs.userId, operation.userId))).get();
+      if (!blog || blog.contentVersion !== contentVersion) throw new Error('Draft changed before publishing');
+      const record: PublishedReleaseRecord = { id: randomUUID(), blogId: operation.blogId, themeRevisionId, contentVersion, snapshot: validatedSnapshot, artifact, active: true, createdAt: now() };
+      tx.update(schema.publishedReleases).set({ active: false }).where(eq(schema.publishedReleases.blogId, operation.blogId)).run();
+      tx.insert(schema.publishedReleases).values({ ...record, snapshot: JSON.stringify(validatedSnapshot) }).run();
+      tx.update(schema.operations).set({ status: 'succeeded', result: JSON.stringify(result), errorMessage: null, updatedAt: now() }).where(eq(schema.operations.id, operationId)).run();
       return record;
     }, { behavior: 'immediate' });
   }
@@ -264,5 +347,12 @@ export class AppDatabase {
       tx.update(schema.previewSessions).set({ themeConfig: JSON.stringify(validated) }).where(eq(schema.previewSessions.tokenHash, tokenHash)).run();
       return validated;
     }, { behavior: 'immediate' });
+  }
+  listStorageReferences(): BlogStorageReference[] {
+    const releases = this.db.select({ blogId: schema.publishedReleases.blogId, artifact: schema.publishedReleases.artifact }).from(schema.publishedReleases).all();
+    const releaseArtifacts = new Map<string, string[]>();
+    for (const release of releases) releaseArtifacts.set(release.blogId, [...(releaseArtifacts.get(release.blogId) ?? []), release.artifact]);
+    return this.db.select({ userId: schema.blogs.userId, blogId: schema.blogs.id, draftArtifact: schema.blogs.draftArtifact }).from(schema.blogs).all()
+      .map((blog) => ({ ...blog, releaseArtifacts: [...(releaseArtifacts.get(blog.blogId) ?? [])].sort() }));
   }
 }

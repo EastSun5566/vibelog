@@ -8,6 +8,13 @@ import type { AppConfig } from './config.js';
 import type { AppDatabase, OperationRecord } from './database.js';
 import { createReleaseSnapshot } from './publication-diff.js';
 import { blogRoot } from './security/path.js';
+import { reconcileStorage } from './storage.js';
+
+const INTERRUPTED_OPERATION_MESSAGES: Record<OperationRecord['type'], string> = {
+  sync: '同步多次中斷，原本的草稿與線上版本沒有變更，請重新同步。',
+  generate_theme: 'AI 樣式設計多次中斷，原本的設計沒有變更，請再試一次。',
+  publish: '發布多次中斷，原本的線上版本沒有變更，請再試一次。',
+};
 
 function safeTechnicalError(error: unknown, config: AppConfig): string {
   const message = error instanceof Error ? (error.stack ?? error.message) : 'Operation failed';
@@ -104,19 +111,19 @@ export class OperationWorker {
         await mkdir(draftsRoot, { recursive: true, mode: 0o700 });
         await rename(output, draft);
         installedDraft = draft;
-        this.database.completeSync(blog.id, {
+        const message = payload.intent === 'identity'
+          ? 'Blog 資訊與內容已更新'
+          : payload.intent === 'selection' ? '文章選擇與草稿已更新' : '內容已同步';
+        this.database.completeSyncOperation(operation.id, {
           ...site,
           author: summary.author.name,
           draftArtifact: draft,
           contentManifest: summary.posts,
-        });
+        }, { message });
         installedDraft = null;
         await removeReplacedDraft(root, blog.draftArtifact, draft).catch((error: unknown) => {
           console.error(`[operation:${operation.id}] failed to remove replaced draft: ${safeTechnicalError(error, this.config)}`);
         });
-        const message = payload.intent === 'identity'
-          ? 'Blog 資訊與內容已更新'
-          : payload.intent === 'selection' ? '文章選擇與草稿已更新' : '內容已同步';
         return { message };
       } finally {
         if (installedDraft) await rm(installedDraft, { recursive: true, force: true });
@@ -133,7 +140,7 @@ export class OperationWorker {
       const theme = await (this.dependencies.aiProvider?.() ?? createAiProvider(this.config.aiProvider, this.config.aiModel)).generate({
         blog: { title: blog.title ?? blog.username, description: blog.description ?? '', author: blog.author ?? blog.username }, currentTheme: baseTheme, prompt,
       });
-      const revision = this.database.createTheme(blog.id, theme, prompt);
+      const revision = this.database.completeThemeOperation(operation.id, theme, { message: '新樣式已準備好' });
       return { message: '新樣式已準備好', revisionId: revision.id };
     }
     case 'publish': {
@@ -152,8 +159,9 @@ export class OperationWorker {
         await cp(blog.draftArtifact, staging, { recursive: true, errorOnExist: true });
         await writeFile(join(staging, 'theme.css'), renderThemeCss(theme.config), { mode: 0o644 });
         await rename(staging, release);
-        this.database.activateRelease(blog.id, theme.id, contentVersion, release, createReleaseSnapshot(blog));
-        return { message: '網站已發布', url: publicOrigin(this.config, blog.username) };
+        const result = { message: '網站已發布', url: publicOrigin(this.config, blog.username) };
+        this.database.completePublishOperation(operation.id, release, createReleaseSnapshot(blog), result);
+        return result;
       } catch (error) {
         await rm(staging, { recursive: true, force: true });
         await rm(release, { recursive: true, force: true });
@@ -166,15 +174,19 @@ export class OperationWorker {
   async runOnce(): Promise<boolean> {
     const operation = this.database.claimNextOperation();
     if (!operation) return false;
-    try { this.database.completeOperation(operation.id, await this.execute(operation)); }
+    try { await this.execute(operation); }
     catch (error) {
       console.error(`[operation:${operation.id}] ${operation.type} failed: ${safeTechnicalError(error, this.config)}`);
       const message = operationPublicError(operation.type, error);
       this.database.failOperation(operation.id, message);
-      if (operation.type === 'sync') this.database.failSync(operation.blogId, message);
     }
     return true;
   }
-  async run(pollMs = 500): Promise<void> { this.database.recoverOperations(); while (!this.stopped) if (!await this.runOnce()) await new Promise((resolve) => setTimeout(resolve, pollMs)); }
+  async run(pollMs = 500): Promise<void> {
+    const storage = await reconcileStorage(this.config.dataRoot, this.database.listStorageReferences());
+    const recovery = this.database.recoverOperations(INTERRUPTED_OPERATION_MESSAGES);
+    console.log(`VibeLog worker ready: requeued=${String(recovery.requeued)} exhausted=${String(recovery.exhausted)} removed=${String(storage.removed)} warnings=${String(storage.warnings)}`);
+    while (!this.stopped) if (!await this.runOnce()) await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
   stop(): void { this.stopped = true; }
 }

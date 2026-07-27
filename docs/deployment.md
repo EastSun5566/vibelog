@@ -32,4 +32,6 @@ Only configure the key for the selected pi-ai provider. Ollama may instead use `
 
 Attach one persistent disk at `/data` for accounts, drafts, operations, and releases. VibeLog supports one service instance because SQLite and the local disk are not shared across instances. Version 0.5 requires an empty disk; startup rejects a pre-0.5 schema with a clear error.
 
+The built-in worker reconciles `/data` on startup. It removes crash leftovers that are not referenced by SQLite, preserves every valid draft and release, and retries an interrupted operation no more than three times. Do not run multiple worker instances against the same disk.
+
 An image-backed Render service does not automatically redeploy when the mutable `beta` tag changes. Choose **Deploy latest reference** or call a deploy hook after publishing a new image.
