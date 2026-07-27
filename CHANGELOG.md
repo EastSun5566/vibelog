@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.5.0-beta.4](https://github.com/EastSun5566/vibelog/compare/v0.5.0-beta.3...v0.5.0-beta.4) (2026-07-27)
+
+### Features
+
+* add long-form article navigation ([7d478b0](https://github.com/EastSun5566/vibelog/commit/7d478b062f29862064e2c500f34c5d0458776340))
+* add pre-publish change summary ([031f86f](https://github.com/EastSun5566/vibelog/commit/031f86f0c48959338cb48ef5639a994a57715712))
+* add reliable article summaries ([f238836](https://github.com/EastSun5566/vibelog/commit/f238836f9ef381a2dcebbc04e1f8e394d520bc22))
+* harden HackMD synchronization ([6241ab3](https://github.com/EastSun5566/vibelog/commit/6241ab3288088422a4dba99c6f468c8f27e48fe1))
+* make operations crash-safe ([1624cc9](https://github.com/EastSun5566/vibelog/commit/1624cc99e1f0d380c24b8bf2031ace9f38e38f36))
+* preserve HackMD metadata and add tag navigation ([ab905db](https://github.com/EastSun5566/vibelog/commit/ab905dbb43a78f18a69cf217f5df09d8ea606c83))
 ## [0.5.0-beta.3](https://github.com/EastSun5566/vibelog/compare/v0.5.0-beta.2...v0.5.0-beta.3) (2026-07-20)
 
 ### Features
