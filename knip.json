@@ -12,6 +12,7 @@
         "docs/.vitepress/config.ts",
         "vitest.config.ts",
         "playwright.config.ts",
+        ".github/scripts/container-smoke.mjs",
         "e2e/fixture-server.ts",
         "e2e/**/*.spec.ts"
       ],
@@ -19,6 +20,7 @@
         "docs/.vitepress/**/*.ts",
         "vitest.config.ts",
         "playwright.config.ts",
+        ".github/scripts/container-smoke.mjs",
         "e2e/tsconfig.json",
         "e2e/**/*.ts"
       ]
@@ -29,7 +31,7 @@
       "ignoreDependencies": ["@astrojs/rss"]
     },
     "packages/app": {
-      "entry": ["src/main.ts", "src/server.tsx", "src/worker.ts", "src/styles/app.css", "tests/**/*.test.ts", "tests/runtime-image-smoke.mjs", "drizzle.config.ts"],
+      "entry": ["src/main.ts", "src/backup.ts", "src/beta-funnel.ts", "src/styles/app.css", "tests/**/*.test.ts", "tests/runtime-image-smoke.mjs", "drizzle.config.ts"],
       "project": ["src/**/*.{ts,tsx,css}", "tests/**/*.ts", "tests/runtime-image-smoke.mjs", "drizzle.config.ts"]
     }
   }

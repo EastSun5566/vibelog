@@ -12,7 +12,7 @@ import { startHttpServer, closeHttpServer } from '../packages/app/src/server-run
 
 const dataRoot = await mkdtemp(join(tmpdir(), 'vibelog-e2e-'));
 const config: AppConfig = {
-  nodeEnv: 'test', dataRoot, appOrigin: 'http://app.localtest.me:3100', appHostname: 'app.localtest.me', previewOrigin: 'http://preview.app.localtest.me:3100',
+  dataRoot, appOrigin: 'http://app.localtest.me:3100', appHostname: 'app.localtest.me', previewOrigin: 'http://preview.app.localtest.me:3100',
   betterAuthSecret: 'e2e-secret-that-is-at-least-thirty-two-characters', betaInviteDigest: createHash('sha256').update('vibelog-e2e-beta-invite-code').digest(),
   aiUserDailyLimit: 20, aiGlobalDailyLimit: 200, aiProvider: 'fake', aiModel: 'fake', secureCookies: false,
 };

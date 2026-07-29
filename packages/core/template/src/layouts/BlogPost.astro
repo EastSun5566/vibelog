@@ -6,6 +6,7 @@ import TagList from "../components/TagList.astro";
 import TableOfContents from "../components/TableOfContents.astro";
 import SiteLayout from "./SiteLayout.astro";
 import { SITE_TITLE } from "../consts";
+import { text } from "../localization";
 
 interface TocHeading {
   depth: number;
@@ -43,7 +44,7 @@ const showTableOfContents = headings.length >= 2;
         {
           showUpdatedDate && (
             <p class="blog-post-update">
-              更新於 <FormattedDate date={updatedDate} />
+              {text.updatedAt} <FormattedDate date={updatedDate} />
             </p>
           )
         }
@@ -54,7 +55,7 @@ const showTableOfContents = headings.length >= 2;
       </div>
       {
         showTableOfContents && (
-          <a class="article-back-to-start" href="#article-start">回到文章開頭</a>
+          <a class="article-back-to-start" href="#article-start">{text.backToStart}</a>
         )
       }
     </div>
@@ -62,10 +63,10 @@ const showTableOfContents = headings.length >= 2;
 
   {
     (newerPost || olderPost) && (
-      <nav class="article-navigation" aria-label="文章導覽">
+      <nav class="article-navigation" aria-label={text.postNavigation}>
         {newerPost ? (
           <a class="article-navigation-link newer" href={`/blog/${newerPost.id}/`}>
-            <span>較新文章</span>
+            <span>{text.newerPost}</span>
             <strong>{newerPost.data.title}</strong>
           </a>
         ) : (
@@ -73,7 +74,7 @@ const showTableOfContents = headings.length >= 2;
         )}
         {olderPost && (
           <a class="article-navigation-link older" href={`/blog/${olderPost.id}/`}>
-            <span>較舊文章</span>
+            <span>{text.olderPost}</span>
             <strong>{olderPost.data.title}</strong>
           </a>
         )}

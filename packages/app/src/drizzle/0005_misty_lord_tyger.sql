@@ -1,0 +1,1 @@
+ALTER TABLE `blogs` ADD `language` text DEFAULT 'zh-Hant' NOT NULL;

@@ -4,17 +4,18 @@ import { getCollection } from "astro:content";
 import PostList from "../../components/PostList.astro";
 import SiteLayout from "../../layouts/SiteLayout.astro";
 import { SITE_DESCRIPTION, SITE_TITLE } from "../../consts";
+import { text } from "../../localization";
 
 const posts = (await getCollection("blog")).sort(
   (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
 );
 ---
 
-<SiteLayout title={`所有文章 · ${SITE_TITLE}`} description={SITE_DESCRIPTION}>
+<SiteLayout title={`${text.allPosts} · ${SITE_TITLE}`} description={SITE_DESCRIPTION}>
   <header class="page-heading">
     <p class="eyebrow">{SITE_TITLE}</p>
-    <h1>所有文章</h1>
-    <p>{posts.length} 篇文章，依發布日期由新到舊排列。</p>
+    <h1>{text.allPosts}</h1>
+    <p>{text.postsByDate(posts.length)}</p>
   </header>
   <PostList {posts} />
 </SiteLayout>

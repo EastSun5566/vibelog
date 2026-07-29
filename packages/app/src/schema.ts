@@ -11,7 +11,7 @@ export const rateLimit = sqliteTable('rate_limit', { id: text('id').primaryKey()
 export const appMeta = sqliteTable('app_meta', { key: text('key').primaryKey(), value: text('value').notNull() });
 export const blogs = sqliteTable('blogs', {
   id: text('id').primaryKey(), userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }), username: text('username').notNull(),
-  hackmdUsername: text('hackmd_username').notNull(), title: text('title'), description: text('description'), author: text('author'),
+  hackmdUsername: text('hackmd_username').notNull(), title: text('title'), description: text('description'), author: text('author'), language: text('language').notNull().default('zh-Hant'),
   state: text('state', { enum: ['syncing', 'ready', 'failed'] }).notNull(), lastError: text('last_error'), draftArtifact: text('draft_artifact'), contentVersion: integer('content_version').notNull().default(0),
   contentManifest: text('content_manifest'), lastSyncedAt: text('last_synced_at'),
   createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull(),

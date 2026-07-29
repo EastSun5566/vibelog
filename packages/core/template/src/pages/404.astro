@@ -1,13 +1,14 @@
 ---
 import SiteLayout from "../layouts/SiteLayout.astro";
 import { SITE_DESCRIPTION, SITE_TITLE } from "../consts";
+import { text } from "../localization";
 ---
 
-<SiteLayout title={`找不到頁面 · ${SITE_TITLE}`} description={SITE_DESCRIPTION}>
+<SiteLayout title={`${text.notFoundTitle} · ${SITE_TITLE}`} description={SITE_DESCRIPTION}>
   <section class="not-found">
     <p class="eyebrow">404</p>
-    <h1>找不到頁面</h1>
-    <p>這個網址不存在，或內容已經移動。</p>
-    <p><a href="/">返回首頁</a></p>
+    <h1>{text.notFoundTitle}</h1>
+    <p>{text.notFoundMessage}</p>
+    <p><a href="/">{text.backHome}</a></p>
   </section>
 </SiteLayout>

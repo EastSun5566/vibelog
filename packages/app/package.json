@@ -9,7 +9,6 @@
     "directory": "packages/app"
   },
   "type": "module",
-  "main": "dist/server.js",
   "files": [
     "dist"
   ],
@@ -18,15 +17,13 @@
   },
   "scripts": {
     "dev": "pnpm css:build && tsx --env-file=../../.env src/main.ts",
-    "dev:server": "pnpm css:build && tsx --env-file=../../.env src/server.tsx",
-    "worker": "tsx --env-file=../../.env src/worker.ts",
     "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -R src/drizzle dist/drizzle && pnpm css:build --minify",
     "css:build": "tailwindcss -i src/styles/app.css -o dist/assets/app.css",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:check": "drizzle-kit check --config drizzle.config.ts",
     "start": "node dist/main.js",
-    "start:server": "node dist/server.js",
-    "start:worker": "node dist/worker.js",
+    "backup": "node dist/backup.js",
+    "beta:funnel": "node dist/beta-funnel.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },

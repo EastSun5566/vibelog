@@ -1,4 +1,6 @@
 ---
+import { text } from "../localization";
+
 interface Tag {
   name: string;
   slug: string;
@@ -13,7 +15,7 @@ const { tags } = Astro.props;
 
 {
   tags.length > 0 && (
-    <ul class="tag-list" role="list" aria-label="文章主題">
+    <ul class="tag-list" role="list" aria-label={text.postTags}>
       {tags.map((tag) => (
         <li><a class="tag-link" href={`/tags/${tag.slug}/`}>{tag.name}</a></li>
       ))}

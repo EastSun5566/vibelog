@@ -5,6 +5,7 @@ import BaseHead from "../components/BaseHead.astro";
 import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
 import { SITE_LANGUAGE } from "../consts";
+import { text } from "../localization";
 
 interface Props {
   title: string;
@@ -30,7 +31,7 @@ const hasTags = posts.some((post) => post.data.tags.length > 0);
     <BaseHead {title} {description} {kind} {publishedAt} {modifiedAt} {tags} />
   </head>
   <body>
-    <a class="skip-link" href="#main-content">跳至主要內容</a>
+    <a class="skip-link" href="#main-content">{text.skipToContent}</a>
     <Header {hasTags} />
     <main id="main-content" tabindex="-1">
       <slot />

@@ -2,7 +2,8 @@
 import { getCollection } from "astro:content";
 
 import SiteLayout from "../../layouts/SiteLayout.astro";
-import { SITE_TITLE } from "../../consts";
+import { SITE_LANGUAGE, SITE_TITLE } from "../../consts";
+import { text } from "../../localization";
 
 const posts = await getCollection("blog");
 const tags = Array.from(posts.reduce((index, post) => {
@@ -12,16 +13,16 @@ const tags = Array.from(posts.reduce((index, post) => {
   }
   return index;
 }, new Map<string, { name: string; slug: string; count: number }>()).values()).sort(
-  (left, right) => right.count - left.count || left.name.localeCompare(right.name, "zh-Hant"),
+  (left, right) => right.count - left.count || left.name.localeCompare(right.name, SITE_LANGUAGE),
 );
-const description = `瀏覽 ${SITE_TITLE} 的文章主題。`;
+const description = text.browseTagsDescription(SITE_TITLE);
 ---
 
-<SiteLayout title={`主題 · ${SITE_TITLE}`} {description}>
+<SiteLayout title={`${text.tags} · ${SITE_TITLE}`} {description}>
   <header class="page-heading">
     <p class="eyebrow">{SITE_TITLE}</p>
-    <h1>主題</h1>
-    <p>依主題瀏覽文章。</p>
+    <h1>{text.tags}</h1>
+    <p>{text.browseTags}</p>
   </header>
   {
     tags.length > 0 ? (
@@ -30,13 +31,13 @@ const description = `瀏覽 ${SITE_TITLE} 的文章主題。`;
           <li>
             <a class="tag-index-link" href={`/tags/${tag.slug}/`}>
               <span>{tag.name}</span>
-              <span class="tag-count">{tag.count} 篇</span>
+              <span class="tag-count">{text.postCount(tag.count)}</span>
             </a>
           </li>
         ))}
       </ul>
     ) : (
-      <p class="empty-state">目前沒有文章主題。</p>
+      <p class="empty-state">{text.noTags}</p>
     )
   }
 </SiteLayout>

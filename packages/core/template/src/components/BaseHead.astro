@@ -2,7 +2,7 @@
 // Import the global.css file here so that it is included on
 // all pages through the use of the <BaseHead /> component.
 import "../styles/global.css";
-import { SITE_TITLE } from "../consts";
+import { SITE_LANGUAGE, SITE_TITLE } from "../consts";
 
 interface Props {
   title: string;
@@ -52,6 +52,7 @@ const {
 <meta property="og:url" content={canonicalURL} />
 <meta property="og:title" content={title} />
 <meta property="og:description" content={description} />
+<meta property="og:locale" content={SITE_LANGUAGE} />
 {
   kind === "article" && publishedAt && (
     <meta property="article:published_time" content={publishedAt.toISOString()} />

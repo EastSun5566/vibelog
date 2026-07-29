@@ -4,6 +4,7 @@ import { type CollectionEntry, getCollection } from "astro:content";
 import PostList from "../../components/PostList.astro";
 import SiteLayout from "../../layouts/SiteLayout.astro";
 import { SITE_TITLE } from "../../consts";
+import { text } from "../../localization";
 
 interface Tag {
   name: string;
@@ -33,14 +34,14 @@ interface Props {
 }
 
 const { tag, posts } = Astro.props;
-const description = `${SITE_TITLE} 中關於「${tag.name}」的文章。`;
+const description = text.tagDescription(SITE_TITLE, tag.name);
 ---
 
-<SiteLayout title={`主題：${tag.name} · ${SITE_TITLE}`} {description}>
+<SiteLayout title={`${text.tagTitle(tag.name)} · ${SITE_TITLE}`} {description}>
   <header class="page-heading">
-    <p class="eyebrow"><a href="/tags">所有主題</a></p>
+    <p class="eyebrow"><a href="/tags">{text.allTags}</a></p>
     <h1>{tag.name}</h1>
-    <p>{posts.length} 篇文章，依發布日期由新到舊排列。</p>
+    <p>{text.postsByDate(posts.length)}</p>
   </header>
   <PostList {posts} />
 </SiteLayout>

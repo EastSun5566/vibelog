@@ -29,6 +29,7 @@ const blog = (posts: SyncedPostSummary[], overrides: Partial<BlogRecord> = {}): 
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   ...overrides,
+  language: overrides.language ?? 'en',
 });
 const theme = (overrides: Partial<ThemeRevisionRecord> = {}): ThemeRevisionRecord => ({
   id: '33333333-3333-4333-8333-333333333333',
@@ -74,9 +75,9 @@ describe('publication diff', () => {
   });
 
   it('tracks identity and theme independently of article changes', () => {
-    const liveBlog = blog([post('one')], { title: 'Old title', description: 'Old description', author: 'Old author', contentVersion: 1 });
+    const liveBlog = blog([post('one')], { title: 'Old title', description: 'Old description', author: 'Old author', language: 'zh-Hant', contentVersion: 1 });
     const diff = calculatePublicationDiff(blog([post('one')]), theme({ id: '55555555-5555-4555-8555-555555555555' }), release(liveBlog));
-    expect(diff.identityChanges).toEqual(['title', 'description', 'author']);
+    expect(diff.identityChanges).toEqual(['title', 'description', 'author', 'language']);
     expect(diff.themeChanged).toBe(true);
     expect(diff.rebuilt).toBe(false);
   });

@@ -1,12 +1,13 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { renderThemeCss } from '@vibelog/core';
 import { createAuth, readSession, type AppVariables } from './auth.js';
-import { blogIdentitySchema } from './blog-sync.js';
+import { blogIdentitySchema, blogLanguageSchema } from './blog-sync.js';
 import { CLIENT_SCRIPT } from './client.js';
 import { loadAppConfig, type AppConfig } from './config.js';
 import { AiQuotaExceededError, AppDatabase, type BlogRecord, type OperationType } from './database.js';
@@ -15,7 +16,7 @@ import { hashToken, randomToken } from './security/crypto.js';
 import { assertNoSymlinkEscape, blogRoot, resolveRelativeWithin } from './security/path.js';
 import { operationMessage } from './operation-status.js';
 import { themeFromControls } from './theme-studio.js';
-import { changePasswordPage, editorPage, loginPage, onboardingPage, operationPage, registerPage } from './views.js';
+import { changePasswordPage, editorPage, landingPage, loginPage, onboardingPage, operationPage, registerPage } from './views.js';
 
 const RESERVED = new Set(['preview', 'www', 'api', 'admin', 'assets']);
 const registerInput = z.object({ inviteCode: z.string().min(1).max(512), username: z.string().trim().min(3).max(32).regex(/^[a-z0-9_-]+$/i), password: z.string().min(12).max(128) });
@@ -61,6 +62,10 @@ export function createApp(options: CreateAppOptions = {}) {
   const auth = createAuth(database, config);
   const app = new Hono<AppEnv>();
   app.use('*', requestContext());
+  app.use('*', bodyLimit({
+    maxSize: 64 * 1024,
+    onError: () => Response.json({ error: { code: 'payload_too_large', message: 'Request body exceeds 64 KiB', requestId: randomUUID() } }, { status: 413 }),
+  }));
   app.onError((error, c) => jsonError(c, error));
   app.notFound((c) => jsonError(c, new AppError('not_found', 'Page not found', 404)));
   app.get('/health', (c) => c.json({ status: 'ok', service: 'vibelog' }));
@@ -105,7 +110,6 @@ export function createApp(options: CreateAppOptions = {}) {
   const internalAuthPost = async (c: AppContext, path: string, body: Record<string, unknown>) => {
     const headers = new Headers({ 'content-type': 'application/json', origin: config.appOrigin });
     const cookie = c.req.header('cookie'); if (cookie) headers.set('cookie', cookie);
-    const ip = c.req.header('x-forwarded-for'); if (ip) headers.set('x-forwarded-for', ip);
     return auth.handler(new Request(new URL(`/api/auth${path}`, config.appOrigin), { method: 'POST', headers, body: JSON.stringify(body) }));
   };
   const copyCookies = (c: AppContext, response: Response) => { for (const cookie of response.headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true }); };
@@ -114,24 +118,25 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post('/auth/login', async (c) => {
     assertMutationOrigin(c, config); const body = await c.req.parseBody().catch(() => ({}));
     const input = loginInput.safeParse({ username: formValue(body, 'username'), password: formValue(body, 'password') });
-    if (!input.success) return c.html(loginPage('Username 或密碼錯誤'), 401);
-    const response = await internalAuthPost(c, '/sign-in/username', { username: input.data.username.toLowerCase(), password: input.data.password });
-    if (!response.ok) return c.html(loginPage(response.status === 429 ? '嘗試次數過多，請稍後再試' : 'Username 或密碼錯誤'), response.status === 429 ? 429 : 401);
+    if (!input.success) return c.html(loginPage('Invalid username or password'), 401);
+    const username = input.data.username.toLowerCase();
+    if (!database.consumeRateLimit(`login:${username}`, 10, 10 * 60)) return c.html(loginPage('Too many attempts. Please try again later.'), 429);
+    const response = await internalAuthPost(c, '/sign-in/username', { username, password: input.data.password });
+    if (!response.ok) return c.html(loginPage('Invalid username or password'), 401);
     copyCookies(c, response); return c.redirect('/editor', 303);
   });
   app.get('/auth/register', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(registerPage()));
   app.post('/auth/register', async (c) => {
     assertMutationOrigin(c, config); const body = await c.req.parseBody().catch(() => ({}));
     const input = registerInput.safeParse({ inviteCode: formValue(body, 'inviteCode'), username: formValue(body, 'username'), password: formValue(body, 'password') });
-    if (!input.success) return c.html(registerPage('請檢查邀請碼、username 與密碼格式'), 400);
+    if (!input.success) return c.html(registerPage('Check the invite code, username, and password format.'), 400);
     const username = input.data.username.toLowerCase();
-    if (RESERVED.has(username)) return c.html(registerPage('這個 username 無法使用'), 400);
-    const ip = ((c.req.header('x-forwarded-for') ?? 'unknown').split(',')[0] ?? 'unknown').trim();
-    if (!database.consumeInviteAttempt(ip)) return c.html(registerPage('嘗試次數過多，請稍後再試'), 429);
+    if (RESERVED.has(username)) return c.html(registerPage('This username is unavailable.'), 400);
+    if (!database.consumeRateLimit('register:global', 50, 60 * 60)) return c.html(registerPage('Registration is temporarily busy. Please try again later.'), 429);
     const digest = createHash('sha256').update(input.data.inviteCode).digest();
-    if (!timingSafeEqual(digest, config.betaInviteDigest)) return c.html(registerPage('邀請碼無效'), 401);
+    if (!timingSafeEqual(digest, config.betaInviteDigest)) return c.html(registerPage('Invalid invite code.'), 401);
     const response = await internalAuthPost(c, '/sign-up/email', { email: `${username}@users.vibelog.invalid`, username, displayUsername: username, name: username, password: input.data.password });
-    if (!response.ok) return c.html(registerPage(response.status === 429 ? '嘗試次數過多，請稍後再試' : '這個 username 無法使用'), response.status === 429 ? 429 : 400);
+    if (!response.ok) return c.html(registerPage('This username is unavailable.'), 400);
     copyCookies(c, response); return c.redirect('/onboarding', 303);
   });
 
@@ -139,9 +144,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use('/editor', requireSession); app.use('/onboarding', requireSession); app.use('/operations/*', requireSession); app.use('/actions/*', requireSession); app.use('/api/*', requireSession); app.use('/auth/change-password', requireSession); app.use('/auth/logout', requireSession);
   app.post('/auth/logout', async (c) => { const body = await c.req.parseBody(); assertMutationOrigin(c, config); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); const response = await internalAuthPost(c, '/sign-out', {}); copyCookies(c, response); return c.redirect('/auth/login', 303); });
   app.get('/auth/change-password', (c) => c.html(changePasswordPage(c.get('session'))));
-  app.post('/auth/change-password', async (c) => { const body = await c.req.parseBody(); assertMutationOrigin(c, config); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); const input = changePasswordInput.safeParse({ currentPassword: formValue(body, 'currentPassword'), newPassword: formValue(body, 'newPassword') }); if (!input.success) throw new AppError('invalid_password', '新密碼必須是 12–128 字元', 400); const response = await internalAuthPost(c, '/change-password', { ...input.data, revokeOtherSessions: true }); if (!response.ok) throw new AppError('password_change_failed', response.status === 429 ? '嘗試次數過多，請稍後再試' : '目前密碼錯誤', response.status === 429 ? 429 : 400); copyCookies(c, response); return c.redirect('/editor', 303); });
+  app.post('/auth/change-password', async (c) => { const body = await c.req.parseBody(); assertMutationOrigin(c, config); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); const input = changePasswordInput.safeParse({ currentPassword: formValue(body, 'currentPassword'), newPassword: formValue(body, 'newPassword') }); if (!input.success) throw new AppError('invalid_password', 'The new password must be 12–128 characters.', 400); if (!database.consumeRateLimit(`password:${c.get('session').user.id}`, 5, 10 * 60)) throw new AppError('rate_limited', 'Too many attempts. Please try again later.', 429); const response = await internalAuthPost(c, '/change-password', { ...input.data, revokeOtherSessions: true }); if (!response.ok) throw new AppError('password_change_failed', 'The current password is incorrect.', 400); copyCookies(c, response); return c.redirect('/editor', 303); });
 
-  app.get('/', async (c) => c.redirect(await readSession(c, auth, config) ? '/editor' : '/auth/login'));
+  app.get('/', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(landingPage()));
   app.get('/onboarding', (c) => {
     const blog = database.getBlogForUser(c.get('session').user.id);
     if (blog?.draftArtifact) return c.redirect('/editor');
@@ -149,7 +154,7 @@ export function createApp(options: CreateAppOptions = {}) {
     return c.html(onboardingPage(c.get('session'), blog, operation));
   });
 
-  function ownedBlog(c: AppContext): BlogRecord { const blog = database.getBlogForUser(c.get('session').user.id); if (!blog) throw new AppError('blog_not_found', '請先連接 HackMD', 404); return blog; }
+  function ownedBlog(c: AppContext): BlogRecord { const blog = database.getBlogForUser(c.get('session').user.id); if (!blog) throw new AppError('blog_not_found', 'Connect HackMD first.', 404); return blog; }
   function redirectOrJson(c: AppContext, operationId: string) { const operationUrl = `/operations/${operationId}`; return c.req.header('accept')?.includes('application/json') ? c.json({ operationUrl, pollUrl: `/api/operations/${operationId}` }, 202) : c.redirect(operationUrl, 303); }
   async function mutationBody(c: AppContext) { assertMutationOrigin(c, config); const body = await c.req.parseBody(); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); return body; }
   function enqueue(c: AppContext, type: OperationType, payload: Record<string, unknown> = {}) {
@@ -166,55 +171,55 @@ export function createApp(options: CreateAppOptions = {}) {
         : database.createSyncOperation(blog.userId, blog.id, payload);
       return redirectOrJson(c, operation.id);
     } catch (error) {
-      if (error instanceof AiQuotaExceededError) throw new AppError('ai_quota_exceeded', '今天的 AI 樣式額度已用完', 429, { 'Retry-After': String(error.retryAfter) });
-      if (error instanceof Error && error.message === 'Nothing to publish') throw new AppError('nothing_to_publish', '目前沒有需要發布的變更', 409);
-      if (error instanceof Error && error.message === 'Nothing to update article selection') throw new AppError('nothing_to_update', '文章選擇沒有變更', 409);
-      if (error instanceof Error && error.message === 'Nothing to update') throw new AppError('nothing_to_update', 'Blog 資訊沒有變更', 409);
-      if (error instanceof Error && error.message === 'No articles selected') throw new AppError('no_articles_selected', '至少要選取一篇文章', 400);
-      if (error instanceof Error && error.message === 'Unknown article selection') throw new AppError('invalid_article_selection', '文章選擇已過期，請重新整理後再試一次', 409);
-      if (error instanceof Error && error.message === 'Article selection unavailable') throw new AppError('article_selection_unavailable', '請先完成內容同步', 409);
-      if (error instanceof Error && error.message === 'Blog has no synced content') throw new AppError('preview_not_ready', '請先完成內容同步', 409);
-      if (error instanceof Error && error.message === 'Preview has unsaved theme changes') throw new AppError('unsaved_theme', '請先儲存目前的樣式，再進行發布', 409);
-      if (error instanceof Error && error.message === 'Preview session expired or invalid') throw new AppError('preview_session_expired', '預覽已過期，請重新整理編輯器', 409);
-      if (error instanceof Error && (error.message.includes('UNIQUE constraint') || error.message.includes('active operation'))) throw new AppError('operation_in_progress', '目前已有操作進行中', 409);
+      if (error instanceof AiQuotaExceededError) throw new AppError('ai_quota_exceeded', 'Today’s AI theme quota is exhausted.', 429, { 'Retry-After': String(error.retryAfter) });
+      if (error instanceof Error && error.message === 'Nothing to publish') throw new AppError('nothing_to_publish', 'There are no unpublished changes.', 409);
+      if (error instanceof Error && error.message === 'Nothing to update article selection') throw new AppError('nothing_to_update', 'The article selection is unchanged.', 409);
+      if (error instanceof Error && error.message === 'Nothing to update') throw new AppError('nothing_to_update', 'The blog details are unchanged.', 409);
+      if (error instanceof Error && error.message === 'No articles selected') throw new AppError('no_articles_selected', 'Select at least one article.', 400);
+      if (error instanceof Error && error.message === 'Unknown article selection') throw new AppError('invalid_article_selection', 'The article selection is stale. Refresh and try again.', 409);
+      if (error instanceof Error && error.message === 'Article selection unavailable') throw new AppError('article_selection_unavailable', 'Finish the first content sync.', 409);
+      if (error instanceof Error && error.message === 'Blog has no synced content') throw new AppError('preview_not_ready', 'Finish the first content sync.', 409);
+      if (error instanceof Error && error.message === 'Preview has unsaved theme changes') throw new AppError('unsaved_theme', 'Save the theme before publishing.', 409);
+      if (error instanceof Error && error.message === 'Preview session expired or invalid') throw new AppError('preview_session_expired', 'The preview expired. Refresh the editor.', 409);
+      if (error instanceof Error && (error.message.includes('UNIQUE constraint') || error.message.includes('active operation'))) throw new AppError('operation_in_progress', 'Another operation is already running.', 409);
       throw error;
     }
   }
 
   app.post('/actions/blog/connect', async (c) => {
     const body = await mutationBody(c);
-    const input = hackmdInput.safeParse({ hackmdUsername: formValue(body, 'hackmdUsername') });
-    if (!input.success) throw new AppError('invalid_hackmd_username', 'HackMD username 格式錯誤', 400);
+    const input = z.object({ hackmdUsername: hackmdInput.shape.hackmdUsername, language: blogLanguageSchema }).safeParse({ hackmdUsername: formValue(body, 'hackmdUsername'), language: formValue(body, 'language') });
+    if (!input.success) throw new AppError('invalid_blog_source', 'Check the HackMD username and language tag.', 400);
     const session = c.get('session');
     const blog = database.getBlogForUser(session.user.id);
-    if (blog?.draftArtifact) throw new AppError('source_locked', '內容首次同步成功後不能更換 HackMD 來源', 409);
+    if (blog?.draftArtifact) throw new AppError('source_locked', 'The HackMD source cannot change after the first successful sync.', 409);
     try {
-      const operation = blog ? database.retryInitialSync(session.user.id, input.data.hackmdUsername) : database.createBlog(session.user.id, session.user.username, input.data.hackmdUsername).operation;
+      const operation = blog ? database.retryInitialSync(session.user.id, input.data.hackmdUsername, input.data.language) : database.createBlog(session.user.id, session.user.username, input.data.hackmdUsername, input.data.language).operation;
       return redirectOrJson(c, operation.id);
     } catch (error) {
-      if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', '目前正在同步，請稍候', 409);
-      if (error instanceof Error && error.message.includes('UNIQUE constraint')) throw new AppError('blog_unavailable', '無法建立 blog', 409);
+      if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', 'A sync is already running.', 409);
+      if (error instanceof Error && error.message.includes('UNIQUE constraint')) throw new AppError('blog_unavailable', 'Could not create the blog.', 409);
       throw error;
     }
   });
   app.post('/actions/blog/sync', async (c) => { await mutationBody(c); return enqueue(c, 'sync', { intent: 'content' }); });
   app.post('/actions/blog/identity', async (c) => {
     const body = await mutationBody(c);
-    const input = blogIdentitySchema.safeParse({ title: formValue(body, 'title'), description: formValue(body, 'description') ?? '' });
-    if (!input.success) throw new AppError('invalid_blog_identity', 'Blog 標題必須是 1–80 字元，描述最多 240 字元', 400);
+    const input = blogIdentitySchema.safeParse({ title: formValue(body, 'title'), description: formValue(body, 'description') ?? '', language: formValue(body, 'language') });
+    if (!input.success) throw new AppError('invalid_blog_identity', 'The title must be 1–80 characters, the description at most 240, and language a BCP 47 tag.', 400);
     return enqueue(c, 'sync', { intent: 'identity', site: input.data });
   });
   app.post('/actions/blog/selection', async (c) => {
     const body = await mutationBody(c);
     const blog = ownedBlog(c);
-    if (!blog.contentManifest?.length) throw new AppError('article_selection_unavailable', '請先完成內容同步', 409);
+    if (!blog.contentManifest?.length) throw new AppError('article_selection_unavailable', 'Finish the first content sync.', 409);
     const prefix = 'article:';
     const includedSlugs = Object.entries(body)
       .filter(([name, value]) => name.startsWith(prefix) && value === 'included')
       .map(([name]) => name.slice(prefix.length));
     const knownSlugs = new Set(blog.contentManifest.map((post) => post.slug));
     if (includedSlugs.some((slug) => !knownSlugs.has(slug))) {
-      throw new AppError('invalid_article_selection', '文章選擇無效，請重新整理後再試一次', 400);
+      throw new AppError('invalid_article_selection', 'The article selection is invalid. Refresh and try again.', 400);
     }
     const included = new Set(includedSlugs);
     const excludedSlugs = blog.contentManifest.filter((post) => !included.has(post.slug)).map((post) => post.slug);
@@ -225,52 +230,52 @@ export function createApp(options: CreateAppOptions = {}) {
     const activeTheme = database.getActiveTheme(blog.id);
     if (!activeTheme) throw new AppError('theme_not_found', 'Theme not found', 404);
     try { return { blog, theme: themeFromControls(activeTheme.config, body) }; }
-    catch { throw new AppError('invalid_theme_controls', '樣式選項無效，請重新整理後再試一次', 400); }
+    catch { throw new AppError('invalid_theme_controls', 'The theme controls are invalid. Refresh and try again.', 400); }
   }
   function readPreviewToken(body: Record<string, string | File>): string {
     const token = previewTokenInput.safeParse(formValue(body, 'previewToken'));
-    if (!token.success) throw new AppError('preview_session_expired', '預覽已過期，請重新整理編輯器', 409);
+    if (!token.success) throw new AppError('preview_session_expired', 'The preview expired. Refresh the editor.', 409);
     return token.data;
   }
   function assertOwnedPreview(blog: BlogRecord, token: string): void {
     const preview = database.getPreviewSession(hashToken(token));
-    if (!preview || preview.userId !== blog.userId || preview.blogId !== blog.id) throw new AppError('preview_session_expired', '預覽已過期，請重新整理編輯器', 409);
+    if (!preview || preview.userId !== blog.userId || preview.blogId !== blog.id) throw new AppError('preview_session_expired', 'The preview expired. Refresh the editor.', 409);
   }
   app.post('/api/theme/preview', async (c) => {
     const body = await mutationBody(c);
     const token = readPreviewToken(body);
     const { blog, theme } = themeFromBody(c, body);
     try { database.updatePreviewTheme(hashToken(token), blog.userId, blog.id, theme); }
-    catch (error) { if (error instanceof Error && error.message === 'Preview session expired or invalid') throw new AppError('preview_session_expired', '預覽已過期，請重新整理編輯器', 409); throw error; }
-    return c.json({ status: 'succeeded', message: '預覽已更新，尚未儲存' });
+    catch (error) { if (error instanceof Error && error.message === 'Preview session expired or invalid') throw new AppError('preview_session_expired', 'The preview expired. Refresh the editor.', 409); throw error; }
+    return c.json({ status: 'succeeded', message: 'Preview updated; changes are not saved' });
   });
   app.post('/actions/theme/apply', async (c) => {
     const body = await mutationBody(c);
     const { blog, theme } = themeFromBody(c, body);
     assertOwnedPreview(blog, readPreviewToken(body));
     try { database.createManualTheme(blog.userId, blog.id, theme); }
-    catch (error) { if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', '目前已有操作進行中', 409); throw error; }
+    catch (error) { if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', 'Another operation is already running.', 409); throw error; }
     return c.redirect('/editor', 303);
   });
-  app.post('/actions/theme/generate', async (c) => { const body = await mutationBody(c); const input = themeInput.safeParse({ prompt: formValue(body, 'prompt') }); if (!input.success) throw new AppError('invalid_theme_prompt', '請用 1–1000 字描述想要的樣式', 400); const { blog, theme } = themeFromBody(c, body); assertOwnedPreview(blog, readPreviewToken(body)); return enqueue(c, 'generate_theme', { ...input.data, baseTheme: theme }); });
-  app.post('/actions/theme/:id/activate', async (c) => { await mutationBody(c); const blog = ownedBlog(c); const id = uuidInput.safeParse(c.req.param('id')); if (!id.success) throw new AppError('invalid_revision', '樣式版本不存在', 404); try { database.activateTheme(id.data, blog.id); } catch (error) { if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', '目前已有操作進行中', 409); throw error; } return c.redirect('/editor', 303); });
+  app.post('/actions/theme/generate', async (c) => { const body = await mutationBody(c); const input = themeInput.safeParse({ prompt: formValue(body, 'prompt') }); if (!input.success) throw new AppError('invalid_theme_prompt', 'Describe the theme in 1–1000 characters.', 400); const { blog, theme } = themeFromBody(c, body); assertOwnedPreview(blog, readPreviewToken(body)); return enqueue(c, 'generate_theme', { ...input.data, baseTheme: theme }); });
+  app.post('/actions/theme/:id/activate', async (c) => { await mutationBody(c); const blog = ownedBlog(c); const id = uuidInput.safeParse(c.req.param('id')); if (!id.success) throw new AppError('invalid_revision', 'Theme version not found.', 404); try { database.activateTheme(id.data, blog.id); } catch (error) { if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', 'Another operation is already running.', 409); throw error; } return c.redirect('/editor', 303); });
   app.post('/actions/publish', async (c) => { const body = await mutationBody(c); return enqueue(c, 'publish', { previewToken: readPreviewToken(body) }); });
   app.post('/actions/releases/:id/activate', async (c) => {
     await mutationBody(c);
     const blog = ownedBlog(c);
     const id = uuidInput.safeParse(c.req.param('id'));
-    if (!id.success) throw new AppError('release_not_found', '發布版本不存在', 404);
+    if (!id.success) throw new AppError('release_not_found', 'Release not found.', 404);
     const release = database.getRelease(id.data, blog.id);
-    if (!release) throw new AppError('release_not_found', '發布版本不存在', 404);
+    if (!release) throw new AppError('release_not_found', 'Release not found.', 404);
     const releasesRoot = join(blogRoot(config.dataRoot, blog.userId, blog.id), 'releases');
     const artifact = await stat(release.artifact).catch(() => null);
-    if (!artifact?.isDirectory()) throw new AppError('release_unavailable', '這個發布版本的檔案已無法使用', 409);
-    await assertNoSymlinkEscape(releasesRoot, release.artifact).catch(() => { throw new AppError('release_unavailable', '這個發布版本的檔案已無法使用', 409); });
+    if (!artifact?.isDirectory()) throw new AppError('release_unavailable', 'This release artifact is unavailable.', 409);
+    await assertNoSymlinkEscape(releasesRoot, release.artifact).catch(() => { throw new AppError('release_unavailable', 'This release artifact is unavailable.', 409); });
     try { database.activateExistingRelease(release.id, blog.id); }
     catch (error) {
-      if (error instanceof Error && error.message === 'Release not found') throw new AppError('release_not_found', '發布版本不存在', 404);
-      if (error instanceof Error && error.message === 'Release already active') throw new AppError('nothing_to_restore', '這個版本已經是目前的線上版本', 409);
-      if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', '目前已有操作進行中', 409);
+      if (error instanceof Error && error.message === 'Release not found') throw new AppError('release_not_found', 'Release not found.', 404);
+      if (error instanceof Error && error.message === 'Release already active') throw new AppError('nothing_to_restore', 'This release is already live.', 409);
+      if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', 'Another operation is already running.', 409);
       throw error;
     }
     return c.redirect('/editor', 303);
@@ -293,7 +298,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get('/operations/:id', (c) => {
     const id = uuidInput.safeParse(c.req.param('id'));
     const operation = id.success ? database.getOperation(id.data, c.get('session').user.id) : null;
-    if (!operation) throw new AppError('operation_not_found', '操作不存在', 404);
+    if (!operation) throw new AppError('operation_not_found', 'Operation not found.', 404);
     const blog = database.getBlog(operation.blogId);
     return c.html(operationPage(c.get('session'), operation, blog?.draftArtifact ? '/editor' : '/onboarding'));
   });
@@ -301,7 +306,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get('/api/operations/:id', (c) => {
     const id = uuidInput.safeParse(c.req.param('id'));
     const operation = id.success ? database.getOperation(id.data, c.get('session').user.id) : null;
-    if (!operation) throw new AppError('operation_not_found', '操作不存在', 404);
+    if (!operation) throw new AppError('operation_not_found', 'Operation not found.', 404);
     return c.json({ status: operation.status, message: operationMessage(operation) });
   });
 

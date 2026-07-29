@@ -19,10 +19,10 @@ export type OperationStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type ThemeRevisionSource = 'system' | 'ai' | 'manual';
 export interface SyncedPostTag { name: string; slug: string }
 export interface SyncedPostSummary { title: string; slug: string; publishedAt: string; included: boolean; tags?: SyncedPostTag[]; updatedAt?: string; contentHash?: string }
-export interface BlogRecord { id: string; userId: string; username: string; hackmdUsername: string; title: string | null; description: string | null; author: string | null; state: BlogState; lastError: string | null; draftArtifact: string | null; contentVersion: number; contentManifest: SyncedPostSummary[] | null; lastSyncedAt: string | null; createdAt: string; updatedAt: string }
+export interface BlogRecord { id: string; userId: string; username: string; hackmdUsername: string; title: string | null; description: string | null; author: string | null; language: string; state: BlogState; lastError: string | null; draftArtifact: string | null; contentVersion: number; contentManifest: SyncedPostSummary[] | null; lastSyncedAt: string | null; createdAt: string; updatedAt: string }
 export interface ThemeRevisionRecord { id: string; blogId: string; config: ThemeConfig; prompt: string | null; description: string; source: ThemeRevisionSource; active: boolean; createdAt: string }
 export interface OperationRecord { id: string; userId: string; blogId: string; type: OperationType; status: OperationStatus; payload: Record<string, unknown>; result: Record<string, unknown> | null; errorMessage: string | null; attempts: number; createdAt: string; updatedAt: string }
-export interface ReleaseSnapshot { site: { title: string; description: string; author: string }; posts: SyncedPostSummary[] }
+export interface ReleaseSnapshot { site: { title: string; description: string; author: string; language: string }; posts: SyncedPostSummary[] }
 export interface PublishedReleaseRecord { id: string; blogId: string; themeRevisionId: string; contentVersion: number; snapshot: ReleaseSnapshot | null; artifact: string; active: boolean; createdAt: string }
 export interface PreviewSessionRecord { tokenHash: string; userId: string; blogId: string; themeConfig: ThemeConfig | null; expiresAt: string }
 export interface AiQuotaLimits { userDailyLimit: number; globalDailyLimit: number; at?: Date }
@@ -31,6 +31,7 @@ export interface BlogStorageReference { userId: string; blogId: string; draftArt
 export class AiQuotaExceededError extends Error { constructor(readonly retryAfter: number) { super('AI daily quota exceeded'); this.name = 'AiQuotaExceededError'; } }
 
 export const MAX_OPERATION_ATTEMPTS = 3;
+export const MAX_PUBLISHED_RELEASES = 20;
 
 const now = () => new Date().toISOString();
 const parseObject = (value: string) => JSON.parse(value) as Record<string, unknown>;
@@ -45,7 +46,7 @@ const syncedPostSummarySchema = z.object({
 });
 const contentManifestSchema = z.array(syncedPostSummarySchema);
 const releaseSnapshotSchema = z.object({
-  site: z.object({ title: z.string().min(1), description: z.string(), author: z.string().min(1) }),
+  site: z.object({ title: z.string().min(1), description: z.string(), author: z.string().min(1), language: z.string().default('zh-Hant') }),
   posts: contentManifestSchema,
 });
 const mapBlog = (row: typeof schema.blogs.$inferSelect): BlogRecord => ({ ...row, contentManifest: row.contentManifest ? contentManifestSchema.parse(JSON.parse(row.contentManifest)) : null });
@@ -91,22 +92,21 @@ export class AppDatabase {
   }
   close(): void { this.connection.close(); }
 
-  consumeInviteAttempt(ip: string, at = new Date()): boolean {
-    const key = `invite:${ip}`;
+  consumeRateLimit(key: string, limit: number, windowSeconds: number, at = new Date()): boolean {
     const timestamp = Math.floor(at.getTime() / 1000);
     return this.db.transaction((tx) => {
       const row = tx.select().from(schema.rateLimit).where(eq(schema.rateLimit.key, key)).get();
-      const expired = !row || timestamp - row.lastRequest >= 3600;
+      const expired = !row || timestamp - row.lastRequest >= windowSeconds;
       const count = expired ? 1 : row.count + 1;
       if (!row) tx.insert(schema.rateLimit).values({ id: randomUUID(), key, count, lastRequest: timestamp }).run();
       else tx.update(schema.rateLimit).set({ count, lastRequest: expired ? timestamp : row.lastRequest }).where(eq(schema.rateLimit.key, key)).run();
-      return count <= 3;
+      return count <= limit;
     }, { behavior: 'immediate' });
   }
 
-  createBlog(userId: string, username: string, hackmdUsername: string): { blog: BlogRecord; operation: OperationRecord } {
+  createBlog(userId: string, username: string, hackmdUsername: string, language = 'en'): { blog: BlogRecord; operation: OperationRecord } {
     const timestamp = now();
-    const blog: BlogRecord = { id: randomUUID(), userId, username, hackmdUsername, title: null, description: null, author: null, state: 'syncing', lastError: null, draftArtifact: null, contentVersion: 0, contentManifest: null, lastSyncedAt: null, createdAt: timestamp, updatedAt: timestamp };
+    const blog: BlogRecord = { id: randomUUID(), userId, username, hackmdUsername, title: null, description: null, author: null, language, state: 'syncing', lastError: null, draftArtifact: null, contentVersion: 0, contentManifest: null, lastSyncedAt: null, createdAt: timestamp, updatedAt: timestamp };
     const operation = this.newOperation(userId, blog.id, 'sync', { intent: 'content', excludedSlugs: [] });
     return this.db.transaction((tx) => {
       tx.insert(schema.blogs).values({ ...blog, contentManifest: null }).run();
@@ -118,7 +118,7 @@ export class AppDatabase {
   getBlogForUser(userId: string): BlogRecord | null { const row = this.db.select().from(schema.blogs).where(eq(schema.blogs.userId, userId)).get(); return row ? mapBlog(row) : null; }
   getBlog(id: string): BlogRecord | null { const row = this.db.select().from(schema.blogs).where(eq(schema.blogs.id, id)).get(); return row ? mapBlog(row) : null; }
   getBlogByUsername(username: string): BlogRecord | null { const row = this.db.select().from(schema.blogs).where(eq(schema.blogs.username, username)).get(); return row ? mapBlog(row) : null; }
-  retryInitialSync(userId: string, hackmdUsername: string): OperationRecord {
+  retryInitialSync(userId: string, hackmdUsername: string, language: string): OperationRecord {
     return this.db.transaction((tx) => {
       const blog = tx.select().from(schema.blogs).where(eq(schema.blogs.userId, userId)).get();
       if (!blog) throw new Error('Blog not found');
@@ -126,12 +126,12 @@ export class AppDatabase {
       const active = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blog.id), inArray(schema.operations.status, ['queued', 'running']))).get();
       if (active) throw new Error('Blog already has an active operation');
       const operation = this.newOperation(userId, blog.id, 'sync', { intent: 'content', excludedSlugs: [] });
-      tx.update(schema.blogs).set({ hackmdUsername, state: 'syncing', lastError: null, updatedAt: now() }).where(eq(schema.blogs.id, blog.id)).run();
+      tx.update(schema.blogs).set({ hackmdUsername, language, state: 'syncing', lastError: null, updatedAt: now() }).where(eq(schema.blogs.id, blog.id)).run();
       tx.insert(schema.operations).values({ ...operation, payload: JSON.stringify(operation.payload), result: null }).run();
       return operation;
     }, { behavior: 'immediate' });
   }
-  completeSync(blogId: string, metadata: { title: string; description: string; author: string; draftArtifact: string; contentManifest?: SyncedPostSummary[]; lastSyncedAt?: string }): void {
+  completeSync(blogId: string, metadata: { title: string; description: string; author: string; language?: string; draftArtifact: string; contentManifest?: SyncedPostSummary[]; lastSyncedAt?: string }): void {
     const timestamp = metadata.lastSyncedAt ?? now();
     const contentManifest = contentManifestSchema.parse(metadata.contentManifest ?? [])
       .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt) || left.slug.localeCompare(right.slug));
@@ -141,7 +141,7 @@ export class AppDatabase {
   }
   failSync(blogId: string, message: string): void { const blog = this.getBlog(blogId); this.db.update(schema.blogs).set({ state: blog?.draftArtifact ? 'ready' : 'failed', lastError: message, updatedAt: now() }).where(eq(schema.blogs.id, blogId)).run(); }
 
-  completeSyncOperation(operationId: string, metadata: { title: string; description: string; author: string; draftArtifact: string; contentManifest?: SyncedPostSummary[]; lastSyncedAt?: string }, result: Record<string, unknown>): void {
+  completeSyncOperation(operationId: string, metadata: { title: string; description: string; author: string; language?: string; draftArtifact: string; contentManifest?: SyncedPostSummary[]; lastSyncedAt?: string }, result: Record<string, unknown>): void {
     const timestamp = metadata.lastSyncedAt ?? now();
     const contentManifest = contentManifestSchema.parse(metadata.contentManifest ?? [])
       .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt) || left.slug.localeCompare(right.slug));
@@ -205,7 +205,7 @@ export class AppDatabase {
       const normalizedPayload = { ...parsed, excludedSlugs };
       if (parsed.intent === 'identity') {
         const site = parsed.site;
-        if (site?.title === blog.title && site.description === (blog.description ?? '')) throw new Error('Nothing to update');
+        if (site?.title === blog.title && site.description === (blog.description ?? '') && site.language === blog.language) throw new Error('Nothing to update');
       }
       if (parsed.intent === 'selection') {
         if (!manifest?.length) throw new Error('Article selection unavailable');
@@ -324,6 +324,30 @@ export class AppDatabase {
   }
   getActiveRelease(blogId: string): PublishedReleaseRecord | null { const row = this.db.select().from(schema.publishedReleases).where(and(eq(schema.publishedReleases.blogId, blogId), eq(schema.publishedReleases.active, true))).get(); return row ? mapRelease(row) : null; }
   listReleases(blogId: string): PublishedReleaseRecord[] { return this.db.select().from(schema.publishedReleases).where(eq(schema.publishedReleases.blogId, blogId)).orderBy(desc(schema.publishedReleases.createdAt)).all().map(mapRelease); }
+  prunePublishedReleases(blogId?: string): number {
+    const blogIds = blogId
+      ? [blogId]
+      : this.db.selectDistinct({ blogId: schema.publishedReleases.blogId }).from(schema.publishedReleases).all().map((row) => row.blogId);
+    return this.db.transaction((tx) => {
+      let removed = 0;
+      for (const id of blogIds) {
+        const releases = tx.select({ id: schema.publishedReleases.id, active: schema.publishedReleases.active })
+          .from(schema.publishedReleases)
+          .where(eq(schema.publishedReleases.blogId, id))
+          .orderBy(desc(schema.publishedReleases.createdAt), desc(schema.publishedReleases.id))
+          .all();
+        const kept = new Set<string>();
+        const active = releases.find((release) => release.active);
+        if (active) kept.add(active.id);
+        for (const release of releases) {
+          if (!release.active && kept.size < MAX_PUBLISHED_RELEASES) kept.add(release.id);
+        }
+        const expired = releases.filter((release) => !kept.has(release.id)).map((release) => release.id);
+        if (expired.length > 0) removed += Number(tx.delete(schema.publishedReleases).where(inArray(schema.publishedReleases.id, expired)).run().changes);
+      }
+      return removed;
+    }, { behavior: 'immediate' });
+  }
   getRelease(id: string, blogId: string): PublishedReleaseRecord | null { const row = this.db.select().from(schema.publishedReleases).where(and(eq(schema.publishedReleases.id, id), eq(schema.publishedReleases.blogId, blogId))).get(); return row ? mapRelease(row) : null; }
   activateExistingRelease(id: string, blogId: string): PublishedReleaseRecord {
     return this.db.transaction((tx) => {

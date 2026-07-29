@@ -13,7 +13,7 @@ import { createReleaseSnapshot } from '../src/publication-diff.js';
 const roots: string[] = [];
 async function setup() {
   const root = await mkdtemp(join(tmpdir(), 'vibelog-app-')); roots.push(root);
-  const config: AppConfig = { nodeEnv: 'test', dataRoot: root, appOrigin: 'http://app.localtest.me:3000', appHostname: 'app.localtest.me', previewOrigin: 'http://preview.app.localtest.me:3000', betterAuthSecret: 'a'.repeat(32), betaInviteDigest: createHash('sha256').update('invite-code-with-24-characters').digest(), aiUserDailyLimit: 20, aiGlobalDailyLimit: 200, aiProvider: 'openai', aiModel: 'gpt-4o-mini', secureCookies: false };
+  const config: AppConfig = { dataRoot: root, appOrigin: 'http://app.localtest.me:3000', appHostname: 'app.localtest.me', previewOrigin: 'http://preview.app.localtest.me:3000', betterAuthSecret: 'a'.repeat(32), betaInviteDigest: createHash('sha256').update('invite-code-with-24-characters').digest(), aiUserDailyLimit: 20, aiGlobalDailyLimit: 200, aiProvider: 'openai', aiModel: 'gpt-4o-mini', secureCookies: false };
   const database = new AppDatabase(root); return { ...createApp({ config, database }), config, root };
 }
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -38,6 +38,50 @@ async function register(app: ReturnType<typeof createApp>['app'], username: stri
 }
 
 describe('hosted app boundaries', () => {
+  it('shows the public landing page and keeps the management UI in English', async () => {
+    const { app, database } = await setup();
+    const response = await app.request('http://app.localtest.me:3000/', { headers: { host: 'app.localtest.me:3000' } });
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(html).toContain('Keep writing in HackMD');
+    expect(html).toContain('Ship a fast static blog');
+    expect(html).toContain('Preview and roll back safely');
+    expect(html).toContain('<html lang="en">');
+    database.close();
+  });
+
+  it('accepts 64 KiB request bodies and rejects larger declared or streamed bodies', async () => {
+    const { app, database } = await setup();
+    const url = 'http://app.localtest.me:3000/auth/login';
+    const baseHeaders = { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', 'content-type': 'application/octet-stream' };
+    const atLimit = 'a'.repeat(64 * 1024);
+    const accepted = await app.request(url, { method: 'POST', headers: { ...baseHeaders, 'content-length': String(atLimit.length) }, body: atLimit });
+    expect(accepted.status).not.toBe(413);
+
+    const oversized = 'a'.repeat(64 * 1024 + 1);
+    const declared = await app.request(url, { method: 'POST', headers: { ...baseHeaders, 'content-length': String(oversized.length) }, body: oversized });
+    expect(declared.status).toBe(413);
+    expect(await declared.json()).toMatchObject({ error: { code: 'payload_too_large' } });
+
+    const streamed = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(32 * 1024));
+        controller.enqueue(new Uint8Array(32 * 1024 + 1));
+        controller.close();
+      },
+    });
+    const chunkedRequest = new Request(url, {
+      method: 'POST',
+      headers: baseHeaders,
+      body: streamed,
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' });
+    const chunked = await app.request(chunkedRequest);
+    expect(chunked.status).toBe(413);
+    expect(await chunked.json()).toMatchObject({ error: { code: 'payload_too_large' } });
+    database.close();
+  });
+
   it('serves the compiled admin stylesheet under a strict self-only CSP', async () => {
     const { app, database } = await setup();
     const page = await app.request('http://app.localtest.me:3000/auth/login', { headers: { host: 'app.localtest.me:3000' } });
@@ -109,8 +153,8 @@ describe('hosted app boundaries', () => {
 
     const editor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
     const editorHtml = await editor.text();
-    expect(editorHtml).toContain('發布紀錄（2）'); expect(editorHtml).toContain('Second release theme'); expect(editorHtml).toContain('目前線上'); expect(editorHtml).not.toContain(artifactA);
-    expect(editorHtml).toContain('此線上版本建立於差異追蹤前');
+    expect(editorHtml).toContain('Release history (2/20)'); expect(editorHtml).toContain('Second release theme'); expect(editorHtml).toContain('Live now'); expect(editorHtml).not.toContain(artifactA);
+    expect(editorHtml).toContain('predates change tracking');
 
     const publicB = await app.request('http://rollback.app.localtest.me:3000/', { headers: { host: 'rollback.app.localtest.me:3000' } });
     const etagB = publicB.headers.get('etag'); if (!etagB) throw new Error('Release ETag missing');
@@ -148,7 +192,7 @@ describe('hosted app boundaries', () => {
     const publicA = await app.request('http://rollback.app.localtest.me:3000/', { headers: { host: 'rollback.app.localtest.me:3000', 'if-none-match': etagB } });
     expect(publicA.status).toBe(200); expect(publicA.headers.get('etag')).not.toBe(etagB); expect(await publicA.text()).toContain('Release A');
     const restoredEditor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
-    expect(await restoredEditor.text()).toContain('有未發布變更');
+    expect(await restoredEditor.text()).toContain('Unpublished changes');
     expect((await restore(releaseB.id)).status).toBe(303); expect(database.getActiveRelease(blog.id)?.id).toBe(releaseB.id);
     database.close();
   });
@@ -180,9 +224,9 @@ describe('hosted app boundaries', () => {
 
     const editor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
     const html = await editor.text();
-    expect(html).toContain('這次會發布');
-    expect(html).toContain('新增 1'); expect(html).toContain('更新 1'); expect(html).toContain('移除 1');
-    expect(html).toContain('Blog 資訊：標題、描述、作者已變更');
+    expect(html).toContain('This release includes');
+    expect(html).toContain('Added 1'); expect(html).toContain('Updated 1'); expect(html).toContain('Removed 1');
+    expect(html).toContain('Blog title, description, author changed');
     expect(html).toContain('Changed article'); expect(html).toContain('Removed article'); expect(html).toContain('Added article');
     expect(html).toContain(`${firstTheme.description} → New theme`);
     expect(html).not.toContain(oldDigest); expect(html).not.toContain(newDigest);
@@ -191,49 +235,49 @@ describe('hosted app boundaries', () => {
     if (!currentDraft || !currentTheme) throw new Error('Updated fixture missing');
     const currentRelease = database.activateRelease(blog.id, currentTheme.id, currentDraft.contentVersion, '/tmp/new-release', createReleaseSnapshot(currentDraft));
     const synced = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
-    expect(await synced.text()).toContain('目前沒有待發布變更');
+    expect(await synced.text()).toContain('There are no unpublished changes');
     database.activateExistingRelease(oldRelease.id, blog.id);
     const rolledBack = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
-    expect(await rolledBack.text()).toContain('新增 1');
+    expect(await rolledBack.text()).toContain('Added 1');
     expect(database.getRelease(currentRelease.id, blog.id)?.snapshot?.site.title).toBe('New title');
     database.close();
   });
   it('lets a user repair the initial HackMD source but locks it after successful sync', async () => {
     const { app, database } = await setup(); const auth = await register(app, 'recover');
     const headers = { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', cookie: auth.cookie, accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' };
-    const first = await app.request('http://app.localtest.me:3000/actions/blog/connect', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, hackmdUsername: 'missing-source' }) });
+    const first = await app.request('http://app.localtest.me:3000/actions/blog/connect', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, hackmdUsername: 'missing-source', language: 'en' }) });
     expect(first.status).toBe(202);
     const blog = database.getBlogForUser((await (await app.request('http://app.localtest.me:3000/api/session', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } })).json() as { user: { id: string } }).user.id);
     if (!blog) throw new Error('Blog missing');
     const active = database.getActiveOperation(blog.id, blog.userId); if (!active) throw new Error('Operation missing');
     const queued = await app.request(`http://app.localtest.me:3000/api/operations/${active.id}`, { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
-    expect(await queued.json()).toMatchObject({ status: 'queued', message: '正在等待同步…' });
+    expect(await queued.json()).toMatchObject({ status: 'queued', message: 'Waiting to sync…' });
     const statusPage = await app.request(`http://app.localtest.me:3000/operations/${active.id}`, { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
-    expect(await statusPage.text()).toContain('重新整理狀態');
+    expect(await statusPage.text()).toContain('Refresh status');
     database.claimNextOperation();
     const running = await app.request(`http://app.localtest.me:3000/api/operations/${active.id}`, { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
-    expect(await running.json()).toMatchObject({ status: 'running', message: '正在讀取 HackMD 並建立預覽…' });
-    database.failOperation(active.id, '找不到這個公開 HackMD 使用者'); database.failSync(blog.id, '找不到這個公開 HackMD 使用者');
+    expect(await running.json()).toMatchObject({ status: 'running', message: 'Reading HackMD and building the preview…' });
+    database.failOperation(active.id, 'HackMD user not found'); database.failSync(blog.id, 'HackMD user not found');
     const onboarding = await app.request('http://app.localtest.me:3000/onboarding', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
     expect(onboarding.status).toBe(200); expect(await onboarding.text()).toContain('missing-source');
-    const retry = await app.request('http://app.localtest.me:3000/actions/blog/connect', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, hackmdUsername: 'correct-source' }) });
+    const retry = await app.request('http://app.localtest.me:3000/actions/blog/connect', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, hackmdUsername: 'correct-source', language: 'en' }) });
     expect(retry.status).toBe(202); expect(database.getBlog(blog.id)?.hackmdUsername).toBe('correct-source');
     const retryOperation = database.getActiveOperation(blog.id, blog.userId); if (!retryOperation) throw new Error('Retry operation missing');
     database.completeOperation(retryOperation.id); database.completeSync(blog.id, { title: 'Recovered', description: '', author: 'Recover', draftArtifact: '/tmp/draft' });
     expect((await app.request('http://app.localtest.me:3000/onboarding', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } })).status).toBe(302);
     const unpublished = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
-    expect(await unpublished.text()).toContain('尚未發布');
-    const locked = await app.request('http://app.localtest.me:3000/actions/blog/connect', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, hackmdUsername: 'another-source' }) });
+    expect(await unpublished.text()).toContain('Not published');
+    const locked = await app.request('http://app.localtest.me:3000/actions/blog/connect', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, hackmdUsername: 'another-source', language: 'en' }) });
     expect(locked.status).toBe(409); expect(await locked.json()).toMatchObject({ error: { code: 'source_locked' } });
     const syncedBlog = database.getBlog(blog.id); const liveTheme = database.getActiveTheme(blog.id); if (!syncedBlog || !liveTheme) throw new Error('Synced fixture missing');
     database.activateRelease(blog.id, liveTheme.id, syncedBlog.contentVersion, '/tmp/release', snapshotFor(database, blog.id));
     const live = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
-    const liveHtml = await live.text(); expect(liveHtml).toContain('已與線上版本同步');
+    const liveHtml = await live.text(); expect(liveHtml).toContain('Live version is current');
     const redundant = await app.request('http://app.localtest.me:3000/actions/publish', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, previewToken: previewToken(liveHtml) }) });
     expect(redundant.status).toBe(409); expect(await redundant.json()).toMatchObject({ error: { code: 'nothing_to_publish' } });
     database.createTheme(blog.id, { ...DEFAULT_THEME, description: 'Unpublished theme' }, 'change');
     const pending = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
-    expect(await pending.text()).toContain('有未發布變更');
+    expect(await pending.text()).toContain('Unpublished changes');
     database.close();
   });
 
@@ -251,28 +295,28 @@ describe('hosted app boundaries', () => {
     });
     const editor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
     const html = await editor.text();
-    expect(html).toContain('Blog 資訊'); expect(html).toContain('已匯入文章（2）'); expect(html.indexOf('Newest article')).toBeLessThan(html.indexOf('Older article'));
-    expect(html).toContain('2026-07-20T10:00:00.000Z'); expect(html).toContain('Writing'); expect(html).toContain('更新於'); expect(html).not.toContain('private body');
+    expect(html).toContain('Blog details'); expect(html).toContain('Imported articles (2)'); expect(html.indexOf('Newest article')).toBeLessThan(html.indexOf('Older article'));
+    expect(html).toContain('2026-07-20T10:00:00.000Z'); expect(html).toContain('Writing'); expect(html).toContain('Updated'); expect(html).not.toContain('private body');
     expect(html).not.toContain('name="tags"');
 
     const headers = { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', cookie: auth.cookie, accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' };
-    const invalid = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: '', description: 'Description' }) });
+    const invalid = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: '', description: 'Description', language: 'en' }) });
     expect(invalid.status).toBe(400); expect(await invalid.json()).toMatchObject({ error: { code: 'invalid_blog_identity' } });
-    const invalidOrigin = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers: { ...headers, origin: 'http://evil.example' }, body: form({ csrfToken: auth.csrfToken, title: 'New title', description: 'New description' }) });
+    const invalidOrigin = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers: { ...headers, origin: 'http://evil.example' }, body: form({ csrfToken: auth.csrfToken, title: 'New title', description: 'New description', language: 'en' }) });
     expect(invalidOrigin.status).toBe(403); expect(await invalidOrigin.json()).toMatchObject({ error: { code: 'invalid_origin' } });
-    const invalidCsrf = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: 'wrong', title: 'New title', description: 'New description' }) });
+    const invalidCsrf = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: 'wrong', title: 'New title', description: 'New description', language: 'en' }) });
     expect(invalidCsrf.status).toBe(403); expect(await invalidCsrf.json()).toMatchObject({ error: { code: 'invalid_csrf_token' } });
 
-    const accepted = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: '  New title  ', description: '  New description  ' }) });
+    const accepted = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: '  New title  ', description: '  New description  ', language: 'en-US' }) });
     expect(accepted.status).toBe(202);
     const active = database.getActiveOperation(blog.id, blog.userId); if (!active) throw new Error('Identity operation missing');
-    expect(active.payload).toEqual({ intent: 'identity', site: { title: 'New title', description: 'New description' }, excludedSlugs: [] });
-    expect((await (await app.request(`http://app.localtest.me:3000/api/operations/${active.id}`, { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } })).json() as { message: string }).message).toBe('正在等待更新 Blog 資訊…');
-    const concurrent = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: 'Another title', description: '' }) });
+    expect(active.payload).toEqual({ intent: 'identity', site: { title: 'New title', description: 'New description', language: 'en-US' }, excludedSlugs: [] });
+    expect((await (await app.request(`http://app.localtest.me:3000/api/operations/${active.id}`, { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } })).json() as { message: string }).message).toBe('Waiting to update blog details…');
+    const concurrent = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: 'Another title', description: '', language: 'en' }) });
     expect(concurrent.status).toBe(409); expect(await concurrent.json()).toMatchObject({ error: { code: 'operation_in_progress' } });
     database.completeOperation(active.id);
-    database.completeSync(blog.id, { title: 'New title', description: 'New description', author: 'Writer', draftArtifact: '/tmp/new-identity-draft' });
-    const unchanged = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: 'New title', description: 'New description' }) });
+    database.completeSync(blog.id, { title: 'New title', description: 'New description', author: 'Writer', language: 'en-US', draftArtifact: '/tmp/new-identity-draft' });
+    const unchanged = await app.request('http://app.localtest.me:3000/actions/blog/identity', { method: 'POST', headers, body: form({ csrfToken: auth.csrfToken, title: 'New title', description: 'New description', language: 'en-US' }) });
     expect(unchanged.status).toBe(409); expect(await unchanged.json()).toMatchObject({ error: { code: 'nothing_to_update' } });
     database.close();
   });
@@ -291,7 +335,7 @@ describe('hosted app boundaries', () => {
     });
     const editor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
     const html = await editor.text();
-    expect(html).toContain('已匯入文章（2） · 已選取 2');
+    expect(html).toContain('Imported articles (2) · 2 selected');
     expect(html).toContain('action="/actions/blog/selection"');
     expect(html).toContain('name="article:newest"');
 
@@ -312,7 +356,7 @@ describe('hosted app boundaries', () => {
     expect(accepted.status).toBe(202);
     const active = database.getActiveOperation(blog.id, blog.userId); if (!active) throw new Error('Selection operation missing');
     expect(active.payload).toEqual({ intent: 'selection', excludedSlugs: ['older'] });
-    expect((await (await app.request(`http://app.localtest.me:3000/api/operations/${active.id}`, { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } })).json() as { message: string }).message).toBe('正在等待更新文章選擇…');
+    expect((await (await app.request(`http://app.localtest.me:3000/api/operations/${active.id}`, { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } })).json() as { message: string }).message).toBe('Waiting to update article selection…');
     database.close();
   });
 
@@ -324,12 +368,12 @@ describe('hosted app boundaries', () => {
     database.completeSync(blog.id, { title: 'Studio', description: '', author: 'Studio', draftArtifact: '/tmp/studio-draft' });
     const editor = await app.request('http://app.localtest.me:3000/editor', { headers: { host: 'app.localtest.me:3000', cookie: auth.cookie } });
     const html = await editor.text(); const token = previewToken(html);
-    expect(html).toContain('Theme Studio'); expect(html).toContain('更像一本克制的獨立雜誌'); expect(html.match(/name="palette"/g)).toHaveLength(6);
+    expect(html).toContain('Theme Studio'); expect(html).toContain('A restrained independent magazine'); expect(html.match(/name="palette"/g)).toHaveLength(6);
     expect(html).toContain('name="headerStyle"'); expect(html).toContain('name="postListStyle"'); expect(html).toContain('name="codeBlockStyle"');
     const headers = { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', cookie: auth.cookie, accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' };
     const values = { csrfToken: auth.csrfToken, previewToken: token, ...studioControls };
     const preview = await app.request('http://app.localtest.me:3000/api/theme/preview', { method: 'POST', headers, body: form(values) });
-    expect(preview.status).toBe(200); expect(await preview.json()).toMatchObject({ status: 'succeeded', message: '預覽已更新，尚未儲存' });
+    expect(preview.status).toBe(200); expect(await preview.json()).toMatchObject({ status: 'succeeded', message: 'Preview updated; changes are not saved' });
     expect(database.listThemes(blog.id)).toHaveLength(1);
     const access = await app.request(`http://preview.app.localtest.me:3000/preview-access/${token}`, { headers: { host: 'preview.app.localtest.me:3000' } });
     const previewCookie = access.headers.get('set-cookie')?.match(/vibelog_preview=[^;]+/)?.[0]; if (!previewCookie) throw new Error('Preview cookie missing');

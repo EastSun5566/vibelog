@@ -4,6 +4,7 @@ import { getCollection, render } from "astro:content";
 import PostList from "../components/PostList.astro";
 import SiteLayout from "../layouts/SiteLayout.astro";
 import { SITE_DESCRIPTION, SITE_TITLE } from "../consts";
+import { text } from "../localization";
 
 const posts = (await getCollection("blog")).sort(
   (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
@@ -22,8 +23,8 @@ const { Content: AuthorBio } = await render(author);
 
   <section class="latest-posts" aria-labelledby="latest-posts-heading">
     <div class="section-heading">
-      <h2 id="latest-posts-heading">最新文章</h2>
-      <a class="all-posts-link" href="/blog">查看所有文章</a>
+      <h2 id="latest-posts-heading">{text.latestPosts}</h2>
+      <a class="all-posts-link" href="/blog">{text.viewAllPosts}</a>
     </div>
     <PostList posts={posts.slice(0, 5)} headingLevel="h3" />
   </section>

@@ -54,18 +54,12 @@ export function createAuth(database: AppDatabase, config: AppConfig) {
       expiresIn: SESSION_TTL_SECONDS,
       updateAge: 0,
     },
-    rateLimit: {
-      enabled: true,
-      storage: 'database',
-      customRules: {
-        '/sign-up/email': { window: 60 * 60, max: 3 },
-        '/sign-in/username': { window: 10 * 60, max: 10 },
-        '/change-password': { window: 10 * 60, max: 5 },
-      },
-    },
+    // Render's trusted client-IP header has not been verified yet. Route-level
+    // account/global limits live in AppDatabase so raw forwarding headers are
+    // never treated as an identity boundary.
+    rateLimit: { enabled: false },
     advanced: {
       database: { generateId: 'uuid' },
-      ipAddress: { ipAddressHeaders: ['x-forwarded-for'] },
       cookiePrefix: 'vibelog',
       defaultCookieAttributes: {
         httpOnly: true,

@@ -52,6 +52,16 @@ textarea { resize: vertical; }
 .auth-kicker, .workspace-kicker, .preview-label { margin: 0; color: var(--muted-foreground); font: 700 0.72rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.11em; text-transform: uppercase; }
 .auth-shell h1, .workspace-title { letter-spacing: -0.045em; text-wrap: balance; }
 
+.landing { width: min(100%, 68rem); margin: clamp(3rem, 10vh, 8rem) auto 0; }
+.landing-hero { max-width: 48rem; }
+.landing h1 { max-width: 16ch; margin: 0.8rem 0 1rem; font-size: clamp(2.8rem, 8vw, 5.8rem); line-height: 0.95; letter-spacing: -0.065em; text-wrap: balance; }
+.landing-intro { max-width: 46rem; margin: 0; color: var(--muted-foreground); font-size: clamp(1.05rem, 2vw, 1.3rem); }
+.landing-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-block-start: 1.5rem; }
+.landing-actions .btn { min-width: 8rem; }
+.landing-points { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: clamp(3rem, 8vh, 6rem) 0 0; padding: 1px; list-style: none; background: var(--border); }
+.landing-points li { display: grid; gap: 0.45rem; padding: 1.25rem; background: var(--card); }
+.landing-points span { color: var(--muted-foreground); }
+
 .card { border: 1px solid var(--border); background: var(--card); box-shadow: 0 1px 2px rgb(23 32 51 / 0.035); }
 .card > header { gap: 0.35rem; padding: 1rem 1rem 0; }
 .card > header h1, .card > header h2, .card > header h3, .card > header p { margin: 0; }
@@ -169,6 +179,7 @@ textarea { resize: vertical; }
   .editor { grid-template-columns: 1fr; }
   .preview-panel { position: static; }
   .preview { min-height: 65vh; }
+  .landing-points { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 36rem) {

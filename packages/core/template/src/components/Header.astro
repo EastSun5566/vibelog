@@ -2,6 +2,7 @@
 import HeaderLink from "./HeaderLink.astro";
 
 import { SITE_TITLE } from "../consts";
+import { text } from "../localization";
 
 interface Props {
   hasTags?: boolean;
@@ -11,12 +12,12 @@ const { hasTags = false } = Astro.props;
 ---
 
 <header class="site-header">
-  <nav aria-label="主要導覽">
+  <nav aria-label={text.primaryNavigation}>
     <a class="site-title" href="/">{SITE_TITLE}</a>
     <ul class="site-nav-links" role="list">
-      <li><HeaderLink href="/">首頁</HeaderLink></li>
-      <li><HeaderLink href="/blog">文章</HeaderLink></li>
-      {hasTags && <li><HeaderLink href="/tags">主題</HeaderLink></li>}
+      <li><HeaderLink href="/">{text.home}</HeaderLink></li>
+      <li><HeaderLink href="/blog">{text.posts}</HeaderLink></li>
+      {hasTags && <li><HeaderLink href="/tags">{text.tags}</HeaderLink></li>}
     </ul>
   </nav>
 </header>

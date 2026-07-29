@@ -36,6 +36,13 @@
       "when": 1784776605523,
       "tag": "0004_release_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1785175730453,
+      "tag": "0005_misty_lord_tyger",
+      "breakpoints": true
     }
   ]
 }

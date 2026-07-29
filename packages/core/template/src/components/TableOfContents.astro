@@ -1,4 +1,6 @@
 ---
+import { text } from "../localization";
+
 interface Heading {
   depth: number;
   slug: string;
@@ -30,9 +32,9 @@ for (const heading of headings) {
 }
 ---
 
-<nav class="table-of-contents" aria-label="文章目錄">
+<nav class="table-of-contents" aria-label={text.tableOfContents}>
   <details open>
-    <summary>文章目錄</summary>
+    <summary>{text.tableOfContents}</summary>
     <ol class="table-of-contents-list">
       {
         items.map(({ heading, children }) => (

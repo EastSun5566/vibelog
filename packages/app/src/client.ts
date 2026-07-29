@@ -39,8 +39,8 @@ const poll = async (url, statusNode, successUrl = '/editor') => {
   while (true) {
     const response = await fetch(url, { headers: { accept: 'application/json' }, credentials: 'same-origin' });
     const payload = await readPayload(response);
-    if (!response.ok) throw new Error(payload.error?.message ?? '無法讀取進度');
-    showStatus(statusNode, payload.message ?? '處理中，請稍候…', payload.status === 'failed');
+    if (!response.ok) throw new Error(payload.error?.message ?? 'Could not read progress');
+    showStatus(statusNode, payload.message ?? 'Working…', payload.status === 'failed');
     if (payload.status === 'succeeded') {
       await sleep(500);
       window.location.assign(successUrl);
@@ -62,20 +62,20 @@ for (const form of document.querySelectorAll('form[data-operation]')) {
     const buttonLabel = button?.textContent;
     form.setAttribute('aria-busy', 'true');
     for (const item of buttons) item.disabled = true;
-    if (button) button.textContent = '處理中…';
-    showStatus(statusNode, '已送出，正在處理…');
+    if (button) button.textContent = 'Working…';
+    showStatus(statusNode, 'Submitted and waiting…');
     const action = button?.hasAttribute('formaction') ? button.formAction : form.action;
     void fetch(action, { method: 'POST', body: new FormData(form), headers: { accept: 'application/json' }, credentials: 'same-origin' })
       .then(async (response) => {
         const payload = await readPayload(response);
-        if (!response.ok || !payload.pollUrl) throw new Error(payload.error?.message ?? '無法開始操作');
+        if (!response.ok || !payload.pollUrl) throw new Error(payload.error?.message ?? 'Could not start the operation');
         await poll(payload.pollUrl, statusNode, form.dataset.successUrl ?? '/editor');
       })
-      .catch((error) => showStatus(statusNode, error instanceof Error ? error.message : '操作失敗，請再試一次', true))
+      .catch((error) => showStatus(statusNode, error instanceof Error ? error.message : 'The operation failed. Please try again.', true))
       .finally(() => {
         form.removeAttribute('aria-busy');
         for (const item of buttons) item.disabled = false;
-        if (button) button.textContent = buttonLabel ?? '送出';
+        if (button) button.textContent = buttonLabel ?? 'Submit';
       });
   });
 }
@@ -103,15 +103,15 @@ if (studio) {
   const updatePreview = async () => {
     previewRequest?.abort();
     previewRequest = new AbortController();
-    showStatus(statusNode, '正在更新預覽…');
+    showStatus(statusNode, 'Updating preview…');
     try {
       const response = await fetch('/api/theme/preview', {
         method: 'POST', body: new FormData(studio), headers: { accept: 'application/json' },
         credentials: 'same-origin', signal: previewRequest.signal,
       });
       const payload = await readPayload(response);
-      if (!response.ok) throw new Error(payload.error?.message ?? '無法更新預覽');
-      showStatus(statusNode, payload.message ?? '預覽已更新，尚未儲存');
+      if (!response.ok) throw new Error(payload.error?.message ?? 'Could not update the preview');
+      showStatus(statusNode, payload.message ?? 'Preview updated; changes are not saved');
       if (preview?.dataset.previewUrl) {
         const url = new URL(preview.dataset.previewUrl);
         url.searchParams.set('theme', String(Date.now()));
@@ -119,7 +119,7 @@ if (studio) {
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      showStatus(statusNode, error instanceof Error ? error.message : '無法更新預覽', true);
+      showStatus(statusNode, error instanceof Error ? error.message : 'Could not update the preview', true);
     }
   };
 
@@ -145,6 +145,6 @@ if (studio) {
 for (const statusNode of document.querySelectorAll('[data-poll-url]')) {
   if (statusNode.dataset.pollUrl) void poll(statusNode.dataset.pollUrl, statusNode, statusNode.dataset.successUrl ?? '/editor')
     .then((status) => { if (status === 'failed') unlockForm(statusNode); })
-    .catch((error) => { showStatus(statusNode, error instanceof Error ? error.message : '無法讀取進度', true); unlockForm(statusNode); });
+    .catch((error) => { showStatus(statusNode, error instanceof Error ? error.message : 'Could not read progress', true); unlockForm(statusNode); });
 }
 `;

@@ -26,13 +26,6 @@ export function requestContext(): MiddlewareHandler<{ Variables: AppVariables }>
   };
 }
 
-export function requestMatchesOrigin(requestUrl: string, expectedOrigin: string): boolean {
-  const request = new URL(requestUrl);
-  const expected = new URL(expectedOrigin);
-  if (request.origin === expected.origin) return true;
-  return request.protocol === 'http:' && expected.protocol === 'https:' && request.host === expected.host;
-}
-
 export function assertMutationOrigin(c: Context, config: AppConfig): void {
   const origin = c.req.header('origin');
   if (!origin || origin !== config.appOrigin) {

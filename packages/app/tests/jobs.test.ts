@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ContentSourceName, DEFAULT_THEME, HackMdSourceError } from '@vibelog/core';
 import type { AiProvider, ContentSource, ThemeConfig } from '@vibelog/core';
@@ -21,6 +21,17 @@ describe('OperationWorker publication snapshots', () => {
     database.db.insert(user).values({ id: userId, name: 'startup', email: 'startup@users.vibelog.invalid', emailVerified: false, username: 'startup', displayUsername: 'startup', createdAt: date, updatedAt: date }).run();
     const { blog, operation } = database.createBlog(userId, 'startup', 'startup');
     expect(database.claimNextOperation()?.id).toBe(operation.id);
+    const theme = database.getActiveTheme(blog.id); if (!theme) throw new Error('Theme missing');
+    const releaseArtifacts: string[] = [];
+    for (let index = 0; index < 21; index += 1) {
+      const artifact = join(root, 'blogs', userId, blog.id, 'releases', randomUUID());
+      await mkdir(artifact, { recursive: true });
+      const release = database.activateRelease(blog.id, theme.id, 0, artifact, {
+        site: { title: 'startup', description: '', author: 'startup', language: 'en' }, posts: [],
+      });
+      database.connection.prepare('UPDATE published_releases SET created_at = ? WHERE id = ?').run(`2026-07-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`, release.id);
+      releaseArtifacts.push(artifact);
+    }
     const orphan = join(root, 'blogs', userId, blog.id, '.sync-02020202-0202-4202-8202-020202020202');
     await mkdir(orphan, { recursive: true });
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -29,9 +40,12 @@ describe('OperationWorker publication snapshots', () => {
 
     await worker.run(0);
 
+    const oldestReleaseArtifact = releaseArtifacts[0]; if (!oldestReleaseArtifact) throw new Error('Release fixture missing');
     expect(database.getOperation(operation.id, userId)).toMatchObject({ status: 'queued', attempts: 1 });
+    expect(database.listReleases(blog.id)).toHaveLength(20);
+    expect(await readdir(join(root, 'blogs', userId, blog.id, 'releases'))).not.toContain(oldestReleaseArtifact.split('/').at(-1));
     expect(await readdir(join(root, 'blogs', userId, blog.id))).not.toContain('.sync-02020202-0202-4202-8202-020202020202');
-    expect(log).toHaveBeenCalledWith('VibeLog worker ready: requeued=1 exhausted=0 removed=1 warnings=0');
+    expect(log).toHaveBeenCalledWith('VibeLog worker ready: requeued=1 exhausted=0 removed=2 warnings=0');
     database.close();
   });
 
@@ -42,7 +56,7 @@ describe('OperationWorker publication snapshots', () => {
     const { blog, operation: initial } = database.createBlog('10101010-1010-4010-8010-101010101010', 'sync', 'sync'); database.completeOperation(initial.id);
     const oldDraft = join(root, 'blogs', blog.userId, blog.id, 'draft'); await mkdir(oldDraft, { recursive: true }); await writeFile(join(oldDraft, 'index.html'), '<h1>Old</h1>');
     database.completeSync(blog.id, {
-      title: 'Custom title', description: 'Custom description', author: 'Old Writer', draftArtifact: oldDraft,
+      title: 'Custom title', description: 'Custom description', author: 'Old Writer', language: 'en-GB', draftArtifact: oldDraft,
       contentManifest: [{ title: 'Older', slug: 'older', publishedAt: '2026-01-01T00:00:00.000Z', included: false }],
     });
     const operation = database.createSyncOperation(blog.userId, blog.id, { intent: 'content' });
@@ -66,7 +80,13 @@ describe('OperationWorker publication snapshots', () => {
       ],
     });
     expect(synced.draftArtifact).toMatch(/\/drafts\/[0-9a-f-]+$/);
-    expect(await readFile(join(synced.draftArtifact, 'index.html'), 'utf8')).toContain('Custom title');
+    const home = await readFile(join(synced.draftArtifact, 'index.html'), 'utf8');
+    expect(home).toContain('Custom title');
+    expect(home).toContain('<html lang="en-GB">');
+    expect(home).toContain('<meta property="og:locale" content="en-GB">');
+    expect(home).toContain('Latest posts');
+    expect(home).not.toContain('最新文章');
+    expect(await readFile(join(synced.draftArtifact, 'rss.xml'), 'utf8')).toContain('<language>en-GB</language>');
     await expect(readFile(join(synced.draftArtifact, 'blog', 'older', 'index.html'), 'utf8')).rejects.toThrow();
     expect(await readFile(join(synced.draftArtifact, 'blog', 'newer', 'index.html'), 'utf8')).toContain('Newer');
     await expect(readFile(join(oldDraft, 'index.html'), 'utf8')).rejects.toThrow();
@@ -80,7 +100,7 @@ describe('OperationWorker publication snapshots', () => {
     const { blog, operation: initial } = database.createBlog('20202020-2020-4020-8020-202020202020', 'failure', 'failure'); database.completeOperation(initial.id);
     const oldDraft = join(root, 'blogs', blog.userId, blog.id, 'draft'); await mkdir(oldDraft, { recursive: true }); await writeFile(join(oldDraft, 'index.html'), '<h1>Still current</h1>');
     database.completeSync(blog.id, { title: 'Current', description: 'Current description', author: 'Writer', draftArtifact: oldDraft, contentManifest: [{ title: 'Current post', slug: 'current', publishedAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-03T00:00:00.000Z', included: true, tags: [{ name: 'Existing', slug: 'existing' }] }] });
-    const operation = database.createSyncOperation(blog.userId, blog.id, { intent: 'identity', site: { title: 'Attempted', description: 'Attempted description' } });
+    const operation = database.createSyncOperation(blog.userId, blog.id, { intent: 'identity', site: { title: 'Attempted', description: 'Attempted description', language: 'en' } });
     const source: ContentSource = { name: ContentSourceName.HACKMD, getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Bio' }), getPosts: () => Promise.resolve({ posts: [{ id: 'post', title: 'Post', slug: 'post', date: '2026-02-01T00:00:00.000Z', content: 'Body' }] }) };
     const config = { dataRoot: root, appOrigin: 'http://app.localtest.me:3000' } as AppConfig;
     const completeSync = vi.spyOn(database, 'completeSyncOperation').mockImplementationOnce(() => { throw new Error('database switch failed'); });
@@ -122,7 +142,7 @@ describe('OperationWorker publication snapshots', () => {
       contentManifest: [{ title: 'Current post', slug: 'current', publishedAt: '2026-01-01T00:00:00.000Z', included: true }],
     });
     expect(database.getActiveRelease(blog.id)?.id).toBe(release.id);
-    expect(database.getOperation(sync.id, userId)).toMatchObject({ status: 'failed', errorMessage: 'HackMD 暫時限制同步請求，請稍後再試一次。' });
+    expect(database.getOperation(sync.id, userId)).toMatchObject({ status: 'failed', errorMessage: 'HackMD is temporarily limiting sync requests. Please try again later.' });
     expect(await readFile(join(oldDraft, 'index.html'), 'utf8')).toContain('Still current');
     expect(consoleError.mock.calls.flat().join(' ')).not.toContain('Current post');
     database.close();
@@ -212,14 +232,14 @@ describe('OperationWorker publication snapshots', () => {
 describe('operationPublicError', () => {
   it('maps structured HackMD failures to actionable messages without echoing technical details', () => {
     const messages = new Map([
-      ['profile_not_found', '找不到這個公開 HackMD 使用者，請確認 username 後再試一次。'],
-      ['article_not_found', '同步期間有公開文章消失或無法讀取，請重新整理 HackMD 後再試一次。'],
-      ['rate_limited', 'HackMD 暫時限制同步請求，請稍後再試一次。'],
-      ['request_timeout', 'HackMD 暫時無法穩定回應，請稍後再試一次。'],
-      ['invalid_response', 'HackMD 回應格式暫時無法辨識，請稍後再試一次。'],
-      ['too_many_articles', 'VibeLog 一次最多同步 200 篇公開文章。'],
-      ['article_too_large', '有 HackMD 文章超過 2 MiB，請縮短內容後再同步。'],
-      ['sync_too_large', '公開文章內容合計超過 32 MiB，請減少內容後再同步。'],
+      ['profile_not_found', 'We could not find that public HackMD user. Check the username and try again.'],
+      ['article_not_found', 'A public article disappeared during sync. Refresh HackMD and try again.'],
+      ['rate_limited', 'HackMD is temporarily limiting sync requests. Please try again later.'],
+      ['request_timeout', 'HackMD is not responding reliably right now. Please try again later.'],
+      ['invalid_response', 'HackMD returned a response VibeLog could not read. Please try again later.'],
+      ['too_many_articles', 'VibeLog can sync up to 200 public articles at a time.'],
+      ['article_too_large', 'A HackMD article exceeds 2 MiB. Shorten it before syncing again.'],
+      ['sync_too_large', 'Public article text exceeds 32 MiB in total. Reduce the content before syncing again.'],
     ] as const);
     for (const [code, expected] of messages) {
       const error = new HackMdSourceError(code, 'secret external response body');

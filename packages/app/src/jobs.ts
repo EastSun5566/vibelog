@@ -11,9 +11,9 @@ import { blogRoot } from './security/path.js';
 import { reconcileStorage } from './storage.js';
 
 const INTERRUPTED_OPERATION_MESSAGES: Record<OperationRecord['type'], string> = {
-  sync: '同步多次中斷，原本的草稿與線上版本沒有變更，請重新同步。',
-  generate_theme: 'AI 樣式設計多次中斷，原本的設計沒有變更，請再試一次。',
-  publish: '發布多次中斷，原本的線上版本沒有變更，請再試一次。',
+  sync: 'Sync was interrupted repeatedly. Your previous draft and live site are unchanged; please try again.',
+  generate_theme: 'AI theme generation was interrupted repeatedly. Your previous theme is unchanged; please try again.',
+  publish: 'Publishing was interrupted repeatedly. Your current live site is unchanged; please try again.',
 };
 
 function safeTechnicalError(error: unknown, config: AppConfig): string {
@@ -26,28 +26,28 @@ export function operationPublicError(type: OperationRecord['type'], error: unkno
   if (type === 'sync') {
     if (isHackMdSourceError(error)) {
       switch (error.code) {
-      case 'profile_not_found': return '找不到這個公開 HackMD 使用者，請確認 username 後再試一次。';
-      case 'article_not_found': return '同步期間有公開文章消失或無法讀取，請重新整理 HackMD 後再試一次。';
-      case 'rate_limited': return 'HackMD 暫時限制同步請求，請稍後再試一次。';
-      case 'temporarily_unavailable': case 'request_timeout': return 'HackMD 暫時無法穩定回應，請稍後再試一次。';
-      case 'request_rejected': return 'HackMD 拒絕了同步請求，請確認內容仍為公開狀態。';
-      case 'invalid_response': return 'HackMD 回應格式暫時無法辨識，請稍後再試一次。';
-      case 'metadata_too_large': return 'HackMD 帳號資料超過同步上限，請減少公開內容後再試一次。';
-      case 'too_many_articles': return 'VibeLog 一次最多同步 200 篇公開文章。';
-      case 'article_too_large': return '有 HackMD 文章超過 2 MiB，請縮短內容後再同步。';
-      case 'sync_too_large': return '公開文章內容合計超過 32 MiB，請減少內容後再同步。';
-      case 'no_public_articles': return '這個 HackMD 帳號目前沒有公開發布的文章。';
-      case 'duplicate_slug': return '有多篇文章會產生相同網址，請先調整 HackMD 文章的 permalink。';
-      case 'invalid_published_date': return '有 HackMD 文章的發布日期無效，請修正後再同步。';
-      case 'invalid_modified_date': return '有 HackMD 文章的最後修改日期無效，請修正後再同步。';
-      case 'invalid_slug': return '有 HackMD 文章無法產生有效網址，請補上標題或 permalink。';
+      case 'profile_not_found': return 'We could not find that public HackMD user. Check the username and try again.';
+      case 'article_not_found': return 'A public article disappeared during sync. Refresh HackMD and try again.';
+      case 'rate_limited': return 'HackMD is temporarily limiting sync requests. Please try again later.';
+      case 'temporarily_unavailable': case 'request_timeout': return 'HackMD is not responding reliably right now. Please try again later.';
+      case 'request_rejected': return 'HackMD rejected the sync request. Confirm that your content is still public.';
+      case 'invalid_response': return 'HackMD returned a response VibeLog could not read. Please try again later.';
+      case 'metadata_too_large': return 'This HackMD profile exceeds the sync metadata limit. Reduce its public content and try again.';
+      case 'too_many_articles': return 'VibeLog can sync up to 200 public articles at a time.';
+      case 'article_too_large': return 'A HackMD article exceeds 2 MiB. Shorten it before syncing again.';
+      case 'sync_too_large': return 'Public article text exceeds 32 MiB in total. Reduce the content before syncing again.';
+      case 'no_public_articles': return 'This HackMD account does not have any public published articles.';
+      case 'duplicate_slug': return 'Multiple articles would use the same URL. Update their HackMD permalinks first.';
+      case 'invalid_published_date': return 'A HackMD article has an invalid published date. Fix it before syncing.';
+      case 'invalid_modified_date': return 'A HackMD article has an invalid modified date. Fix it before syncing.';
+      case 'invalid_slug': return 'A HackMD article cannot produce a valid URL. Add a title or permalink first.';
       }
     }
-    if (message.includes('No articles selected')) return '至少要選取一篇文章，才能建立 Blog 草稿。';
-    return '同步失敗，請確認 HackMD 內容可以公開讀取後再試一次。';
+    if (message.includes('No articles selected')) return 'Select at least one article before building the blog draft.';
+    return 'Sync failed. Confirm that your HackMD content is publicly readable and try again.';
   }
-  if (type === 'generate_theme') return 'AI 暫時無法產生可用樣式，原本的設計沒有變更，請調整描述後再試一次。';
-  return '發布失敗，草稿與目前的線上版本都沒有變更，請再試一次。';
+  if (type === 'generate_theme') return 'AI could not produce a valid theme. Your previous design is unchanged; adjust the prompt and try again.';
+  return 'Publishing failed. Your draft and current live site are unchanged; please try again.';
 }
 function publicOrigin(config: AppConfig, username: string): string {
   const app = new URL(config.appOrigin);
@@ -91,8 +91,8 @@ export class OperationWorker {
         const payload = parseSyncOperationPayload(operation.payload);
         const site = payload.intent === 'identity'
           ? payload.site
-          : { title: blog.title ?? `${author.name}'s blog`, description: blog.description ?? author.bio };
-        await writeFile(join(stagingRoot, 'vibelog.config.json'), JSON.stringify({ site: { ...site, language: 'zh-Hant' } }), { mode: 0o600 });
+          : { title: blog.title ?? `${author.name}'s blog`, description: blog.description ?? author.bio, language: blog.language };
+        await writeFile(join(stagingRoot, 'vibelog.config.json'), JSON.stringify({ site }), { mode: 0o600 });
         const snapshotSource: ContentSource = {
           name: source.name,
           getPosts: () => Promise.resolve({ posts }),
@@ -112,8 +112,8 @@ export class OperationWorker {
         await rename(output, draft);
         installedDraft = draft;
         const message = payload.intent === 'identity'
-          ? 'Blog 資訊與內容已更新'
-          : payload.intent === 'selection' ? '文章選擇與草稿已更新' : '內容已同步';
+          ? 'Blog details and content updated'
+          : payload.intent === 'selection' ? 'Article selection and draft updated' : 'Content synced';
         this.database.completeSyncOperation(operation.id, {
           ...site,
           author: summary.author.name,
@@ -140,8 +140,8 @@ export class OperationWorker {
       const theme = await (this.dependencies.aiProvider?.() ?? createAiProvider(this.config.aiProvider, this.config.aiModel)).generate({
         blog: { title: blog.title ?? blog.username, description: blog.description ?? '', author: blog.author ?? blog.username }, currentTheme: baseTheme, prompt,
       });
-      const revision = this.database.completeThemeOperation(operation.id, theme, { message: '新樣式已準備好' });
-      return { message: '新樣式已準備好', revisionId: revision.id };
+      const revision = this.database.completeThemeOperation(operation.id, theme, { message: 'New theme ready' });
+      return { message: 'New theme ready', revisionId: revision.id };
     }
     case 'publish': {
       if (!blog.draftArtifact) throw new Error('Sync content before publishing');
@@ -159,8 +159,14 @@ export class OperationWorker {
         await cp(blog.draftArtifact, staging, { recursive: true, errorOnExist: true });
         await writeFile(join(staging, 'theme.css'), renderThemeCss(theme.config), { mode: 0o644 });
         await rename(staging, release);
-        const result = { message: '網站已發布', url: publicOrigin(this.config, blog.username) };
+        const result = { message: 'Site published', url: publicOrigin(this.config, blog.username) };
         this.database.completePublishOperation(operation.id, release, createReleaseSnapshot(blog), result);
+        try {
+          this.database.prunePublishedReleases(blog.id);
+          await reconcileStorage(this.config.dataRoot, this.database.listStorageReferences());
+        } catch (error) {
+          console.error(`[operation:${operation.id}] release cleanup will retry at startup: ${safeTechnicalError(error, this.config)}`);
+        }
         return result;
       } catch (error) {
         await rm(staging, { recursive: true, force: true });
@@ -183,6 +189,7 @@ export class OperationWorker {
     return true;
   }
   async run(pollMs = 500): Promise<void> {
+    this.database.prunePublishedReleases();
     const storage = await reconcileStorage(this.config.dataRoot, this.database.listStorageReferences());
     const recovery = this.database.recoverOperations(INTERRUPTED_OPERATION_MESSAGES);
     console.log(`VibeLog worker ready: requeued=${String(recovery.requeued)} exhausted=${String(recovery.exhausted)} removed=${String(storage.removed)} warnings=${String(storage.warnings)}`);

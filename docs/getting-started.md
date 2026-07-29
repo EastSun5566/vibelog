@@ -1,45 +1,23 @@
 # Getting Started
 
-VibeLog 0.5 is an invite-only hosted editor. You need a public HackMD profile with at least one published note.
+VibeLog is an invite-only beta for technical writers with a public HackMD profile and at least one published note.
 
-## Writer flow
+## Publish your first blog
 
-1. Register with the shared beta code, a permanent username, and a password.
-2. Enter your public HackMD username.
-3. Confirm the imported article titles, dates, and HackMD tags, then set the blog title and description.
-4. Open the live preview and describe a visual direction, such as “a quiet editorial journal with warm paper colors.”
-5. Switch between any saved theme revisions.
-6. Publish to `<username>.<APP_ORIGIN hostname>`.
-7. If a later publication is not right, open the publication history and restore any earlier live version without changing the current draft.
+1. Create an account with your invite code. Your username becomes the permanent VibeLog subdomain.
+2. Enter your public HackMD username and blog language, such as `en`, `en-US`, or `zh-Hant`.
+3. Review the imported articles and exclude anything that should not appear on the blog.
+4. Set the title and description, then review the static preview.
+5. Optionally adjust safe theme controls or ask AI for a visual direction.
+6. Publish the release.
 
-Only notes that HackMD exposes as public and published are imported. Tags and the last-modified time come directly from HackMD and cannot be edited in VibeLog. Duplicate slugs, invalid dates, and an empty public profile stop the sync without replacing the last working draft.
+Only public, published HackMD notes are imported. A failed sync never replaces the last working draft or live release.
 
-HackMD sync uses bounded requests: at most four articles download concurrently, transient network failures are retried, and every request has a 15-second timeout. The self-contained beta accepts up to 200 public articles, 2 MiB per Markdown article, and 32 MiB of article text per sync. Exceeding a limit or receiving an invalid HackMD response leaves the current draft and live site unchanged and produces an actionable message in the Editor.
+## Update or restore
 
-The editor records the last successful sync and lists the imported article metadata without storing article bodies in SQLite. Saving the blog title or description also fetches the latest HackMD content and rebuilds a new draft. The previous identity, draft, and published site remain active if that rebuild fails. Later content syncs preserve the title and description you chose.
+- Use **Sync HackMD again** to rebuild the draft from current public content.
+- Publishing is always explicit; a sync never changes the live site.
+- **Release history** retains the live release plus the 19 newest inactive releases.
+- Restoring a release changes only the live site. Your current draft and preview theme remain unchanged.
 
-The public homepage shows the blog identity, author bio, and five newest selected articles. VibeLog derives each article summary from the first useful body paragraph in HackMD, ignoring headings, images, code blocks, and other non-body introductions. The same plain-text summary appears in article lists, HTML metadata, Open Graph, and RSS. It cannot be edited separately in VibeLog.
-
-`/blog` contains the complete selected archive, `/tags` lists its HackMD topics, and `/tags/<slug>` groups selected articles under each topic. Long articles with at least two level-two or level-three headings receive a static, collapsible table of contents. Article pages also link to the adjacent newer and older posts. RSS categories, sitemap, canonical URLs, modification time, and Open Graph article tags are generated from the same content snapshot.
-
-VibeLog keeps published releases immutable. When a template update or new HackMD metadata becomes available, run **重新同步 HackMD**, review the new draft in Preview, and publish it explicitly. Existing live releases do not change during the upgrade, so older sites only gain newer template features, including reliable article summaries and long-form navigation, after this sync-preview-publish flow.
-
-## Theme safety
-
-The AI receives the blog title, description, author, current theme, and your design request. It does not receive article bodies. It returns one `propose_theme` tool call containing:
-
-- one of three presets: minimal, editorial, or notebook
-- light or dark appearance
-- six semantic colors
-- allowlisted system font stacks
-- fixed typography, width, density, and radius scales
-
-VibeLog rejects unknown fields, remote fonts, arbitrary CSS, unsafe values, and colors that fail WCAG text/link contrast. A failed proposal never changes the active revision.
-
-There is no password recovery in the self-contained beta. Keep your password safe; signed-in users can change it from the editor.
-
-## Publication history
-
-Before publishing, the Editor lists articles that will be added, updated, or removed, and separately identifies blog identity, theme, and template-only rebuild changes. VibeLog detects body changes with a one-way SHA-256 digest: article Markdown is not stored in SQLite, and the digest is never rendered in the Editor, static site, logs, or AI input.
-
-Every successful publication is immutable and remains available from the Editor. Restoring an earlier publication changes only the public website; the current draft, imported content summary, and preview theme stay unchanged. The change summary is recalculated against the restored release, and publishing again restores the current draft to the live site. Releases created before change tracking show a compatibility notice; after the next publication, itemized comparisons become available.
+The beta has no password recovery. Keep your password safe; signed-in users can change it from the editor.

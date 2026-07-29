@@ -1,27 +1,18 @@
 # VibeLog App
 
-The app is one Node.js process containing the Hono server and SQLite-backed operation worker. It hosts three isolated surfaces from one image:
+One Node.js process owns the Hono server, SQLite connection, and operation worker. The same image serves:
 
-- `APP_ORIGIN`: authenticated management editor
-- `preview.<APP_ORIGIN hostname>`: short-lived draft preview
-- `<username>.<APP_ORIGIN hostname>`: public immutable release
+- `APP_ORIGIN`: authenticated management UI
+- `preview.<APP_ORIGIN hostname>`: short-lived draft previews
+- `<username>.<APP_ORIGIN hostname>`: immutable public releases
 
-Auth cookies are host-only and are never sent to preview or user blogs. Preview uses a separate short-lived token cookie. Published content is scriptless and receives a restrictive CSP.
-
-Each successful HackMD sync builds a versioned draft directory and switches the SQLite pointer only after the build is complete. Failed syncs therefore leave the previous blog identity, article summary, draft, and public release untouched.
-
-Every successful publication also remains as an immutable release. Writers can restore an earlier live release from the Editor without changing their current draft or theme; public responses use release-aware ETags so the restored version is visible on the next load.
-
-The worker completes each sync, theme, or publish result in the same SQLite transaction that marks its operation successful. After an unexpected restart it retries interrupted work at most three times and removes only recognized staging or unreferenced artifact directories. Current drafts and every release recorded in SQLite are retained.
-
-## Runtime
+Auth cookies stay on the management host. Preview uses a separate short-lived token, and published sites are static and scriptless.
 
 ```sh
-docker compose up --build
+pnpm dev                         # source mode
+docker compose up --build       # production shape
+node dist/backup.js              # consistent SQLite backup
+node dist/beta-funnel.js         # aggregate beta metrics, no PII
 ```
 
-The container runs as the non-root `node` user, stores all durable state below `/data`, responds at `/health`, and gracefully stops HTTP and the current operation on SIGTERM.
-
-Required auth configuration is only `BETTER_AUTH_SECRET` and `BETA_INVITE_CODE`; neither is a user password. The beta code gates registration, while each writer chooses their own username and password. There is no email, CAPTCHA, external auth key, or password recovery.
-
-See [the Render deployment guide](../../docs/deployment.md) for domains and environment variables.
+The only production entrypoint is `dist/main.js`. See [Deployment](../../docs/deployment.md) for domains, environment, backup, and recovery.

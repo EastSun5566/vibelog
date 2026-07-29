@@ -7,7 +7,7 @@ import type {
 } from './database.js';
 
 export type PublicationDiffMode = 'first' | 'tracked' | 'legacy';
-export type IdentityChange = 'title' | 'description' | 'author';
+export type IdentityChange = 'title' | 'description' | 'author' | 'language';
 
 export interface PublicationDiff {
   mode: PublicationDiffMode;
@@ -26,6 +26,7 @@ export function createReleaseSnapshot(blog: BlogRecord): ReleaseSnapshot {
       title: blog.title ?? blog.username,
       description: blog.description ?? '',
       author: blog.author ?? blog.username,
+      language: blog.language,
     },
     posts: blog.contentManifest ?? [],
   };
@@ -92,6 +93,7 @@ export function calculatePublicationDiff(
   if (draftSnapshot.site.title !== liveRelease.snapshot.site.title) identityChanges.push('title');
   if (draftSnapshot.site.description !== liveRelease.snapshot.site.description) identityChanges.push('description');
   if (draftSnapshot.site.author !== liveRelease.snapshot.site.author) identityChanges.push('author');
+  if (draftSnapshot.site.language !== liveRelease.snapshot.site.language) identityChanges.push('language');
   const hasSemanticContentChange = added.length > 0 || updated.length > 0 || removed.length > 0 || identityChanges.length > 0;
 
   return {
