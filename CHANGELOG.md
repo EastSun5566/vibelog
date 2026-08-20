@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.5.0-beta.5](https://github.com/EastSun5566/vibelog/compare/v0.5.0-beta.4...v0.5.0-beta.5) (2026-08-20)
+
+### Features
+
+* prepare VibeLog for global beta ([45eb5b4](https://github.com/EastSun5566/vibelog/commit/45eb5b48990e1e5bf7d144c7085bde2b9756dc6a))
+
+### Bug Fixes
+
+* patch js-yaml advisory ([93e6caf](https://github.com/EastSun5566/vibelog/commit/93e6caf3332dd07ebccae0d664d832c3983837ea))
 ## [0.5.0-beta.4](https://github.com/EastSun5566/vibelog/compare/v0.5.0-beta.3...v0.5.0-beta.4) (2026-07-27)
 
 ### Features
