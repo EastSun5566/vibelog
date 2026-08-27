@@ -24,9 +24,7 @@
     "lint:fix": "pnpm --filter @vibelog/core build && oxlint --type-aware --fix .",
     "knip": "knip --no-config-hints --include files,dependencies,devDependencies,unlisted,binaries",
     "db:check": "pnpm --filter @vibelog/app db:check",
-    "check": "pnpm lint && pnpm knip && pnpm db:check && pnpm typecheck && pnpm test",
-    "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs"
+    "check": "pnpm lint && pnpm knip && pnpm db:check && pnpm typecheck && pnpm test"
   },
   "keywords": [
     "blog-builder",
@@ -49,7 +47,6 @@
     "oxlint": "1.74.0",
     "oxlint-tsgolint": "0.23.0",
     "typescript": "7.0.2",
-    "vitepress": "^1.6.3",
     "vitest": "^3.2.7"
   }
 }

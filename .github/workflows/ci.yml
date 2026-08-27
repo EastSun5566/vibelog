@@ -24,7 +24,6 @@ jobs:
           git diff --exit-code -- packages/app/src/drizzle
           test -z "$(git status --porcelain -- packages/app/src/drizzle)"
       - run: pnpm build
-      - run: pnpm docs:build
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
 
@@ -41,7 +40,6 @@ jobs:
           NODE_ENV: production
           APP_ORIGIN: http://app.localtest.me:34123
           BETTER_AUTH_SECRET: vibelog-ci-secret-that-is-at-least-thirty-two-chars
-          BETA_INVITE_CODE: vibelog-ci-invite-that-is-at-least-twenty-four-chars
           VIBELOG_AI_PROVIDER: openai
           VIBELOG_AI_MODEL: gpt-4o-mini
           PORT: 34123

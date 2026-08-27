@@ -15,4 +15,4 @@ node dist/backup.js              # consistent SQLite backup
 node dist/beta-funnel.js         # aggregate beta metrics, no PII
 ```
 
-The only production entrypoint is `dist/main.js`. See [Deployment](../../docs/deployment.md) for domains, environment, backup, and recovery.
+The only production entrypoint is `dist/main.js`. See the root [README](../../README.md#deploy-on-render) for domains, environment, backup, and recovery.

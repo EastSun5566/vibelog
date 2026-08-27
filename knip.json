@@ -9,7 +9,6 @@
   "workspaces": {
     ".": {
       "entry": [
-        "docs/.vitepress/config.ts",
         "vitest.config.ts",
         "playwright.config.ts",
         ".github/scripts/container-smoke.mjs",
@@ -17,7 +16,6 @@
         "e2e/**/*.spec.ts"
       ],
       "project": [
-        "docs/.vitepress/**/*.ts",
         "vitest.config.ts",
         "playwright.config.ts",
         ".github/scripts/container-smoke.mjs",

@@ -1,10 +1,14 @@
 import { expect, test } from '@playwright/test';
 
-test('invite signup to hosted publication', async ({ page }) => {
+test('public signup to hosted publication', async ({ page }) => {
   const articleDescription = 'This is reliable public prose with readable text and code.';
   await page.route('https://images.example.com/**', (route) => route.abort());
-  await page.goto('/auth/register');
-  await page.getByLabel('Beta invite code').fill('vibelog-e2e-beta-invite-code');
+  await page.goto('/');
+  const primaryCta = page.getByRole('link', { name: 'Create your blog' });
+  await expect(primaryCta).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await page.getByRole('link', { name: 'Guide' }).click();
+  await expect(page.getByRole('heading', { name: 'From HackMD to your own blog' })).toBeVisible();
+  await page.getByRole('link', { name: 'Create your blog' }).click();
   await page.getByLabel('Username').fill('alice');
   await page.getByLabel('Password').fill('a-long-enough-test-password');
   await page.getByRole('button', { name: 'Create account' }).click();

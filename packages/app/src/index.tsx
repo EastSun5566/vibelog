@@ -1,4 +1,4 @@
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
@@ -16,10 +16,10 @@ import { hashToken, randomToken } from './security/crypto.js';
 import { assertNoSymlinkEscape, blogRoot, resolveRelativeWithin } from './security/path.js';
 import { operationMessage } from './operation-status.js';
 import { themeFromControls } from './theme-studio.js';
-import { changePasswordPage, editorPage, landingPage, loginPage, onboardingPage, operationPage, registerPage } from './views.js';
+import { changePasswordPage, editorPage, guidePage, landingPage, loginPage, onboardingPage, operationPage, registerPage } from './views.js';
 
 const RESERVED = new Set(['preview', 'www', 'api', 'admin', 'assets']);
-const registerInput = z.object({ inviteCode: z.string().min(1).max(512), username: z.string().trim().min(3).max(32).regex(/^[a-z0-9_-]+$/i), password: z.string().min(12).max(128) });
+const registerInput = z.object({ username: z.string().trim().min(3).max(32).regex(/^[a-z0-9_-]+$/i), password: z.string().min(12).max(128) });
 const loginInput = z.object({ username: z.string().trim().min(3).max(32), password: z.string().min(1).max(128) });
 const changePasswordInput = z.object({ currentPassword: z.string().min(1).max(128), newPassword: z.string().min(12).max(128) });
 const hackmdInput = z.object({ hackmdUsername: z.string().trim().min(1).max(100).regex(/^[\p{L}\p{N}_.-]+$/u) });
@@ -128,13 +128,11 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get('/auth/register', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(registerPage()));
   app.post('/auth/register', async (c) => {
     assertMutationOrigin(c, config); const body = await c.req.parseBody().catch(() => ({}));
-    const input = registerInput.safeParse({ inviteCode: formValue(body, 'inviteCode'), username: formValue(body, 'username'), password: formValue(body, 'password') });
-    if (!input.success) return c.html(registerPage('Check the invite code, username, and password format.'), 400);
+    const input = registerInput.safeParse({ username: formValue(body, 'username'), password: formValue(body, 'password') });
+    if (!input.success) return c.html(registerPage('Check the username and password format.'), 400);
     const username = input.data.username.toLowerCase();
     if (RESERVED.has(username)) return c.html(registerPage('This username is unavailable.'), 400);
     if (!database.consumeRateLimit('register:global', 50, 60 * 60)) return c.html(registerPage('Registration is temporarily busy. Please try again later.'), 429);
-    const digest = createHash('sha256').update(input.data.inviteCode).digest();
-    if (!timingSafeEqual(digest, config.betaInviteDigest)) return c.html(registerPage('Invalid invite code.'), 401);
     const response = await internalAuthPost(c, '/sign-up/email', { email: `${username}@users.vibelog.invalid`, username, displayUsername: username, name: username, password: input.data.password });
     if (!response.ok) return c.html(registerPage('This username is unavailable.'), 400);
     copyCookies(c, response); return c.redirect('/onboarding', 303);
@@ -147,6 +145,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post('/auth/change-password', async (c) => { const body = await c.req.parseBody(); assertMutationOrigin(c, config); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); const input = changePasswordInput.safeParse({ currentPassword: formValue(body, 'currentPassword'), newPassword: formValue(body, 'newPassword') }); if (!input.success) throw new AppError('invalid_password', 'The new password must be 12–128 characters.', 400); if (!database.consumeRateLimit(`password:${c.get('session').user.id}`, 5, 10 * 60)) throw new AppError('rate_limited', 'Too many attempts. Please try again later.', 429); const response = await internalAuthPost(c, '/change-password', { ...input.data, revokeOtherSessions: true }); if (!response.ok) throw new AppError('password_change_failed', 'The current password is incorrect.', 400); copyCookies(c, response); return c.redirect('/editor', 303); });
 
   app.get('/', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(landingPage()));
+  app.get('/guide', async (c) => c.html(guidePage((await readSession(c, auth, config)) ?? undefined)));
   app.get('/onboarding', (c) => {
     const blog = database.getBlogForUser(c.get('session').user.id);
     if (blog?.draftArtifact) return c.redirect('/editor');

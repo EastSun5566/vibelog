@@ -17,13 +17,16 @@ export function document(title: string, content: unknown, session?: AppSession, 
       <div class="app-shell">
         <header class="app-header">
           <a class="app-brand" href={session ? '/editor' : '/'}>VibeLog</a>
-          {session ? <nav class="account-nav" aria-label="Account">
+          <nav class="account-nav" aria-label={session ? 'Account' : 'Site'}>
+            <a class="btn" data-variant="ghost" data-size="compact" href="/guide">Guide</a>
+          {session ? <>
             <a class="btn" data-variant="ghost" data-size="compact" href="/auth/change-password">Change password</a>
             <form method="post" action="/auth/logout">
               <input type="hidden" name="csrfToken" value={session.csrfToken}/>
               <button class="btn" data-variant="outline" data-size="compact" type="submit">Sign out</button>
             </form>
-          </nav> : null}
+          </> : null}
+          </nav>
         </header>
         <main class="app-main">{content}</main>
       </div>
@@ -35,11 +38,11 @@ export function document(title: string, content: unknown, session?: AppSession, 
 export function landingPage() {
   return document('Publish your HackMD as a blog', <section class="landing">
     <header class="landing-hero">
-      <p class="auth-kicker">Invite-only beta</p>
+      <p class="auth-kicker">Open beta</p>
       <h1>Keep writing in HackMD.<br/>Publish a real blog.</h1>
       <p class="landing-intro">VibeLog turns your public HackMD articles into a fast static site without moving your writing workflow.</p>
       <div class="landing-actions">
-        <a class="btn" href="/auth/register">Use an invite</a>
+        <a class="btn" href="/auth/register">Create your blog</a>
         <a class="btn" data-variant="outline" href="/auth/login">Sign in</a>
       </div>
     </header>
@@ -62,17 +65,16 @@ export function loginPage(message?: string) {
         <button class="btn" type="submit">Sign in</button>
       </form>
     </section>
-    <footer><a href="/auth/register">Create an account with an invite</a></footer>
+    <footer><a href="/auth/register">Create an account</a></footer>
   </section>);
 }
 
 export function registerPage(message?: string) {
   return document('Create account', <section class="auth-shell card">
-    <header><p class="auth-kicker">Invite-only beta</p><h1>Create your VibeLog</h1><p>Your username becomes your permanent blog URL.</p></header>
+    <header><p class="auth-kicker">Open beta</p><h1>Create your VibeLog</h1><p>Your username becomes your permanent blog URL.</p></header>
     <section class="stack">
       {message ? <div class="alert" data-variant="destructive" role="alert"><section>{message}</section></div> : null}
       <form class="stack" method="post" action="/auth/register">
-        <div class="field"><label for="inviteCode">Beta invite code</label><input id="inviteCode" name="inviteCode" type="password" required autocomplete="off"/></div>
         <div class="field"><label for="username">Username</label><input id="username" name="username" required minlength={3} maxlength={32} pattern="[A-Za-z0-9_-]+" autocomplete="username"/><p>3–32 letters, numbers, underscores, or hyphens.</p></div>
         <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" required minlength={12} maxlength={128} autocomplete="new-password"/><p>At least 12 characters. This beta has no password recovery.</p></div>
         <button class="btn" type="submit">Create account</button>
@@ -80,6 +82,46 @@ export function registerPage(message?: string) {
     </section>
     <footer><a href="/auth/login">Back to sign in</a></footer>
   </section>);
+}
+
+export function guidePage(session?: AppSession) {
+  return document('Guide', <article class="guide">
+    <header>
+      <p class="auth-kicker">Writer guide</p>
+      <h1>From HackMD to your own blog</h1>
+      <p>VibeLog imports public HackMD articles, builds a private preview, and publishes only when you approve a release.</p>
+      <a class="btn" href={session ? '/editor' : '/auth/register'}>{session ? 'Open your editor' : 'Create your blog'}</a>
+    </header>
+    <section aria-labelledby="first-release">
+      <h2 id="first-release">Publish your first release</h2>
+      <ol>
+        <li>Create an account. Your username becomes your permanent VibeLog subdomain.</li>
+        <li>Enter your public HackMD username and blog language.</li>
+        <li>Review the imported articles and exclude anything that should not appear.</li>
+        <li>Set the blog title and description, then review the static preview.</li>
+        <li>Optionally adjust safe theme controls or ask AI for a visual direction.</li>
+        <li>Publish the release when the preview is ready.</li>
+      </ol>
+      <p>Only public, published HackMD notes are imported. A failed sync never replaces the last working draft or live release.</p>
+    </section>
+    <section aria-labelledby="updates">
+      <h2 id="updates">Update and restore safely</h2>
+      <ul>
+        <li><strong>Sync HackMD again</strong> rebuilds the draft from current public content.</li>
+        <li>Syncing never changes the live site; publishing is always explicit.</li>
+        <li>Release history keeps the live release plus the 19 newest inactive releases.</li>
+        <li>Restoring changes only the live site. Your draft and preview theme remain unchanged.</li>
+      </ul>
+    </section>
+    <section aria-labelledby="ai-privacy">
+      <h2 id="ai-privacy">AI themes and privacy</h2>
+      <p>AI receives only your blog identity, current theme, and design prompt. Article bodies are never sent to the AI provider, and AI cannot write arbitrary CSS or HTML.</p>
+    </section>
+    <section aria-labelledby="account-safety">
+      <h2 id="account-safety">Account safety</h2>
+      <p>VibeLog does not provide password recovery yet. Keep your password safe; signed-in users can change it from the editor.</p>
+    </section>
+  </article>, session);
 }
 
 export function changePasswordPage(session: AppSession) {

@@ -37,6 +37,8 @@ body {
 }
 
 a { color: var(--primary); text-underline-offset: 0.18em; }
+a.btn:any-link { color: var(--primary-foreground); text-decoration: none; }
+a.btn:is([data-variant="outline"], [data-variant="ghost"]):any-link { color: var(--primary); }
 button, input, textarea { font: inherit; }
 textarea { resize: vertical; }
 :focus-visible { outline: 0.18rem solid var(--ring); outline-offset: 0.18rem; }
@@ -61,6 +63,15 @@ textarea { resize: vertical; }
 .landing-points { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: clamp(3rem, 8vh, 6rem) 0 0; padding: 1px; list-style: none; background: var(--border); }
 .landing-points li { display: grid; gap: 0.45rem; padding: 1.25rem; background: var(--card); }
 .landing-points span { color: var(--muted-foreground); }
+
+.guide { display: grid; gap: 2.25rem; width: min(100%, 48rem); margin: clamp(2rem, 7vh, 5rem) auto 0; }
+.guide > header { display: grid; justify-items: start; gap: 1rem; }
+.guide h1 { max-width: 16ch; margin: 0; font-size: clamp(2.4rem, 7vw, 4.8rem); line-height: 0.98; letter-spacing: -0.055em; text-wrap: balance; }
+.guide header > p:not(.auth-kicker) { max-width: 62ch; margin: 0; color: var(--muted-foreground); font-size: 1.1rem; text-wrap: pretty; }
+.guide > section { padding-block-start: 1.25rem; border-top: 1px solid var(--border); }
+.guide h2 { margin: 0 0 0.75rem; letter-spacing: -0.025em; }
+.guide section > p, .guide li { max-width: 72ch; }
+.guide ol, .guide ul { display: grid; gap: 0.55rem; padding-inline-start: 1.4rem; }
 
 .card { border: 1px solid var(--border); background: var(--card); box-shadow: 0 1px 2px rgb(23 32 51 / 0.035); }
 .card > header { gap: 0.35rem; padding: 1rem 1rem 0; }

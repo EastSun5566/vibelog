@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,7 +12,7 @@ import { createReleaseSnapshot } from '../src/publication-diff.js';
 const roots: string[] = [];
 async function setup() {
   const root = await mkdtemp(join(tmpdir(), 'vibelog-app-')); roots.push(root);
-  const config: AppConfig = { dataRoot: root, appOrigin: 'http://app.localtest.me:3000', appHostname: 'app.localtest.me', previewOrigin: 'http://preview.app.localtest.me:3000', betterAuthSecret: 'a'.repeat(32), betaInviteDigest: createHash('sha256').update('invite-code-with-24-characters').digest(), aiUserDailyLimit: 20, aiGlobalDailyLimit: 200, aiProvider: 'openai', aiModel: 'gpt-4o-mini', secureCookies: false };
+  const config: AppConfig = { dataRoot: root, appOrigin: 'http://app.localtest.me:3000', appHostname: 'app.localtest.me', previewOrigin: 'http://preview.app.localtest.me:3000', betterAuthSecret: 'a'.repeat(32), aiUserDailyLimit: 20, aiGlobalDailyLimit: 200, aiProvider: 'openai', aiModel: 'gpt-4o-mini', secureCookies: false };
   const database = new AppDatabase(root); return { ...createApp({ config, database }), config, root };
 }
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -30,7 +29,7 @@ function snapshotFor(database: AppDatabase, blogId: string) {
   return createReleaseSnapshot(blog);
 }
 async function register(app: ReturnType<typeof createApp>['app'], username: string) {
-  const response = await app.request('http://app.localtest.me:3000/auth/register', { method: 'POST', headers: { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', 'x-forwarded-for': '9.9.9.9', 'content-type': 'application/x-www-form-urlencoded' }, body: form({ inviteCode: 'invite-code-with-24-characters', username, password: 'long-enough-password' }) });
+  const response = await app.request('http://app.localtest.me:3000/auth/register', { method: 'POST', headers: { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', 'x-forwarded-for': '9.9.9.9', 'content-type': 'application/x-www-form-urlencoded' }, body: form({ username, password: 'long-enough-password' }) });
   const cookie = response.headers.get('set-cookie')?.match(/vibelog[^=]*=[^;]+/)?.[0];
   if (!cookie) throw new Error('Registration did not set a session cookie');
   const session = await app.request('http://app.localtest.me:3000/api/session', { headers: { host: 'app.localtest.me:3000', cookie } });
@@ -46,7 +45,14 @@ describe('hosted app boundaries', () => {
     expect(html).toContain('Keep writing in HackMD');
     expect(html).toContain('Ship a fast static blog');
     expect(html).toContain('Preview and roll back safely');
+    expect(html).toContain('Create your blog');
+    expect(html).toContain('Open beta');
+    expect(html).not.toContain('invite');
     expect(html).toContain('<html lang="en">');
+
+    const guide = await app.request('http://app.localtest.me:3000/guide', { headers: { host: 'app.localtest.me:3000' } });
+    expect(guide.status).toBe(200);
+    expect(await guide.text()).toContain('Publish your first release');
     database.close();
   });
 
@@ -99,18 +105,16 @@ describe('hosted app boundaries', () => {
   });
 
   it('uses a wildcard localhost domain by default', () => {
-    const config = loadAppConfig({ BETTER_AUTH_SECRET: 'a'.repeat(32), BETA_INVITE_CODE: 'invite-code-with-24-characters' });
+    const config = loadAppConfig({ BETTER_AUTH_SECRET: 'a'.repeat(32) });
     expect(config.appOrigin).toBe('http://app.localtest.me:3000');
     expect(config.previewOrigin).toBe('http://preview.app.localtest.me:3000');
   });
 
-  it('requires the beta code, reserves system usernames, and creates a host-only session', async () => {
+  it('supports public registration, reserves system usernames, and creates a host-only session', async () => {
     const { app, database } = await setup();
-    const reserved = await app.request('http://app.localtest.me:3000/auth/register', { method: 'POST', headers: { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', 'x-forwarded-for': '1.1.1.1', 'content-type': 'application/x-www-form-urlencoded' }, body: form({ inviteCode: 'invite-code-with-24-characters', username: 'preview', password: 'long-enough-password' }) });
+    const reserved = await app.request('http://app.localtest.me:3000/auth/register', { method: 'POST', headers: { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', 'x-forwarded-for': '1.1.1.1', 'content-type': 'application/x-www-form-urlencoded' }, body: form({ username: 'preview', password: 'long-enough-password' }) });
     expect(reserved.status).toBe(400);
-    const denied = await app.request('http://app.localtest.me:3000/auth/register', { method: 'POST', headers: { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', 'x-forwarded-for': '2.2.2.2', 'content-type': 'application/x-www-form-urlencoded' }, body: form({ inviteCode: 'wrong-code', username: 'alice', password: 'long-enough-password' }) });
-    expect(denied.status).toBe(401);
-    const response = await app.request('http://app.localtest.me:3000/auth/register', { method: 'POST', headers: { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', 'x-forwarded-for': '3.3.3.3', 'content-type': 'application/x-www-form-urlencoded' }, body: form({ inviteCode: 'invite-code-with-24-characters', username: 'Alice', password: 'long-enough-password' }) });
+    const response = await app.request('http://app.localtest.me:3000/auth/register', { method: 'POST', headers: { host: 'app.localtest.me:3000', origin: 'http://app.localtest.me:3000', 'x-forwarded-for': '3.3.3.3', 'content-type': 'application/x-www-form-urlencoded' }, body: form({ username: 'Alice', password: 'long-enough-password' }) });
     expect(response.status).toBe(303);
     expect(response.headers.get('set-cookie')).toContain('vibelog');
     expect(response.headers.get('set-cookie')).not.toContain('Domain=');
