@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.7.0](https://github.com/EastSun5566/vibelog/compare/v0.6.0...v0.7.0) (2026-08-28)
+
+### Features
+
+* show operation progress and preserve preview routes ([1117a18](https://github.com/EastSun5566/vibelog/commit/1117a1899a973649a8db883b9db68799755dab2f))
 ## [0.6.0](https://github.com/EastSun5566/vibelog/compare/v0.5.0-beta.5...v0.6.0) (2026-08-27)
 
 ### Features
