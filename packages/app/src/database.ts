@@ -16,6 +16,7 @@ import * as schema from './schema.js';
 export type BlogState = 'syncing' | 'ready' | 'failed';
 export type OperationType = 'sync' | 'generate_theme' | 'publish';
 export type OperationStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+export type OperationProgress = { kind: 'indeterminate' } | { kind: 'determinate'; value: number; max: number };
 export type ThemeRevisionSource = 'system' | 'ai' | 'manual';
 export interface SyncedPostTag { name: string; slug: string }
 export interface SyncedPostSummary { title: string; slug: string; publishedAt: string; included: boolean; tags?: SyncedPostTag[]; updatedAt?: string; contentHash?: string }
@@ -241,9 +242,9 @@ export class AppDatabase {
       return operation;
     }, { behavior: 'immediate' });
   }
-  createThemeOperation(userId: string, blogId: string, prompt: string, baseTheme: unknown, limits: AiQuotaLimits): OperationRecord {
+  createThemeOperation(userId: string, blogId: string, prompt: string, baseTheme: unknown, limits: AiQuotaLimits, previewPath = '/'): OperationRecord {
     const validatedBase = validateThemeConfig(baseTheme);
-    const at = limits.at ?? new Date(); const window = quotaWindow(at); const op = this.newOperation(userId, blogId, 'generate_theme', { prompt, baseTheme: validatedBase });
+    const at = limits.at ?? new Date(); const window = quotaWindow(at); const op = this.newOperation(userId, blogId, 'generate_theme', { prompt, baseTheme: validatedBase, previewPath });
     return this.db.transaction((tx) => {
       const active = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get();
       if (active) throw new Error('Blog already has an active operation');
@@ -257,6 +258,10 @@ export class AppDatabase {
   getOperation(id: string, userId: string): OperationRecord | null { const row = this.db.select().from(schema.operations).where(and(eq(schema.operations.id, id), eq(schema.operations.userId, userId))).get(); return row ? mapOperation(row) : null; }
   getActiveOperation(blogId: string, userId: string): OperationRecord | null { const row = this.db.select().from(schema.operations).where(and(eq(schema.operations.blogId, blogId), eq(schema.operations.userId, userId), inArray(schema.operations.status, ['queued', 'running']))).get(); return row ? mapOperation(row) : null; }
   claimNextOperation(): OperationRecord | null { return this.db.transaction((tx) => { const row = tx.select().from(schema.operations).where(and(eq(schema.operations.status, 'queued'), lt(schema.operations.attempts, MAX_OPERATION_ATTEMPTS))).orderBy(asc(schema.operations.createdAt)).limit(1).get(); if (!row) return null; const updatedAt = now(); tx.update(schema.operations).set({ status: 'running', attempts: row.attempts + 1, updatedAt }).where(and(eq(schema.operations.id, row.id), eq(schema.operations.status, 'queued'))).run(); return mapOperation({ ...row, status: 'running', attempts: row.attempts + 1, updatedAt }); }, { behavior: 'immediate' }); }
+  updateOperationProgress(id: string, progress: OperationProgress, message: string): void {
+    const result = JSON.stringify({ progress, progressMessage: message });
+    this.db.update(schema.operations).set({ result, updatedAt: now() }).where(and(eq(schema.operations.id, id), eq(schema.operations.status, 'running'))).run();
+  }
   recoverOperations(messages: Record<OperationType, string>): OperationRecoveryResult {
     return this.db.transaction((tx) => {
       const active = tx.select().from(schema.operations).where(inArray(schema.operations.status, activeOperationStatuses)).all();
@@ -264,7 +269,7 @@ export class AppDatabase {
       for (const operation of active) {
         if (operation.attempts < MAX_OPERATION_ATTEMPTS) {
           if (operation.status === 'running') {
-            tx.update(schema.operations).set({ status: 'queued', updatedAt: timestamp }).where(eq(schema.operations.id, operation.id)).run();
+            tx.update(schema.operations).set({ status: 'queued', result: null, updatedAt: timestamp }).where(eq(schema.operations.id, operation.id)).run();
             requeued += 1;
           }
           continue;

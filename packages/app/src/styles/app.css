@@ -112,6 +112,9 @@ textarea { resize: vertical; }
 
 .alert { border: 1px solid var(--border); background: #f8faff; }
 .alert[data-variant="destructive"] { border-color: #efb4ae; background: #fff5f4; color: #8f1d16; }
+.operation-feedback { display: grid; gap: 0.45rem; }
+.operation-feedback:has(.operation-status:empty) { display: none; }
+.operation-feedback progress { width: 100%; height: 0.55rem; accent-color: var(--primary); }
 .operation-status { min-height: 0; }
 .operation-status:empty { display: none; }
 .error-text { color: var(--destructive); }

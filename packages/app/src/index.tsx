@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
@@ -14,7 +14,8 @@ import { AiQuotaExceededError, AppDatabase, type BlogRecord, type OperationType 
 import { AppError, assertCsrfToken, assertMutationOrigin, jsonError, requestContext } from './http.js';
 import { hashToken, randomToken } from './security/crypto.js';
 import { assertNoSymlinkEscape, blogRoot, resolveRelativeWithin } from './security/path.js';
-import { operationMessage } from './operation-status.js';
+import { operationMessage, operationProgress } from './operation-status.js';
+import { editorUrlWithPreviewPath, safePreviewPath } from './preview-path.js';
 import { themeFromControls } from './theme-studio.js';
 import { changePasswordPage, editorPage, guidePage, landingPage, loginPage, onboardingPage, operationPage, registerPage } from './views.js';
 
@@ -40,20 +41,31 @@ function releaseEtag(releaseId: string, requestPath: string): string { return `"
 function matchesEtag(value: string | undefined, etag: string): boolean { return value?.split(',').some((candidate) => { const tag = candidate.trim(); return tag === '*' || tag === etag || tag === `W/${etag}`; }) ?? false; }
 
 
-async function staticResponse(c: AppContext, root: string, requestPath: string, cache: string, etag?: string): Promise<Response> {
+async function staticResponse(c: AppContext, root: string, requestPath: string, cache: string, etag?: string, transformHtml?: (html: string) => string): Promise<Response> {
   if (/%(?:2f|5c|2e)/i.test(requestPath)) throw new AppError('unsafe_path', 'Unsafe path', 400);
   const relative = decodeURIComponent(requestPath.replace(/^\/+/, '') || 'index.html');
   let target = resolveRelativeWithin(root, relative);
   const info = await stat(target).catch(() => null);
   if (info?.isDirectory()) target = join(target, 'index.html');
   await assertNoSymlinkEscape(root, target).catch(() => { throw new AppError('site_not_found', 'Page not found', 404); });
-  c.header('Content-Type', contentType(basename(target)));
+  const type = contentType(basename(target));
+  c.header('Content-Type', type);
   c.header('Cache-Control', cache);
   if (etag) {
     c.header('ETag', etag);
     if (matchesEtag(c.req.header('if-none-match'), etag)) return new Response(null, { status: 304, headers: c.res.headers });
   }
+  if (transformHtml && type.startsWith('text/html')) return new Response(transformHtml(await readFile(target, 'utf8')), { headers: c.res.headers });
   return new Response(new Uint8Array(await readFile(target)), { headers: c.res.headers });
+}
+
+function previewBridge(appOrigin: string, nonce: string): string {
+  const parentOrigin = JSON.stringify(new URL(appOrigin).origin).replaceAll('<', '\\u003c');
+  return `<script nonce="${nonce}">(()=>{const parentOrigin=${parentOrigin};const report=()=>parent.postMessage({type:'vibelog-preview-location',path:location.pathname+location.search+location.hash},parentOrigin);addEventListener('hashchange',report);addEventListener('message',(event)=>{if(event.origin!==parentOrigin||event.source!==parent||event.data?.type!=='vibelog-preview-refresh')return;location.reload()});report()})()</script>`;
+}
+
+function injectPreviewBridge(html: string, script: string): string {
+  return html.includes('</body>') ? html.replace('</body>', `${script}</body>`) : `${html}${script}`;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -80,14 +92,17 @@ export function createApp(options: CreateAppOptions = {}) {
       if (!preview) throw new AppError('preview_access_denied', 'Preview access expired or invalid', 403);
       const blog = database.getBlog(preview.blogId);
       if (!blog?.draftArtifact) throw new AppError('preview_not_ready', 'Preview is not ready', 404);
-      c.header('Content-Security-Policy', `default-src 'self'; script-src 'none'; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors ${config.appOrigin}`);
       if (c.req.path === '/theme.css') {
+        c.header('Content-Security-Policy', `default-src 'self'; script-src 'none'; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors ${config.appOrigin}`);
         const theme = database.getActiveTheme(blog.id);
         if (!theme) throw new AppError('theme_not_found', 'Theme not found', 404);
         c.header('Content-Type', 'text/css; charset=utf-8'); c.header('Cache-Control', 'private, no-store');
         return c.body(renderThemeCss(preview.themeConfig ?? theme.config));
       }
-      return staticResponse(c, blog.draftArtifact, c.req.path, 'private, no-store');
+      const nonce = randomBytes(18).toString('base64');
+      c.header('Content-Security-Policy', `default-src 'self'; script-src 'nonce-${nonce}'; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors ${config.appOrigin}`);
+      const bridge = previewBridge(config.appOrigin, nonce);
+      return staticResponse(c, blog.draftArtifact, c.req.path, 'private, no-store', undefined, (html) => injectPreviewBridge(html, bridge));
     }
     const username = publicUsername(c, config);
     if (username) {
@@ -154,10 +169,11 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   function ownedBlog(c: AppContext): BlogRecord { const blog = database.getBlogForUser(c.get('session').user.id); if (!blog) throw new AppError('blog_not_found', 'Connect HackMD first.', 404); return blog; }
-  function redirectOrJson(c: AppContext, operationId: string) { const operationUrl = `/operations/${operationId}`; return c.req.header('accept')?.includes('application/json') ? c.json({ operationUrl, pollUrl: `/api/operations/${operationId}` }, 202) : c.redirect(operationUrl, 303); }
+  function redirectOrJson(c: AppContext, operationId: string, successUrl = '/editor') { const operationUrl = `/operations/${operationId}`; return c.req.header('accept')?.includes('application/json') ? c.json({ operationUrl, pollUrl: `/api/operations/${operationId}`, successUrl }, 202) : c.redirect(operationUrl, 303); }
   async function mutationBody(c: AppContext) { assertMutationOrigin(c, config); const body = await c.req.parseBody(); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); return body; }
   function enqueue(c: AppContext, type: OperationType, payload: Record<string, unknown> = {}) {
     const blog = ownedBlog(c);
+    const previewPath = typeof payload.previewPath === 'string' ? payload.previewPath : '/';
     try {
       const operation = type === 'generate_theme' ? database.createThemeOperation(
         blog.userId,
@@ -165,10 +181,11 @@ export function createApp(options: CreateAppOptions = {}) {
         String(payload.prompt),
         payload.baseTheme,
         { userDailyLimit: config.aiUserDailyLimit, globalDailyLimit: config.aiGlobalDailyLimit },
+        previewPath,
       ) : type === 'publish'
         ? database.createPublishOperation(blog.userId, blog.id, hashToken(String(payload.previewToken)))
         : database.createSyncOperation(blog.userId, blog.id, payload);
-      return redirectOrJson(c, operation.id);
+      return redirectOrJson(c, operation.id, type === 'generate_theme' ? editorUrlWithPreviewPath(previewPath) : '/editor');
     } catch (error) {
       if (error instanceof AiQuotaExceededError) throw new AppError('ai_quota_exceeded', 'Today’s AI theme quota is exhausted.', 429, { 'Retry-After': String(error.retryAfter) });
       if (error instanceof Error && error.message === 'Nothing to publish') throw new AppError('nothing_to_publish', 'There are no unpublished changes.', 409);
@@ -254,10 +271,10 @@ export function createApp(options: CreateAppOptions = {}) {
     assertOwnedPreview(blog, readPreviewToken(body));
     try { database.createManualTheme(blog.userId, blog.id, theme); }
     catch (error) { if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', 'Another operation is already running.', 409); throw error; }
-    return c.redirect('/editor', 303);
+    return c.redirect(editorUrlWithPreviewPath(safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin)), 303);
   });
-  app.post('/actions/theme/generate', async (c) => { const body = await mutationBody(c); const input = themeInput.safeParse({ prompt: formValue(body, 'prompt') }); if (!input.success) throw new AppError('invalid_theme_prompt', 'Describe the theme in 1–1000 characters.', 400); const { blog, theme } = themeFromBody(c, body); assertOwnedPreview(blog, readPreviewToken(body)); return enqueue(c, 'generate_theme', { ...input.data, baseTheme: theme }); });
-  app.post('/actions/theme/:id/activate', async (c) => { await mutationBody(c); const blog = ownedBlog(c); const id = uuidInput.safeParse(c.req.param('id')); if (!id.success) throw new AppError('invalid_revision', 'Theme version not found.', 404); try { database.activateTheme(id.data, blog.id); } catch (error) { if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', 'Another operation is already running.', 409); throw error; } return c.redirect('/editor', 303); });
+  app.post('/actions/theme/generate', async (c) => { const body = await mutationBody(c); const input = themeInput.safeParse({ prompt: formValue(body, 'prompt') }); if (!input.success) throw new AppError('invalid_theme_prompt', 'Describe the theme in 1–1000 characters.', 400); const { blog, theme } = themeFromBody(c, body); assertOwnedPreview(blog, readPreviewToken(body)); const previewPath = safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin); return enqueue(c, 'generate_theme', { ...input.data, baseTheme: theme, previewPath }); });
+  app.post('/actions/theme/:id/activate', async (c) => { const body = await mutationBody(c); const blog = ownedBlog(c); const id = uuidInput.safeParse(c.req.param('id')); if (!id.success) throw new AppError('invalid_revision', 'Theme version not found.', 404); try { database.activateTheme(id.data, blog.id); } catch (error) { if (error instanceof Error && error.message.includes('active operation')) throw new AppError('operation_in_progress', 'Another operation is already running.', 409); throw error; } return c.redirect(editorUrlWithPreviewPath(safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin)), 303); });
   app.post('/actions/publish', async (c) => { const body = await mutationBody(c); return enqueue(c, 'publish', { previewToken: readPreviewToken(body) }); });
   app.post('/actions/releases/:id/activate', async (c) => {
     await mutationBody(c);
@@ -288,27 +305,31 @@ export function createApp(options: CreateAppOptions = {}) {
     if (!activeTheme) throw new AppError('theme_not_found', 'Theme not found', 404);
     const token = randomToken();
     database.createPreviewSession(hashToken(token), blog.userId, blog.id, new Date(Date.now() + 15 * 60_000).toISOString(), activeTheme.config);
-    const previewUrl = `${config.previewOrigin}/preview-access/${encodeURIComponent(token)}`;
+    const previewPath = safePreviewPath(c.req.query('previewPath'), config.previewOrigin);
+    const accessUrl = new URL(`/preview-access/${encodeURIComponent(token)}`, config.previewOrigin);
+    if (previewPath !== '/') accessUrl.searchParams.set('returnTo', previewPath);
+    const previewUrl = accessUrl.toString();
     const published = database.getActiveRelease(blog.id);
     const releases = database.listReleases(blog.id);
     const operation = database.getActiveOperation(blog.id, blog.userId);
-    return c.html(editorPage({ session: c.get('session'), blog, themes, activeTheme, published, releases, previewUrl, previewToken: token, publicUrl: siteUrl(config, blog.username), appHostname: config.appHostname, operation }));
+    return c.html(editorPage({ session: c.get('session'), blog, themes, activeTheme, published, releases, previewUrl, previewToken: token, previewOrigin: config.previewOrigin, previewPath, publicUrl: siteUrl(config, blog.username), appHostname: config.appHostname, operation }));
   });
   app.get('/operations/:id', (c) => {
     const id = uuidInput.safeParse(c.req.param('id'));
     const operation = id.success ? database.getOperation(id.data, c.get('session').user.id) : null;
     if (!operation) throw new AppError('operation_not_found', 'Operation not found.', 404);
     const blog = database.getBlog(operation.blogId);
-    return c.html(operationPage(c.get('session'), operation, blog?.draftArtifact ? '/editor' : '/onboarding'));
+    const previewPath = operation.type === 'generate_theme' ? safePreviewPath(operation.payload.previewPath, config.previewOrigin) : '/';
+    return c.html(operationPage(c.get('session'), operation, blog?.draftArtifact ? '/editor' : '/onboarding', editorUrlWithPreviewPath(previewPath)));
   });
   app.get('/api/session', (c) => c.json({ user: c.get('session').user, csrfToken: c.get('session').csrfToken }));
   app.get('/api/operations/:id', (c) => {
     const id = uuidInput.safeParse(c.req.param('id'));
     const operation = id.success ? database.getOperation(id.data, c.get('session').user.id) : null;
     if (!operation) throw new AppError('operation_not_found', 'Operation not found.', 404);
-    return c.json({ status: operation.status, message: operationMessage(operation) });
+    return c.json({ status: operation.status, message: operationMessage(operation), progress: operationProgress(operation) });
   });
 
-  app.get('/preview-access/:token', (c) => { const preview = database.getPreviewSession(hashToken(c.req.param('token'))); if (!preview) throw new AppError('preview_access_denied', 'Preview access expired or invalid', 403); setCookie(c, 'vibelog_preview', c.req.param('token'), { httpOnly: true, secure: config.secureCookies, sameSite: 'Lax', path: '/', maxAge: 900 }); return c.redirect('/'); });
+  app.get('/preview-access/:token', (c) => { const preview = database.getPreviewSession(hashToken(c.req.param('token'))); if (!preview) throw new AppError('preview_access_denied', 'Preview access expired or invalid', 403); setCookie(c, 'vibelog_preview', c.req.param('token'), { httpOnly: true, secure: config.secureCookies, sameSite: 'Lax', path: '/', maxAge: 900 }); return c.redirect(safePreviewPath(c.req.query('returnTo'), config.previewOrigin)); });
   return { app, auth, database, config };
 }

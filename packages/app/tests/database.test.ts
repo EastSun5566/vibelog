@@ -272,14 +272,16 @@ describe('AppDatabase 0.5 model', () => {
     expect(database.claimNextOperation()?.attempts).toBe(1);
     database.connection.prepare("UPDATE operations SET status = 'queued' WHERE id = ?").run(operation.id);
     expect(database.claimNextOperation()?.attempts).toBe(2);
+    database.updateOperationProgress(operation.id, { kind: 'determinate', value: 2, max: 4 }, 'Building static preview');
     const messages = {
       sync: '同步多次中斷', generate_theme: '樣式多次中斷', publish: '發布多次中斷',
     };
     expect(database.recoverOperations(messages)).toEqual({ requeued: 1, exhausted: 0 });
-    expect(database.getOperation(operation.id, blog.userId)).toMatchObject({ status: 'queued', attempts: 2 });
+    expect(database.getOperation(operation.id, blog.userId)).toMatchObject({ status: 'queued', attempts: 2, result: null });
     expect(database.claimNextOperation()?.attempts).toBe(3);
+    database.updateOperationProgress(operation.id, { kind: 'determinate', value: 3, max: 4 }, 'Finalizing draft');
     expect(database.recoverOperations(messages)).toEqual({ requeued: 0, exhausted: 1 });
-    expect(database.getOperation(operation.id, blog.userId)).toMatchObject({ status: 'failed', attempts: 3, errorMessage: '同步多次中斷' });
+    expect(database.getOperation(operation.id, blog.userId)).toMatchObject({ status: 'failed', attempts: 3, errorMessage: '同步多次中斷', result: { progress: { kind: 'determinate', value: 3, max: 4 }, progressMessage: 'Finalizing draft' } });
     expect(database.getBlog(blog.id)).toMatchObject({ state: 'failed', lastError: '同步多次中斷', contentVersion: 0 });
     expect(database.claimNextOperation()).toBeNull();
     database.close();

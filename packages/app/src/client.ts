@@ -14,6 +14,46 @@ const showStatus = (node, message, failed = false) => {
   if (failed) node.focus();
 };
 
+const updateProgress = (statusNode, progress = { kind: 'indeterminate' }) => {
+  const node = statusNode?.closest('.operation-feedback')?.querySelector('[data-operation-progress]');
+  if (!(node instanceof HTMLProgressElement)) return;
+  node.hidden = false;
+  if (progress?.kind === 'determinate' && Number.isFinite(progress.value) && Number.isFinite(progress.max) && progress.max > 0) {
+    node.max = progress.max;
+    node.value = Math.min(progress.max, Math.max(0, progress.value));
+  } else {
+    node.removeAttribute('value');
+  }
+};
+
+const preview = document.querySelector('iframe[data-preview-url]');
+const previewOrigin = preview?.dataset.previewOrigin;
+const safePreviewPath = (value) => {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 2048 || !value.startsWith('/') || value.startsWith('//') || !previewOrigin) return '/';
+  try {
+    const url = new URL(value, previewOrigin);
+    return url.origin === new URL(previewOrigin).origin ? url.pathname + url.search + url.hash : '/';
+  } catch { return '/'; }
+};
+let currentPreviewPath = safePreviewPath(document.querySelector('[data-preview-path-input]')?.value ?? '/');
+const rememberPreviewPath = (value) => {
+  currentPreviewPath = safePreviewPath(value);
+  for (const input of document.querySelectorAll('[data-preview-path-input]')) input.value = currentPreviewPath;
+};
+
+if (preview && previewOrigin) {
+  addEventListener('message', (event) => {
+    if (event.origin !== new URL(previewOrigin).origin || event.source !== preview.contentWindow || event.data?.type !== 'vibelog-preview-location') return;
+    rememberPreviewPath(event.data.path);
+  });
+}
+
+const editorUrl = new URL(location.href);
+if (editorUrl.pathname === '/editor' && editorUrl.searchParams.has('previewPath')) {
+  editorUrl.searchParams.delete('previewPath');
+  history.replaceState(history.state, '', editorUrl.pathname + editorUrl.search + editorUrl.hash);
+}
+
 const syncAriaInvalid = (control) => {
   if (!(control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)) return;
   if (!control.checkValidity()) control.setAttribute('aria-invalid', 'true');
@@ -40,6 +80,7 @@ const poll = async (url, statusNode, successUrl = '/editor') => {
     const response = await fetch(url, { headers: { accept: 'application/json' }, credentials: 'same-origin' });
     const payload = await readPayload(response);
     if (!response.ok) throw new Error(payload.error?.message ?? 'Could not read progress');
+    updateProgress(statusNode, payload.progress);
     showStatus(statusNode, payload.message ?? 'Working…', payload.status === 'failed');
     if (payload.status === 'succeeded') {
       await sleep(500);
@@ -63,13 +104,14 @@ for (const form of document.querySelectorAll('form[data-operation]')) {
     form.setAttribute('aria-busy', 'true');
     for (const item of buttons) item.disabled = true;
     if (button) button.textContent = 'Working…';
+    updateProgress(statusNode);
     showStatus(statusNode, 'Submitted and waiting…');
     const action = button?.hasAttribute('formaction') ? button.formAction : form.action;
     void fetch(action, { method: 'POST', body: new FormData(form), headers: { accept: 'application/json' }, credentials: 'same-origin' })
       .then(async (response) => {
         const payload = await readPayload(response);
         if (!response.ok || !payload.pollUrl) throw new Error(payload.error?.message ?? 'Could not start the operation');
-        await poll(payload.pollUrl, statusNode, form.dataset.successUrl ?? '/editor');
+        await poll(payload.pollUrl, statusNode, payload.successUrl ?? form.dataset.successUrl ?? '/editor');
       })
       .catch((error) => showStatus(statusNode, error instanceof Error ? error.message : 'The operation failed. Please try again.', true))
       .finally(() => {
@@ -83,7 +125,6 @@ for (const form of document.querySelectorAll('form[data-operation]')) {
 const studio = document.querySelector('form[data-theme-studio]');
 if (studio) {
   const statusNode = studio.querySelector('[data-operation-status]');
-  const preview = document.querySelector('iframe[data-preview-url]');
   const publishButton = document.querySelector('[data-publish-button]');
   const unsavedNote = studio.querySelector('[data-unsaved-note]');
   const publishInitiallyDisabled = publishButton?.disabled ?? true;
@@ -112,11 +153,7 @@ if (studio) {
       const payload = await readPayload(response);
       if (!response.ok) throw new Error(payload.error?.message ?? 'Could not update the preview');
       showStatus(statusNode, payload.message ?? 'Preview updated; changes are not saved');
-      if (preview?.dataset.previewUrl) {
-        const url = new URL(preview.dataset.previewUrl);
-        url.searchParams.set('theme', String(Date.now()));
-        preview.src = url.toString();
-      }
+      if (previewOrigin) preview?.contentWindow?.postMessage({ type: 'vibelog-preview-refresh' }, new URL(previewOrigin).origin);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       showStatus(statusNode, error instanceof Error ? error.message : 'Could not update the preview', true);

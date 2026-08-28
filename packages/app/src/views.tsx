@@ -1,7 +1,8 @@
 import type { AppSession } from './auth.js';
 import type { BlogRecord, OperationRecord, PublishedReleaseRecord, SyncedPostSummary, ThemeRevisionRecord } from './database.js';
 import { syncOperationIntent } from './blog-sync.js';
-import { operationLabel, operationMessage } from './operation-status.js';
+import { operationLabel, operationMessage, operationProgress } from './operation-status.js';
+import { editorUrlWithPreviewPath } from './preview-path.js';
 import { calculatePublicationDiff } from './publication-diff.js';
 import { THEME_PALETTES, themeControlValues } from './theme-studio.js';
 
@@ -136,16 +137,27 @@ export function changePasswordPage(session: AppSession) {
   </section>, session);
 }
 
-function OperationOutput({ operation }: { operation?: OperationRecord }) {
+function OperationOutput({ operation, successUrl }: { operation?: OperationRecord; successUrl?: string }) {
   const pending = operation && (operation.status === 'queued' || operation.status === 'running');
-  return <output
-    class="alert operation-status"
-    data-variant={operation?.status === 'failed' ? 'destructive' : undefined}
-    aria-live="polite"
-    tabindex={-1}
-    data-operation-status
-    data-poll-url={pending ? `/api/operations/${operation.id}` : undefined}
-  >{operation ? operationMessage(operation) : ''}</output>;
+  const progress = operation ? operationProgress(operation) : null;
+  return <div class="operation-feedback">
+    <progress
+      data-operation-progress
+      aria-label="Operation progress"
+      hidden={!operation}
+      max={progress?.kind === 'determinate' ? progress.max : undefined}
+      value={progress?.kind === 'determinate' ? progress.value : undefined}
+    ></progress>
+    <output
+      class="alert operation-status"
+      data-variant={operation?.status === 'failed' ? 'destructive' : undefined}
+      aria-live="polite"
+      tabindex={-1}
+      data-operation-status
+      data-poll-url={pending ? `/api/operations/${operation.id}` : undefined}
+      data-success-url={successUrl}
+    >{operation ? operationMessage(operation) : ''}</output>
+  </div>;
 }
 
 export function onboardingPage(session: AppSession, blog: BlogRecord | null, operation: OperationRecord | null) {
@@ -182,6 +194,8 @@ interface EditorPageInput {
   releases: PublishedReleaseRecord[];
   previewUrl: string | null;
   previewToken: string;
+  previewOrigin: string;
+  previewPath: string;
   publicUrl: string;
   appHostname: string;
   operation?: OperationRecord | null;
@@ -289,6 +303,7 @@ export function editorPage(input: EditorPageInput) {
   const contentOperation = input.operation?.type === 'sync' && syncOperationIntent(input.operation.payload) === 'content' ? input.operation : undefined;
   const selectionOperation = input.operation?.type === 'sync' && syncOperationIntent(input.operation.payload) === 'selection' ? input.operation : undefined;
   const includedPosts = blog.contentManifest?.filter((post) => post.included).length ?? 0;
+  const themeSuccessUrl = editorUrlWithPreviewPath(input.previewPath);
 
   return document('Edit blog', <div class="editor">
     <section class="controls" aria-label="Blog controls">
@@ -367,6 +382,7 @@ export function editorPage(input: EditorPageInput) {
         <section><form method="post" action="/actions/theme/apply" data-operation data-mixed-actions data-theme-studio>
           <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
           <input type="hidden" name="previewToken" value={input.previewToken}/>
+          <input type="hidden" name="previewPath" value={input.previewPath} data-preview-path-input/>
           <div class="field"><label for="prompt">Describe the feel you want</label><textarea id="prompt" name="prompt" maxlength={1000} placeholder="For example: make long articles feel like a restrained independent magazine"></textarea></div>
           <div class="prompt-starters" aria-label="Prompt suggestions">
             {['A restrained independent magazine', 'Make long articles easier to read', 'Keep it minimal but add personality', 'A dark theme for night reading'].map((prompt) => <button class="btn prompt-chip" data-variant="secondary" data-size="compact" type="button" data-prompt-starter={prompt} aria-controls="prompt">{prompt}</button>)}
@@ -398,7 +414,7 @@ export function editorPage(input: EditorPageInput) {
           </details>
           <button class="btn" data-variant="outline" type="submit" disabled={busy}>Save as a new version</button>
           <p class="unsaved-note" data-unsaved-note hidden>These theme changes are not saved. Save before publishing.</p>
-          <OperationOutput operation={input.operation?.type === 'generate_theme' ? input.operation : undefined}/>
+          <OperationOutput operation={input.operation?.type === 'generate_theme' ? input.operation : undefined} successUrl={themeSuccessUrl}/>
         </form></section>
       </section>
 
@@ -418,6 +434,7 @@ export function editorPage(input: EditorPageInput) {
             </div>
             {theme.active ? null : <form method="post" action={`/actions/theme/${theme.id}/activate`}>
               <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
+              <input type="hidden" name="previewPath" value={input.previewPath} data-preview-path-input/>
               <button class="btn" data-variant="outline" data-size="compact" type="submit" disabled={busy}>Preview this version</button>
             </form>}
           </div>)}</div>
@@ -461,28 +478,20 @@ export function editorPage(input: EditorPageInput) {
       <div class="preview-frame">
         <div class="preview-chrome">{blog.username}.{input.appHostname}</div>
         {input.previewUrl
-          ? <iframe class="preview" src={input.previewUrl} data-preview-url={input.previewUrl} title={`Live preview of ${blog.title ?? blog.username}`} sandbox="allow-same-origin"></iframe>
+          ? <iframe class="preview" src={input.previewUrl} data-preview-url={input.previewUrl} data-preview-origin={input.previewOrigin} title={`Live preview of ${blog.title ?? blog.username}`} sandbox="allow-same-origin allow-scripts"></iframe>
           : <div class="preview-empty card"><section><p>Your preview appears here after the first content sync.</p></section></div>}
       </div>
     </section>
   </div>, input.session, true);
 }
 
-export function operationPage(session: AppSession, operation: OperationRecord, backUrl: string) {
+export function operationPage(session: AppSession, operation: OperationRecord, backUrl: string, successUrl = '/editor') {
   const pending = operation.status === 'queued' || operation.status === 'running';
   const label = operationLabel(operation);
   return document(label, <section class="auth-shell card">
     <header><p class="auth-kicker">Background operation</p><h1>{label}</h1><p>Wait here or return to the editor and check again later.</p></header>
     <section class="stack">
-    <output
-      class="alert operation-status"
-      data-variant={operation.status === 'failed' ? 'destructive' : undefined}
-      aria-live="polite"
-      tabindex={-1}
-      data-operation-status
-      data-poll-url={pending ? `/api/operations/${operation.id}` : undefined}
-      data-success-url="/editor"
-    >{operationMessage(operation)}</output>
+    <OperationOutput operation={operation} successUrl={successUrl}/>
     {pending ? <p><a href={`/operations/${operation.id}`}>Refresh status</a></p> : null}
     <p><a href={backUrl}>{operation.status === 'failed' ? 'Go back and retry' : 'Back to editor'}</a></p>
     </section>

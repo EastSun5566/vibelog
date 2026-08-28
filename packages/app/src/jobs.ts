@@ -85,9 +85,11 @@ export class OperationWorker {
       const stagingRoot = join(root, `.sync-${randomUUID()}`);
       let installedDraft: string | null = null;
       try {
+        this.database.updateOperationProgress(operation.id, { kind: 'determinate', value: 0, max: 4 }, 'Reading HackMD');
         await mkdir(stagingRoot, { recursive: true, mode: 0o700 });
         const source = this.dependencies.contentSource?.(blog.hackmdUsername) ?? new HackMdSource(blog.hackmdUsername);
         const [{ posts }, author] = await Promise.all([source.getPosts(), source.getAuthor()]);
+        this.database.updateOperationProgress(operation.id, { kind: 'determinate', value: 1, max: 4 }, 'Preparing blog files');
         const payload = parseSyncOperationPayload(operation.payload);
         const site = payload.intent === 'identity'
           ? payload.site
@@ -104,8 +106,10 @@ export class OperationWorker {
           ?? blog.contentManifest?.filter((post) => !post.included).map((post) => post.slug)
           ?? [];
         const summary = await builder.fetchContent({ excludedSlugs });
+        this.database.updateOperationProgress(operation.id, { kind: 'determinate', value: 2, max: 4 }, 'Building static preview');
         const output = join(stagingRoot, 'dist');
         await buildFromVibelog({ vibelogDir: join(stagingRoot, '.vibelog'), outDir: output, site: publicOrigin(this.config, blog.username) });
+        this.database.updateOperationProgress(operation.id, { kind: 'determinate', value: 3, max: 4 }, 'Finalizing draft');
         const draftsRoot = join(root, 'drafts');
         const draft = join(draftsRoot, randomUUID());
         await mkdir(draftsRoot, { recursive: true, mode: 0o700 });
@@ -131,6 +135,7 @@ export class OperationWorker {
       }
     }
     case 'generate_theme': {
+      this.database.updateOperationProgress(operation.id, { kind: 'indeterminate' }, 'AI is designing a new theme…');
       const prompt = operation.payload.prompt;
       if (typeof prompt !== 'string') throw new Error('Theme description is required');
       const current = this.database.getActiveTheme(blog.id);
@@ -156,9 +161,12 @@ export class OperationWorker {
       const release = join(releasesRoot, releaseId);
       await mkdir(releasesRoot, { recursive: true, mode: 0o700 });
       try {
+        this.database.updateOperationProgress(operation.id, { kind: 'determinate', value: 0, max: 3 }, 'Copying draft');
         await cp(blog.draftArtifact, staging, { recursive: true, errorOnExist: true });
+        this.database.updateOperationProgress(operation.id, { kind: 'determinate', value: 1, max: 3 }, 'Applying theme');
         await writeFile(join(staging, 'theme.css'), renderThemeCss(theme.config), { mode: 0o644 });
         await rename(staging, release);
+        this.database.updateOperationProgress(operation.id, { kind: 'determinate', value: 2, max: 3 }, 'Activating release and cleaning up');
         const result = { message: 'Site published', url: publicOrigin(this.config, blog.username) };
         this.database.completePublishOperation(operation.id, release, createReleaseSnapshot(blog), result);
         try {

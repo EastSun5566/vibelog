@@ -67,6 +67,7 @@ describe('OperationWorker publication snapshots', () => {
     ] }));
     const source: ContentSource = { name: ContentSourceName.HACKMD, getAuthor, getPosts };
     const config = { dataRoot: root, appOrigin: 'http://app.localtest.me:3000' } as AppConfig;
+    const progress = vi.spyOn(database, 'updateOperationProgress');
 
     await new OperationWorker(database, config, { contentSource: () => source }).execute(operation);
 
@@ -90,6 +91,12 @@ describe('OperationWorker publication snapshots', () => {
     await expect(readFile(join(synced.draftArtifact, 'blog', 'older', 'index.html'), 'utf8')).rejects.toThrow();
     expect(await readFile(join(synced.draftArtifact, 'blog', 'newer', 'index.html'), 'utf8')).toContain('Newer');
     await expect(readFile(join(oldDraft, 'index.html'), 'utf8')).rejects.toThrow();
+    expect(progress.mock.calls.map(([, value, message]) => [value, message])).toEqual([
+      [{ kind: 'determinate', value: 0, max: 4 }, 'Reading HackMD'],
+      [{ kind: 'determinate', value: 1, max: 4 }, 'Preparing blog files'],
+      [{ kind: 'determinate', value: 2, max: 4 }, 'Building static preview'],
+      [{ kind: 'determinate', value: 3, max: 4 }, 'Finalizing draft'],
+    ]);
     database.close();
   }, 30_000);
 
@@ -158,9 +165,11 @@ describe('OperationWorker publication snapshots', () => {
     let received: ThemeConfig | undefined;
     const provider: AiProvider = { name: 'faux', modelId: 'faux', generate(input) { received = input.currentTheme; return Promise.resolve({ ...input.currentTheme, radius: 'round', description: 'AI continuation' }); } };
     const config = { dataRoot: root, appOrigin: 'http://app.localtest.me:3000' } as AppConfig;
+    const progress = vi.spyOn(database, 'updateOperationProgress');
     await new OperationWorker(database, config, { aiProvider: () => provider }).execute(generate);
     expect(received).toEqual(baseTheme);
     expect(database.getActiveTheme(blog.id)).toMatchObject({ source: 'ai', config: { preset: 'editorial', contentWidth: 'wide', radius: 'round' } });
+    expect(progress).toHaveBeenCalledWith(generate.id, { kind: 'indeterminate' }, 'AI is designing a new theme…');
     database.close();
   });
 
@@ -179,6 +188,7 @@ describe('OperationWorker publication snapshots', () => {
     const publish = database.createPublishOperation(blog.userId, blog.id, 'frank-preview');
     database.createTheme(blog.id, { ...DEFAULT_THEME, appearance: 'dark', colors: { ...DEFAULT_THEME.colors, background: '#111111', surface: '#222222', text: '#ffffff', muted: '#c0c0c0', accent: '#80caff', border: '#555555' }, description: 'A later theme' }, 'later change');
     const config = { dataRoot: root, appOrigin: 'http://app.localtest.me:3000' } as AppConfig;
+    const progress = vi.spyOn(database, 'updateOperationProgress');
     await new OperationWorker(database, config).execute(publish);
     const release = database.getActiveRelease(blog.id);
     expect(release).toMatchObject({
@@ -189,6 +199,11 @@ describe('OperationWorker publication snapshots', () => {
         posts: [{ slug: 'published-post', contentHash: digest }],
       },
     });
+    expect(progress.mock.calls.map(([, value, message]) => [value, message])).toEqual([
+      [{ kind: 'determinate', value: 0, max: 3 }, 'Copying draft'],
+      [{ kind: 'determinate', value: 1, max: 3 }, 'Applying theme'],
+      [{ kind: 'determinate', value: 2, max: 3 }, 'Activating release and cleaning up'],
+    ]);
     database.close();
   });
 
