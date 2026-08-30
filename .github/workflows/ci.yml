@@ -52,6 +52,7 @@ jobs:
       - name: Validate Compose manifests
         run: |
           docker compose config --quiet
+          docker compose --env-file .env.selfhost.example -f compose.selfhost.yml config --quiet
       - name: Build and smoke test stateless application containers
         env:
           VIBELOG_APP_IMAGE: vibelog-app:ci

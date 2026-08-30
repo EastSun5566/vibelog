@@ -48,3 +48,17 @@ The production build publishes one application image containing three entrypoint
 - `node dist/migrate.js`
 
 The image deliberately does not bundle PostgreSQL, object storage, or an edge proxy.
+
+## Self-hosting on a VPS
+
+[`compose.selfhost.yml`](compose.selfhost.yml) runs the released image as separate migration, web, and durable PostgreSQL-backed worker roles. It also includes private PostgreSQL and MinIO services with persistent volumes. Copy [`.env.selfhost.example`](.env.selfhost.example) to `.env.selfhost`, replace every placeholder, pin `VIBELOG_IMAGE` to an immutable release, then run:
+
+```sh
+docker compose --env-file .env.selfhost -f compose.selfhost.yml pull
+docker compose --env-file .env.selfhost -f compose.selfhost.yml up -d
+docker compose --env-file .env.selfhost -f compose.selfhost.yml ps
+```
+
+Only the web port binds to `127.0.0.1`; PostgreSQL, MinIO, and the worker stay private. Put your existing reverse proxy in front of that port with wildcard TLS, preserve the original `Host`, and route `APP_ORIGIN`, `PREVIEW_ORIGIN`, and every `*.<APP_ORIGIN hostname>` request to it. Cloudflare Worker/Pulumi infrastructure is not required for self-hosting.
+
+Back up both named volumes and `.env.selfhost` before upgrades. The manifest is a simple single-VPS topology, not a high-availability database or object-storage setup.

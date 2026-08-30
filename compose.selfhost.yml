@@ -1,0 +1,125 @@
+x-runtime-environment: &runtime-environment
+  NODE_ENV: production
+  HOST: 0.0.0.0
+  PORT: 3000
+  APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN in .env.selfhost}
+  DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.selfhost}
+  OBJECT_STORE_ENDPOINT: ${OBJECT_STORE_ENDPOINT:-http://minio:9000}
+  OBJECT_STORE_REGION: ${OBJECT_STORE_REGION:-us-east-1}
+  OBJECT_STORE_BUCKET: ${OBJECT_STORE_BUCKET:-vibelog}
+  OBJECT_STORE_ACCESS_KEY_ID: ${OBJECT_STORE_ACCESS_KEY_ID:?Set OBJECT_STORE_ACCESS_KEY_ID in .env.selfhost}
+  OBJECT_STORE_SECRET_ACCESS_KEY: ${OBJECT_STORE_SECRET_ACCESS_KEY:?Set OBJECT_STORE_SECRET_ACCESS_KEY in .env.selfhost}
+  OBJECT_STORE_FORCE_PATH_STYLE: ${OBJECT_STORE_FORCE_PATH_STYLE:-true}
+  OPERATION_QUEUE: postgres
+  OPERATION_POLL_INTERVAL_MS: ${OPERATION_POLL_INTERVAL_MS:-1000}
+  VIBELOG_AI_PROVIDER: ${VIBELOG_AI_PROVIDER:-openai}
+  VIBELOG_AI_MODEL: ${VIBELOG_AI_MODEL:-gpt-4o-mini}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GROQ_API_KEY: ${GROQ_API_KEY:-}
+
+services:
+  postgres:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vibelog}
+      POSTGRES_USER: ${POSTGRES_USER:-vibelog}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.selfhost}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    security_opt:
+      - no-new-privileges:true
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${OBJECT_STORE_ACCESS_KEY_ID:?Set OBJECT_STORE_ACCESS_KEY_ID in .env.selfhost}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORE_SECRET_ACCESS_KEY:?Set OBJECT_STORE_SECRET_ACCESS_KEY in .env.selfhost}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - minio_data:/data
+    security_opt:
+      - no-new-privileges:true
+
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${OBJECT_STORE_ACCESS_KEY_ID:?Set OBJECT_STORE_ACCESS_KEY_ID in .env.selfhost}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORE_SECRET_ACCESS_KEY:?Set OBJECT_STORE_SECRET_ACCESS_KEY in .env.selfhost}
+      OBJECT_STORE_BUCKET: ${OBJECT_STORE_BUCKET:-vibelog}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" && mc mb --ignore-existing \"local/$$OBJECT_STORE_BUCKET\""]
+
+  migrate:
+    image: ${VIBELOG_IMAGE:?Set VIBELOG_IMAGE to an immutable image tag or digest}
+    restart: "no"
+    command: ["node", "dist/migrate.js"]
+    environment:
+      DATABASE_MIGRATION_URL: ${DATABASE_MIGRATION_URL:?Set DATABASE_MIGRATION_URL in .env.selfhost}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    image: ${VIBELOG_IMAGE:?Set VIBELOG_IMAGE to an immutable image tag or digest}
+    restart: unless-stopped
+    command: ["node", "dist/web-main.js"]
+    environment:
+      <<: *runtime-environment
+      PREVIEW_ORIGIN: ${PREVIEW_ORIGIN:?Set PREVIEW_ORIGIN in .env.selfhost}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env.selfhost}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      EMAIL_PROVIDER: resend
+      RESEND_API_KEY: ${RESEND_API_KEY:?Set RESEND_API_KEY in .env.selfhost}
+      EMAIL_FROM: ${EMAIL_FROM:?Set EMAIL_FROM in .env.selfhost}
+      EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:?Set EMAIL_REPLY_TO in .env.selfhost}
+    ports:
+      - "127.0.0.1:${VIBELOG_BIND_PORT:-3000}:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+
+  worker:
+    image: ${VIBELOG_IMAGE:?Set VIBELOG_IMAGE to an immutable image tag or digest}
+    restart: unless-stopped
+    command: ["node", "dist/worker-main.js"]
+    environment: *runtime-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres_data:
+  minio_data:
