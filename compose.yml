@@ -1,29 +1,119 @@
 services:
-  app:
-    image: ${VIBELOG_APP_IMAGE:-ghcr.io/eastsun5566/vibelog-app:beta}
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: vibelog
+      POSTGRES_USER: vibelog
+      POSTGRES_PASSWORD: local-vibelog
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vibelog"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    volumes:
+      - minio_data:/data
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mc alias set local http://minio:9000 minioadmin minioadmin && mc mb --ignore-existing local/vibelog"]
+  mailpit:
+    image: axllent/mailpit:v1.27.8
+    ports:
+      - "${MAILPIT_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+  hackmd-fixture:
+    image: node:24-slim
+    profiles: ["e2e"]
+    command: ["node", "/fixtures/fixture-hackmd.mjs"]
+    volumes:
+      - ./e2e:/fixtures:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4400/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+  migrate:
+    image: ${VIBELOG_APP_IMAGE:-vibelog-app:dev}
     build:
       context: .
       dockerfile: packages/app/Dockerfile
-    env_file:
-      - path: .env
-        required: false
+    command: ["node", "dist/migrate.js"]
     environment:
+      DATABASE_MIGRATION_URL: postgresql://vibelog:local-vibelog@postgres:5432/vibelog
+    depends_on:
+      postgres:
+        condition: service_healthy
+  web:
+    image: ${VIBELOG_APP_IMAGE:-vibelog-app:dev}
+    command: ["node", "dist/web-main.js"]
+    environment: &runtime-environment
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 3000
-      DATA_ROOT: /data
       APP_ORIGIN: ${APP_ORIGIN:-http://app.localtest.me:3000}
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
-      VIBELOG_AI_USER_DAILY_LIMIT: ${VIBELOG_AI_USER_DAILY_LIMIT:-20}
-      VIBELOG_AI_GLOBAL_DAILY_LIMIT: ${VIBELOG_AI_GLOBAL_DAILY_LIMIT:-200}
+      HACKMD_BASE_URL: ${HACKMD_BASE_URL:-https://hackmd.io}
+      DATABASE_URL: postgresql://vibelog:local-vibelog@postgres:5432/vibelog
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-local-vibelog-secret-that-is-longer-than-thirty-two-characters}
+      EMAIL_PROVIDER: mailpit
+      MAILPIT_API_URL: http://mailpit:8025
+      EMAIL_FROM: ${EMAIL_FROM:-VibeLog <login@send.example.com>}
+      EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-support@example.com}
+      OBJECT_STORE_ENDPOINT: http://minio:9000
+      OBJECT_STORE_REGION: us-east-1
+      OBJECT_STORE_BUCKET: vibelog
+      OBJECT_STORE_ACCESS_KEY_ID: minioadmin
+      OBJECT_STORE_SECRET_ACCESS_KEY: minioadmin
+      OBJECT_STORE_FORCE_PATH_STYLE: "true"
+      OPERATION_QUEUE: postgres
+      OPERATION_POLL_INTERVAL_MS: "250"
       VIBELOG_AI_PROVIDER: ${VIBELOG_AI_PROVIDER:-openai}
       VIBELOG_AI_MODEL: ${VIBELOG_AI_MODEL:-gpt-4o-mini}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "${PORT:-3000}:3000"
-    volumes:
-      - app_data:/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_healthy
     stop_grace_period: 30s
-
+  worker:
+    image: ${VIBELOG_APP_IMAGE:-vibelog-app:dev}
+    command: ["node", "dist/worker-main.js"]
+    environment: *runtime-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
 volumes:
-  app_data:
+  postgres_data:
+  minio_data:

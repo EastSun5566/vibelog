@@ -279,18 +279,20 @@ function prepareNotes(notes: z.infer<typeof noteSchema>[]): PreparedNote[] {
 
 export class HackMdSource implements ContentSource {
   readonly name = ContentSourceName.HACKMD;
-  constructor(readonly username: string) {
+  private readonly baseUrl: string;
+  constructor(readonly username: string, options: { baseUrl?: string } = {}) {
     logger.info(`Content source: HackMD (${username})`);
     assert(username, 'HackMD username is required');
+    this.baseUrl = new URL(options.baseUrl ?? BASE_URL).origin;
   }
 
   async getPosts() {
     const overviewController = new AbortController();
-    const overview = await requestJson(`${BASE_URL}/api/@${this.username}/overview`, 'overview', MAX_OVERVIEW_BYTES, (input) => overviewSchema.parse(input), overviewController.signal);
+    const overview = await requestJson(`${this.baseUrl}/api/@${this.username}/overview`, 'overview', MAX_OVERVIEW_BYTES, (input) => overviewSchema.parse(input), overviewController.signal);
     const notes = prepareNotes(overview.notes);
     let totalBytes = 0;
     const posts = await mapConcurrent(notes, DOWNLOAD_CONCURRENCY, async (note, signal): Promise<Post> => {
-      const result = await requestText(`${BASE_URL}/${note.id}/download`, 'article', MAX_ARTICLE_BYTES, signal);
+      const result = await requestText(`${this.baseUrl}/${note.id}/download`, 'article', MAX_ARTICLE_BYTES, signal);
       totalBytes += result.bytes;
       if (totalBytes > MAX_SYNC_BYTES) throw new HackMdSourceError('sync_too_large', 'HackMD articles exceed the 32 MiB sync limit');
       return {
@@ -308,7 +310,7 @@ export class HackMdSource implements ContentSource {
 
   async getAuthor() {
     const controller = new AbortController();
-    const { user, team } = await requestJson(`${BASE_URL}/info/@${this.username}`, 'profile', MAX_PROFILE_BYTES, (input) => profileSchema.parse(input), controller.signal);
+    const { user, team } = await requestJson(`${this.baseUrl}/info/@${this.username}`, 'profile', MAX_PROFILE_BYTES, (input) => profileSchema.parse(input), controller.signal);
     return {
       name: user?.displayName ?? team?.name ?? 'Unknown',
       bio: user?.biography ?? team?.description ?? '',

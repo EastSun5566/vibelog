@@ -1,16 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { DatabaseSync } from 'node:sqlite';
-import { and, asc, desc, eq, gt, inArray, lt, sql } from 'drizzle-orm';
-import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3/driver';
-import { readMigrationFiles } from 'drizzle-orm/migrator';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
 import type { ThemeConfig } from '@vibelog/core';
 import { DEFAULT_THEME, validateThemeConfig } from '@vibelog/core';
 import { z } from 'zod';
-import { drizzleNodeSqlite } from './node-sqlite-drizzle.js';
 import { parseSyncOperationPayload } from './blog-sync.js';
+import type { OperationMessage } from './ports/operation-queue.js';
 import * as schema from './schema.js';
 
 export type BlogState = 'syncing' | 'ready' | 'failed';
@@ -18,370 +14,277 @@ export type OperationType = 'sync' | 'generate_theme' | 'publish';
 export type OperationStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type OperationProgress = { kind: 'indeterminate' } | { kind: 'determinate'; value: number; max: number };
 export type ThemeRevisionSource = 'system' | 'ai' | 'manual';
+export type ArtifactState = 'uploading' | 'ready' | 'cleanup_pending';
 export interface SyncedPostTag { name: string; slug: string }
 export interface SyncedPostSummary { title: string; slug: string; publishedAt: string; included: boolean; tags?: SyncedPostTag[]; updatedAt?: string; contentHash?: string }
-export interface BlogRecord { id: string; userId: string; username: string; hackmdUsername: string; title: string | null; description: string | null; author: string | null; language: string; state: BlogState; lastError: string | null; draftArtifact: string | null; contentVersion: number; contentManifest: SyncedPostSummary[] | null; lastSyncedAt: string | null; createdAt: string; updatedAt: string }
+export interface BlogRecord { id: string; userId: string; username: string; hackmdUsername: string; title: string | null; description: string | null; author: string | null; language: string; state: BlogState; lastError: string | null; draftArtifactId: string | null; contentVersion: number; contentManifest: SyncedPostSummary[] | null; lastSyncedAt: string | null; createdAt: string; updatedAt: string }
+export interface ArtifactRecord { id: string; blogId: string; kind: 'draft' | 'release'; keyPrefix: string; state: ArtifactState; createdAt: string; readyAt: string | null }
 export interface ThemeRevisionRecord { id: string; blogId: string; config: ThemeConfig; prompt: string | null; description: string; source: ThemeRevisionSource; active: boolean; createdAt: string }
-export interface OperationRecord { id: string; userId: string; blogId: string; type: OperationType; status: OperationStatus; payload: Record<string, unknown>; result: Record<string, unknown> | null; errorMessage: string | null; attempts: number; createdAt: string; updatedAt: string }
+export interface OperationRecord { id: string; userId: string; blogId: string; type: OperationType; status: OperationStatus; payload: Record<string, unknown>; result: Record<string, unknown> | null; errorMessage: string | null; attempts: number; lockedAt: string | null; leaseExpiresAt: string | null; createdAt: string; updatedAt: string }
 export interface ReleaseSnapshot { site: { title: string; description: string; author: string; language: string }; posts: SyncedPostSummary[] }
-export interface PublishedReleaseRecord { id: string; blogId: string; themeRevisionId: string; contentVersion: number; snapshot: ReleaseSnapshot | null; artifact: string; active: boolean; createdAt: string }
+export interface PublishedReleaseRecord { id: string; blogId: string; themeRevisionId: string; contentVersion: number; snapshot: ReleaseSnapshot | null; artifactId: string; active: boolean; createdAt: string }
 export interface PreviewSessionRecord { tokenHash: string; userId: string; blogId: string; themeConfig: ThemeConfig | null; expiresAt: string }
 export interface AiQuotaLimits { userDailyLimit: number; globalDailyLimit: number; at?: Date }
-export interface OperationRecoveryResult { requeued: number; exhausted: number }
-export interface BlogStorageReference { userId: string; blogId: string; draftArtifact: string | null; releaseArtifacts: string[] }
+export interface OutboxRecord { id: string; operationId: string; message: OperationMessage }
 export class AiQuotaExceededError extends Error { constructor(readonly retryAfter: number) { super('AI daily quota exceeded'); this.name = 'AiQuotaExceededError'; } }
 
 export const MAX_OPERATION_ATTEMPTS = 3;
 export const MAX_PUBLISHED_RELEASES = 20;
-
-const now = () => new Date().toISOString();
-const parseObject = (value: string) => JSON.parse(value) as Record<string, unknown>;
 const syncedPostSummarySchema = z.object({
-  title: z.string().min(1),
-  slug: z.string().min(1),
+  title: z.string().min(1), slug: z.string().min(1),
   publishedAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid published date'),
-  included: z.boolean().default(true),
-  tags: z.array(z.object({ name: z.string().min(1), slug: z.string().min(1) })).default([]),
+  included: z.boolean().default(true), tags: z.array(z.object({ name: z.string().min(1), slug: z.string().min(1) })).default([]),
   updatedAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid modified date').optional(),
   contentHash: z.string().regex(/^[0-9a-f]{64}$/u, 'Invalid content digest').optional(),
 });
 const contentManifestSchema = z.array(syncedPostSummarySchema);
-const releaseSnapshotSchema = z.object({
-  site: z.object({ title: z.string().min(1), description: z.string(), author: z.string().min(1), language: z.string().default('zh-Hant') }),
-  posts: contentManifestSchema,
-});
-const mapBlog = (row: typeof schema.blogs.$inferSelect): BlogRecord => ({ ...row, contentManifest: row.contentManifest ? contentManifestSchema.parse(JSON.parse(row.contentManifest)) : null });
-const mapTheme = (row: typeof schema.themeRevisions.$inferSelect): ThemeRevisionRecord => ({ ...row, config: validateThemeConfig(JSON.parse(row.config)) });
-const mapOperation = (row: typeof schema.operations.$inferSelect): OperationRecord => ({ ...row, payload: parseObject(row.payload), result: row.result ? parseObject(row.result) : null });
-const mapPreview = (row: typeof schema.previewSessions.$inferSelect): PreviewSessionRecord => ({ ...row, themeConfig: row.themeConfig ? validateThemeConfig(JSON.parse(row.themeConfig)) : null });
-const mapRelease = (row: typeof schema.publishedReleases.$inferSelect): PublishedReleaseRecord => ({ ...row, snapshot: row.snapshot ? releaseSnapshotSchema.parse(JSON.parse(row.snapshot)) : null });
-const activeOperationStatuses: OperationStatus[] = ['queued', 'running'];
+const releaseSnapshotSchema = z.object({ site: z.object({ title: z.string().min(1), description: z.string(), author: z.string().min(1), language: z.string().default('zh-Hant') }), posts: contentManifestSchema });
+const iso = (value: Date | null) => value?.toISOString() ?? null;
+const mapBlog = (row: typeof schema.blogs.$inferSelect): BlogRecord => ({ ...row, contentManifest: row.contentManifest ? contentManifestSchema.parse(row.contentManifest) : null, lastSyncedAt: iso(row.lastSyncedAt), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() });
+const mapArtifact = (row: typeof schema.artifacts.$inferSelect): ArtifactRecord => ({ ...row, createdAt: row.createdAt.toISOString(), readyAt: iso(row.readyAt) });
+const mapTheme = (row: typeof schema.themeRevisions.$inferSelect): ThemeRevisionRecord => ({ ...row, config: validateThemeConfig(row.config), createdAt: row.createdAt.toISOString() });
+const mapOperation = (row: typeof schema.operations.$inferSelect): OperationRecord => ({ ...row, payload: row.payload, result: row.result, lockedAt: iso(row.lockedAt), leaseExpiresAt: iso(row.leaseExpiresAt), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() });
+const mapPreview = (row: typeof schema.previewSessions.$inferSelect): PreviewSessionRecord => ({ ...row, themeConfig: row.themeConfig ? validateThemeConfig(row.themeConfig) : null, expiresAt: row.expiresAt.toISOString() });
+const mapRelease = (row: typeof schema.publishedReleases.$inferSelect): PublishedReleaseRecord => ({ ...row, snapshot: row.snapshot ? releaseSnapshotSchema.parse(row.snapshot) : null, createdAt: row.createdAt.toISOString() });
 function quotaWindow(at: Date): { date: string; retryAfter: number } { const next = Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate() + 1); return { date: at.toISOString().slice(0, 10), retryAfter: Math.max(1, Math.ceil((next - at.getTime()) / 1000)) }; }
-
-function refuseLegacyDatabase(connection: DatabaseSync): void {
-  const tables = connection.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((row) => String(row.name));
-  if (!tables.includes('app_meta') && tables.some((name) => ['projects', 'jobs', 'credentials', 'deployments'].includes(name))) {
-    throw new Error('This volume contains a pre-0.5 VibeLog database. Delete the SQLite volume before starting VibeLog 0.5.');
-  }
+function newOperation(userId: string, blogId: string, type: OperationType, payload: Record<string, unknown>) {
+  const timestamp = new Date();
+  return { id: randomUUID(), userId, blogId, type, status: 'queued' as const, payload, result: null, errorMessage: null, attempts: 0, lockedAt: null, leaseExpiresAt: null, createdAt: timestamp, updatedAt: timestamp };
 }
-function migrateDatabase(db: BetterSQLite3Database<typeof schema>, migrationsFolder: string): void {
-  const migrations = readMigrationFiles({ migrationsFolder });
-  db.run(sql.raw('CREATE TABLE IF NOT EXISTS __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash TEXT NOT NULL, created_at INTEGER NOT NULL)'));
-  db.run(sql.raw('BEGIN IMMEDIATE'));
-  try {
-    const last = db.values<[number, string, number]>(sql.raw('SELECT id, hash, created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1'))[0];
-    for (const migration of migrations) {
-      if (last && last[2] >= migration.folderMillis) continue;
-      for (const statement of migration.sql) db.run(sql.raw(statement));
-      db.run(sql`INSERT INTO __drizzle_migrations (hash, created_at) VALUES (${migration.hash}, ${migration.folderMillis})`);
-    }
-    db.run(sql.raw('COMMIT'));
-  } catch (error) { db.run(sql.raw('ROLLBACK')); throw error; }
+function operationMessage(operationId: string): OperationMessage { return { version: 1, operationId, traceId: randomUUID(), createdAt: new Date().toISOString() }; }
+async function insertOutbox(tx: NodePgDatabase<typeof schema>, operationId: string): Promise<void> {
+  await tx.insert(schema.operationOutbox).values({ id: randomUUID(), operationId, payload: operationMessage(operationId) as unknown as Record<string, unknown> });
 }
 
 export class AppDatabase {
-  readonly connection: DatabaseSync;
-  readonly db: BetterSQLite3Database<typeof schema>;
-  constructor(dataRoot: string, databasePath = join(dataRoot, 'vibelog.sqlite')) {
-    mkdirSync(dataRoot, { recursive: true });
-    this.connection = new DatabaseSync(databasePath, { enableForeignKeyConstraints: true, enableDoubleQuotedStringLiterals: false });
-    this.connection.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;');
-    refuseLegacyDatabase(this.connection);
-    this.db = drizzleNodeSqlite(this.connection, schema);
-    migrateDatabase(this.db, fileURLToPath(new URL('./drizzle', import.meta.url)));
-    this.db.insert(schema.appMeta).values({ key: 'schema_version', value: '0.5' }).onConflictDoNothing().run();
+  readonly pool: Pool;
+  readonly db: NodePgDatabase<typeof schema>;
+  constructor(databaseUrl: string, options: { max?: number } = {}) {
+    this.pool = new Pool({ connectionString: databaseUrl, max: options.max ?? 10, application_name: 'vibelog' });
+    this.db = drizzle(this.pool, { schema });
   }
-  close(): void { this.connection.close(); }
+  async close(): Promise<void> { await this.pool.end(); }
+  async ping(): Promise<void> { await this.pool.query('select 1'); }
 
-  consumeRateLimit(key: string, limit: number, windowSeconds: number, at = new Date()): boolean {
+  async consumeRateLimit(key: string, limit: number, windowSeconds: number, at = new Date()): Promise<boolean> {
     const timestamp = Math.floor(at.getTime() / 1000);
-    return this.db.transaction((tx) => {
-      const row = tx.select().from(schema.rateLimit).where(eq(schema.rateLimit.key, key)).get();
-      const expired = !row || timestamp - row.lastRequest >= windowSeconds;
-      const count = expired ? 1 : row.count + 1;
-      if (!row) tx.insert(schema.rateLimit).values({ id: randomUUID(), key, count, lastRequest: timestamp }).run();
-      else tx.update(schema.rateLimit).set({ count, lastRequest: expired ? timestamp : row.lastRequest }).where(eq(schema.rateLimit.key, key)).run();
-      return count <= limit;
-    }, { behavior: 'immediate' });
+    const [row] = await this.db.insert(schema.rateLimit).values({ id: randomUUID(), key, count: 1, lastRequest: timestamp }).onConflictDoUpdate({
+      target: schema.rateLimit.key,
+      set: {
+        count: sql`case when ${schema.rateLimit.lastRequest} <= ${timestamp - windowSeconds} then 1 else ${schema.rateLimit.count} + 1 end`,
+        lastRequest: sql`case when ${schema.rateLimit.lastRequest} <= ${timestamp - windowSeconds} then ${timestamp} else ${schema.rateLimit.lastRequest} end`,
+      },
+    }).returning({ count: schema.rateLimit.count });
+    return Boolean(row && row.count <= limit);
   }
 
-  createBlog(userId: string, username: string, hackmdUsername: string, language = 'en'): { blog: BlogRecord; operation: OperationRecord } {
-    const timestamp = now();
-    const blog: BlogRecord = { id: randomUUID(), userId, username, hackmdUsername, title: null, description: null, author: null, language, state: 'syncing', lastError: null, draftArtifact: null, contentVersion: 0, contentManifest: null, lastSyncedAt: null, createdAt: timestamp, updatedAt: timestamp };
-    const operation = this.newOperation(userId, blog.id, 'sync', { intent: 'content', excludedSlugs: [] });
-    return this.db.transaction((tx) => {
-      tx.insert(schema.blogs).values({ ...blog, contentManifest: null }).run();
-      tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId: blog.id, config: JSON.stringify(DEFAULT_THEME), prompt: null, description: DEFAULT_THEME.description, source: 'system', active: true, createdAt: timestamp }).run();
-      tx.insert(schema.operations).values({ ...operation, payload: JSON.stringify(operation.payload), result: null }).run();
-      return { blog, operation };
-    }, { behavior: 'immediate' });
+  async createBlog(userId: string, username: string, hackmdUsername: string, language = 'en'): Promise<{ blog: BlogRecord; operation: OperationRecord }> {
+    const id = randomUUID(); const op = newOperation(userId, id, 'sync', { intent: 'content', excludedSlugs: [] });
+    return this.db.transaction(async (tx) => {
+      const [blog] = await tx.insert(schema.blogs).values({ id, userId, username, hackmdUsername, language, state: 'syncing' }).returning();
+      await tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId: id, config: DEFAULT_THEME, description: DEFAULT_THEME.description, source: 'system', active: true });
+      const [operation] = await tx.insert(schema.operations).values(op).returning();
+      await insertOutbox(tx, operation.id);
+      return { blog: mapBlog(blog), operation: mapOperation(operation) };
+    });
   }
-  getBlogForUser(userId: string): BlogRecord | null { const row = this.db.select().from(schema.blogs).where(eq(schema.blogs.userId, userId)).get(); return row ? mapBlog(row) : null; }
-  getBlog(id: string): BlogRecord | null { const row = this.db.select().from(schema.blogs).where(eq(schema.blogs.id, id)).get(); return row ? mapBlog(row) : null; }
-  getBlogByUsername(username: string): BlogRecord | null { const row = this.db.select().from(schema.blogs).where(eq(schema.blogs.username, username)).get(); return row ? mapBlog(row) : null; }
-  retryInitialSync(userId: string, hackmdUsername: string, language: string): OperationRecord {
-    return this.db.transaction((tx) => {
-      const blog = tx.select().from(schema.blogs).where(eq(schema.blogs.userId, userId)).get();
+  async getBlogForUser(userId: string): Promise<BlogRecord | null> { const [row] = await this.db.select().from(schema.blogs).where(eq(schema.blogs.userId, userId)); return row ? mapBlog(row) : null; }
+  async getBlog(id: string): Promise<BlogRecord | null> { const [row] = await this.db.select().from(schema.blogs).where(eq(schema.blogs.id, id)); return row ? mapBlog(row) : null; }
+  async getBlogByUsername(username: string): Promise<BlogRecord | null> { const [row] = await this.db.select().from(schema.blogs).where(eq(schema.blogs.username, username)); return row ? mapBlog(row) : null; }
+  async retryInitialSync(userId: string, hackmdUsername: string, language: string): Promise<OperationRecord> {
+    return this.db.transaction(async (tx) => {
+      const [blog] = await tx.select().from(schema.blogs).where(eq(schema.blogs.userId, userId));
       if (!blog) throw new Error('Blog not found');
-      if (blog.draftArtifact) throw new Error('Blog already has synced content');
-      const active = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blog.id), inArray(schema.operations.status, ['queued', 'running']))).get();
+      if (blog.draftArtifactId) throw new Error('Blog already has synced content');
+      const [active] = await tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blog.id), inArray(schema.operations.status, ['queued', 'running'])));
       if (active) throw new Error('Blog already has an active operation');
-      const operation = this.newOperation(userId, blog.id, 'sync', { intent: 'content', excludedSlugs: [] });
-      tx.update(schema.blogs).set({ hackmdUsername, language, state: 'syncing', lastError: null, updatedAt: now() }).where(eq(schema.blogs.id, blog.id)).run();
-      tx.insert(schema.operations).values({ ...operation, payload: JSON.stringify(operation.payload), result: null }).run();
-      return operation;
-    }, { behavior: 'immediate' });
+      const op = newOperation(userId, blog.id, 'sync', { intent: 'content', excludedSlugs: [] });
+      await tx.update(schema.blogs).set({ hackmdUsername, language, state: 'syncing', lastError: null, updatedAt: new Date() }).where(eq(schema.blogs.id, blog.id));
+      const [row] = await tx.insert(schema.operations).values(op).returning(); await insertOutbox(tx, row.id); return mapOperation(row);
+    });
   }
-  completeSync(blogId: string, metadata: { title: string; description: string; author: string; language?: string; draftArtifact: string; contentManifest?: SyncedPostSummary[]; lastSyncedAt?: string }): void {
-    const timestamp = metadata.lastSyncedAt ?? now();
-    const contentManifest = contentManifestSchema.parse(metadata.contentManifest ?? [])
-      .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt) || left.slug.localeCompare(right.slug));
-    this.db.transaction((tx) => {
-      tx.update(schema.blogs).set({ ...metadata, contentManifest: JSON.stringify(contentManifest), lastSyncedAt: timestamp, contentVersion: sql`${schema.blogs.contentVersion} + 1`, state: 'ready', lastError: null, updatedAt: timestamp }).where(eq(schema.blogs.id, blogId)).run();
-    }, { behavior: 'immediate' });
+  async createArtifact(blogId: string, kind: 'draft' | 'release', id = randomUUID()): Promise<ArtifactRecord> {
+    const [row] = await this.db.insert(schema.artifacts).values({ id, blogId, kind, keyPrefix: `artifacts/${id}/`, state: 'uploading' }).returning();
+    return mapArtifact(row);
   }
-  failSync(blogId: string, message: string): void { const blog = this.getBlog(blogId); this.db.update(schema.blogs).set({ state: blog?.draftArtifact ? 'ready' : 'failed', lastError: message, updatedAt: now() }).where(eq(schema.blogs.id, blogId)).run(); }
-
-  completeSyncOperation(operationId: string, metadata: { title: string; description: string; author: string; language?: string; draftArtifact: string; contentManifest?: SyncedPostSummary[]; lastSyncedAt?: string }, result: Record<string, unknown>): void {
-    const timestamp = metadata.lastSyncedAt ?? now();
-    const contentManifest = contentManifestSchema.parse(metadata.contentManifest ?? [])
-      .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt) || left.slug.localeCompare(right.slug));
-    this.db.transaction((tx) => {
-      const operation = tx.select().from(schema.operations).where(and(eq(schema.operations.id, operationId), eq(schema.operations.type, 'sync'), inArray(schema.operations.status, activeOperationStatuses))).get();
+  async getArtifact(id: string): Promise<ArtifactRecord | null> { const [row] = await this.db.select().from(schema.artifacts).where(eq(schema.artifacts.id, id)); return row ? mapArtifact(row) : null; }
+  async markArtifactCleanup(id: string): Promise<void> { await this.db.update(schema.artifacts).set({ state: 'cleanup_pending' }).where(eq(schema.artifacts.id, id)); }
+  async completeSyncOperation(operationId: string, metadata: { title: string; description: string; author: string; language?: string; artifactId: string; contentManifest?: SyncedPostSummary[]; lastSyncedAt?: string }, result: Record<string, unknown>): Promise<void> {
+    const syncedAt = metadata.lastSyncedAt ? new Date(metadata.lastSyncedAt) : new Date();
+    const manifest = contentManifestSchema.parse(metadata.contentManifest ?? []).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt) || a.slug.localeCompare(b.slug));
+    await this.db.transaction(async (tx) => {
+      const [operation] = await tx.select().from(schema.operations).where(and(eq(schema.operations.id, operationId), eq(schema.operations.type, 'sync'), eq(schema.operations.status, 'running')));
       if (!operation) throw new Error('Active sync operation not found');
-      const updated = tx.update(schema.blogs).set({ ...metadata, contentManifest: JSON.stringify(contentManifest), lastSyncedAt: timestamp, contentVersion: sql`${schema.blogs.contentVersion} + 1`, state: 'ready', lastError: null, updatedAt: timestamp }).where(and(eq(schema.blogs.id, operation.blogId), eq(schema.blogs.userId, operation.userId))).run();
-      if (updated.changes !== 1) throw new Error('Blog not found');
-      tx.update(schema.operations).set({ status: 'succeeded', result: JSON.stringify(result), errorMessage: null, updatedAt: timestamp }).where(eq(schema.operations.id, operationId)).run();
-    }, { behavior: 'immediate' });
+      const [artifact] = await tx.update(schema.artifacts).set({ state: 'ready', readyAt: new Date() }).where(and(eq(schema.artifacts.id, metadata.artifactId), eq(schema.artifacts.blogId, operation.blogId), eq(schema.artifacts.state, 'uploading'))).returning();
+      if (!artifact) throw new Error('Uploading artifact not found');
+      const [blog] = await tx.select({ draftArtifactId: schema.blogs.draftArtifactId }).from(schema.blogs).where(eq(schema.blogs.id, operation.blogId));
+      await tx.update(schema.blogs).set({ title: metadata.title, description: metadata.description, author: metadata.author, language: metadata.language, contentManifest: manifest, lastSyncedAt: syncedAt, contentVersion: sql`${schema.blogs.contentVersion} + 1`, state: 'ready', lastError: null, draftArtifactId: artifact.id, updatedAt: syncedAt }).where(and(eq(schema.blogs.id, operation.blogId), eq(schema.blogs.userId, operation.userId)));
+      if (blog?.draftArtifactId) await tx.update(schema.artifacts).set({ state: 'cleanup_pending' }).where(eq(schema.artifacts.id, blog.draftArtifactId));
+      await tx.update(schema.operations).set({ status: 'succeeded', result, errorMessage: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, operationId));
+    });
   }
+  async failSync(blogId: string, message: string): Promise<void> { const blog = await this.getBlog(blogId); await this.db.update(schema.blogs).set({ state: blog?.draftArtifactId ? 'ready' : 'failed', lastError: message, updatedAt: new Date() }).where(eq(schema.blogs.id, blogId)); }
 
-  listThemes(blogId: string): ThemeRevisionRecord[] { return this.db.select().from(schema.themeRevisions).where(eq(schema.themeRevisions.blogId, blogId)).orderBy(desc(schema.themeRevisions.createdAt)).all().map(mapTheme); }
-  getTheme(id: string, blogId: string): ThemeRevisionRecord | null { const row = this.db.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.id, id), eq(schema.themeRevisions.blogId, blogId))).get(); return row ? mapTheme(row) : null; }
-  getActiveTheme(blogId: string): ThemeRevisionRecord | null { const row = this.db.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.blogId, blogId), eq(schema.themeRevisions.active, true))).get(); return row ? mapTheme(row) : null; }
-  createTheme(blogId: string, config: ThemeConfig, prompt: string): ThemeRevisionRecord {
+  async listThemes(blogId: string): Promise<ThemeRevisionRecord[]> { return (await this.db.select().from(schema.themeRevisions).where(eq(schema.themeRevisions.blogId, blogId)).orderBy(desc(schema.themeRevisions.createdAt))).map(mapTheme); }
+  async getTheme(id: string, blogId: string): Promise<ThemeRevisionRecord | null> { const [row] = await this.db.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.id, id), eq(schema.themeRevisions.blogId, blogId))); return row ? mapTheme(row) : null; }
+  async getActiveTheme(blogId: string): Promise<ThemeRevisionRecord | null> { const [row] = await this.db.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.blogId, blogId), eq(schema.themeRevisions.active, true))); return row ? mapTheme(row) : null; }
+  async completeThemeOperation(operationId: string, config: ThemeConfig, result: Record<string, unknown>): Promise<ThemeRevisionRecord> {
     const validated = validateThemeConfig(config);
-    const record: ThemeRevisionRecord = { id: randomUUID(), blogId, config: validated, prompt, description: validated.description, source: 'ai', active: true, createdAt: now() };
-    return this.db.transaction((tx) => { tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, blogId)).run(); tx.insert(schema.themeRevisions).values({ ...record, config: JSON.stringify(validated) }).run(); return record; }, { behavior: 'immediate' });
-  }
-  completeThemeOperation(operationId: string, config: ThemeConfig, result: Record<string, unknown>): ThemeRevisionRecord {
-    const validated = validateThemeConfig(config);
-    return this.db.transaction((tx) => {
-      const row = tx.select().from(schema.operations).where(and(eq(schema.operations.id, operationId), eq(schema.operations.type, 'generate_theme'), inArray(schema.operations.status, activeOperationStatuses))).get();
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.select().from(schema.operations).where(and(eq(schema.operations.id, operationId), eq(schema.operations.type, 'generate_theme'), eq(schema.operations.status, 'running')));
       if (!row) throw new Error('Active theme operation not found');
-      const operation = mapOperation(row);
-      const prompt = operation.payload.prompt;
-      if (typeof prompt !== 'string') throw new Error('Theme description is required');
-      const record: ThemeRevisionRecord = { id: randomUUID(), blogId: operation.blogId, config: validated, prompt, description: validated.description, source: 'ai', active: true, createdAt: now() };
-      tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, operation.blogId)).run();
-      tx.insert(schema.themeRevisions).values({ ...record, config: JSON.stringify(validated) }).run();
-      tx.update(schema.operations).set({ status: 'succeeded', result: JSON.stringify({ ...result, revisionId: record.id }), errorMessage: null, updatedAt: now() }).where(eq(schema.operations.id, operationId)).run();
-      return record;
-    }, { behavior: 'immediate' });
+      const prompt = row.payload.prompt; if (typeof prompt !== 'string') throw new Error('Theme description is required');
+      await tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, row.blogId));
+      const [revision] = await tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId: row.blogId, config: validated, prompt, description: validated.description, source: 'ai', active: true }).returning();
+      await tx.update(schema.operations).set({ status: 'succeeded', result: { ...result, revisionId: revision.id }, errorMessage: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, operationId));
+      return mapTheme(revision);
+    });
   }
-  createManualTheme(userId: string, blogId: string, config: ThemeConfig): ThemeRevisionRecord {
+  async createManualTheme(userId: string, blogId: string, config: ThemeConfig): Promise<ThemeRevisionRecord> {
     const validated = validateThemeConfig(config);
-    const record: ThemeRevisionRecord = { id: randomUUID(), blogId, config: validated, prompt: null, description: validated.description, source: 'manual', active: true, createdAt: now() };
-    return this.db.transaction((tx) => {
-      const blog = tx.select({ id: schema.blogs.id }).from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId))).get();
-      if (!blog) throw new Error('Blog not found');
-      const activeOperation = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get();
-      if (activeOperation) throw new Error('Blog already has an active operation');
-      tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, blogId)).run();
-      tx.insert(schema.themeRevisions).values({ ...record, config: JSON.stringify(validated) }).run();
-      return record;
-    }, { behavior: 'immediate' });
+    return this.db.transaction(async (tx) => {
+      const [blog] = await tx.select({ id: schema.blogs.id }).from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId))); if (!blog) throw new Error('Blog not found');
+      const [active] = await tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))); if (active) throw new Error('Blog already has an active operation');
+      await tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, blogId));
+      const [row] = await tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId, config: validated, description: validated.description, source: 'manual', active: true }).returning(); return mapTheme(row);
+    });
   }
-  activateTheme(id: string, blogId: string): void { this.db.transaction((tx) => { const activeOperation = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get(); if (activeOperation) throw new Error('Blog already has an active operation'); const found = tx.select({ id: schema.themeRevisions.id }).from(schema.themeRevisions).where(and(eq(schema.themeRevisions.id, id), eq(schema.themeRevisions.blogId, blogId))).get(); if (!found) throw new Error('Theme revision not found'); tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, blogId)).run(); tx.update(schema.themeRevisions).set({ active: true }).where(eq(schema.themeRevisions.id, id)).run(); }, { behavior: 'immediate' }); }
+  async activateTheme(id: string, blogId: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [active] = await tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))); if (active) throw new Error('Blog already has an active operation');
+      const [found] = await tx.select({ id: schema.themeRevisions.id }).from(schema.themeRevisions).where(and(eq(schema.themeRevisions.id, id), eq(schema.themeRevisions.blogId, blogId))); if (!found) throw new Error('Theme revision not found');
+      await tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, blogId)); await tx.update(schema.themeRevisions).set({ active: true }).where(eq(schema.themeRevisions.id, id));
+    });
+  }
 
-  private newOperation(userId: string, blogId: string, type: OperationType, payload: Record<string, unknown>): OperationRecord { const timestamp = now(); return { id: randomUUID(), userId, blogId, type, status: 'queued', payload, result: null, errorMessage: null, attempts: 0, createdAt: timestamp, updatedAt: timestamp }; }
-  createSyncOperation(userId: string, blogId: string, payload: Record<string, unknown>): OperationRecord {
-    return this.db.transaction((tx) => {
-      const blog = tx.select().from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId))).get();
-      if (!blog) throw new Error('Blog not found');
-      const parsed = parseSyncOperationPayload(payload);
-      const manifest = blog.contentManifest ? contentManifestSchema.parse(JSON.parse(blog.contentManifest)) : null;
-      const currentExcluded = manifest?.filter((post) => !post.included).map((post) => post.slug) ?? [];
-      const sortedCurrentExcluded = [...currentExcluded].sort();
-      const excludedSlugs = [...new Set(parsed.excludedSlugs ?? currentExcluded)].sort();
-      const normalizedPayload = { ...parsed, excludedSlugs };
-      if (parsed.intent === 'identity') {
-        const site = parsed.site;
-        if (site?.title === blog.title && site.description === (blog.description ?? '') && site.language === blog.language) throw new Error('Nothing to update');
+  private async createOperation(userId: string, blogId: string, type: OperationType, payload: Record<string, unknown>): Promise<OperationRecord> {
+    const op = newOperation(userId, blogId, type, payload);
+    return this.db.transaction(async (tx) => { const [row] = await tx.insert(schema.operations).values(op).returning(); await insertOutbox(tx, row.id); return mapOperation(row); });
+  }
+  async createSyncOperation(userId: string, blogId: string, payload: Record<string, unknown>): Promise<OperationRecord> {
+    const blog = await this.getBlog(blogId); if (!blog || blog.userId !== userId) throw new Error('Blog not found');
+    const parsed = parseSyncOperationPayload(payload); const currentExcluded = blog.contentManifest?.filter((post) => !post.included).map((post) => post.slug) ?? [];
+    const excludedSlugs = [...new Set(parsed.excludedSlugs ?? currentExcluded)].sort();
+    if (parsed.intent === 'identity' && parsed.site?.title === blog.title && parsed.site.description === (blog.description ?? '') && parsed.site.language === blog.language) throw new Error('Nothing to update');
+    if (parsed.intent === 'selection') {
+      if (!blog.contentManifest?.length) throw new Error('Article selection unavailable');
+      const known = new Set(blog.contentManifest.map((post) => post.slug)); if (excludedSlugs.some((slug) => !known.has(slug))) throw new Error('Unknown article selection');
+      if (excludedSlugs.length === blog.contentManifest.length) throw new Error('No articles selected');
+      const old = [...currentExcluded].sort(); if (old.length === excludedSlugs.length && old.every((slug, index) => slug === excludedSlugs[index])) throw new Error('Nothing to update article selection');
+    }
+    return this.createOperation(userId, blogId, 'sync', { ...parsed, excludedSlugs });
+  }
+  async createPublishOperation(userId: string, blogId: string, previewTokenHash: string): Promise<OperationRecord> {
+    const blog = await this.getBlog(blogId); if (!blog || blog.userId !== userId || !blog.draftArtifactId) throw new Error('Blog has no synced content');
+    const theme = await this.getActiveTheme(blogId); if (!theme) throw new Error('Active theme not found');
+    const preview = await this.getPreviewSession(previewTokenHash); if (!preview || preview.userId !== userId || preview.blogId !== blogId) throw new Error('Preview session expired or invalid');
+    if (preview.themeConfig && JSON.stringify(preview.themeConfig) !== JSON.stringify(theme.config)) throw new Error('Preview has unsaved theme changes');
+    const release = await this.getActiveRelease(blogId); if (release?.contentVersion === blog.contentVersion && release.themeRevisionId === theme.id) throw new Error('Nothing to publish');
+    return this.createOperation(userId, blogId, 'publish', { contentVersion: blog.contentVersion, themeRevisionId: theme.id });
+  }
+  async createThemeOperation(userId: string, blogId: string, prompt: string, baseTheme: unknown, limits: AiQuotaLimits, previewPath = '/'): Promise<OperationRecord> {
+    const validatedBase = validateThemeConfig(baseTheme); const at = limits.at ?? new Date(); const window = quotaWindow(at);
+    return this.db.transaction(async (tx) => {
+      const [active] = await tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))); if (active) throw new Error('Blog already has an active operation');
+      const op = newOperation(userId, blogId, 'generate_theme', { prompt, baseTheme: validatedBase, previewPath });
+      for (const item of [{ scope: 'user' as const, subject: userId, limit: limits.userDailyLimit }, { scope: 'global' as const, subject: '*', limit: limits.globalDailyLimit }]) {
+        const [usage] = await tx.insert(schema.aiDailyUsage).values({ usageDate: window.date, scope: item.scope, subject: item.subject, count: 1 }).onConflictDoUpdate({ target: [schema.aiDailyUsage.usageDate, schema.aiDailyUsage.scope, schema.aiDailyUsage.subject], set: { count: sql`${schema.aiDailyUsage.count} + 1` } }).returning({ count: schema.aiDailyUsage.count });
+        if (!usage || usage.count > item.limit) throw new AiQuotaExceededError(window.retryAfter);
       }
-      if (parsed.intent === 'selection') {
-        if (!manifest?.length) throw new Error('Article selection unavailable');
-        const knownSlugs = new Set(manifest.map((post) => post.slug));
-        if (excludedSlugs.some((slug) => !knownSlugs.has(slug))) throw new Error('Unknown article selection');
-        if (excludedSlugs.length === manifest.length) throw new Error('No articles selected');
-        if (excludedSlugs.length === sortedCurrentExcluded.length && excludedSlugs.every((slug, index) => slug === sortedCurrentExcluded[index])) {
-          throw new Error('Nothing to update article selection');
-        }
+      const [row] = await tx.insert(schema.operations).values(op).returning(); await insertOutbox(tx, row.id);
+      return mapOperation(row);
+    });
+  }
+  async getOperation(id: string, userId?: string): Promise<OperationRecord | null> {
+    const where = userId ? and(eq(schema.operations.id, id), eq(schema.operations.userId, userId)) : eq(schema.operations.id, id);
+    const [row] = await this.db.select().from(schema.operations).where(where); return row ? mapOperation(row) : null;
+  }
+  async getActiveOperation(blogId: string, userId: string): Promise<OperationRecord | null> { const [row] = await this.db.select().from(schema.operations).where(and(eq(schema.operations.blogId, blogId), eq(schema.operations.userId, userId), inArray(schema.operations.status, ['queued', 'running']))); return row ? mapOperation(row) : null; }
+  async claimOperation(id: string, leaseSeconds = 35 * 60): Promise<OperationRecord | null> {
+    const now = new Date(); const lease = new Date(now.getTime() + leaseSeconds * 1000);
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.update(schema.operations).set({ status: 'running', attempts: sql`${schema.operations.attempts} + 1`, lockedAt: now, leaseExpiresAt: lease, updatedAt: now })
+        .where(and(eq(schema.operations.id, id), lt(schema.operations.attempts, MAX_OPERATION_ATTEMPTS), or(eq(schema.operations.status, 'queued'), and(eq(schema.operations.status, 'running'), lt(schema.operations.leaseExpiresAt, now))))).returning();
+      if (row) return mapOperation(row);
+      const exhaustedMessage = 'Operation stopped after repeated worker interruptions.';
+      const [exhausted] = await tx.update(schema.operations).set({ status: 'failed', errorMessage: exhaustedMessage, leaseExpiresAt: null, updatedAt: now })
+        .where(and(eq(schema.operations.id, id), eq(schema.operations.status, 'running'), sql`${schema.operations.attempts} >= ${MAX_OPERATION_ATTEMPTS}`, lt(schema.operations.leaseExpiresAt, now))).returning();
+      if (exhausted?.type === 'sync') {
+        const [blog] = await tx.select({ draftArtifactId: schema.blogs.draftArtifactId }).from(schema.blogs).where(eq(schema.blogs.id, exhausted.blogId));
+        await tx.update(schema.blogs).set({ state: blog?.draftArtifactId ? 'ready' : 'failed', lastError: exhaustedMessage, updatedAt: now }).where(eq(schema.blogs.id, exhausted.blogId));
       }
-      const active = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get();
-      if (active) throw new Error('Blog already has an active operation');
-      const operation = this.newOperation(userId, blogId, 'sync', normalizedPayload);
-      tx.insert(schema.operations).values({ ...operation, payload: JSON.stringify(normalizedPayload), result: null }).run();
-      return operation;
-    }, { behavior: 'immediate' });
+      return null;
+    });
   }
-  createPublishOperation(userId: string, blogId: string, previewTokenHash: string): OperationRecord {
-    return this.db.transaction((tx) => {
-      const blog = tx.select().from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId))).get();
-      if (!blog?.draftArtifact) throw new Error('Blog has no synced content');
-      const theme = tx.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.blogId, blogId), eq(schema.themeRevisions.active, true))).get();
-      if (!theme) throw new Error('Active theme not found');
-      const preview = tx.select().from(schema.previewSessions).where(and(eq(schema.previewSessions.tokenHash, previewTokenHash), eq(schema.previewSessions.userId, userId), eq(schema.previewSessions.blogId, blogId), gt(schema.previewSessions.expiresAt, now()))).get();
-      if (!preview) throw new Error('Preview session expired or invalid');
-      if (preview.themeConfig && JSON.stringify(validateThemeConfig(JSON.parse(preview.themeConfig))) !== JSON.stringify(validateThemeConfig(JSON.parse(theme.config)))) throw new Error('Preview has unsaved theme changes');
-      const release = tx.select().from(schema.publishedReleases).where(and(eq(schema.publishedReleases.blogId, blogId), eq(schema.publishedReleases.active, true))).get();
-      if (release?.contentVersion === blog.contentVersion && release.themeRevisionId === theme.id) throw new Error('Nothing to publish');
-      const active = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get();
-      if (active) throw new Error('Blog already has an active operation');
-      const operation = this.newOperation(userId, blogId, 'publish', { contentVersion: blog.contentVersion, themeRevisionId: theme.id });
-      tx.insert(schema.operations).values({ ...operation, payload: JSON.stringify(operation.payload), result: null }).run();
-      return operation;
-    }, { behavior: 'immediate' });
-  }
-  createThemeOperation(userId: string, blogId: string, prompt: string, baseTheme: unknown, limits: AiQuotaLimits, previewPath = '/'): OperationRecord {
-    const validatedBase = validateThemeConfig(baseTheme);
-    const at = limits.at ?? new Date(); const window = quotaWindow(at); const op = this.newOperation(userId, blogId, 'generate_theme', { prompt, baseTheme: validatedBase, previewPath });
-    return this.db.transaction((tx) => {
-      const active = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get();
-      if (active) throw new Error('Blog already has an active operation');
-      const usage = tx.select().from(schema.aiDailyUsage).where(and(eq(schema.aiDailyUsage.usageDate, window.date), sql`(${schema.aiDailyUsage.scope} = 'global' or ${schema.aiDailyUsage.subject} = ${userId})`)).all();
-      if ((usage.find((item) => item.scope === 'user')?.count ?? 0) >= limits.userDailyLimit || (usage.find((item) => item.scope === 'global')?.count ?? 0) >= limits.globalDailyLimit) throw new AiQuotaExceededError(window.retryAfter);
-      tx.insert(schema.operations).values({ ...op, payload: JSON.stringify(op.payload), result: null }).run();
-      for (const item of [{ scope: 'user' as const, subject: userId }, { scope: 'global' as const, subject: '*' }]) tx.insert(schema.aiDailyUsage).values({ usageDate: window.date, ...item, count: 1 }).onConflictDoUpdate({ target: [schema.aiDailyUsage.usageDate, schema.aiDailyUsage.scope, schema.aiDailyUsage.subject], set: { count: sql`${schema.aiDailyUsage.count} + 1` } }).run();
-      return op;
-    }, { behavior: 'immediate' });
-  }
-  getOperation(id: string, userId: string): OperationRecord | null { const row = this.db.select().from(schema.operations).where(and(eq(schema.operations.id, id), eq(schema.operations.userId, userId))).get(); return row ? mapOperation(row) : null; }
-  getActiveOperation(blogId: string, userId: string): OperationRecord | null { const row = this.db.select().from(schema.operations).where(and(eq(schema.operations.blogId, blogId), eq(schema.operations.userId, userId), inArray(schema.operations.status, ['queued', 'running']))).get(); return row ? mapOperation(row) : null; }
-  claimNextOperation(): OperationRecord | null { return this.db.transaction((tx) => { const row = tx.select().from(schema.operations).where(and(eq(schema.operations.status, 'queued'), lt(schema.operations.attempts, MAX_OPERATION_ATTEMPTS))).orderBy(asc(schema.operations.createdAt)).limit(1).get(); if (!row) return null; const updatedAt = now(); tx.update(schema.operations).set({ status: 'running', attempts: row.attempts + 1, updatedAt }).where(and(eq(schema.operations.id, row.id), eq(schema.operations.status, 'queued'))).run(); return mapOperation({ ...row, status: 'running', attempts: row.attempts + 1, updatedAt }); }, { behavior: 'immediate' }); }
-  updateOperationProgress(id: string, progress: OperationProgress, message: string): void {
-    const result = JSON.stringify({ progress, progressMessage: message });
-    this.db.update(schema.operations).set({ result, updatedAt: now() }).where(and(eq(schema.operations.id, id), eq(schema.operations.status, 'running'))).run();
-  }
-  recoverOperations(messages: Record<OperationType, string>): OperationRecoveryResult {
-    return this.db.transaction((tx) => {
-      const active = tx.select().from(schema.operations).where(inArray(schema.operations.status, activeOperationStatuses)).all();
-      let requeued = 0; let exhausted = 0; const timestamp = now();
-      for (const operation of active) {
-        if (operation.attempts < MAX_OPERATION_ATTEMPTS) {
-          if (operation.status === 'running') {
-            tx.update(schema.operations).set({ status: 'queued', result: null, updatedAt: timestamp }).where(eq(schema.operations.id, operation.id)).run();
-            requeued += 1;
-          }
-          continue;
-        }
-        const message = messages[operation.type];
-        tx.update(schema.operations).set({ status: 'failed', errorMessage: message, updatedAt: timestamp }).where(eq(schema.operations.id, operation.id)).run();
-        if (operation.type === 'sync') {
-          const blog = tx.select({ draftArtifact: schema.blogs.draftArtifact }).from(schema.blogs).where(eq(schema.blogs.id, operation.blogId)).get();
-          tx.update(schema.blogs).set({ state: blog?.draftArtifact ? 'ready' : 'failed', lastError: message, updatedAt: timestamp }).where(eq(schema.blogs.id, operation.blogId)).run();
-        }
-        exhausted += 1;
-      }
-      return { requeued, exhausted };
-    }, { behavior: 'immediate' });
-  }
-  completeOperation(id: string, result: Record<string, unknown> = {}): void { this.db.update(schema.operations).set({ status: 'succeeded', result: JSON.stringify(result), errorMessage: null, updatedAt: now() }).where(eq(schema.operations.id, id)).run(); }
-  failOperation(id: string, message: string): void {
-    this.db.transaction((tx) => {
-      const operation = tx.select().from(schema.operations).where(and(eq(schema.operations.id, id), inArray(schema.operations.status, activeOperationStatuses))).get();
-      if (!operation) return;
-      const timestamp = now();
-      tx.update(schema.operations).set({ status: 'failed', errorMessage: message, updatedAt: timestamp }).where(eq(schema.operations.id, id)).run();
+  async updateOperationProgress(id: string, progress: OperationProgress, message: string): Promise<void> { await this.db.update(schema.operations).set({ result: { progress, progressMessage: message }, updatedAt: new Date() }).where(and(eq(schema.operations.id, id), eq(schema.operations.status, 'running'))); }
+  async completeOperation(id: string, result: Record<string, unknown> = {}): Promise<void> { await this.db.update(schema.operations).set({ status: 'succeeded', result, errorMessage: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, id)); }
+  async failOperation(id: string, message: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [operation] = await tx.select().from(schema.operations).where(and(eq(schema.operations.id, id), inArray(schema.operations.status, ['queued', 'running']))); if (!operation) return;
+      await tx.update(schema.operations).set({ status: 'failed', errorMessage: message, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, id));
       if (operation.type === 'sync') {
-        const blog = tx.select({ draftArtifact: schema.blogs.draftArtifact }).from(schema.blogs).where(eq(schema.blogs.id, operation.blogId)).get();
-        tx.update(schema.blogs).set({ state: blog?.draftArtifact ? 'ready' : 'failed', lastError: message, updatedAt: timestamp }).where(eq(schema.blogs.id, operation.blogId)).run();
+        const [blog] = await tx.select({ draftArtifactId: schema.blogs.draftArtifactId }).from(schema.blogs).where(eq(schema.blogs.id, operation.blogId));
+        await tx.update(schema.blogs).set({ state: blog?.draftArtifactId ? 'ready' : 'failed', lastError: message, updatedAt: new Date() }).where(eq(schema.blogs.id, operation.blogId));
       }
-    }, { behavior: 'immediate' });
+    });
   }
+  async listPendingOutbox(limit = 100): Promise<OutboxRecord[]> {
+    const rows = await this.db.select().from(schema.operationOutbox).where(isNull(schema.operationOutbox.dispatchedAt)).orderBy(asc(schema.operationOutbox.createdAt)).limit(limit);
+    return rows.map((row) => ({ id: row.id, operationId: row.operationId, message: row.payload as unknown as OperationMessage }));
+  }
+  async markOutboxDispatched(id: string): Promise<void> { await this.db.update(schema.operationOutbox).set({ dispatchedAt: new Date(), attempts: sql`${schema.operationOutbox.attempts} + 1` }).where(eq(schema.operationOutbox.id, id)); }
+  async noteOutboxAttempt(id: string): Promise<void> { await this.db.update(schema.operationOutbox).set({ attempts: sql`${schema.operationOutbox.attempts} + 1` }).where(eq(schema.operationOutbox.id, id)); }
 
-  activateRelease(blogId: string, themeRevisionId: string, contentVersion: number, artifact: string, snapshot: ReleaseSnapshot): PublishedReleaseRecord {
-    const validatedSnapshot = releaseSnapshotSchema.parse(snapshot);
-    const record: PublishedReleaseRecord = { id: randomUUID(), blogId, themeRevisionId, contentVersion, snapshot: validatedSnapshot, artifact, active: true, createdAt: now() };
-    return this.db.transaction((tx) => {
-      const blog = tx.select({ contentVersion: schema.blogs.contentVersion }).from(schema.blogs).where(eq(schema.blogs.id, blogId)).get();
-      if (!blog || blog.contentVersion !== contentVersion) throw new Error('Draft changed before publishing');
-      tx.update(schema.publishedReleases).set({ active: false }).where(eq(schema.publishedReleases.blogId, blogId)).run();
-      tx.insert(schema.publishedReleases).values({ ...record, snapshot: JSON.stringify(validatedSnapshot) }).run();
-      return record;
-    }, { behavior: 'immediate' });
-  }
-  completePublishOperation(operationId: string, artifact: string, snapshot: ReleaseSnapshot, result: Record<string, unknown>): PublishedReleaseRecord {
-    const validatedSnapshot = releaseSnapshotSchema.parse(snapshot);
-    return this.db.transaction((tx) => {
-      const row = tx.select().from(schema.operations).where(and(eq(schema.operations.id, operationId), eq(schema.operations.type, 'publish'), inArray(schema.operations.status, activeOperationStatuses))).get();
-      if (!row) throw new Error('Active publish operation not found');
-      const operation = mapOperation(row);
-      const { contentVersion, themeRevisionId } = operation.payload;
+  async completePublishOperation(operationId: string, artifactId: string, snapshot: ReleaseSnapshot, result: Record<string, unknown>): Promise<PublishedReleaseRecord> {
+    const validated = releaseSnapshotSchema.parse(snapshot);
+    return this.db.transaction(async (tx) => {
+      const [operation] = await tx.select().from(schema.operations).where(and(eq(schema.operations.id, operationId), eq(schema.operations.type, 'publish'), eq(schema.operations.status, 'running'))); if (!operation) throw new Error('Active publish operation not found');
+      const contentVersion = operation.payload.contentVersion; const themeRevisionId = operation.payload.themeRevisionId;
       if (!Number.isInteger(contentVersion) || typeof themeRevisionId !== 'string') throw new Error('Publish snapshot is invalid');
-      const blog = tx.select({ contentVersion: schema.blogs.contentVersion }).from(schema.blogs).where(and(eq(schema.blogs.id, operation.blogId), eq(schema.blogs.userId, operation.userId))).get();
+      const [blog] = await tx.select({ contentVersion: schema.blogs.contentVersion }).from(schema.blogs).where(and(eq(schema.blogs.id, operation.blogId), eq(schema.blogs.userId, operation.userId)));
       if (!blog || blog.contentVersion !== contentVersion) throw new Error('Draft changed before publishing');
-      const record: PublishedReleaseRecord = { id: randomUUID(), blogId: operation.blogId, themeRevisionId, contentVersion, snapshot: validatedSnapshot, artifact, active: true, createdAt: now() };
-      tx.update(schema.publishedReleases).set({ active: false }).where(eq(schema.publishedReleases.blogId, operation.blogId)).run();
-      tx.insert(schema.publishedReleases).values({ ...record, snapshot: JSON.stringify(validatedSnapshot) }).run();
-      tx.update(schema.operations).set({ status: 'succeeded', result: JSON.stringify(result), errorMessage: null, updatedAt: now() }).where(eq(schema.operations.id, operationId)).run();
-      return record;
-    }, { behavior: 'immediate' });
+      const [artifact] = await tx.update(schema.artifacts).set({ state: 'ready', readyAt: new Date() }).where(and(eq(schema.artifacts.id, artifactId), eq(schema.artifacts.blogId, operation.blogId), eq(schema.artifacts.state, 'uploading'))).returning(); if (!artifact) throw new Error('Uploading artifact not found');
+      await tx.update(schema.publishedReleases).set({ active: false }).where(eq(schema.publishedReleases.blogId, operation.blogId));
+      const [release] = await tx.insert(schema.publishedReleases).values({ id: randomUUID(), blogId: operation.blogId, themeRevisionId, contentVersion, snapshot: validated, artifactId, active: true }).returning();
+      await tx.update(schema.operations).set({ status: 'succeeded', result, errorMessage: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, operationId));
+      return mapRelease(release);
+    });
   }
-  getActiveRelease(blogId: string): PublishedReleaseRecord | null { const row = this.db.select().from(schema.publishedReleases).where(and(eq(schema.publishedReleases.blogId, blogId), eq(schema.publishedReleases.active, true))).get(); return row ? mapRelease(row) : null; }
-  listReleases(blogId: string): PublishedReleaseRecord[] { return this.db.select().from(schema.publishedReleases).where(eq(schema.publishedReleases.blogId, blogId)).orderBy(desc(schema.publishedReleases.createdAt)).all().map(mapRelease); }
-  prunePublishedReleases(blogId?: string): number {
-    const blogIds = blogId
-      ? [blogId]
-      : this.db.selectDistinct({ blogId: schema.publishedReleases.blogId }).from(schema.publishedReleases).all().map((row) => row.blogId);
-    return this.db.transaction((tx) => {
-      let removed = 0;
+  async getActiveRelease(blogId: string): Promise<PublishedReleaseRecord | null> { const [row] = await this.db.select().from(schema.publishedReleases).where(and(eq(schema.publishedReleases.blogId, blogId), eq(schema.publishedReleases.active, true))); return row ? mapRelease(row) : null; }
+  async listReleases(blogId: string): Promise<PublishedReleaseRecord[]> { return (await this.db.select().from(schema.publishedReleases).where(eq(schema.publishedReleases.blogId, blogId)).orderBy(desc(schema.publishedReleases.createdAt))).map(mapRelease); }
+  async getRelease(id: string, blogId: string): Promise<PublishedReleaseRecord | null> { const [row] = await this.db.select().from(schema.publishedReleases).where(and(eq(schema.publishedReleases.id, id), eq(schema.publishedReleases.blogId, blogId))); return row ? mapRelease(row) : null; }
+  async activateExistingRelease(id: string, blogId: string): Promise<PublishedReleaseRecord> {
+    return this.db.transaction(async (tx) => {
+      const [release] = await tx.select().from(schema.publishedReleases).where(and(eq(schema.publishedReleases.id, id), eq(schema.publishedReleases.blogId, blogId))); if (!release) throw new Error('Release not found'); if (release.active) throw new Error('Release already active');
+      const [active] = await tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))); if (active) throw new Error('Blog already has an active operation');
+      await tx.update(schema.publishedReleases).set({ active: false }).where(eq(schema.publishedReleases.blogId, blogId)); await tx.update(schema.publishedReleases).set({ active: true }).where(eq(schema.publishedReleases.id, id)); return mapRelease({ ...release, active: true });
+    });
+  }
+  async prunePublishedReleases(blogId?: string): Promise<string[]> {
+    const blogIds = blogId ? [blogId] : (await this.db.selectDistinct({ blogId: schema.publishedReleases.blogId }).from(schema.publishedReleases)).map((row) => row.blogId);
+    const removed: string[] = [];
+    await this.db.transaction(async (tx) => {
       for (const id of blogIds) {
-        const releases = tx.select({ id: schema.publishedReleases.id, active: schema.publishedReleases.active })
-          .from(schema.publishedReleases)
-          .where(eq(schema.publishedReleases.blogId, id))
-          .orderBy(desc(schema.publishedReleases.createdAt), desc(schema.publishedReleases.id))
-          .all();
-        const kept = new Set<string>();
-        const active = releases.find((release) => release.active);
-        if (active) kept.add(active.id);
-        for (const release of releases) {
-          if (!release.active && kept.size < MAX_PUBLISHED_RELEASES) kept.add(release.id);
-        }
-        const expired = releases.filter((release) => !kept.has(release.id)).map((release) => release.id);
-        if (expired.length > 0) removed += Number(tx.delete(schema.publishedReleases).where(inArray(schema.publishedReleases.id, expired)).run().changes);
+        const releases = await tx.select({ id: schema.publishedReleases.id, artifactId: schema.publishedReleases.artifactId, active: schema.publishedReleases.active }).from(schema.publishedReleases).where(eq(schema.publishedReleases.blogId, id)).orderBy(desc(schema.publishedReleases.createdAt));
+        const kept = new Set(releases.filter((release) => release.active).map((release) => release.id));
+        for (const release of releases) if (!release.active && kept.size < MAX_PUBLISHED_RELEASES) kept.add(release.id);
+        const expired = releases.filter((release) => !kept.has(release.id)); if (!expired.length) continue;
+        await tx.delete(schema.publishedReleases).where(inArray(schema.publishedReleases.id, expired.map((release) => release.id)));
+        await tx.update(schema.artifacts).set({ state: 'cleanup_pending' }).where(inArray(schema.artifacts.id, expired.map((release) => release.artifactId)));
+        removed.push(...expired.map((release) => release.artifactId));
       }
-      return removed;
-    }, { behavior: 'immediate' });
+    });
+    return removed;
   }
-  getRelease(id: string, blogId: string): PublishedReleaseRecord | null { const row = this.db.select().from(schema.publishedReleases).where(and(eq(schema.publishedReleases.id, id), eq(schema.publishedReleases.blogId, blogId))).get(); return row ? mapRelease(row) : null; }
-  activateExistingRelease(id: string, blogId: string): PublishedReleaseRecord {
-    return this.db.transaction((tx) => {
-      const release = tx.select().from(schema.publishedReleases).where(and(eq(schema.publishedReleases.id, id), eq(schema.publishedReleases.blogId, blogId))).get();
-      if (!release) throw new Error('Release not found');
-      if (release.active) throw new Error('Release already active');
-      const activeOperation = tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))).get();
-      if (activeOperation) throw new Error('Blog already has an active operation');
-      tx.update(schema.publishedReleases).set({ active: false }).where(eq(schema.publishedReleases.blogId, blogId)).run();
-      tx.update(schema.publishedReleases).set({ active: true }).where(and(eq(schema.publishedReleases.id, id), eq(schema.publishedReleases.blogId, blogId))).run();
-      return mapRelease({ ...release, active: true });
-    }, { behavior: 'immediate' });
+  async listCleanupArtifacts(limit = 100): Promise<ArtifactRecord[]> { return (await this.db.select().from(schema.artifacts).where(eq(schema.artifacts.state, 'cleanup_pending')).limit(limit)).map(mapArtifact); }
+  async deleteArtifactRecord(id: string): Promise<void> { await this.db.delete(schema.artifacts).where(and(eq(schema.artifacts.id, id), eq(schema.artifacts.state, 'cleanup_pending'))); }
+
+  async createPreviewSession(tokenHash: string, userId: string, blogId: string, expiresAt: string, themeConfig: ThemeConfig): Promise<void> {
+    const validated = validateThemeConfig(themeConfig); await this.db.transaction(async (tx) => { await tx.delete(schema.previewSessions).where(lt(schema.previewSessions.expiresAt, new Date())); await tx.insert(schema.previewSessions).values({ tokenHash, userId, blogId, themeConfig: validated, expiresAt: new Date(expiresAt) }); });
   }
-  createPreviewSession(tokenHash: string, userId: string, blogId: string, expiresAt: string, themeConfig: ThemeConfig): void { const validated = validateThemeConfig(themeConfig); this.db.transaction((tx) => { tx.delete(schema.previewSessions).where(sql`${schema.previewSessions.expiresAt} <= ${now()}`).run(); tx.insert(schema.previewSessions).values({ tokenHash, userId, blogId, themeConfig: JSON.stringify(validated), expiresAt, createdAt: now() }).run(); }, { behavior: 'immediate' }); }
-  getPreviewSession(tokenHash: string): PreviewSessionRecord | null { const row = this.db.select().from(schema.previewSessions).where(and(eq(schema.previewSessions.tokenHash, tokenHash), gt(schema.previewSessions.expiresAt, now()))).get(); return row ? mapPreview(row) : null; }
-  updatePreviewTheme(tokenHash: string, userId: string, blogId: string, config: ThemeConfig): ThemeConfig {
-    const validated = validateThemeConfig(config);
-    return this.db.transaction((tx) => {
-      const preview = tx.select({ tokenHash: schema.previewSessions.tokenHash }).from(schema.previewSessions).where(and(eq(schema.previewSessions.tokenHash, tokenHash), eq(schema.previewSessions.userId, userId), eq(schema.previewSessions.blogId, blogId), gt(schema.previewSessions.expiresAt, now()))).get();
-      if (!preview) throw new Error('Preview session expired or invalid');
-      tx.update(schema.previewSessions).set({ themeConfig: JSON.stringify(validated) }).where(eq(schema.previewSessions.tokenHash, tokenHash)).run();
-      return validated;
-    }, { behavior: 'immediate' });
-  }
-  listStorageReferences(): BlogStorageReference[] {
-    const releases = this.db.select({ blogId: schema.publishedReleases.blogId, artifact: schema.publishedReleases.artifact }).from(schema.publishedReleases).all();
-    const releaseArtifacts = new Map<string, string[]>();
-    for (const release of releases) releaseArtifacts.set(release.blogId, [...(releaseArtifacts.get(release.blogId) ?? []), release.artifact]);
-    return this.db.select({ userId: schema.blogs.userId, blogId: schema.blogs.id, draftArtifact: schema.blogs.draftArtifact }).from(schema.blogs).all()
-      .map((blog) => ({ ...blog, releaseArtifacts: [...(releaseArtifacts.get(blog.blogId) ?? [])].sort() }));
+  async getPreviewSession(tokenHash: string): Promise<PreviewSessionRecord | null> { const [row] = await this.db.select().from(schema.previewSessions).where(and(eq(schema.previewSessions.tokenHash, tokenHash), gt(schema.previewSessions.expiresAt, new Date()))); return row ? mapPreview(row) : null; }
+  async updatePreviewTheme(tokenHash: string, userId: string, blogId: string, config: ThemeConfig): Promise<ThemeConfig> {
+    const validated = validateThemeConfig(config); const [row] = await this.db.update(schema.previewSessions).set({ themeConfig: validated }).where(and(eq(schema.previewSessions.tokenHash, tokenHash), eq(schema.previewSessions.userId, userId), eq(schema.previewSessions.blogId, blogId), gt(schema.previewSessions.expiresAt, new Date()))).returning();
+    if (!row) throw new Error('Preview session expired or invalid'); return validated;
   }
 }

@@ -4,5 +4,5 @@
     "rootDir": "..",
     "noEmit": true
   },
-  "include": ["./fixture-server.ts", "./editor.spec.ts", "../playwright.config.ts"]
+  "include": ["./smoke.spec.ts", "../playwright.config.ts"]
 }

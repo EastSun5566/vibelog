@@ -39,6 +39,18 @@ afterEach(() => {
 });
 
 describe('HackMdSource', () => {
+  it('can target a deterministic compatible endpoint without changing HackMD parsing', async () => {
+    const fetchMock = vi.fn((input: string | URL | Request) => Promise.resolve(fetchUrl(input).endsWith('/overview')
+      ? overview([note('one')])
+      : new Response('Body')));
+    vi.stubGlobal('fetch', fetchMock);
+    await new HackMdSource('writer', { baseUrl: 'http://fixture.test:4400/path-is-ignored' }).getPosts();
+    expect(fetchMock.mock.calls.map(([input]) => fetchUrl(input))).toEqual([
+      'http://fixture.test:4400/api/@writer/overview',
+      'http://fixture.test:4400/one/download',
+    ]);
+  });
+
   it('imports only public published notes and sanitizes content', async () => {
     vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => {
       const url = fetchUrl(input);

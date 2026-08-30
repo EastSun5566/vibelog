@@ -9,6 +9,14 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TEST_DATABASE_URL: postgresql://vibelog:local-vibelog@127.0.0.1:5432/vibelog
+      TEST_OBJECT_STORE_ENDPOINT: http://127.0.0.1:9000
+      TEST_OBJECT_STORE_REGION: us-east-1
+      TEST_OBJECT_STORE_BUCKET: vibelog
+      TEST_OBJECT_STORE_ACCESS_KEY_ID: minioadmin
+      TEST_OBJECT_STORE_SECRET_ACCESS_KEY: minioadmin
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -17,6 +25,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Start PostgreSQL and MinIO
+        run: |
+          docker compose up --detach --wait postgres minio
+          docker compose up minio-init
       - run: pnpm check
       - name: Verify Drizzle baseline is current
         run: |
@@ -26,6 +38,9 @@ jobs:
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
+      - name: Stop integration services
+        if: always()
+        run: docker compose down --volumes
 
   container:
     runs-on: ubuntu-latest
@@ -34,7 +49,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-      - name: Build and smoke test the fat container
+      - name: Validate Compose manifests
+        run: |
+          docker compose config --quiet
+      - name: Build and smoke test stateless application containers
         env:
           VIBELOG_APP_IMAGE: vibelog-app:ci
           NODE_ENV: production
@@ -45,5 +63,5 @@ jobs:
           PORT: 34123
         run: |
           trap 'docker compose down --volumes' EXIT
-          docker compose up --detach --build
+          docker compose up --detach --build postgres minio minio-init migrate web worker
           node .github/scripts/container-smoke.mjs

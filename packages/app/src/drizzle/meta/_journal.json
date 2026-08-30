@@ -1,47 +1,12 @@
 {
   "version": "7",
-  "dialect": "sqlite",
+  "dialect": "postgresql",
   "entries": [
     {
       "idx": 0,
-      "version": "6",
-      "when": 1784405352638,
-      "tag": "0000_good_impossible_man",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1784468650874,
-      "tag": "0001_fat_reavers",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1784473047963,
-      "tag": "0002_shallow_ultron",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1784482978747,
-      "tag": "0003_thankful_adam_warlock",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1784776605523,
-      "tag": "0004_release_snapshot",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1785175730453,
-      "tag": "0005_misty_lord_tyger",
+      "version": "7",
+      "when": 1788008871297,
+      "tag": "0000_postgres-baseline",
       "breakpoints": true
     }
   ]

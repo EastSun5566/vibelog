@@ -21,7 +21,6 @@ export function document(title: string, content: unknown, session?: AppSession, 
           <nav class="account-nav" aria-label={session ? 'Account' : 'Site'}>
             <a class="btn" data-variant="ghost" data-size="compact" href="/guide">Guide</a>
           {session ? <>
-            <a class="btn" data-variant="ghost" data-size="compact" href="/auth/change-password">Change password</a>
             <form method="post" action="/auth/logout">
               <input type="hidden" name="csrfToken" value={session.csrfToken}/>
               <button class="btn" data-variant="outline" data-size="compact" type="submit">Sign out</button>
@@ -43,7 +42,7 @@ export function landingPage() {
       <h1>Keep writing in HackMD.<br/>Publish a real blog.</h1>
       <p class="landing-intro">VibeLog turns your public HackMD articles into a fast static site without moving your writing workflow.</p>
       <div class="landing-actions">
-        <a class="btn" href="/auth/register">Create your blog</a>
+        <a class="btn" href="/auth/login">Create your blog</a>
         <a class="btn" data-variant="outline" href="/auth/login">Sign in</a>
       </div>
     </header>
@@ -55,33 +54,19 @@ export function landingPage() {
   </section>);
 }
 
-export function loginPage(message?: string) {
+export function loginPage(input: { github: boolean; google: boolean; message?: string; sent?: boolean }) {
   return document('Sign in', <section class="auth-shell card">
-    <header><p class="auth-kicker">Publishing desk</p><h1>Return to your blog</h1><p>Sign in to sync, preview, and publish.</p></header>
+    <header><p class="auth-kicker">Publishing desk</p><h1>Sign in to VibeLog</h1><p>Use a social account or a one-time email link.</p></header>
     <section class="stack">
-      {message ? <div class="alert" data-variant="destructive" role="alert"><section>{message}</section></div> : null}
-      <form class="stack" method="post" action="/auth/login">
-        <div class="field"><label for="username">Username</label><input id="username" name="username" required minlength={3} maxlength={32} autocomplete="username" autofocus/></div>
-        <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" required maxlength={128} autocomplete="current-password"/></div>
-        <button class="btn" type="submit">Sign in</button>
+      {input.message ? <div class="alert" data-variant="destructive" role="alert"><section>{input.message}</section></div> : null}
+      {input.sent ? <div class="alert" role="status"><section>Check your email. The link expires in 10 minutes.</section></div> : null}
+      {input.github ? <form method="post" action="/auth/oauth/github"><button class="btn" data-variant="outline" type="submit">Continue with GitHub</button></form> : null}
+      {input.google ? <form method="post" action="/auth/oauth/google"><button class="btn" data-variant="outline" type="submit">Continue with Google</button></form> : null}
+      <form class="stack" method="post" action="/auth/magic-link">
+        <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" required maxlength={320} autocomplete="email" autofocus/></div>
+        <button class="btn" type="submit">Email me a sign-in link</button>
       </form>
     </section>
-    <footer><a href="/auth/register">Create an account</a></footer>
-  </section>);
-}
-
-export function registerPage(message?: string) {
-  return document('Create account', <section class="auth-shell card">
-    <header><p class="auth-kicker">Open beta</p><h1>Create your VibeLog</h1><p>Your username becomes your permanent blog URL.</p></header>
-    <section class="stack">
-      {message ? <div class="alert" data-variant="destructive" role="alert"><section>{message}</section></div> : null}
-      <form class="stack" method="post" action="/auth/register">
-        <div class="field"><label for="username">Username</label><input id="username" name="username" required minlength={3} maxlength={32} pattern="[A-Za-z0-9_-]+" autocomplete="username"/><p>3–32 letters, numbers, underscores, or hyphens.</p></div>
-        <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" required minlength={12} maxlength={128} autocomplete="new-password"/><p>At least 12 characters. This beta has no password recovery.</p></div>
-        <button class="btn" type="submit">Create account</button>
-      </form>
-    </section>
-    <footer><a href="/auth/login">Back to sign in</a></footer>
   </section>);
 }
 
@@ -91,7 +76,7 @@ export function guidePage(session?: AppSession) {
       <p class="auth-kicker">Writer guide</p>
       <h1>From HackMD to your own blog</h1>
       <p>VibeLog imports public HackMD articles, builds a private preview, and publishes only when you approve a release.</p>
-      <a class="btn" href={session ? '/editor' : '/auth/register'}>{session ? 'Open your editor' : 'Create your blog'}</a>
+      <a class="btn" href={session ? '/editor' : '/auth/login'}>{session ? 'Open your editor' : 'Create your blog'}</a>
     </header>
     <section aria-labelledby="first-release">
       <h2 id="first-release">Publish your first release</h2>
@@ -120,21 +105,9 @@ export function guidePage(session?: AppSession) {
     </section>
     <section aria-labelledby="account-safety">
       <h2 id="account-safety">Account safety</h2>
-      <p>VibeLog does not provide password recovery yet. Keep your password safe; signed-in users can change it from the editor.</p>
+      <p>VibeLog does not store passwords. Sign in with GitHub, Google, or a short-lived email link.</p>
     </section>
   </article>, session);
-}
-
-export function changePasswordPage(session: AppSession) {
-  return document('Change password', <section class="auth-shell card">
-    <header><p class="auth-kicker">Account security</p><h1>Change password</h1><p>This signs out your other sessions.</p></header>
-    <section><form class="stack" method="post" action="/auth/change-password">
-      <input type="hidden" name="csrfToken" value={session.csrfToken}/>
-      <div class="field"><label for="currentPassword">Current password</label><input id="currentPassword" name="currentPassword" type="password" required autocomplete="current-password"/></div>
-      <div class="field"><label for="newPassword">New password</label><input id="newPassword" name="newPassword" type="password" required minlength={12} maxlength={128} autocomplete="new-password"/></div>
-      <button class="btn" type="submit">Update password</button>
-    </form></section>
-  </section>, session);
 }
 
 function OperationOutput({ operation, successUrl }: { operation?: OperationRecord; successUrl?: string }) {
@@ -169,6 +142,7 @@ export function onboardingPage(session: AppSession, blog: BlogRecord | null, ope
     {failed ? <div id="hackmd-error" class="alert" data-variant="destructive" role="alert"><section>{failed}</section></div> : null}
     <form class="stack" method="post" action="/actions/blog/connect" data-operation data-success-url="/editor" aria-busy={busy ? 'true' : undefined}>
       <input type="hidden" name="csrfToken" value={session.csrfToken}/>
+      <div class="field"><label for="username">Blog handle</label><input id="username" name="username" required minlength={3} maxlength={32} pattern="[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])" value={blog?.username ?? ''} readonly={Boolean(blog)}/><p>This becomes your public subdomain and is separate from your login identity.</p></div>
       <div class="field"><label for="hackmdUsername">HackMD username</label><input
         id="hackmdUsername"
         name="hackmdUsername"
@@ -447,7 +421,7 @@ export function editorPage(input: EditorPageInput) {
         <form class="stack" method="post" action="/actions/publish" data-operation>
           <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
           <input type="hidden" name="previewToken" value={input.previewToken}/>
-          <button class="btn" type="submit" data-publish-button disabled={!blog.draftArtifact || !hasChanges || busy}>{publishLabel} to {blog.username}.{input.appHostname}</button>
+          <button class="btn" type="submit" data-publish-button disabled={!blog.draftArtifactId || !hasChanges || busy}>{publishLabel} to {blog.username}.{input.appHostname}</button>
           <OperationOutput operation={input.operation?.type === 'publish' ? input.operation : undefined}/>
         </form>
         {releases.length > 0 ? <details class="history">

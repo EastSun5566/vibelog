@@ -1,27 +1,19 @@
-import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import http from 'node:http';
+import { execFileSync } from 'node:child_process';
 
 const port = Number(process.env.PORT ?? 34123);
 const image = process.env.VIBELOG_APP_IMAGE;
 if (!image) throw new Error('VIBELOG_APP_IMAGE is required');
 
 const docker = (args, options = {}) => {
-  const output = execFileSync('docker', args, { encoding: 'utf8', ...options });
+  const output = execFileSync('docker', args, {
+    encoding: 'utf8',
+    ...options,
+  });
   return typeof output === 'string' ? output.trim() : '';
 };
-const inContainer = (source, capture = false) => docker(
-  ['compose', 'exec', '-T', 'app', 'node', '--input-type=module'],
-  { input: source, stdio: capture ? undefined : ['pipe', 'inherit', 'inherit'] },
-);
-const canRunInContainer = (source) => spawnSync(
-  'docker',
-  ['compose', 'exec', '-T', 'app', 'node', '--input-type=module'],
-  { input: source, stdio: 'ignore' },
-).status === 0;
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-async function eventually(check, attempts = 30) {
+async function eventually(check, attempts = 90) {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (await check()) return;
     await sleep(1000);
@@ -29,104 +21,71 @@ async function eventually(check, attempts = 30) {
   throw new Error('Container smoke condition did not become true');
 }
 
-async function appIsHealthy() {
-  try { return (await fetch(`http://127.0.0.1:${String(port)}/health`)).ok; }
-  catch { return false; }
+async function webIsHealthy() {
+  try {
+    return (await fetch(`http://127.0.0.1:${String(port)}/health`)).ok;
+  } catch {
+    return false;
+  }
 }
 
-async function publicSiteContains(expected) {
-  return await new Promise((resolve) => {
-    const request = http.get({
-      hostname: '127.0.0.1',
-      port,
-      headers: { host: `smoke.app.localtest.me:${String(port)}` },
-    }, (response) => {
-      let body = '';
-      response.on('data', (chunk) => { body += chunk; });
-      response.on('end', () => resolve(response.statusCode === 200 && body.includes(expected)));
-    });
-    request.on('error', () => resolve(false));
-  });
+await eventually(webIsHealthy);
+
+const workerUserId = '00000000-0000-4000-8000-000000000101';
+const workerBlogId = '00000000-0000-4000-8000-000000000102';
+const workerOperationId = '00000000-0000-4000-8000-000000000103';
+const workerOutboxId = '00000000-0000-4000-8000-000000000104';
+docker([
+  'compose', 'exec', '-T', 'postgres', 'psql', '-U', 'vibelog', '-d', 'vibelog',
+  '-v', 'ON_ERROR_STOP=1', '-c',
+  `INSERT INTO "user" (id, name, email) VALUES ('${workerUserId}', 'Worker Smoke', 'worker-smoke@example.com');
+   INSERT INTO blogs (id, user_id, username, hackmd_username, state) VALUES ('${workerBlogId}', '${workerUserId}', 'worker-smoke', 'worker-smoke', 'ready');
+   INSERT INTO operations (id, user_id, blog_id, type, status, payload) VALUES ('${workerOperationId}', '${workerUserId}', '${workerBlogId}', 'generate_theme', 'queued', '{}');
+   INSERT INTO operation_outbox (id, operation_id, payload) VALUES ('${workerOutboxId}', '${workerOperationId}', jsonb_build_object('version', 1, 'operationId', '${workerOperationId}', 'traceId', 'container-smoke', 'createdAt', now()::text));`,
+]);
+await eventually(() => docker([
+  'compose', 'exec', '-T', 'postgres', 'psql', '-U', 'vibelog', '-d', 'vibelog', '-tAc',
+  `SELECT operations.status || '|' || (operation_outbox.dispatched_at IS NOT NULL)::text FROM operations JOIN operation_outbox ON operation_outbox.operation_id = operations.id WHERE operations.id = '${workerOperationId}'`,
+]) === 'failed|true');
+docker(['compose', 'exec', '-T', 'postgres', 'psql', '-U', 'vibelog', '-d', 'vibelog', '-c', `DELETE FROM "user" WHERE id = '${workerUserId}'`]);
+
+if (docker(['image', 'inspect', image, '--format', '{{json .Config.Cmd}}']) !== '["node","dist/web-main.js"]') {
+  throw new Error('Unexpected image command');
 }
+const volumes = docker(['image', 'inspect', image, '--format', '{{json .Config.Volumes}}']);
+if (volumes !== 'null' && volumes.includes('/data')) throw new Error('Image declares a persistent /data volume');
+if (docker(['compose', 'exec', '-T', 'web', 'node', '-p', 'process.getuid()']) === '0') {
+  throw new Error('Web container runs as root');
+}
+docker(['compose', 'exec', '-T', 'web', 'node', '-e', "if (require('node:fs').existsSync('/data')) process.exit(1)"]);
 
-await eventually(appIsHealthy, 90);
-if (docker(['image', 'inspect', image, '--format', '{{json .Config.Cmd}}']) !== '["node","dist/main.js"]') throw new Error('Unexpected image command');
-if (inContainer("console.log(process.getuid())", true) === '0') throw new Error('Container runs as root');
-inContainer(readFileSync('packages/app/tests/runtime-image-smoke.mjs', 'utf8'));
+docker([
+  'compose', 'exec', '-T', 'postgres', 'psql', '-U', 'vibelog', '-d', 'vibelog',
+  '-v', 'ON_ERROR_STOP=1', '-c',
+  "CREATE TABLE IF NOT EXISTS container_smoke (id text PRIMARY KEY); INSERT INTO container_smoke VALUES ('external-state') ON CONFLICT DO NOTHING;",
+]);
+docker([
+  'compose', 'run', '--rm', '--no-deps', '--entrypoint', '/bin/sh', 'minio-init', '-c',
+  "mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null && printf external-object | mc pipe local/vibelog/container-smoke/marker >/dev/null",
+]);
 
-inContainer(`
-  import { randomUUID } from 'node:crypto';
-  import { mkdirSync, writeFileSync } from 'node:fs';
-  import { AppDatabase } from './dist/database.js';
-  import { user } from './dist/schema.js';
+docker(['compose', 'restart', 'web', 'worker'], { stdio: 'inherit' });
+await eventually(webIsHealthy);
 
-  const db = new AppDatabase('/data');
-  const userId = randomUUID();
-  const at = new Date();
-  db.db.insert(user).values({
-    id: userId, name: 'smoke', email: 'smoke@users.vibelog.invalid', emailVerified: false,
-    username: 'smoke', displayUsername: 'smoke', createdAt: at, updatedAt: at,
-  }).run();
-  const { blog, operation } = db.createBlog(userId, 'smoke', 'smoke');
-  db.completeOperation(operation.id);
-  const root = '/data/blogs/' + userId + '/' + blog.id;
-  const draft = root + '/drafts/' + randomUUID();
-  mkdirSync(draft, { recursive: true });
-  writeFileSync(draft + '/index.html', '<h1>Smoke published</h1>');
-  db.completeSync(blog.id, { title: 'Smoke', description: 'Smoke', author: 'Smoke', draftArtifact: draft });
-  const theme = db.getActiveTheme(blog.id);
-  if (!theme) throw new Error('Theme missing');
-  db.createPreviewSession('smoke-preview', userId, blog.id, '2099-01-01T00:00:00.000Z', theme.config);
-  const publish = db.createPublishOperation(userId, blog.id, 'smoke-preview');
-  writeFileSync('/data/smoke-operation', publish.id);
-  writeFileSync('/data/smoke-storage.json', JSON.stringify({ blogId: blog.id, root, draft }));
-  db.close();
-`);
+const databaseMarker = docker([
+  'compose', 'exec', '-T', 'postgres', 'psql', '-U', 'vibelog', '-d', 'vibelog',
+  '-tAc', "SELECT id FROM container_smoke WHERE id = 'external-state'",
+]);
+if (databaseMarker !== 'external-state') throw new Error('PostgreSQL state did not survive app container restart');
 
-await eventually(() => canRunInContainer(`
-  import { readFileSync } from 'node:fs';
-  import { AppDatabase } from './dist/database.js';
-  const db = new AppDatabase('/data');
-  const id = readFileSync('/data/smoke-operation', 'utf8');
-  const row = db.connection.prepare('SELECT status FROM operations WHERE id = ?').get(id);
-  db.close();
-  if (row?.status !== 'succeeded') process.exit(1);
-`));
-await eventually(() => publicSiteContains('Smoke published'));
+const objectMarker = docker([
+  'compose', 'run', '--rm', '--no-deps', '--entrypoint', '/bin/sh', 'minio-init', '-c',
+  "mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null && mc cat local/vibelog/container-smoke/marker",
+]);
+if (objectMarker !== 'external-object') throw new Error('Object state did not survive app container restart');
 
-inContainer(`
-  import { randomUUID } from 'node:crypto';
-  import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-  const state = JSON.parse(readFileSync('/data/smoke-storage.json', 'utf8'));
-  state.orphans = [
-    state.root + '/.sync-' + randomUUID(),
-    state.root + '/drafts/' + randomUUID(),
-    state.root + '/releases/.staging-' + randomUUID(),
-    state.root + '/releases/' + randomUUID(),
-  ];
-  for (const path of [...state.orphans, state.root + '/keep-me']) mkdirSync(path, { recursive: true });
-  writeFileSync('/data/smoke-storage.json', JSON.stringify(state));
-  writeFileSync('/data/persistence-smoke', 'ok');
-`);
-docker(['compose', 'restart', 'app'], { stdio: 'inherit' });
-await eventually(appIsHealthy, 90);
-
-inContainer(`
-  import { readFileSync } from 'node:fs';
-  if (readFileSync('/data/persistence-smoke', 'utf8') !== 'ok') process.exit(1);
-`);
-await eventually(() => canRunInContainer(`
-  import { existsSync, readFileSync } from 'node:fs';
-  import { AppDatabase } from './dist/database.js';
-  const state = JSON.parse(readFileSync('/data/smoke-storage.json', 'utf8'));
-  const db = new AppDatabase('/data');
-  const release = db.getActiveRelease(state.blogId);
-  db.close();
-  if (!release || !existsSync(state.draft) || !existsSync(release.artifact)
-    || !existsSync(state.root + '/keep-me') || state.orphans.some(existsSync)) process.exit(1);
-`));
-await eventually(() => publicSiteContains('Smoke published'));
-
-const containerId = docker(['compose', 'ps', '--all', '--quiet', 'app']);
-docker(['compose', 'stop', '--timeout', '30', 'app'], { stdio: 'inherit' });
-if (docker(['inspect', containerId, '--format', '{{.State.ExitCode}}']) !== '0') throw new Error('Container did not stop cleanly');
+const containerId = docker(['compose', 'ps', '--all', '--quiet', 'web']);
+docker(['compose', 'stop', '--timeout', '30', 'web'], { stdio: 'inherit' });
+if (docker(['inspect', containerId, '--format', '{{.State.ExitCode}}']) !== '0') {
+  throw new Error('Web container did not stop cleanly');
+}
