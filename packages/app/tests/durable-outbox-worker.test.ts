@@ -28,7 +28,7 @@ describe('durable PostgreSQL outbox worker', () => {
     const database = repository('succeeded');
     const executor: OperationExecutor = { execute: vi.fn(() => Promise.resolve({ message: 'done' })) };
     expect(await new DurableOutboxWorker(database, executor).dispatch()).toBe(1);
-    expect(database.markOutboxDispatched).toHaveBeenCalledWith(event.id);
+    expect(database.markOutboxDispatched).toHaveBeenCalledWith(event.id, event.message.traceId);
   });
 
   it('leaves an event pending while another worker owns the operation lease', async () => {

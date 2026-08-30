@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CloudTasksRequestVerifier } from '../src/adapters/cloud-tasks-request-verifier.js';
 import { handleOperationTask } from '../src/adapters/cloud-tasks-transport.js';
-import { TerminalOperationError } from '../src/jobs.js';
+import { RetryableOperationError, TerminalOperationError } from '../src/jobs.js';
 import type { OperationExecutor } from '../src/ports/operation-queue.js';
 
 const message = { version: 1, operationId: '11111111-1111-4111-8111-111111111111', traceId: 'trace', createdAt: '2026-08-29T00:00:00.000Z' } as const;
@@ -11,6 +11,11 @@ function request(body: unknown = message, authenticated = true): Request {
 const verifier = new CloudTasksRequestVerifier('operations');
 
 describe('Cloud Tasks HTTP transport', () => {
+  it('keeps an active lease retryable instead of acknowledging it as a duplicate', async () => {
+    const executor: OperationExecutor = { execute: () => Promise.reject(new RetryableOperationError('Lease is active', undefined, 2100)) };
+    const response = await handleOperationTask(request(), verifier, executor);
+    expect(response.status).toBe(503); expect(response.headers.get('retry-after')).toBe('2100');
+  });
   it('rejects missing identity and malformed provider-neutral messages', async () => {
     expect((await handleOperationTask(request(message, false), verifier, { execute: () => Promise.resolve({}) })).status).toBe(401);
     expect((await handleOperationTask(request({ operationId: 'invalid' }), verifier, { execute: () => Promise.resolve({}) })).status).toBe(400);

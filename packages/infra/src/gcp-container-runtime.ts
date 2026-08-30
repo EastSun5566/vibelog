@@ -33,7 +33,8 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
     const webAccount = new gcp.serviceaccount.Account(`${name}-web-sa`, { project: args.project, accountId: `vibelog-web-${args.environment}`, displayName: 'VibeLog web runtime' }, resourceOptions);
     const workerAccount = new gcp.serviceaccount.Account(`${name}-worker-sa`, { project: args.project, accountId: `vibelog-worker-${args.environment}`, displayName: 'VibeLog worker runtime' }, resourceOptions);
     const tasksAccount = new gcp.serviceaccount.Account(`${name}-tasks-sa`, { project: args.project, accountId: `vibelog-tasks-${args.environment}`, displayName: 'Cloud Tasks caller' }, resourceOptions);
-    this.queue = new gcp.cloudtasks.Queue(`${name}-operations`, { project: args.project, location: args.region, name: `vibelog-operations-${args.environment}`, rateLimits: { maxConcurrentDispatches: 10, maxDispatchesPerSecond: 5 }, retryConfig: { maxAttempts: 5, maxBackoff: '300s', minBackoff: '5s', maxDoublings: 5 } }, { ...resourceOptions, dependsOn: apis });
+    // Delivery retries must outlive the 35-minute operation lease; execution is capped separately in PostgreSQL.
+    this.queue = new gcp.cloudtasks.Queue(`${name}-operations`, { project: args.project, location: args.region, name: `vibelog-operations-${args.environment}`, rateLimits: { maxConcurrentDispatches: 10, maxDispatchesPerSecond: 5 }, retryConfig: { maxAttempts: 100, maxBackoff: '300s', minBackoff: '30s', maxDoublings: 5 } }, { ...resourceOptions, dependsOn: apis });
     const secretValues: Record<string, { value: pulumi.Input<string>; services: ('web' | 'worker')[] }> = {
       DATABASE_URL: { value: args.secrets.databaseUrl, services: ['web', 'worker'] },
       OBJECT_STORE_ACCESS_KEY_ID: { value: args.secrets.objectStoreAccessKeyId, services: ['web', 'worker'] },

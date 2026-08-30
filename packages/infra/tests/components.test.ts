@@ -49,6 +49,7 @@ describe('Pulumi components', () => {
       );
     });
     const services = registrations.filter((item) => item.type.includes('cloudrunv2/service:Service'));
+    expect(registrations.find((item) => item.type.includes('cloudtasks/queue:Queue'))?.inputs.retryConfig).toMatchObject({ maxAttempts: 100, minBackoff: '30s', maxBackoff: '300s' });
     expect(services).toHaveLength(2);
     const web = services.find((item) => item.name.endsWith('-web')); const worker = services.find((item) => item.name.endsWith('-worker'));
     expect(web).toBeDefined(); expect(worker).toBeDefined();

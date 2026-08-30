@@ -21,6 +21,8 @@ export interface BlogRecord { id: string; userId: string; username: string; hack
 export interface ArtifactRecord { id: string; blogId: string; kind: 'draft' | 'release'; keyPrefix: string; state: ArtifactState; createdAt: string; readyAt: string | null }
 export interface ThemeRevisionRecord { id: string; blogId: string; config: ThemeConfig; prompt: string | null; description: string; source: ThemeRevisionSource; active: boolean; createdAt: string }
 export interface OperationRecord { id: string; userId: string; blogId: string; type: OperationType; status: OperationStatus; payload: Record<string, unknown>; result: Record<string, unknown> | null; errorMessage: string | null; attempts: number; lockedAt: string | null; leaseExpiresAt: string | null; createdAt: string; updatedAt: string }
+type OperationLease = Pick<OperationRecord, 'id' | 'attempts'>;
+export class OperationLeaseLostError extends Error { constructor() { super('Operation lease is no longer owned'); this.name = 'OperationLeaseLostError'; } }
 export interface ReleaseSnapshot { site: { title: string; description: string; author: string; language: string }; posts: SyncedPostSummary[] }
 export interface PublishedReleaseRecord { id: string; blogId: string; themeRevisionId: string; contentVersion: number; snapshot: ReleaseSnapshot | null; artifactId: string; active: boolean; createdAt: string }
 export interface PreviewSessionRecord { tokenHash: string; userId: string; blogId: string; themeConfig: ThemeConfig | null; expiresAt: string }
@@ -29,6 +31,10 @@ export interface OutboxRecord { id: string; operationId: string; message: Operat
 export class AiQuotaExceededError extends Error { constructor(readonly retryAfter: number) { super('AI daily quota exceeded'); this.name = 'AiQuotaExceededError'; } }
 
 export const MAX_OPERATION_ATTEMPTS = 3;
+const OPERATION_LEASE_SECONDS = 35 * 60;
+function ownedLease(lease: OperationLease) {
+  return and(eq(schema.operations.id, lease.id), eq(schema.operations.status, 'running'), eq(schema.operations.attempts, lease.attempts), gt(schema.operations.leaseExpiresAt, sql`now()`));
+}
 export const MAX_PUBLISHED_RELEASES = 20;
 const syncedPostSummarySchema = z.object({
   title: z.string().min(1), slug: z.string().min(1),
@@ -108,19 +114,19 @@ export class AppDatabase {
     return mapArtifact(row);
   }
   async getArtifact(id: string): Promise<ArtifactRecord | null> { const [row] = await this.db.select().from(schema.artifacts).where(eq(schema.artifacts.id, id)); return row ? mapArtifact(row) : null; }
-  async markArtifactCleanup(id: string): Promise<void> { await this.db.update(schema.artifacts).set({ state: 'cleanup_pending' }).where(eq(schema.artifacts.id, id)); }
-  async completeSyncOperation(operationId: string, metadata: { title: string; description: string; author: string; language?: string; artifactId: string; contentManifest?: SyncedPostSummary[]; lastSyncedAt?: string }, result: Record<string, unknown>): Promise<void> {
+  async markArtifactCleanup(id: string): Promise<void> { await this.db.update(schema.artifacts).set({ state: 'cleanup_pending' }).where(and(eq(schema.artifacts.id, id), eq(schema.artifacts.state, 'uploading'))); }
+  async completeSyncOperation(lease: OperationLease, metadata: { title: string; description: string; author: string; language?: string; artifactId: string; contentManifest?: SyncedPostSummary[]; lastSyncedAt?: string }, result: Record<string, unknown>): Promise<void> {
     const syncedAt = metadata.lastSyncedAt ? new Date(metadata.lastSyncedAt) : new Date();
     const manifest = contentManifestSchema.parse(metadata.contentManifest ?? []).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt) || a.slug.localeCompare(b.slug));
     await this.db.transaction(async (tx) => {
-      const [operation] = await tx.select().from(schema.operations).where(and(eq(schema.operations.id, operationId), eq(schema.operations.type, 'sync'), eq(schema.operations.status, 'running')));
-      if (!operation) throw new Error('Active sync operation not found');
+      const [operation] = await tx.select().from(schema.operations).where(and(ownedLease(lease), eq(schema.operations.type, 'sync'))).for('update');
+      if (!operation) throw new OperationLeaseLostError();
       const [artifact] = await tx.update(schema.artifacts).set({ state: 'ready', readyAt: new Date() }).where(and(eq(schema.artifacts.id, metadata.artifactId), eq(schema.artifacts.blogId, operation.blogId), eq(schema.artifacts.state, 'uploading'))).returning();
       if (!artifact) throw new Error('Uploading artifact not found');
       const [blog] = await tx.select({ draftArtifactId: schema.blogs.draftArtifactId }).from(schema.blogs).where(eq(schema.blogs.id, operation.blogId));
       await tx.update(schema.blogs).set({ title: metadata.title, description: metadata.description, author: metadata.author, language: metadata.language, contentManifest: manifest, lastSyncedAt: syncedAt, contentVersion: sql`${schema.blogs.contentVersion} + 1`, state: 'ready', lastError: null, draftArtifactId: artifact.id, updatedAt: syncedAt }).where(and(eq(schema.blogs.id, operation.blogId), eq(schema.blogs.userId, operation.userId)));
       if (blog?.draftArtifactId) await tx.update(schema.artifacts).set({ state: 'cleanup_pending' }).where(eq(schema.artifacts.id, blog.draftArtifactId));
-      await tx.update(schema.operations).set({ status: 'succeeded', result, errorMessage: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, operationId));
+      await tx.update(schema.operations).set({ status: 'succeeded', result, errorMessage: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, lease.id));
     });
   }
   async failSync(blogId: string, message: string): Promise<void> { const blog = await this.getBlog(blogId); await this.db.update(schema.blogs).set({ state: blog?.draftArtifactId ? 'ready' : 'failed', lastError: message, updatedAt: new Date() }).where(eq(schema.blogs.id, blogId)); }
@@ -128,15 +134,15 @@ export class AppDatabase {
   async listThemes(blogId: string): Promise<ThemeRevisionRecord[]> { return (await this.db.select().from(schema.themeRevisions).where(eq(schema.themeRevisions.blogId, blogId)).orderBy(desc(schema.themeRevisions.createdAt))).map(mapTheme); }
   async getTheme(id: string, blogId: string): Promise<ThemeRevisionRecord | null> { const [row] = await this.db.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.id, id), eq(schema.themeRevisions.blogId, blogId))); return row ? mapTheme(row) : null; }
   async getActiveTheme(blogId: string): Promise<ThemeRevisionRecord | null> { const [row] = await this.db.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.blogId, blogId), eq(schema.themeRevisions.active, true))); return row ? mapTheme(row) : null; }
-  async completeThemeOperation(operationId: string, config: ThemeConfig, result: Record<string, unknown>): Promise<ThemeRevisionRecord> {
+  async completeThemeOperation(lease: OperationLease, config: ThemeConfig, result: Record<string, unknown>): Promise<ThemeRevisionRecord> {
     const validated = validateThemeConfig(config);
     return this.db.transaction(async (tx) => {
-      const [row] = await tx.select().from(schema.operations).where(and(eq(schema.operations.id, operationId), eq(schema.operations.type, 'generate_theme'), eq(schema.operations.status, 'running')));
-      if (!row) throw new Error('Active theme operation not found');
+      const [row] = await tx.select().from(schema.operations).where(and(ownedLease(lease), eq(schema.operations.type, 'generate_theme'))).for('update');
+      if (!row) throw new OperationLeaseLostError();
       const prompt = row.payload.prompt; if (typeof prompt !== 'string') throw new Error('Theme description is required');
       await tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, row.blogId));
       const [revision] = await tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId: row.blogId, config: validated, prompt, description: validated.description, source: 'ai', active: true }).returning();
-      await tx.update(schema.operations).set({ status: 'succeeded', result: { ...result, revisionId: revision.id }, errorMessage: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, operationId));
+      await tx.update(schema.operations).set({ status: 'succeeded', result: { ...result, revisionId: revision.id }, errorMessage: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, lease.id));
       return mapTheme(revision);
     });
   }
@@ -200,7 +206,7 @@ export class AppDatabase {
     const [row] = await this.db.select().from(schema.operations).where(where); return row ? mapOperation(row) : null;
   }
   async getActiveOperation(blogId: string, userId: string): Promise<OperationRecord | null> { const [row] = await this.db.select().from(schema.operations).where(and(eq(schema.operations.blogId, blogId), eq(schema.operations.userId, userId), inArray(schema.operations.status, ['queued', 'running']))); return row ? mapOperation(row) : null; }
-  async claimOperation(id: string, leaseSeconds = 35 * 60): Promise<OperationRecord | null> {
+  async claimOperation(id: string, leaseSeconds = OPERATION_LEASE_SECONDS): Promise<OperationRecord | null> {
     const now = new Date(); const lease = new Date(now.getTime() + leaseSeconds * 1000);
     return this.db.transaction(async (tx) => {
       const [row] = await tx.update(schema.operations).set({ status: 'running', attempts: sql`${schema.operations.attempts} + 1`, lockedAt: now, leaseExpiresAt: lease, updatedAt: now })
@@ -216,29 +222,56 @@ export class AppDatabase {
       return null;
     });
   }
-  async updateOperationProgress(id: string, progress: OperationProgress, message: string): Promise<void> { await this.db.update(schema.operations).set({ result: { progress, progressMessage: message }, updatedAt: new Date() }).where(and(eq(schema.operations.id, id), eq(schema.operations.status, 'running'))); }
-  async completeOperation(id: string, result: Record<string, unknown> = {}): Promise<void> { await this.db.update(schema.operations).set({ status: 'succeeded', result, errorMessage: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, id)); }
-  async failOperation(id: string, message: string): Promise<void> {
+  async updateOperationProgress(lease: OperationLease, progress: OperationProgress, message: string): Promise<void> {
+    const [row] = await this.db.update(schema.operations).set({ result: { progress, progressMessage: message }, updatedAt: new Date() }).where(ownedLease(lease)).returning({ id: schema.operations.id });
+    if (!row) throw new OperationLeaseLostError();
+  }
+  async failOperation(lease: OperationLease, message: string): Promise<void> {
     await this.db.transaction(async (tx) => {
-      const [operation] = await tx.select().from(schema.operations).where(and(eq(schema.operations.id, id), inArray(schema.operations.status, ['queued', 'running']))); if (!operation) return;
-      await tx.update(schema.operations).set({ status: 'failed', errorMessage: message, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, id));
+      const [operation] = await tx.select().from(schema.operations).where(ownedLease(lease)).for('update'); if (!operation) throw new OperationLeaseLostError();
+      await tx.update(schema.operations).set({ status: 'failed', errorMessage: message, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, lease.id));
       if (operation.type === 'sync') {
         const [blog] = await tx.select({ draftArtifactId: schema.blogs.draftArtifactId }).from(schema.blogs).where(eq(schema.blogs.id, operation.blogId));
         await tx.update(schema.blogs).set({ state: blog?.draftArtifactId ? 'ready' : 'failed', lastError: message, updatedAt: new Date() }).where(eq(schema.blogs.id, operation.blogId));
       }
     });
   }
+  /** Reopen stranded deliveries, with a fresh message identity to bypass queue deduplication. */
+  async recoverExpiredOperations(limit = 100): Promise<number> {
+    const now = new Date(); const queuedBefore = new Date(now.getTime() - OPERATION_LEASE_SECONDS * 1000);
+    return this.db.transaction(async (tx) => {
+      const rows = await tx.select({ operation: schema.operations, outbox: schema.operationOutbox }).from(schema.operations)
+        .innerJoin(schema.operationOutbox, eq(schema.operationOutbox.operationId, schema.operations.id))
+        .where(or(and(eq(schema.operations.status, 'running'), lt(schema.operations.leaseExpiresAt, now)), and(eq(schema.operations.status, 'queued'), lt(schema.operations.updatedAt, queuedBefore))))
+        .limit(limit).for('update', { skipLocked: true });
+      for (const { operation, outbox } of rows) {
+        if (operation.attempts >= MAX_OPERATION_ATTEMPTS) {
+          const message = 'Operation stopped after repeated worker interruptions.';
+          await tx.update(schema.operations).set({ status: 'failed', errorMessage: message, leaseExpiresAt: null, updatedAt: now }).where(eq(schema.operations.id, operation.id));
+          if (operation.type === 'sync') {
+            const [blog] = await tx.select({ draftArtifactId: schema.blogs.draftArtifactId }).from(schema.blogs).where(eq(schema.blogs.id, operation.blogId));
+            await tx.update(schema.blogs).set({ state: blog?.draftArtifactId ? 'ready' : 'failed', lastError: message, updatedAt: now }).where(eq(schema.blogs.id, operation.blogId));
+          }
+          await tx.update(schema.operationOutbox).set({ dispatchedAt: now }).where(eq(schema.operationOutbox.id, outbox.id));
+        } else {
+          await tx.update(schema.operations).set({ status: 'queued', lockedAt: null, leaseExpiresAt: null, updatedAt: now }).where(eq(schema.operations.id, operation.id));
+          await tx.update(schema.operationOutbox).set({ dispatchedAt: null, payload: { ...operationMessage(operation.id) } }).where(eq(schema.operationOutbox.id, outbox.id));
+        }
+      }
+      return rows.length;
+    });
+  }
   async listPendingOutbox(limit = 100): Promise<OutboxRecord[]> {
     const rows = await this.db.select().from(schema.operationOutbox).where(isNull(schema.operationOutbox.dispatchedAt)).orderBy(asc(schema.operationOutbox.createdAt)).limit(limit);
     return rows.map((row) => ({ id: row.id, operationId: row.operationId, message: row.payload as unknown as OperationMessage }));
   }
-  async markOutboxDispatched(id: string): Promise<void> { await this.db.update(schema.operationOutbox).set({ dispatchedAt: new Date(), attempts: sql`${schema.operationOutbox.attempts} + 1` }).where(eq(schema.operationOutbox.id, id)); }
+  async markOutboxDispatched(id: string, traceId: string): Promise<void> { await this.db.update(schema.operationOutbox).set({ dispatchedAt: new Date(), attempts: sql`${schema.operationOutbox.attempts} + 1` }).where(and(eq(schema.operationOutbox.id, id), sql`${schema.operationOutbox.payload}->>'traceId' = ${traceId}`)); }
   async noteOutboxAttempt(id: string): Promise<void> { await this.db.update(schema.operationOutbox).set({ attempts: sql`${schema.operationOutbox.attempts} + 1` }).where(eq(schema.operationOutbox.id, id)); }
 
-  async completePublishOperation(operationId: string, artifactId: string, snapshot: ReleaseSnapshot, result: Record<string, unknown>): Promise<PublishedReleaseRecord> {
+  async completePublishOperation(lease: OperationLease, artifactId: string, snapshot: ReleaseSnapshot, result: Record<string, unknown>): Promise<PublishedReleaseRecord> {
     const validated = releaseSnapshotSchema.parse(snapshot);
     return this.db.transaction(async (tx) => {
-      const [operation] = await tx.select().from(schema.operations).where(and(eq(schema.operations.id, operationId), eq(schema.operations.type, 'publish'), eq(schema.operations.status, 'running'))); if (!operation) throw new Error('Active publish operation not found');
+      const [operation] = await tx.select().from(schema.operations).where(and(ownedLease(lease), eq(schema.operations.type, 'publish'))).for('update'); if (!operation) throw new OperationLeaseLostError();
       const contentVersion = operation.payload.contentVersion; const themeRevisionId = operation.payload.themeRevisionId;
       if (!Number.isInteger(contentVersion) || typeof themeRevisionId !== 'string') throw new Error('Publish snapshot is invalid');
       const [blog] = await tx.select({ contentVersion: schema.blogs.contentVersion }).from(schema.blogs).where(and(eq(schema.blogs.id, operation.blogId), eq(schema.blogs.userId, operation.userId)));
@@ -246,7 +279,7 @@ export class AppDatabase {
       const [artifact] = await tx.update(schema.artifacts).set({ state: 'ready', readyAt: new Date() }).where(and(eq(schema.artifacts.id, artifactId), eq(schema.artifacts.blogId, operation.blogId), eq(schema.artifacts.state, 'uploading'))).returning(); if (!artifact) throw new Error('Uploading artifact not found');
       await tx.update(schema.publishedReleases).set({ active: false }).where(eq(schema.publishedReleases.blogId, operation.blogId));
       const [release] = await tx.insert(schema.publishedReleases).values({ id: randomUUID(), blogId: operation.blogId, themeRevisionId, contentVersion, snapshot: validated, artifactId, active: true }).returning();
-      await tx.update(schema.operations).set({ status: 'succeeded', result, errorMessage: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, operationId));
+      await tx.update(schema.operations).set({ status: 'succeeded', result, errorMessage: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, lease.id));
       return mapRelease(release);
     });
   }

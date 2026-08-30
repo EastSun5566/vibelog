@@ -6,6 +6,7 @@ import type { AiProvider, ContentSource } from '@vibelog/core';
 import { parseSyncOperationPayload } from './blog-sync.js';
 import type { OperationRuntimeConfig } from './config.js';
 import type { AppDatabase, OperationRecord } from './database.js';
+import { OperationLeaseLostError } from './database.js';
 import type { ArtifactStore } from './ports/artifact-store.js';
 import type { OperationDispatcher, OperationExecutor, OperationQueue, OperationResult } from './ports/operation-queue.js';
 import { createReleaseSnapshot } from './publication-diff.js';
@@ -40,7 +41,7 @@ export class TerminalOperationError extends Error {
   constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = 'TerminalOperationError'; }
 }
 export class RetryableOperationError extends Error {
-  constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = 'RetryableOperationError'; }
+  constructor(message: string, options?: ErrorOptions, readonly retryAfterSeconds = 5) { super(message, options); this.name = 'RetryableOperationError'; }
 }
 function publicOrigin(config: OperationRuntimeConfig, username: string): string {
   const app = new URL(config.appOrigin); return `${app.protocol}//${username}.${app.hostname}${app.port ? `:${app.port}` : ''}`;
@@ -50,12 +51,18 @@ export class AppOperationExecutor implements OperationExecutor {
   constructor(private readonly database: AppDatabase, private readonly artifacts: ArtifactStore, private readonly config: OperationRuntimeConfig, private readonly dependencies: { contentSource?: (username: string) => ContentSource; aiProvider?: () => AiProvider } = {}) {}
   async execute(operationId: string): Promise<OperationResult> {
     const operation = await this.database.claimOperation(operationId);
-    if (!operation) return { duplicate: true };
+    if (!operation) {
+      const current = await this.database.getOperation(operationId);
+      if (!current || current.status === 'succeeded' || current.status === 'failed') return { duplicate: true };
+      const retryAfter = current.leaseExpiresAt ? Math.max(5, Math.ceil((Date.parse(current.leaseExpiresAt) - Date.now()) / 1000)) : 5;
+      throw new RetryableOperationError('Operation is still in progress', undefined, retryAfter);
+    }
     try { return await this.executeClaimed(operation); }
     catch (error) {
+      if (error instanceof OperationLeaseLostError) throw new RetryableOperationError(error.message, { cause: error });
       console.error(`[operation:${operation.id}] ${operation.type} failed: ${safeTechnicalError(error)}`);
       const publicError = operationPublicError(operation.type, error);
-      try { await this.database.failOperation(operation.id, publicError); }
+      try { await this.database.failOperation(operation, publicError); }
       catch (persistenceError) { throw new RetryableOperationError('Could not persist operation failure', { cause: persistenceError }); }
       throw new TerminalOperationError(publicError, { cause: error });
     }
@@ -66,7 +73,7 @@ export class AppOperationExecutor implements OperationExecutor {
     if (operation.type === 'sync') {
       const work = await mkdtemp(join(tmpdir(), 'vibelog-sync-')); const artifact = await this.database.createArtifact(blog.id, 'draft');
       try {
-        await this.database.updateOperationProgress(operation.id, { kind: 'determinate', value: 0, max: 4 }, 'Reading HackMD');
+        await this.database.updateOperationProgress(operation, { kind: 'determinate', value: 0, max: 4 }, 'Reading HackMD');
         const source = this.dependencies.contentSource?.(blog.hackmdUsername) ?? new HackMdSource(blog.hackmdUsername, { baseUrl: this.config.hackmdBaseUrl });
         const [{ posts }, author] = await Promise.all([source.getPosts(), source.getAuthor()]);
         const payload = parseSyncOperationPayload(operation.payload);
@@ -76,22 +83,22 @@ export class AppOperationExecutor implements OperationExecutor {
         const builder = createDevBuilder({ root: work, contentSource: snapshotSource }); await builder.prepare({ installDependencies: false });
         const excludedSlugs = payload.excludedSlugs ?? blog.contentManifest?.filter((post) => !post.included).map((post) => post.slug) ?? [];
         const summary = await builder.fetchContent({ excludedSlugs });
-        await this.database.updateOperationProgress(operation.id, { kind: 'determinate', value: 2, max: 4 }, 'Building static preview');
+        await this.database.updateOperationProgress(operation, { kind: 'determinate', value: 2, max: 4 }, 'Building static preview');
         const output = join(work, 'dist'); await buildFromVibelog({ vibelogDir: join(work, '.vibelog'), outDir: output, site: publicOrigin(this.config, blog.username) });
         await this.artifacts.uploadDirectory(artifact.id, output);
         const message = payload.intent === 'identity' ? 'Blog details and content updated' : payload.intent === 'selection' ? 'Article selection and draft updated' : 'Content synced';
-        await this.database.completeSyncOperation(operation.id, { ...site, author: summary.author.name, artifactId: artifact.id, contentManifest: summary.posts }, { message });
+        await this.database.completeSyncOperation(operation, { ...site, author: summary.author.name, artifactId: artifact.id, contentManifest: summary.posts }, { message });
         return { message };
-      } catch (error) { await this.artifacts.deleteArtifact(artifact.id).catch(() => undefined); await this.database.markArtifactCleanup(artifact.id); throw error; }
+      } catch (error) { await this.database.markArtifactCleanup(artifact.id); throw error; }
       finally { await rm(work, { recursive: true, force: true }); }
     }
     if (operation.type === 'generate_theme') {
-      await this.database.updateOperationProgress(operation.id, { kind: 'indeterminate' }, 'AI is designing a new theme…');
+      await this.database.updateOperationProgress(operation, { kind: 'indeterminate' }, 'AI is designing a new theme…');
       const prompt = operation.payload.prompt; if (typeof prompt !== 'string') throw new Error('Theme description is required');
       const current = await this.database.getActiveTheme(blog.id); if (!current) throw new Error('Active theme not found');
       const baseTheme = operation.payload.baseTheme ? validateThemeConfig(operation.payload.baseTheme) : current.config;
       const theme = await (this.dependencies.aiProvider?.() ?? createAiProvider(this.config.aiProvider, this.config.aiModel)).generate({ blog: { title: blog.title ?? blog.username, description: blog.description ?? '', author: blog.author ?? blog.username }, currentTheme: baseTheme, prompt });
-      const revision = await this.database.completeThemeOperation(operation.id, theme, { message: 'New theme ready' });
+      const revision = await this.database.completeThemeOperation(operation, theme, { message: 'New theme ready' });
       return { message: 'New theme ready', revisionId: revision.id };
     }
     if (!blog.draftArtifactId) throw new Error('Sync content before publishing');
@@ -100,25 +107,25 @@ export class AppOperationExecutor implements OperationExecutor {
     const theme = await this.database.getTheme(themeRevisionId, blog.id); if (!theme) throw new Error('Active theme not found');
     const artifact = await this.database.createArtifact(blog.id, 'release'); const overlay = await mkdtemp(join(tmpdir(), 'vibelog-publish-'));
     try {
-      await this.database.updateOperationProgress(operation.id, { kind: 'determinate', value: 0, max: 3 }, 'Copying draft');
+      await this.database.updateOperationProgress(operation, { kind: 'determinate', value: 0, max: 3 }, 'Copying draft');
       await this.artifacts.copyArtifact(blog.draftArtifactId, artifact.id);
       await mkdir(overlay, { recursive: true }); await writeFile(join(overlay, 'theme.css'), renderThemeCss(theme.config)); await this.artifacts.uploadDirectory(artifact.id, overlay);
       const result = { message: 'Site published', url: publicOrigin(this.config, blog.username) };
-      await this.database.completePublishOperation(operation.id, artifact.id, createReleaseSnapshot(blog), result);
-      for (const id of await this.database.prunePublishedReleases(blog.id)) await this.cleanupArtifact(id);
+      await this.database.completePublishOperation(operation, artifact.id, createReleaseSnapshot(blog), result);
       return result;
-    } catch (error) { await this.artifacts.deleteArtifact(artifact.id).catch(() => undefined); await this.database.markArtifactCleanup(artifact.id); throw error; }
+    } catch (error) { await this.database.markArtifactCleanup(artifact.id); throw error; }
     finally { await rm(overlay, { recursive: true, force: true }); }
   }
   async cleanupArtifact(id: string): Promise<void> { await this.artifacts.deleteArtifact(id); await this.database.deleteArtifactRecord(id); }
-  async cleanupPending(): Promise<number> { const pending = await this.database.listCleanupArtifacts(); for (const item of pending) await this.cleanupArtifact(item.id); return pending.length; }
+  async cleanupPending(): Promise<number> { await this.database.prunePublishedReleases(); const pending = await this.database.listCleanupArtifacts(); for (const item of pending) await this.cleanupArtifact(item.id); return pending.length; }
 }
 export class OutboxDispatcher implements OperationDispatcher {
   constructor(private readonly database: AppDatabase, private readonly queue: OperationQueue) {}
   async dispatch(limit = 100): Promise<number> {
+    await this.database.recoverExpiredOperations(limit);
     const events = await this.database.listPendingOutbox(limit); let sent = 0;
     for (const event of events) {
-      try { await this.queue.enqueue(event.message); await this.database.markOutboxDispatched(event.id); sent += 1; }
+      try { await this.queue.enqueue(event.message); await this.database.markOutboxDispatched(event.id, event.message.traceId); sent += 1; }
       catch (error) { await this.database.noteOutboxAttempt(event.id); throw error; }
     }
     return sent;
@@ -143,7 +150,7 @@ export class DurableOutboxWorker implements OperationDispatcher {
       }
       const operation = await this.database.getOperation(event.operationId);
       if (operation?.status === 'succeeded' || operation?.status === 'failed') {
-        await this.database.markOutboxDispatched(event.id); completed += 1;
+        await this.database.markOutboxDispatched(event.id, event.message.traceId); completed += 1;
       }
     }
     return completed;
