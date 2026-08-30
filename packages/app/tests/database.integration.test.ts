@@ -7,6 +7,9 @@ import { DEFAULT_THEME } from '@vibelog/core';
 import { AppDatabase, MAX_OPERATION_ATTEMPTS, OperationLeaseLostError } from '../src/database.js';
 import { AppOperationExecutor, OutboxDispatcher, RetryableOperationError } from '../src/jobs.js';
 import { loadWorkerConfig } from '../src/config.js';
+import { smokeWorker } from '../scripts/worker-smoke.js';
+import { CloudTasksRequestVerifier } from '../src/adapters/cloud-tasks-request-verifier.js';
+import { handleOperationTask } from '../src/adapters/cloud-tasks-transport.js';
 import { operations, rateLimit, user } from '../src/schema.js';
 
 const url = process.env.TEST_DATABASE_URL;
@@ -113,5 +116,23 @@ describe.skipIf(!url)('operation crash recovery', () => {
     await complete(current);
     await expect(complete(first)).rejects.toBeInstanceOf(OperationLeaseLostError);
     expect(type === 'generate_theme' ? (await database.listThemes(blog.id)).length : (await database.listReleases(blog.id)).length).toBe(type === 'generate_theme' ? 2 : 1);
+  });
+  it('runs the deployment smoke fixture through real DB execution and removes it afterwards', async () => {
+    let operationId = '';
+    const request: typeof fetch = async (_input, init) => {
+      if (init?.method === 'DELETE') return new Response(null, { status: 404 });
+      if (typeof init?.body !== 'string') throw new Error('Missing task body');
+      const { task } = JSON.parse(init.body) as { task: { httpRequest: { body: string } } };
+      const body = Buffer.from(task.httpRequest.body, 'base64').toString();
+      operationId = (JSON.parse(body) as { operationId: string }).operationId;
+      expect(await database.listPendingOutbox()).toHaveLength(0);
+      const response = await handleOperationTask(new Request('http://worker/tasks/operations', { method: 'POST', headers: { authorization: 'Bearer test-iam-boundary', 'x-cloudtasks-queuename': 'operations', 'content-type': 'application/json' }, body }), new CloudTasksRequestVerifier('operations'), executor());
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ failed: true });
+      return new Response('{}');
+    };
+    await smokeWorker({ candidateUrl: 'https://candidate---worker.run.app', audience: 'https://worker.run.app', queuePath: 'projects/test/locations/region/queues/operations', invokerEmail: 'tasks@test', accessToken: 'fake' }, database.pool, { fetch: request, polls: 1 });
+    expect(operationId).not.toBe('');
+    expect(await database.getOperation(operationId)).toBeNull();
   });
 });

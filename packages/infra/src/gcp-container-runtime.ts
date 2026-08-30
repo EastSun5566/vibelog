@@ -24,6 +24,10 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
   readonly webServingRevision: pulumi.Output<string>;
   readonly workerServingRevision: pulumi.Output<string>;
   readonly candidateWebUrl: pulumi.Output<string>;
+  readonly candidateWorkerUrl: pulumi.Output<string>;
+  readonly workerUrl: pulumi.Output<string>;
+  readonly taskQueuePath: pulumi.Output<string>;
+  readonly taskInvokerEmail: pulumi.Output<string>;
   constructor(name: string, args: GcpContainerRuntimeArgs, opts?: pulumi.ComponentResourceOptions) {
     super('vibelog:infra:GcpContainerRuntime', name, {}, opts);
     const resourceOptions = { parent: this, provider: args.provider };
@@ -99,6 +103,10 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
     this.webServingRevision = this.web.trafficStatuses.apply((statuses) => statuses.find((status) => status.percent === 100)?.revision ?? '');
     this.workerServingRevision = this.worker.trafficStatuses.apply((statuses) => statuses.find((status) => status.percent === 100)?.revision ?? '');
     this.candidateWebUrl = this.web.trafficStatuses.apply((statuses) => statuses.find((status) => status.tag === 'candidate')?.uri ?? '');
-    this.registerOutputs({ repository: this.repository.repositoryId, webUrl: this.webUrl, webServingRevision: this.webServingRevision, workerServingRevision: this.workerServingRevision, candidateWebUrl: this.candidateWebUrl, workerName: this.worker.name, queueName: this.queue.name });
+    this.candidateWorkerUrl = this.worker.trafficStatuses.apply((statuses) => statuses.find((status) => status.tag === 'candidate')?.uri ?? '');
+    this.workerUrl = this.worker.uri;
+    this.taskQueuePath = pulumi.interpolate`projects/${args.project}/locations/${args.region}/queues/${this.queue.name}`;
+    this.taskInvokerEmail = tasksAccount.email;
+    this.registerOutputs({ repository: this.repository.repositoryId, webUrl: this.webUrl, webServingRevision: this.webServingRevision, workerServingRevision: this.workerServingRevision, candidateWebUrl: this.candidateWebUrl, candidateWorkerUrl: this.candidateWorkerUrl, workerUrl: this.workerUrl, taskQueuePath: this.taskQueuePath, taskInvokerEmail: this.taskInvokerEmail, workerName: this.worker.name, queueName: this.queue.name });
   }
 }

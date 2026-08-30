@@ -41,6 +41,10 @@ describe('Pulumi components', () => {
       secrets: { databaseUrl: pulumi.secret('database'), objectStoreAccessKeyId: pulumi.secret('key'), objectStoreSecretAccessKey: pulumi.secret('secret'), resendApiKey: pulumi.secret('resend'), betterAuthSecret: pulumi.secret('auth'), githubClientSecret: pulumi.secret('github'), googleClientSecret: pulumi.secret('google'), aiApiKey: pulumi.secret('ai'), edgeSharedSecret: pulumi.secret('edge') },
       }, { providers: [provider] });
       await resolveOutput(runtime.webUrl);
+      expect(await resolveOutput(runtime.candidateWorkerUrl)).toBe('https://candidate---test-runtime-worker.run.test');
+      expect(await resolveOutput(runtime.workerUrl)).toBe('https://test-runtime-worker.run.test');
+      expect(await resolveOutput(runtime.taskQueuePath)).toBe('projects/vibelog-dev-q7n4xp/locations/asia-east1/queues/vibelog-operations-dev');
+      expect(await resolveOutput(runtime.taskInvokerEmail)).toBe('test-runtime-tasks-sa@project.iam.gserviceaccount.com');
       childUrns.push(
         await resolveOutput(runtime.repository.urn),
         await resolveOutput(runtime.web.urn),

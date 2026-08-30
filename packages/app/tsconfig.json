@@ -14,7 +14,8 @@
   },
   "include": [
     "src",
-    "tests"
+    "tests",
+    "scripts"
   ],
   "exclude": ["dist", "coverage"]
 }

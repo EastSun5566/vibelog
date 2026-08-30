@@ -3,7 +3,6 @@ import * as gcp from '@pulumi/gcp';
 import * as pulumi from '@pulumi/pulumi';
 import { CloudflareDelivery } from './cloudflare-delivery.js';
 import { GcpContainerRuntime } from './gcp-container-runtime.js';
-import { GithubDeploymentIdentity } from './github-deployment-identity.js';
 
 const config = new pulumi.Config('vibelog'); const gcpConfig = new pulumi.Config('gcp');
 const environment = config.require('environment'); const project = gcpConfig.require('project'); const region = gcpConfig.require('region');
@@ -34,16 +33,15 @@ const delivery = new CloudflareDelivery('delivery', {
   accountId, zoneId, rootDomain, bucketName, location: config.get('r2Location') ?? 'apac',
   originUrl: runtime.webUrl, edgeSharedSecret, provider: cloudflareProvider,
 }, { providers: [cloudflareProvider] });
-const deploymentIdentity = new GithubDeploymentIdentity('github', {
-  project, environment, githubRepository: config.get('githubRepository') ?? 'EastSun5566/vibelog', provider: gcpProvider,
-}, { providers: [gcpProvider] });
 
 export const webUrl = runtime.webUrl;
 export const deployedImage = pulumi.output(imageDigest);
 export const webServingRevision = runtime.webServingRevision;
 export const workerServingRevision = runtime.workerServingRevision;
 export const candidateWebUrl = runtime.candidateWebUrl;
+export const candidateWorkerUrl = runtime.candidateWorkerUrl;
+export const workerUrl = runtime.workerUrl;
+export const taskQueuePath = runtime.taskQueuePath;
+export const taskInvokerEmail = runtime.taskInvokerEmail;
 export const r2Bucket = delivery.bucket.name;
 export const artifactRepository = runtime.repository.repositoryId;
-export const githubWorkloadIdentityProvider = deploymentIdentity.providerName;
-export const githubDeployServiceAccount = deploymentIdentity.serviceAccount.email;
