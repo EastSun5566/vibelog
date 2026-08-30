@@ -1,6 +1,6 @@
 # VibeLog
 
-VibeLog turns HackMD content into a production-ready, AI-styled blog. This repository is a pnpm monorepo containing the core builder and stateless web and worker containers.
+VibeLog turns HackMD content into a production-ready, AI-styled blog. This repository is a pnpm monorepo containing the core builder, the web and worker containers, a Cloudflare edge Worker, and Pulumi infrastructure.
 
 ## Architecture
 
@@ -62,3 +62,9 @@ docker compose --env-file .env.selfhost -f compose.selfhost.yml ps
 Only the web port binds to `127.0.0.1`; PostgreSQL, MinIO, and the worker stay private. Put your existing reverse proxy in front of that port with wildcard TLS, preserve the original `Host`, and route `APP_ORIGIN`, `PREVIEW_ORIGIN`, and every `*.<APP_ORIGIN hostname>` request to it. Cloudflare Worker/Pulumi infrastructure is not required for self-hosting.
 
 Back up both named volumes and `.env.selfhost` before upgrades. The manifest is a simple single-VPS topology, not a high-availability database or object-storage setup.
+
+## Deployment
+
+Infrastructure lives in [`packages/infra`](packages/infra/README.md) and is owned by Pulumi. CI builds one immutable image for both Cloud Run services, runs migrations with the direct PostgreSQL URL, then deploys the image digest. Do not deploy Cloud Run separately with `gcloud run deploy`, because that creates two owners for the same revision configuration.
+
+Pulumi ESC supplies deployment credentials and external SaaS secrets. Pulumi materializes runtime secrets into GCP Secret Manager; the application does not depend on Pulumi or ESC at runtime.

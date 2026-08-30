@@ -1,0 +1,53 @@
+name: Pulumi preview
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - packages/infra/**
+      - packages/edge/**
+      - packages/app/Dockerfile
+      - .github/scripts/guard-pulumi-preview.mjs
+      - .github/workflows/infra-preview.yml
+      - pnpm-lock.yaml
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PULUMI_ENABLE_STREAMING_JSON_PREVIEW: "true"
+
+jobs:
+  preview:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @vibelog/edge build
+      - run: pnpm --filter @vibelog/infra build
+      - name: Authenticate with Pulumi Cloud using GitHub OIDC
+        uses: pulumi/auth-actions@v2
+        with:
+          organization: EastSun5566
+          requested-token-type: urn:pulumi:token-type:access_token:organization
+      - name: Load deployment credentials and secrets from ESC
+        uses: pulumi/esc-action@v3
+        with:
+          environment: EastSun5566/vibelog/dev
+      - name: Reuse the currently deployed immutable image
+        run: |
+          image="$(pnpm exec pulumi stack output deployedImage --cwd packages/infra --stack EastSun5566/vibelog/dev)"
+          test -n "$image"
+          pnpm exec pulumi config set vibelog:imageDigest "$image" --cwd packages/infra --stack EastSun5566/vibelog/dev
+      - name: Preview infrastructure as JSON
+        run: pnpm exec pulumi preview --cwd packages/infra --stack EastSun5566/vibelog/dev --non-interactive --json > "$RUNNER_TEMP/pulumi-preview.jsonl"
+      - name: Reject destructive or public-state changes
+        run: node .github/scripts/guard-pulumi-preview.mjs "$RUNNER_TEMP/pulumi-preview.jsonl"

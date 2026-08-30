@@ -12,6 +12,7 @@
         "vitest.config.ts",
         "playwright.config.ts",
         ".github/scripts/container-smoke.mjs",
+        ".github/scripts/guard-pulumi-preview.mjs",
         "e2e/run-local.mjs",
         "e2e/**/*.spec.ts"
       ],
@@ -19,10 +20,12 @@
         "vitest.config.ts",
         "playwright.config.ts",
         ".github/scripts/container-smoke.mjs",
+        ".github/scripts/guard-pulumi-preview.mjs",
         "e2e/run-local.mjs",
         "e2e/tsconfig.json",
         "e2e/**/*.ts"
-      ]
+      ],
+      "ignoreBinaries": ["pulumi"]
     },
     "packages/core": {
       "entry": ["src/index.ts", "tests/**/*.test.ts"],
@@ -32,6 +35,14 @@
     "packages/app": {
       "entry": ["src/main.ts", "src/web-main.ts", "src/worker-main.ts", "src/migrate.ts", "src/styles/app.css", "tests/**/*.test.ts", "drizzle.config.ts"],
       "project": ["src/**/*.{ts,tsx,css}", "tests/**/*.ts", "drizzle.config.ts"]
+    },
+    "packages/edge": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/infra": {
+      "entry": ["src/index.ts", "tests/**/*.test.{ts,mjs}"],
+      "project": ["src/**/*.ts", "tests/**/*.{ts,mjs,js}"]
     }
   }
 }

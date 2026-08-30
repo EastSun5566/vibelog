@@ -1,0 +1,7 @@
+name: vibelog
+runtime:
+  name: nodejs
+  options:
+    packagemanager: pnpm
+description: VibeLog GCP and Cloudflare delivery infrastructure
+main: dist/index.js

@@ -1,49 +1,109 @@
-name: Publish app image
+name: Deploy development
 
 on:
-  push:
-    tags: "v*.*.*"
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
 
 permissions:
   contents: read
-  packages: write
+  id-token: write
 
 concurrency:
-  group: publish-${{ github.ref }}
+  group: deploy-vibelog-dev
   cancel-in-progress: false
 
+env:
+  GCP_PROJECT: vibelog-dev-q7n4xp
+  GCP_REGION: asia-east1
+  IMAGE_REPOSITORY: asia-east1-docker.pkg.dev/vibelog-dev-q7n4xp/vibelog-dev/vibelog-app
+  PULUMI_STACK: EastSun5566/vibelog/dev
+  PULUMI_ENABLE_STREAMING_JSON_PREVIEW: "true"
+  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
 jobs:
-  publish:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
+    environment: development
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-qemu-action@v3
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @vibelog/core build
+      - run: pnpm --filter @vibelog/app build
+      - run: pnpm --filter @vibelog/edge build
+      - run: pnpm --filter @vibelog/infra build
+      - name: Authenticate with Pulumi Cloud using GitHub OIDC
+        uses: pulumi/auth-actions@v2
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Set image version
-        id: image
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-      - name: Build and publish multi-arch image
-        uses: docker/build-push-action@v6
+          organization: EastSun5566
+          requested-token-type: urn:pulumi:token-type:access_token:organization
+      - name: Load short-lived GCP credentials and secrets from ESC
+        uses: pulumi/esc-action@v3
         with:
-          context: .
-          file: packages/app/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/eastsun5566/vibelog-app:${{ steps.image.outputs.version }}
-            ghcr.io/eastsun5566/vibelog-app:beta
-          labels: |
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.image.outputs.version }}
-      - name: Verify both architectures and anonymous pull
+          environment: EastSun5566/vibelog/dev
+      - name: Validate deployment environment
         run: |
-          docker buildx imagetools inspect "ghcr.io/eastsun5566/vibelog-app:${{ steps.image.outputs.version }}" | grep --quiet 'linux/amd64'
-          docker buildx imagetools inspect "ghcr.io/eastsun5566/vibelog-app:${{ steps.image.outputs.version }}" | grep --quiet 'linux/arm64'
-          docker logout ghcr.io
-          docker pull "ghcr.io/eastsun5566/vibelog-app:${{ steps.image.outputs.version }}"
+          test -n "$GOOGLE_OAUTH_ACCESS_TOKEN"
+          test -n "$DATABASE_MIGRATION_URL"
+      - name: Authenticate Docker to Artifact Registry
+        run: printf '%s' "$GOOGLE_OAUTH_ACCESS_TOKEN" | docker login --username oauth2accesstoken --password-stdin "https://${GCP_REGION}-docker.pkg.dev"
+      - name: Build and push immutable application image
+        id: image
+        run: |
+          image="${IMAGE_REPOSITORY}:${DEPLOY_SHA}"
+          docker buildx build --platform linux/amd64 --file packages/app/Dockerfile --tag "$image" --push --metadata-file "$RUNNER_TEMP/image-metadata.json" .
+          digest="$(node -p "JSON.parse(require('node:fs').readFileSync(process.env.RUNNER_TEMP + '/image-metadata.json'))['containerimage.digest']")"
+          test -n "$digest"
+          echo "reference=${IMAGE_REPOSITORY}@${digest}" >> "$GITHUB_OUTPUT"
+      - name: Run PostgreSQL migration with the direct connection
+        run: pnpm --filter @vibelog/app db:migrate
+      - name: Keep existing revisions active while staging the candidate
+        run: |
+          web_revision="$(pnpm exec pulumi stack output webServingRevision --cwd packages/infra --stack "$PULUMI_STACK" 2>/dev/null || true)"
+          worker_revision="$(pnpm exec pulumi stack output workerServingRevision --cwd packages/infra --stack "$PULUMI_STACK" 2>/dev/null || true)"
+          if test -n "$web_revision" && test -n "$worker_revision"; then
+            pnpm exec pulumi config set vibelog:webActiveRevision "$web_revision" --cwd packages/infra --stack "$PULUMI_STACK"
+            pnpm exec pulumi config set vibelog:workerActiveRevision "$worker_revision" --cwd packages/infra --stack "$PULUMI_STACK"
+          else
+            echo "No active revisions exist yet; the bootstrap deployment cannot use a zero-traffic candidate."
+          fi
+      - name: Set immutable deployment input
+        run: pnpm exec pulumi config set vibelog:imageDigest "${{ steps.image.outputs.reference }}" --cwd packages/infra --stack "$PULUMI_STACK"
+      - name: Preview candidate deployment
+        run: pnpm exec pulumi preview --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --json > "$RUNNER_TEMP/candidate-preview.jsonl"
+      - name: Guard candidate deployment
+        run: node .github/scripts/guard-pulumi-preview.mjs "$RUNNER_TEMP/candidate-preview.jsonl"
+      - name: Stage candidate at zero traffic
+        run: pnpm exec pulumi up --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --yes --strict
+      - name: Smoke test candidate revision
+        run: |
+          candidate_url="$(pnpm exec pulumi stack output candidateWebUrl --cwd packages/infra --stack "$PULUMI_STACK")"
+          test -n "$candidate_url"
+          curl --fail --show-error --retry 6 --retry-all-errors --max-time 20 "$candidate_url/health"
+      - name: Select the verified candidate for traffic
+        run: |
+          pnpm exec pulumi config rm vibelog:webActiveRevision --cwd packages/infra --stack "$PULUMI_STACK" || true
+          pnpm exec pulumi config rm vibelog:workerActiveRevision --cwd packages/infra --stack "$PULUMI_STACK" || true
+      - name: Preview candidate promotion
+        run: pnpm exec pulumi preview --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --json > "$RUNNER_TEMP/promotion-preview.jsonl"
+      - name: Guard candidate promotion
+        run: node .github/scripts/guard-pulumi-preview.mjs "$RUNNER_TEMP/promotion-preview.jsonl"
+      - name: Promote the verified revisions
+        run: pnpm exec pulumi up --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --yes --strict
+      - name: Smoke test Cloud Run and wildcard edge routing
+        run: |
+          web_url="$(pnpm exec pulumi stack output webUrl --cwd packages/infra --stack "$PULUMI_STACK")"
+          root_domain="$(pnpm exec pulumi config get vibelog:rootDomain --cwd packages/infra --stack "$PULUMI_STACK")"
+          curl --fail --show-error --retry 6 --retry-all-errors --max-time 20 "$web_url/health"
+          curl --fail --show-error --retry 6 --retry-all-errors --max-time 20 "https://app.${root_domain}/health"
