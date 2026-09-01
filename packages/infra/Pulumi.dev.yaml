@@ -1,9 +1,0 @@
-config:
-  gcp:project: vibelog-dev-q7n4xp
-  gcp:region: asia-east1
-  vibelog:environment: dev
-  vibelog:minInstances: 0
-  vibelog:maxInstances: 3
-  vibelog:r2Location: apac
-environment:
-  - EastSun5566/vibelog/dev

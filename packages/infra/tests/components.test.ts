@@ -6,6 +6,7 @@ import * as pulumi from '@pulumi/pulumi';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { CloudflareDelivery } from '../src/cloudflare-delivery.js';
 import { GcpContainerRuntime } from '../src/gcp-container-runtime.js';
+import { ProductionFoundation } from '../src/production-foundation.js';
 
 interface Registration { type: string; name: string; inputs: Record<string, unknown>; provider?: string }
 const registrations: Registration[] = [];
@@ -24,17 +25,17 @@ beforeAll(async () => {
       return { id: `${args.name}-id`, state };
     },
     call: (args) => record(args.inputs),
-  }, 'vibelog', 'dev', false, 'EastSun5566');
+  }, 'vibelog', 'prod', false, 'test-organization');
 });
 beforeEach(() => { registrations.length = 0; });
 describe('Pulumi components', () => {
   it('keeps web public, worker private, bounded at zero-to-max, and secrets out of plaintext env', async () => {
     const childUrns: string[] = [];
     await pulumi.runtime.runInPulumiStack(async () => {
-      const provider = new gcp.Provider('test-gcp', { project: 'vibelog-dev-q7n4xp', region: 'asia-east1' });
+      const provider = new gcp.Provider('test-gcp', { project: 'vibelog-test-project', region: 'asia-east1' });
       const runtime = new GcpContainerRuntime('test-runtime', {
-      project: 'vibelog-dev-q7n4xp', region: 'asia-east1', environment: 'dev', imageDigest: 'asia-east1-docker.pkg.dev/project/repo/app@sha256:abc',
-      appOrigin: 'https://app.example.com', previewOrigin: 'https://preview.example.com', objectStoreEndpoint: 'https://account.r2.cloudflarestorage.com',
+      project: 'vibelog-test-project', region: 'asia-east1', environment: 'prod', imageDigest: 'asia-east1-docker.pkg.dev/project/repo/app@sha256:abc',
+      appOrigin: 'https://example.com', previewOrigin: 'https://preview.example.com', objectStoreEndpoint: 'https://account.r2.cloudflarestorage.com',
       objectStoreBucket: 'artifacts', githubClientId: 'github-id', googleClientId: 'google-id', aiProvider: 'openai', aiModel: 'gpt-4o-mini',
       aiApiKeyEnv: 'OPENAI_API_KEY', emailFrom: 'VibeLog <login@send.example.com>', emailReplyTo: 'support@example.com',
       minInstances: 0, maxInstances: 3, webActiveRevision: 'web-stable', workerActiveRevision: 'worker-stable', provider,
@@ -43,10 +44,9 @@ describe('Pulumi components', () => {
       await resolveOutput(runtime.webUrl);
       expect(await resolveOutput(runtime.candidateWorkerUrl)).toBe('https://candidate---test-runtime-worker.run.test');
       expect(await resolveOutput(runtime.workerUrl)).toBe('https://test-runtime-worker.run.test');
-      expect(await resolveOutput(runtime.taskQueuePath)).toBe('projects/vibelog-dev-q7n4xp/locations/asia-east1/queues/vibelog-operations-dev');
+      expect(await resolveOutput(runtime.taskQueuePath)).toBe('projects/vibelog-test-project/locations/asia-east1/queues/vibelog-operations-prod');
       expect(await resolveOutput(runtime.taskInvokerEmail)).toBe('test-runtime-tasks-sa@project.iam.gserviceaccount.com');
       childUrns.push(
-        await resolveOutput(runtime.repository.urn),
         await resolveOutput(runtime.web.urn),
         await resolveOutput(runtime.worker.urn),
         await resolveOutput(runtime.queue.urn),
@@ -80,24 +80,47 @@ describe('Pulumi components', () => {
     expect(workerSecretNames.has('OPENAI_API_KEY')).toBe(true);
     const gcpChildren = registrations.filter((item) => item.type.startsWith('gcp:'));
     expect(gcpChildren.filter((item) => !item.provider).map((item) => item.name)).toEqual([]);
-    expect(childUrns).toHaveLength(4);
+    expect(registrations.some((item) => item.type.includes('projects/service:Service'))).toBe(false);
+    expect(registrations.some((item) => item.type.includes('artifactregistry/repository:Repository'))).toBe(false);
+    expect(childUrns).toHaveLength(3);
     expect(childUrns.every((urn) => urn.includes('vibelog:infra:GcpContainerRuntime$gcp:'))).toBe(true);
   });
-  it('creates only a protected private R2 bucket and a fixed-date edge route', async () => {
+  it('creates only the protected repository and private R2 bucket in the foundation', async () => {
+    const childUrns: string[] = [];
+    await pulumi.runtime.runInPulumiStack(async () => {
+      const gcpProvider = new gcp.Provider('foundation-gcp', { project: 'vibelog-test-project', region: 'asia-east1' });
+      const cloudflareProvider = new cloudflare.Provider('foundation-cloudflare', { apiToken: pulumi.secret('token') });
+      const foundation = new ProductionFoundation('test-foundation', {
+        project: 'vibelog-test-project', region: 'asia-east1', environment: 'prod', cloudflareAccountId: 'account',
+        r2BucketName: 'vibelog-prod-artifacts', r2Location: 'apac', gcpProvider, cloudflareProvider,
+      }, { providers: [gcpProvider, cloudflareProvider] });
+      childUrns.push(await resolveOutput(foundation.repository.urn), await resolveOutput(foundation.bucket.urn));
+    });
+    const repository = registrations.find((item) => item.type.includes('artifactregistry/repository:Repository'));
+    const bucket = registrations.find((item) => item.type.includes('r2Bucket:R2Bucket'));
+    expect(repository?.inputs).toMatchObject({ project: 'vibelog-test-project', location: 'asia-east1', repositoryId: 'vibelog-prod', format: 'DOCKER' });
+    expect(bucket?.inputs).toMatchObject({ accountId: 'account', name: 'vibelog-prod-artifacts', location: 'apac', storageClass: 'Standard' });
+    expect(childUrns).toHaveLength(2);
+    expect(childUrns.every((urn) => urn.includes('vibelog:infra:ProductionFoundation$'))).toBe(true);
+    expect(readFileSync(fileURLToPath(new URL('../src/production-foundation.ts', import.meta.url)), 'utf8').match(/protect: true/g)).toHaveLength(2);
+    expect(registrations.some((item) => /r2(Custom|Managed)Domain/.test(item.type))).toBe(false);
+  });
+  it('routes both the apex and first-level hosts through the edge without owning R2', async () => {
     await pulumi.runtime.runInPulumiStack(async () => {
       const provider = new cloudflare.Provider('test-cloudflare', { apiToken: pulumi.secret('token') });
-      const delivery = new CloudflareDelivery('test-delivery', { accountId: 'account', zoneId: 'zone', rootDomain: 'example.com', bucketName: 'artifacts', location: 'apac', originUrl: 'https://web.run.test', edgeSharedSecret: pulumi.secret('edge'), provider, bundlePath: fileURLToPath(new URL('./fixture-worker.js', import.meta.url)) }, { providers: [provider] });
+      const delivery = new CloudflareDelivery('test-delivery', { accountId: 'account', zoneId: 'zone', rootDomain: 'example.com', originUrl: 'https://web.run.test', edgeSharedSecret: pulumi.secret('edge'), provider, bundlePath: fileURLToPath(new URL('./fixture-worker.js', import.meta.url)) }, { providers: [provider] });
       await resolveOutput(delivery.script.scriptName);
       await Promise.all(delivery.routes.map((route) => resolveOutput(route.pattern)));
     });
-    const bucket = registrations.find((item) => item.type.includes('r2Bucket:R2Bucket')); const script = registrations.find((item) => item.type.includes('workersScript:WorkersScript'));
-    expect(bucket).toBeDefined(); expect(script).toBeDefined();
-    if (!bucket || !script) throw new Error('Cloudflare resources missing');
-    expect(bucket.inputs).toMatchObject({ location: 'apac', storageClass: 'Standard' });
-    expect(readFileSync(fileURLToPath(new URL('../src/cloudflare-delivery.ts', import.meta.url)), 'utf8')).toContain('{ ...resourceOptions, protect: true }');
-    expect(registrations.some((item) => /r2(Custom|Managed)Domain/.test(item.type))).toBe(false);
+    const script = registrations.find((item) => item.type.includes('workersScript:WorkersScript'));
+    expect(script).toBeDefined();
+    if (!script) throw new Error('Cloudflare Worker missing');
+    expect(registrations.some((item) => item.type.includes('r2Bucket:R2Bucket'))).toBe(false);
     expect(script.inputs.compatibilityDate).toBe('2026-08-29');
     const routes = registrations.filter((item) => item.type.includes('workersRoute:WorkersRoute')).map((item) => item.inputs.pattern);
-    expect(routes).toEqual(expect.arrayContaining(['*.example.com/*', '*.app.example.com/*']));
+    expect(routes.sort()).toEqual(['*.example.com/*', 'example.com/*']);
+    const dns = registrations.filter((item) => item.type.includes('dnsRecord:DnsRecord'));
+    expect(dns.map((item) => item.inputs.name).sort()).toEqual(['*.example.com', 'example.com']);
+    expect(dns.every((item) => item.inputs.proxied === true)).toBe(true);
   });
 });

@@ -24,4 +24,23 @@ describe('Pulumi preview safety gate', () => {
     ].join('\n');
     expect(findUnsafeChanges(preview)).toHaveLength(4);
   });
+
+  it('allows only the protected foundation graph in foundation mode', () => {
+    const preview = [
+      event('create', 'urn:pulumi:prod::vibelog::pulumi:providers:gcp::gcp'),
+      event('create', 'urn:pulumi:prod::vibelog::pulumi:providers:cloudflare::cloudflare-r2'),
+      event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation::foundation'),
+      event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$gcp:artifactregistry/repository:Repository::foundation-images'),
+      event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$cloudflare:index/r2Bucket:R2Bucket::foundation-artifacts'),
+    ].join('\n');
+    expect(findUnsafeChanges(preview, 'foundation')).toEqual([]);
+  });
+
+  it('rejects application and public resources in foundation mode', () => {
+    const preview = [
+      event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:GcpContainerRuntime$gcp:cloudrunv2/service:Service::web'),
+      event('create', 'urn:pulumi:prod::vibelog::cloudflare:index/r2ManagedDomain:R2ManagedDomain::public'),
+    ].join('\n');
+    expect(findUnsafeChanges(preview, 'foundation')).toHaveLength(3);
+  });
 });

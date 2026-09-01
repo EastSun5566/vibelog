@@ -16,7 +16,6 @@ export interface GcpContainerRuntimeArgs {
   secrets: RuntimeSecretInputs; provider: gcp.Provider;
 }
 export class GcpContainerRuntime extends pulumi.ComponentResource {
-  readonly repository: gcp.artifactregistry.Repository;
   readonly web: gcp.cloudrunv2.Service;
   readonly worker: gcp.cloudrunv2.Service;
   readonly queue: gcp.cloudtasks.Queue;
@@ -31,14 +30,11 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
   constructor(name: string, args: GcpContainerRuntimeArgs, opts?: pulumi.ComponentResourceOptions) {
     super('vibelog:infra:GcpContainerRuntime', name, {}, opts);
     const resourceOptions = { parent: this, provider: args.provider };
-    const apis = ['artifactregistry.googleapis.com', 'run.googleapis.com', 'cloudtasks.googleapis.com', 'cloudscheduler.googleapis.com', 'secretmanager.googleapis.com', 'iamcredentials.googleapis.com'].map((service) =>
-      new gcp.projects.Service(`${name}-${service.split('.')[0]}`, { project: args.project, service, disableOnDestroy: false }, resourceOptions));
-    this.repository = new gcp.artifactregistry.Repository(`${name}-images`, { project: args.project, location: args.region, repositoryId: `vibelog-${args.environment}`, format: 'DOCKER', description: 'Immutable VibeLog application images' }, { ...resourceOptions, dependsOn: apis, protect: true });
     const webAccount = new gcp.serviceaccount.Account(`${name}-web-sa`, { project: args.project, accountId: `vibelog-web-${args.environment}`, displayName: 'VibeLog web runtime' }, resourceOptions);
     const workerAccount = new gcp.serviceaccount.Account(`${name}-worker-sa`, { project: args.project, accountId: `vibelog-worker-${args.environment}`, displayName: 'VibeLog worker runtime' }, resourceOptions);
     const tasksAccount = new gcp.serviceaccount.Account(`${name}-tasks-sa`, { project: args.project, accountId: `vibelog-tasks-${args.environment}`, displayName: 'Cloud Tasks caller' }, resourceOptions);
     // Delivery retries must outlive the 35-minute operation lease; execution is capped separately in PostgreSQL.
-    this.queue = new gcp.cloudtasks.Queue(`${name}-operations`, { project: args.project, location: args.region, name: `vibelog-operations-${args.environment}`, rateLimits: { maxConcurrentDispatches: 10, maxDispatchesPerSecond: 5 }, retryConfig: { maxAttempts: 100, maxBackoff: '300s', minBackoff: '30s', maxDoublings: 5 } }, { ...resourceOptions, dependsOn: apis });
+    this.queue = new gcp.cloudtasks.Queue(`${name}-operations`, { project: args.project, location: args.region, name: `vibelog-operations-${args.environment}`, rateLimits: { maxConcurrentDispatches: 10, maxDispatchesPerSecond: 5 }, retryConfig: { maxAttempts: 100, maxBackoff: '300s', minBackoff: '30s', maxDoublings: 5 } }, resourceOptions);
     const secretValues: Record<string, { value: pulumi.Input<string>; services: ('web' | 'worker')[] }> = {
       DATABASE_URL: { value: args.secrets.databaseUrl, services: ['web', 'worker'] },
       OBJECT_STORE_ACCESS_KEY_ID: { value: args.secrets.objectStoreAccessKeyId, services: ['web', 'worker'] },
@@ -81,7 +77,7 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
           { type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION', revision: activeRevision, percent: 100 },
           { type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', percent: 0, tag: 'candidate' },
         ] : [{ type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', percent: 100, tag: 'candidate' }],
-      }, { ...resourceOptions, dependsOn: apis });
+      }, resourceOptions);
     const projectInfo = gcp.organizations.getProjectOutput({ projectId: args.project }, { provider: args.provider });
     const workerServiceUrl = pulumi.interpolate`https://vibelog-worker-${args.environment}-${projectInfo.number}.${args.region}.run.app`;
     const queueEnv = (workerUrl: pulumi.Input<string>) => [
@@ -107,6 +103,6 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
     this.workerUrl = this.worker.uri;
     this.taskQueuePath = pulumi.interpolate`projects/${args.project}/locations/${args.region}/queues/${this.queue.name}`;
     this.taskInvokerEmail = tasksAccount.email;
-    this.registerOutputs({ repository: this.repository.repositoryId, webUrl: this.webUrl, webServingRevision: this.webServingRevision, workerServingRevision: this.workerServingRevision, candidateWebUrl: this.candidateWebUrl, candidateWorkerUrl: this.candidateWorkerUrl, workerUrl: this.workerUrl, taskQueuePath: this.taskQueuePath, taskInvokerEmail: this.taskInvokerEmail, workerName: this.worker.name, queueName: this.queue.name });
+    this.registerOutputs({ webUrl: this.webUrl, webServingRevision: this.webServingRevision, workerServingRevision: this.workerServingRevision, candidateWebUrl: this.candidateWebUrl, candidateWorkerUrl: this.candidateWorkerUrl, workerUrl: this.workerUrl, taskQueuePath: this.taskQueuePath, taskInvokerEmail: this.taskInvokerEmail, workerName: this.worker.name, queueName: this.queue.name });
   }
 }

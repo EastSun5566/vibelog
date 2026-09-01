@@ -39,12 +39,16 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
 
   await expect(page).toHaveURL(/\/editor(?:\?|$)/u, { timeout: 120_000 });
   await expect(page.getByRole('heading', { name: "Alice Writer's blog" })).toBeVisible();
+  const appUrl = new URL(page.url());
+  const previewUrl = new URL(await page.locator('iframe[title^="Live preview"]').getAttribute('src') ?? '');
+  expect(previewUrl.hostname).toBe(`preview.${appUrl.hostname}`);
   const preview = page.frameLocator('iframe[title^="Live preview"]');
   await expect(preview.getByRole('heading', { name: "Alice Writer's blog", level: 1 })).toBeVisible({ timeout: 30_000 });
   await expect(preview.getByRole('link', { name: 'Hello VibeLog' })).toBeVisible();
 
   await page.getByRole('button', { name: /Publish first release/ }).click();
   await expect(page.getByText('Live version is current')).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole('link', { name: 'View published site' })).toHaveAttribute('href', `${appUrl.protocol}//alice.${appUrl.host}`);
 
   const publicUrl = new URL(page.url());
   publicUrl.hostname = `alice.${publicUrl.hostname}`;

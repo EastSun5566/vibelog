@@ -65,6 +65,6 @@ Back up both named volumes and `.env.selfhost` before upgrades. The manifest is 
 
 ## Deployment
 
-Infrastructure lives in [`packages/infra`](packages/infra/README.md) and is owned by Pulumi. CI builds one immutable image for both Cloud Run services, runs migrations with the direct PostgreSQL URL, then deploys the image digest. Do not deploy Cloud Run separately with `gcloud run deploy`, because that creates two owners for the same revision configuration.
+Infrastructure lives in [`packages/infra`](packages/infra/README.md) and is owned by Pulumi. There is one cloud `prod` stack; development runs locally. The **Deploy production** workflow is manually dispatched on `main` and requires CI to have passed for that exact commit. It builds one immutable image for both Cloud Run services, runs migrations with the direct PostgreSQL URL, then deploys the image digest. Pushing code does not automatically deploy. Do not deploy Cloud Run separately with `gcloud run deploy`, because that creates two owners for the same revision configuration.
 
 Pulumi ESC supplies deployment credentials and external SaaS secrets. Pulumi materializes runtime secrets into GCP Secret Manager; the application does not depend on Pulumi or ESC at runtime.

@@ -1,34 +1,43 @@
-name: Deploy development
+name: Deploy production
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
   id-token: write
 
 concurrency:
-  group: deploy-vibelog-dev
+  group: deploy-vibelog-prod
   cancel-in-progress: false
 
 env:
-  GCP_PROJECT: vibelog-dev-q7n4xp
+  GCP_PROJECT: vibelog-prod-h6t9m2
   GCP_REGION: asia-east1
-  IMAGE_REPOSITORY: asia-east1-docker.pkg.dev/vibelog-dev-q7n4xp/vibelog-dev/vibelog-app
-  PULUMI_STACK: EastSun5566/vibelog/dev
+  IMAGE_REPOSITORY: asia-east1-docker.pkg.dev/vibelog-prod-h6t9m2/vibelog-prod/vibelog-app
+  PULUMI_STACK: EastSun5566/vibelog/prod
   PULUMI_ENABLE_STREAMING_JSON_PREVIEW: "true"
-  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  DEPLOY_SHA: ${{ github.sha }}
 
 jobs:
   deploy:
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    environment: development
+    environment: production
     steps:
+      - name: Require successful CI for the selected main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ci_passed="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+            -f branch=main -f event=push -f head_sha="$DEPLOY_SHA" -F per_page=1 \
+            --jq '.workflow_runs[0] | .status == "completed" and .conclusion == "success"')"
+          if test "$ci_passed" != true; then
+            echo "::error::CI must finish successfully for ${DEPLOY_SHA} on main before deployment."
+            exit 1
+          fi
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.DEPLOY_SHA }}
@@ -51,9 +60,10 @@ jobs:
       - name: Load short-lived GCP credentials and secrets from ESC
         uses: pulumi/esc-action@v3
         with:
-          environment: EastSun5566/vibelog/dev
+          environment: EastSun5566/vibelog/prod
       - name: Validate deployment environment
         run: |
+          test "$(pnpm exec pulumi config get vibelog:deploymentPhase --cwd packages/infra --stack "$PULUMI_STACK")" = application
           test -n "$GOOGLE_OAUTH_ACCESS_TOKEN"
           test -n "$DATABASE_MIGRATION_URL"
       - name: Authenticate Docker to Artifact Registry
@@ -108,9 +118,9 @@ jobs:
         run: node .github/scripts/guard-pulumi-preview.mjs "$RUNNER_TEMP/promotion-preview.jsonl"
       - name: Promote the verified revisions
         run: pnpm exec pulumi up --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --yes --strict
-      - name: Smoke test Cloud Run and wildcard edge routing
+      - name: Smoke test Cloud Run and apex edge routing
         run: |
           web_url="$(pnpm exec pulumi stack output webUrl --cwd packages/infra --stack "$PULUMI_STACK")"
           root_domain="$(pnpm exec pulumi config get vibelog:rootDomain --cwd packages/infra --stack "$PULUMI_STACK")"
           curl --fail --show-error --retry 6 --retry-all-errors --max-time 20 "$web_url/health"
-          curl --fail --show-error --retry 6 --retry-all-errors --max-time 20 "https://app.${root_domain}/health"
+          curl --fail --show-error --retry 6 --retry-all-errors --max-time 20 "https://${root_domain}/health"

@@ -8,7 +8,8 @@ const postgresPort = 30_000 + offset;
 const minioPort = 40_000 + offset;
 const minioConsolePort = 50_000 + offset;
 const mailpitPort = 60_000 + (offset % 5_000);
-const appOrigin = `http://app.localtest.me:${String(appPort)}`;
+// Exercise the cloud hostname layout: apex app, preview.<apex>, alice.<apex>.
+const appOrigin = `http://localtest.me:${String(appPort)}`;
 const environment = {
   ...process.env,
   COMPOSE_PROJECT_NAME: project,
