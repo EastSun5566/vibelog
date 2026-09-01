@@ -15,6 +15,7 @@ const project = gcpConfig.require('project');
 const region = config.require('gcpRegion');
 const accountId = config.require('cloudflareAccountId');
 const bucketName = config.get('r2BucketName') ?? `vibelog-${environment}-artifacts`;
+const deployerServiceAccountEmail = `vibelog-deployer@${project}.iam.gserviceaccount.com`;
 const gcpProvider = new gcp.Provider('gcp', { project });
 const cloudflareR2Provider = new cloudflare.Provider('cloudflare-r2', { apiToken: config.requireSecret('cloudflareR2ApiToken') });
 const foundation = new ProductionFoundation('foundation', {
@@ -39,6 +40,7 @@ function createApplication() {
     region,
     environment,
     imageDigest,
+    deployerServiceAccountEmail,
     appOrigin: pulumi.interpolate`https://${rootDomain}`,
     previewOrigin: pulumi.interpolate`https://preview.${rootDomain}`,
     objectStoreEndpoint: pulumi.interpolate`https://${accountId}.r2.cloudflarestorage.com`,

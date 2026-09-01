@@ -53,6 +53,8 @@ The foundation token needs only the account-scoped `Workers R2 Storage Write` pe
 
 The `foundation` phase always manages the protected Artifact Registry repository and private R2 bucket without evaluating application configuration. The `application` phase retains those same resources and adds the runtime and delivery components. GCP service APIs are owner-operated prerequisites; the deployment service account is not granted Service Usage Admin.
 
+The application phase expects the bootstrap identity to be `vibelog-deployer@<gcp-project-id>.iam.gserviceaccount.com`. Pulumi grants that identity `roles/iam.serviceAccountUser` only on the three service accounts it creates for web, worker, and task invocation. Web and worker receive `roles/cloudtasks.enqueuer` only on the application operation queue; the stack does not create project-wide bindings for either permission.
+
 ## Edge delivery
 
 `rootDomain` must be the apex of the dedicated Cloudflare zone for the intended free Universal SSL setup. With `rootDomain: example.org`, the application uses:

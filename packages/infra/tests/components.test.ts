@@ -35,6 +35,7 @@ describe('Pulumi components', () => {
       const provider = new gcp.Provider('test-gcp', { project: 'vibelog-test-project', region: 'asia-east1' });
       const runtime = new GcpContainerRuntime('test-runtime', {
       project: 'vibelog-test-project', region: 'asia-east1', environment: 'prod', imageDigest: 'asia-east1-docker.pkg.dev/project/repo/app@sha256:abc',
+      deployerServiceAccountEmail: 'vibelog-deployer@vibelog-test-project.iam.gserviceaccount.com',
       appOrigin: 'https://example.com', previewOrigin: 'https://preview.example.com', objectStoreEndpoint: 'https://account.r2.cloudflarestorage.com',
       objectStoreBucket: 'artifacts', githubClientId: 'github-id', googleClientId: 'google-id', aiProvider: 'openai', aiModel: 'gpt-4o-mini',
       aiApiKeyEnv: 'OPENAI_API_KEY', emailFrom: 'VibeLog <login@send.example.com>', emailReplyTo: 'support@example.com',
@@ -81,7 +82,14 @@ describe('Pulumi components', () => {
     const gcpChildren = registrations.filter((item) => item.type.startsWith('gcp:'));
     expect(gcpChildren.filter((item) => !item.provider).map((item) => item.name)).toEqual([]);
     expect(registrations.some((item) => item.type.includes('projects/service:Service'))).toBe(false);
+    expect(registrations.some((item) => item.type.includes('projects/iAMMember:IAMMember'))).toBe(false);
     expect(registrations.some((item) => item.type.includes('artifactregistry/repository:Repository'))).toBe(false);
+    const queueIamMembers = registrations.filter((item) => item.type.includes('cloudtasks/queueIamMember:QueueIamMember'));
+    expect(queueIamMembers).toHaveLength(2);
+    expect(queueIamMembers.every((item) => item.inputs.project === 'vibelog-test-project' && item.inputs.location === 'asia-east1' && item.inputs.name === 'vibelog-operations-prod' && item.inputs.role === 'roles/cloudtasks.enqueuer')).toBe(true);
+    const deployerActAs = registrations.filter((item) => item.type.includes('serviceaccount/iAMMember:IAMMember') && item.name.includes('-deployer-'));
+    expect(deployerActAs).toHaveLength(3);
+    expect(deployerActAs.every((item) => item.inputs.role === 'roles/iam.serviceAccountUser' && item.inputs.member === 'serviceAccount:vibelog-deployer@vibelog-test-project.iam.gserviceaccount.com')).toBe(true);
     expect(childUrns).toHaveLength(3);
     expect(childUrns.every((urn) => urn.includes('vibelog:infra:GcpContainerRuntime$gcp:'))).toBe(true);
   });

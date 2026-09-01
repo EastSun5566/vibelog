@@ -8,6 +8,7 @@ export interface RuntimeSecretInputs {
 }
 export interface GcpContainerRuntimeArgs {
   project: pulumi.Input<string>; region: pulumi.Input<string>; environment: string; imageDigest: pulumi.Input<string>;
+  deployerServiceAccountEmail: pulumi.Input<string>;
   appOrigin: pulumi.Input<string>; previewOrigin: pulumi.Input<string>; objectStoreEndpoint: pulumi.Input<string>;
   objectStoreBucket: pulumi.Input<string>; githubClientId: pulumi.Input<string>; googleClientId: pulumi.Input<string>;
   aiProvider: pulumi.Input<string>; aiModel: pulumi.Input<string>; aiApiKeyEnv: pulumi.Input<string>;
@@ -33,6 +34,12 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
     const webAccount = new gcp.serviceaccount.Account(`${name}-web-sa`, { project: args.project, accountId: `vibelog-web-${args.environment}`, displayName: 'VibeLog web runtime' }, resourceOptions);
     const workerAccount = new gcp.serviceaccount.Account(`${name}-worker-sa`, { project: args.project, accountId: `vibelog-worker-${args.environment}`, displayName: 'VibeLog worker runtime' }, resourceOptions);
     const tasksAccount = new gcp.serviceaccount.Account(`${name}-tasks-sa`, { project: args.project, accountId: `vibelog-tasks-${args.environment}`, displayName: 'Cloud Tasks caller' }, resourceOptions);
+    const deployerMember = pulumi.interpolate`serviceAccount:${args.deployerServiceAccountEmail}`;
+    const deployerActAs = {
+      web: new gcp.serviceaccount.IAMMember(`${name}-deployer-web-identity`, { serviceAccountId: webAccount.name, role: 'roles/iam.serviceAccountUser', member: deployerMember }, resourceOptions),
+      worker: new gcp.serviceaccount.IAMMember(`${name}-deployer-worker-identity`, { serviceAccountId: workerAccount.name, role: 'roles/iam.serviceAccountUser', member: deployerMember }, resourceOptions),
+      tasks: new gcp.serviceaccount.IAMMember(`${name}-deployer-tasks-identity`, { serviceAccountId: tasksAccount.name, role: 'roles/iam.serviceAccountUser', member: deployerMember }, resourceOptions),
+    };
     // Delivery retries must outlive the 35-minute operation lease; execution is capped separately in PostgreSQL.
     this.queue = new gcp.cloudtasks.Queue(`${name}-operations`, { project: args.project, location: args.region, name: `vibelog-operations-${args.environment}`, rateLimits: { maxConcurrentDispatches: 10, maxDispatchesPerSecond: 5 }, retryConfig: { maxAttempts: 100, maxBackoff: '300s', minBackoff: '30s', maxDoublings: 5 } }, resourceOptions);
     const secretValues: Record<string, { value: pulumi.Input<string>; services: ('web' | 'worker')[] }> = {
@@ -77,7 +84,7 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
           { type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION', revision: activeRevision, percent: 100 },
           { type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', percent: 0, tag: 'candidate' },
         ] : [{ type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', percent: 100, tag: 'candidate' }],
-      }, resourceOptions);
+      }, { ...resourceOptions, dependsOn: deployerActAs[kind] });
     const projectInfo = gcp.organizations.getProjectOutput({ projectId: args.project }, { provider: args.provider });
     const workerServiceUrl = pulumi.interpolate`https://vibelog-worker-${args.environment}-${projectInfo.number}.${args.region}.run.app`;
     const queueEnv = (workerUrl: pulumi.Input<string>) => [
@@ -90,11 +97,11 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
     this.web = service('web', webAccount, 'dist/web-main.js', args.webActiveRevision, queueEnv(this.worker.uri));
     new gcp.cloudrunv2.ServiceIamMember(`${name}-web-public`, { project: args.project, location: args.region, name: this.web.name, role: 'roles/run.invoker', member: 'allUsers' }, resourceOptions);
     new gcp.cloudrunv2.ServiceIamMember(`${name}-worker-tasks`, { project: args.project, location: args.region, name: this.worker.name, role: 'roles/run.invoker', member: pulumi.interpolate`serviceAccount:${tasksAccount.email}` }, resourceOptions);
-    new gcp.projects.IAMMember(`${name}-web-enqueuer`, { project: args.project, role: 'roles/cloudtasks.enqueuer', member: pulumi.interpolate`serviceAccount:${webAccount.email}` }, resourceOptions);
-    new gcp.projects.IAMMember(`${name}-worker-enqueuer`, { project: args.project, role: 'roles/cloudtasks.enqueuer', member: pulumi.interpolate`serviceAccount:${workerAccount.email}` }, resourceOptions);
+    new gcp.cloudtasks.QueueIamMember(`${name}-web-enqueuer`, { project: args.project, location: args.region, name: this.queue.name, role: 'roles/cloudtasks.enqueuer', member: pulumi.interpolate`serviceAccount:${webAccount.email}` }, resourceOptions);
+    new gcp.cloudtasks.QueueIamMember(`${name}-worker-enqueuer`, { project: args.project, location: args.region, name: this.queue.name, role: 'roles/cloudtasks.enqueuer', member: pulumi.interpolate`serviceAccount:${workerAccount.email}` }, resourceOptions);
     new gcp.serviceaccount.IAMMember(`${name}-web-task-identity`, { serviceAccountId: tasksAccount.name, role: 'roles/iam.serviceAccountUser', member: pulumi.interpolate`serviceAccount:${webAccount.email}` }, resourceOptions);
     new gcp.serviceaccount.IAMMember(`${name}-worker-task-identity`, { serviceAccountId: tasksAccount.name, role: 'roles/iam.serviceAccountUser', member: pulumi.interpolate`serviceAccount:${workerAccount.email}` }, resourceOptions);
-    for (const [schedule, path] of [['outbox', '/tasks/outbox'], ['maintenance', '/tasks/maintenance']] as const) new gcp.cloudscheduler.Job(`${name}-${schedule}`, { project: args.project, region: args.region, name: `vibelog-${schedule}-${args.environment}`, schedule: schedule === 'outbox' ? '*/5 * * * *' : '17 * * * *', timeZone: 'Etc/UTC', httpTarget: { httpMethod: 'POST', uri: pulumi.interpolate`${this.worker.uri}${path}`, oidcToken: { serviceAccountEmail: tasksAccount.email, audience: this.worker.uri } } }, { ...resourceOptions, dependsOn: this.worker });
+    for (const [schedule, path] of [['outbox', '/tasks/outbox'], ['maintenance', '/tasks/maintenance']] as const) new gcp.cloudscheduler.Job(`${name}-${schedule}`, { project: args.project, region: args.region, name: `vibelog-${schedule}-${args.environment}`, schedule: schedule === 'outbox' ? '*/5 * * * *' : '17 * * * *', timeZone: 'Etc/UTC', httpTarget: { httpMethod: 'POST', uri: pulumi.interpolate`${this.worker.uri}${path}`, oidcToken: { serviceAccountEmail: tasksAccount.email, audience: this.worker.uri } } }, { ...resourceOptions, dependsOn: [this.worker, deployerActAs.tasks] });
     this.webUrl = this.web.uri;
     this.webServingRevision = this.web.trafficStatuses.apply((statuses) => statuses.find((status) => status.percent === 100)?.revision ?? '');
     this.workerServingRevision = this.worker.trafficStatuses.apply((statuses) => statuses.find((status) => status.percent === 100)?.revision ?? '');
