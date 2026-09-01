@@ -2,10 +2,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as cloudflare from '@pulumi/cloudflare';
 import * as gcp from '@pulumi/gcp';
+import * as neon from '@pulumi/neon';
 import * as pulumi from '@pulumi/pulumi';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { CloudflareDelivery } from '../src/cloudflare-delivery.js';
+import { DatabaseMigration } from '../src/database-migration.js';
 import { GcpContainerRuntime } from '../src/gcp-container-runtime.js';
+import { ApplicationImage } from '../src/application-image.js';
 import { ProductionFoundation } from '../src/production-foundation.js';
 
 interface Registration { type: string; name: string; inputs: Record<string, unknown>; provider?: string }
@@ -20,6 +23,14 @@ beforeAll(async () => {
       const inputs = record(args.inputs);
       registrations.push({ type: args.type, name: args.name, inputs, provider: args.provider });
       const state: Record<string, unknown> = { ...inputs, uri: `https://${args.name}.run.test`, name: inputs.name ?? args.name, secretId: inputs.secretId ?? args.name, repositoryId: inputs.repositoryId ?? args.name, email: `${args.name}@project.iam.gserviceaccount.com` };
+      if (args.type === 'neon:index/project:Project') {
+        state.connectionUri = 'postgresql://owner:secret@primary.test/vibelog';
+        state.connectionUriPooler = 'postgresql://owner:secret@pooler.test/vibelog';
+      }
+      if (args.type === 'docker-build:index:Image') {
+        state.digest = 'sha256:abc';
+        state.ref = 'asia-east1-docker.pkg.dev/project/repository/vibelog-app:pulumi-prod@sha256:abc';
+      }
       const traffics = Array.isArray(inputs.traffics) ? inputs.traffics.map(record) : [];
       if (args.type.includes('cloudrunv2/service:Service')) state.trafficStatuses = traffics.map((traffic) => ({ ...traffic, revision: traffic.revision ?? `${args.name}-revision`, uri: `https://${typeof traffic.tag === 'string' ? `${traffic.tag}---` : ''}${args.name}.run.test` }));
       return { id: `${args.name}-id`, state };
@@ -95,25 +106,73 @@ describe('Pulumi components', () => {
     expect(childUrns).toHaveLength(3);
     expect(childUrns.every((urn) => urn.includes('vibelog:infra:GcpContainerRuntime$gcp:'))).toBe(true);
   });
-  it('creates only the protected repository and private R2 bucket in the foundation', async () => {
+  it('creates only the protected repository, private R2 bucket, and Neon database in the foundation', async () => {
     const childUrns: string[] = [];
     await pulumi.runtime.runInPulumiStack(async () => {
       const gcpProvider = new gcp.Provider('foundation-gcp', { project: 'vibelog-test-project', region: 'asia-east1' });
       const cloudflareProvider = new cloudflare.Provider('foundation-cloudflare', { apiToken: pulumi.secret('token') });
+      const neonProvider = new neon.Provider('foundation-neon', { apiKey: pulumi.secret('token') });
       const foundation = new ProductionFoundation('test-foundation', {
         project: 'vibelog-test-project', region: 'asia-east1', environment: 'prod', cloudflareAccountId: 'account',
-        r2BucketName: 'vibelog-prod-artifacts', r2Location: 'apac', gcpProvider, cloudflareProvider,
-      }, { providers: [gcpProvider, cloudflareProvider] });
-      childUrns.push(await resolveOutput(foundation.repository.urn), await resolveOutput(foundation.bucket.urn));
+        r2BucketName: 'vibelog-prod-artifacts', r2Location: 'apac', neonOrgId: 'org-test', neonRegionId: 'aws-ap-southeast-1',
+        neonProjectName: 'vibelog-prod', gcpProvider, cloudflareProvider, neonProvider,
+      }, { providers: [gcpProvider, cloudflareProvider, neonProvider] });
+      childUrns.push(await resolveOutput(foundation.repository.urn), await resolveOutput(foundation.bucket.urn), await resolveOutput(foundation.database.urn));
     });
     const repository = registrations.find((item) => item.type.includes('artifactregistry/repository:Repository'));
     const bucket = registrations.find((item) => item.type.includes('r2Bucket:R2Bucket'));
+    const database = registrations.find((item) => item.type === 'neon:index/project:Project');
     expect(repository?.inputs).toMatchObject({ project: 'vibelog-test-project', location: 'asia-east1', repositoryId: 'vibelog-prod', format: 'DOCKER' });
     expect(bucket?.inputs).toMatchObject({ accountId: 'account', name: 'vibelog-prod-artifacts', location: 'apac', storageClass: 'Standard' });
-    expect(childUrns).toHaveLength(2);
+    expect(database?.inputs).toMatchObject({
+      name: 'vibelog-prod', orgId: 'org-test', regionId: 'aws-ap-southeast-1', pgVersion: 17,
+      branch: { name: 'main', databaseName: 'vibelog', roleName: 'vibelog_owner' },
+      defaultEndpointSettings: { autoscalingLimitMinCu: 0.25, autoscalingLimitMaxCu: 0.25, suspendTimeoutSeconds: 0 },
+    });
+    expect(childUrns).toHaveLength(3);
     expect(childUrns.every((urn) => urn.includes('vibelog:infra:ProductionFoundation$'))).toBe(true);
-    expect(readFileSync(fileURLToPath(new URL('../src/production-foundation.ts', import.meta.url)), 'utf8').match(/protect: true/g)).toHaveLength(2);
+    expect(readFileSync(fileURLToPath(new URL('../src/production-foundation.ts', import.meta.url)), 'utf8').match(/protect: true/g)).toHaveLength(3);
     expect(registrations.some((item) => /r2(Custom|Managed)Domain/.test(item.type))).toBe(false);
+  });
+  it('tracks the database migration as a secret local command keyed by image digest', async () => {
+    await pulumi.runtime.runInPulumiStack(async () => {
+      const migration = new DatabaseMigration('test-migration', {
+        databaseUrl: pulumi.secret('postgresql://owner:secret@primary.test/vibelog'),
+        imageDigest: 'registry.test/vibelog@sha256:abc',
+      });
+      await resolveOutput(migration.run.urn);
+    });
+    const run = registrations.find((item) => item.type === 'command:local:Command');
+    expect(run?.inputs).toMatchObject({
+      dir: '../..',
+      logging: 'none',
+      addPreviousOutputInEnv: false,
+      triggers: ['registry.test/vibelog@sha256:abc'],
+    });
+    expect(record(record(run?.inputs.environment).value).DATABASE_MIGRATION_URL).toBe('postgresql://owner:secret@primary.test/vibelog');
+    expect(run?.inputs.create).toContain('db:migrate');
+    expect(run?.inputs.update).toBe(run?.inputs.create);
+  });
+  it('builds and pushes one linux/amd64 application image from the repository root', async () => {
+    await pulumi.runtime.runInPulumiStack(async () => {
+      const provider = new gcp.Provider('image-gcp', { project: 'vibelog-test-project', region: 'asia-east1' });
+      const repository = new gcp.artifactregistry.Repository('image-repository', {
+        project: 'vibelog-test-project', location: 'asia-east1', repositoryId: 'vibelog-prod', format: 'DOCKER',
+      }, { provider });
+      const image = new ApplicationImage('test-image', {
+        project: 'vibelog-test-project', region: 'asia-east1', environment: 'prod', repository,
+      });
+      expect(await resolveOutput(image.reference)).toContain('@sha256:abc');
+    });
+    const image = registrations.find((item) => item.type === 'docker-build:index:Image');
+    expect(image?.inputs).toMatchObject({
+      context: { location: '../..' },
+      dockerfile: { location: '../../packages/app/Dockerfile' },
+      platforms: ['linux/amd64'],
+      push: true,
+      buildOnPreview: false,
+    });
+    expect(image?.inputs.tags).toEqual(['asia-east1-docker.pkg.dev/vibelog-test-project/vibelog-prod/vibelog-app:pulumi-prod']);
   });
   it('routes both the apex and first-level hosts through the edge without owning R2', async () => {
     await pulumi.runtime.runInPulumiStack(async () => {

@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 
-const statefulType = /(r2Bucket:R2Bucket|artifactregistry\/repository:Repository|secretmanager\/secret:Secret)(?:::|$)/i;
+const statefulType = /(r2Bucket:R2Bucket|artifactregistry\/repository:Repository|secretmanager\/secret:Secret|neon:index\/project:Project)(?:::|$)/i;
 const publicR2Type = /r2(Custom|Managed)Domain/i;
-const foundationType = /(pulumi:pulumi:Stack|pulumi:providers:(gcp|cloudflare)|vibelog:infra:ProductionFoundation|gcp:artifactregistry\/repository:Repository|cloudflare:index\/r2Bucket:R2Bucket)(?:\$|::|$)/i;
+const foundationType = /(pulumi:pulumi:Stack|pulumi:providers:(gcp|cloudflare|neon)|vibelog:infra:ProductionFoundation|gcp:artifactregistry\/repository:Repository|cloudflare:index\/r2Bucket:R2Bucket|neon:index\/project:Project)(?:\$|::|$)/i;
 
 /** @param {unknown} value @returns {Record<string, unknown>} */
 function record(value) { return typeof value === 'object' && value !== null ? value : {}; }

@@ -5,3 +5,10 @@ runtime:
     packagemanager: pnpm
 description: VibeLog GCP and Cloudflare delivery infrastructure
 main: dist/index.js
+packages:
+  neon:
+    source: terraform-provider
+    version: 1.4.0
+    parameters:
+      - kislerdm/neon
+      - 0.15.0

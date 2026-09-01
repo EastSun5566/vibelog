@@ -14,7 +14,8 @@
   },
   "ignorePatterns": [
     ".github/scripts/**",
-    "packages/core/template/**"
+    "packages/core/template/**",
+    "packages/infra/sdks/**"
   ],
   "rules": {
     "constructor-super": "error",

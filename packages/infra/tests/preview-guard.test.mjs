@@ -19,19 +19,22 @@ describe('Pulumi preview safety gate', () => {
     const preview = [
       event('delete', 'urn::gcp:cloudrunv2/service:Service::old'),
       event('replace', 'urn::cloudflare:index/r2Bucket:R2Bucket::artifacts'),
+      event('replace', 'urn::neon:index/project:Project::database'),
       event('update', 'urn::gcp:cloudrunv2/service:Service::worker', { name: 'vibelog-worker-dev', ingress: 'INGRESS_TRAFFIC_ALL' }),
       event('create', 'urn::cloudflare:index/r2CustomDomain:R2CustomDomain::public'),
     ].join('\n');
-    expect(findUnsafeChanges(preview)).toHaveLength(4);
+    expect(findUnsafeChanges(preview)).toHaveLength(5);
   });
 
   it('allows only the protected foundation graph in foundation mode', () => {
     const preview = [
       event('create', 'urn:pulumi:prod::vibelog::pulumi:providers:gcp::gcp'),
       event('create', 'urn:pulumi:prod::vibelog::pulumi:providers:cloudflare::cloudflare-r2'),
+      event('create', 'urn:pulumi:prod::vibelog::pulumi:providers:neon::neon'),
       event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation::foundation'),
       event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$gcp:artifactregistry/repository:Repository::foundation-images'),
       event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$cloudflare:index/r2Bucket:R2Bucket::foundation-artifacts'),
+      event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$neon:index/project:Project::foundation-database'),
     ].join('\n');
     expect(findUnsafeChanges(preview, 'foundation')).toEqual([]);
   });

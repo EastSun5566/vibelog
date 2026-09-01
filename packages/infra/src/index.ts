@@ -1,7 +1,10 @@
 import * as cloudflare from '@pulumi/cloudflare';
 import * as gcp from '@pulumi/gcp';
+import * as neon from '@pulumi/neon';
 import * as pulumi from '@pulumi/pulumi';
+import { ApplicationImage } from './application-image.js';
 import { CloudflareDelivery } from './cloudflare-delivery.js';
+import { DatabaseMigration } from './database-migration.js';
 import { GcpContainerRuntime } from './gcp-container-runtime.js';
 import { ProductionFoundation } from './production-foundation.js';
 
@@ -18,6 +21,7 @@ const bucketName = config.get('r2BucketName') ?? `vibelog-${environment}-artifac
 const deployerServiceAccountEmail = `vibelog-deployer@${project}.iam.gserviceaccount.com`;
 const gcpProvider = new gcp.Provider('gcp', { project });
 const cloudflareR2Provider = new cloudflare.Provider('cloudflare-r2', { apiToken: config.requireSecret('cloudflareR2ApiToken') });
+const neonProvider = new neon.Provider('neon', { apiKey: config.requireSecret('neonApiKey') });
 const foundation = new ProductionFoundation('foundation', {
   project,
   region,
@@ -25,21 +29,46 @@ const foundation = new ProductionFoundation('foundation', {
   cloudflareAccountId: accountId,
   r2BucketName: bucketName,
   r2Location: config.get('r2Location') ?? 'apac',
+  neonOrgId: config.require('neonOrgId'),
+  neonRegionId: config.require('neonRegionId'),
+  neonProjectName: config.get('neonProjectName') ?? `vibelog-${environment}`,
   gcpProvider,
   cloudflareProvider: cloudflareR2Provider,
-}, { providers: [gcpProvider, cloudflareR2Provider] });
+  neonProvider,
+}, { providers: [gcpProvider, cloudflareR2Provider, neonProvider] });
+
+function securePostgresUrl(uri: pulumi.Output<string>): pulumi.Output<string> {
+  return uri.apply((value) => {
+    const url = new URL(value);
+    url.searchParams.set('sslmode', 'verify-full');
+    url.searchParams.set('channel_binding', 'require');
+    return url.toString();
+  });
+}
+
+const databaseUrl = securePostgresUrl(foundation.database.connectionUriPooler);
+const directDatabaseUrl = securePostgresUrl(foundation.database.connectionUri);
 
 function createApplication() {
   const rootDomain = config.require('rootDomain');
   const zoneId = config.require('cloudflareZoneId');
-  const imageDigest = config.require('imageDigest');
   const edgeSharedSecret = config.requireSecret('edgeSharedSecret');
   const cloudflareDeliveryProvider = new cloudflare.Provider('cloudflare-delivery', { apiToken: config.requireSecret('cloudflareDeliveryApiToken') });
+  const image = new ApplicationImage('application-image', {
+    project,
+    region,
+    environment,
+    repository: foundation.repository,
+  });
+  const migration = new DatabaseMigration('database-migration', {
+    databaseUrl: directDatabaseUrl,
+    imageDigest: image.reference,
+  }, { dependsOn: [foundation.database] });
   const runtime = new GcpContainerRuntime('runtime', {
     project,
     region,
     environment,
-    imageDigest,
+    imageDigest: image.reference,
     deployerServiceAccountEmail,
     appOrigin: pulumi.interpolate`https://${rootDomain}`,
     previewOrigin: pulumi.interpolate`https://preview.${rootDomain}`,
@@ -58,7 +87,7 @@ function createApplication() {
     workerActiveRevision: config.get('workerActiveRevision'),
     provider: gcpProvider,
     secrets: {
-      databaseUrl: config.requireSecret('databaseUrl'),
+      databaseUrl,
       objectStoreAccessKeyId: config.requireSecret('objectStoreAccessKeyId'),
       objectStoreSecretAccessKey: config.requireSecret('objectStoreSecretAccessKey'),
       resendApiKey: config.requireSecret('resendApiKey'),
@@ -68,7 +97,7 @@ function createApplication() {
       aiApiKey: config.requireSecret('aiApiKey'),
       edgeSharedSecret,
     },
-  }, { providers: [gcpProvider] });
+  }, { providers: [gcpProvider], dependsOn: [migration] });
   new CloudflareDelivery('delivery', {
     accountId,
     zoneId,
@@ -77,7 +106,7 @@ function createApplication() {
     edgeSharedSecret,
     provider: cloudflareDeliveryProvider,
   }, { providers: [cloudflareDeliveryProvider] });
-  return { runtime, imageDigest };
+  return { runtime, image };
 }
 
 const application = phase === 'application' ? createApplication() : undefined;
@@ -85,8 +114,10 @@ const application = phase === 'application' ? createApplication() : undefined;
 export const deploymentPhase = phase;
 export const artifactRepository = foundation.repository.repositoryId;
 export const r2Bucket = foundation.bucket.name;
+export const databaseProjectId = foundation.database.id;
+export const databaseMigrationUrl = directDatabaseUrl;
 export const webUrl = application?.runtime.webUrl;
-export const deployedImage = application ? pulumi.output(application.imageDigest) : undefined;
+export const deployedImage = application?.image.reference;
 export const webServingRevision = application?.runtime.webServingRevision;
 export const workerServingRevision = application?.runtime.workerServingRevision;
 export const candidateWebUrl = application?.runtime.candidateWebUrl;

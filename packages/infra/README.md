@@ -4,11 +4,12 @@ This package provisions the production delivery infrastructure with Pulumi TypeS
 
 The Pulumi program manages:
 
-- Artifact Registry and separate public web/private worker Cloud Run services
+- Artifact Registry, a Pulumi-built immutable application image, and separate public web/private worker Cloud Run services
 - Cloud Tasks, Cloud Scheduler, service accounts, IAM, and Secret Manager
 - a private Cloudflare R2 bucket, edge Worker, and explicit routes for application, preview, and public-blog hostnames
+- a Neon PostgreSQL project and its default branch, database, role, and compute endpoint
 
-The R2 bucket, Artifact Registry repository, and Secret Manager secrets are protected resources. The program does not create the GCP project, cloud-provider accounts, PostgreSQL database, email account, or OAuth applications.
+The R2 bucket, Artifact Registry repository, Neon project, and Secret Manager secrets are protected resources. The program does not create the GCP project, cloud-provider accounts, email account, or OAuth applications.
 
 ## Configuration
 
@@ -21,6 +22,8 @@ config:
   vibelog:environment: prod
   vibelog:gcpRegion: <gcp-region>
   vibelog:cloudflareAccountId: <cloudflare-account-id>
+  vibelog:neonOrgId: <neon-organization-id>
+  vibelog:neonRegionId: aws-ap-southeast-1
   vibelog:minInstances: 0
   vibelog:maxInstances: 3
   vibelog:r2Location: apac
@@ -31,27 +34,28 @@ environment:
 Required non-secret `vibelog:` configuration:
 
 - `deploymentPhase`: exactly `foundation` or `application`
-- `environment`, `gcpRegion`, and `cloudflareAccountId`
-- application only: `rootDomain`, `cloudflareZoneId`, and `imageDigest`
+- `environment`, `gcpRegion`, `cloudflareAccountId`, `neonOrgId`, and `neonRegionId`
+- optional `neonProjectName`; defaults to `vibelog-<environment>`
+- application only: `rootDomain` and `cloudflareZoneId`
 - application only: `githubClientId`, `googleClientId`, `emailFrom`, and `emailReplyTo`
 
 Required secret `vibelog:` configuration, normally supplied through Pulumi ESC:
 
 - `cloudflareR2ApiToken` for the foundation R2 provider
-- application only: `databaseUrl`, `objectStoreAccessKeyId`, `objectStoreSecretAccessKey`, `resendApiKey`, `betterAuthSecret`, OAuth client secrets, `aiApiKey`, `edgeSharedSecret`, and `cloudflareDeliveryApiToken`
+- `neonApiKey` for the Neon provider
+- application only: `objectStoreAccessKeyId`, `objectStoreSecretAccessKey`, `resendApiKey`, `betterAuthSecret`, OAuth client secrets, `aiApiKey`, `edgeSharedSecret`, and `cloudflareDeliveryApiToken`
 
 The deployment environment must also expose:
 
 - `GOOGLE_OAUTH_ACCESS_TOKEN`: a short-lived GCP token used by Pulumi and Artifact Registry
-- `DATABASE_MIGRATION_URL`: the direct PostgreSQL URL used by migration and the isolated deployment smoke fixture
 
-`DATABASE_MIGRATION_URL` is deliberately not passed to Cloud Run. Pulumi materializes runtime secrets into GCP Secret Manager, and Cloud Run receives only native secret references.
+Pulumi derives both PostgreSQL URLs from the managed Neon project. The pooled URL is materialized into GCP Secret Manager for Cloud Run. The direct URL remains a secret Pulumi output and is used by the migration gate and isolated deployment smoke fixture; it is never passed to Cloud Run.
 
 Keep the R2 administrative token, Worker/DNS delivery token, and bucket-scoped object-store credentials separate. Never expose them as non-secret stack outputs.
 
 The foundation token needs only the account-scoped `Workers R2 Storage Write` permission for the intended Cloudflare account. Create it as a dedicated custom API token rather than reusing Wrangler's user OAuth credential.
 
-The `foundation` phase always manages the protected Artifact Registry repository and private R2 bucket without evaluating application configuration. The `application` phase retains those same resources and adds the runtime and delivery components. GCP service APIs are owner-operated prerequisites; the deployment service account is not granted Service Usage Admin.
+The `foundation` phase always manages the protected Artifact Registry repository, private R2 bucket, and Neon database without evaluating application configuration. The `application` phase retains those same resources, builds and pushes the application image after Artifact Registry exists, applies checked-in Drizzle migrations, and then adds the runtime and delivery components. A fresh application stack can therefore create storage, database, image, schema, runtime, and edge delivery in one `pulumi up`. GCP service APIs, a running Docker daemon, and registry authentication are operator prerequisites; the deployment service account is not granted Service Usage Admin.
 
 The application phase expects the bootstrap identity to be `vibelog-deployer@<gcp-project-id>.iam.gserviceaccount.com`. Pulumi grants that identity `roles/iam.serviceAccountAdmin` and `roles/iam.serviceAccountUser` only on the three service accounts it creates for web, worker, and task invocation. The admin role lets later updates manage those exact identities; the user role lets Cloud Run and Scheduler attach them. Web and worker receive `roles/cloudtasks.enqueuer` only on the application operation queue.
 
@@ -90,24 +94,24 @@ Review every preview before running `pulumi up`. The repository's preview guard 
 
 The **Deploy production** workflow only accepts manual dispatches on `main`. Before loading deployment credentials, it checks that the latest CI push run for the selected commit completed successfully. Missing, running, failed, or cancelled CI blocks deployment. The GitHub environment is `production`; configure its protection rules and restrict Pulumi Cloud OIDC trust to the intended repository/environment during bootstrap. No push or CI completion automatically deploys production.
 
-The first deployment requires one-time bootstrap authority for Pulumi Cloud OIDC, ESC dynamic GCP credentials, and external service credentials. GitHub authenticates to Pulumi Cloud; ESC supplies the short-lived GCP credentials. This stack does not provision a second GitHub-to-GCP workload identity or deployment service account. Artifact Registry must exist before CI can push the first application image, so bootstrap that protected repository first, push an immutable image, and then deploy the complete stack.
+The first deployment requires one-time bootstrap authority for Pulumi Cloud OIDC, ESC dynamic GCP credentials, external service credentials, and a Docker daemon authenticated to `<region>-docker.pkg.dev`. GitHub authenticates to Pulumi Cloud; ESC supplies the short-lived GCP credentials. This stack does not provision a second GitHub-to-GCP workload identity or deployment service account. The Pulumi image resource depends on Artifact Registry, so the application phase can create the repository and then build and push the first image in the same update.
 
 Before the first deployment, complete these gates in order:
 
 1. Create a fresh GCP project and link the existing billing account. Recreating a project does not restart Free Trial credits or extend the trial. Do not upgrade or close the account as part of project replacement.
 2. Create the empty Pulumi `prod` stack and ESC `prod` environment. Configure the ESC GCP identity and narrowly scoped deployment permissions; no runtime service needs ESC credentials.
 3. Enable the explicitly approved GCP APIs with the project owner account. Do not grant Service Usage Admin to the deployment service account.
-4. Set `deploymentPhase: foundation`, add the purpose-specific R2 management token through encrypted ESC configuration, and preview the allowlisted foundation graph. Pulumi creates and owns the protected Artifact Registry repository and private R2 bucket from their first update; Wrangler is only used for inspection and remote object smoke tests.
+4. Set `deploymentPhase: foundation`, add the purpose-specific R2 management and Neon API tokens through encrypted ESC configuration, and preview the allowlisted foundation graph. Pulumi creates and owns the protected Artifact Registry repository, private R2 bucket, and Neon project from their first update; Wrangler and Neon CLI are only used for inspection and smoke tests.
 5. Create Object Read & Write credentials scoped to `vibelog-prod-artifacts`, store them in ESC, and verify them with the application's S3 integration test. Do not reuse the R2 management token as runtime credentials.
-6. Finish domain registration and collect the Cloudflare zone ID. Supply the Neon pooled/direct URLs, delivery token, Resend sender credentials, OAuth client credentials, and AI key through encrypted ESC inputs. Do not paste secrets into workflow YAML or commit them.
-7. Change `deploymentPhase` to `application`, push a newly built immutable image, and review the complete preview. The old `0.7.0` release predates the stateless entrypoints and cannot bootstrap this stack. On the first application deployment there is no previous serving revision, so the candidate cannot be isolated at zero traffic.
+6. Finish domain registration and collect the Cloudflare zone ID. Supply the delivery token, Resend sender credentials, OAuth client credentials, and AI key through encrypted ESC inputs. Do not paste secrets into workflow YAML or commit them.
+7. Change `deploymentPhase` to `application` and review the complete preview. The Pulumi update builds the checked-out source, pushes it under the stack-managed tag, and passes the resulting digest-pinned reference to migrations and Cloud Run. On the first application deployment there is no previous serving revision, so the candidate cannot be isolated at zero traffic.
 8. Verify apex login, real OAuth/email delivery, preview, sync, publish, and a public author page over HTTPS. The workflow's apex `/health` smoke alone does not verify preview or wildcard author TLS.
 
-External service credentials and the ESC identity are prerequisites, not resources this application stack creates. An empty stack or environment is not a completed bootstrap.
+Cloud account credentials and the ESC identity are prerequisites, not resources this application stack creates. The Neon project itself is stack-owned. An empty stack or environment is not a completed bootstrap.
 
 The ESC deployment identity also needs `cloudtasks.tasks.create` and `cloudtasks.tasks.delete` on the operation queue, plus `iam.serviceAccounts.actAs` on the task-invoker service account for worker smoke tests. Grant these during bootstrap with the rest of the deployment identity permissions; do not grant them to public callers. If an older stack has already provisioned the removed GitHub identity resources, retire those explicitly after reviewing their users. The normal preview guard still blocks deletes.
 
-Normal deployments use one immutable application image for both Cloud Run services, run PostgreSQL migrations separately with the direct URL, stage candidate revisions without traffic, smoke-test the candidate, and then promote it.
+Normal deployments use one Pulumi-managed image resource for both Cloud Run services. Its registry tag is mutable, but Cloud Run and the migration trigger receive the immutable `tag@sha256:digest` output. The Pulumi migration resource runs the checked-in Drizzle migrations with the managed direct URL before either Cloud Run service can update. The workflow then stages candidate revisions without traffic, smoke-tests the candidate, and promotes it.
 
 The worker smoke sends a real Cloud Task to the candidate-tag URL, keeping the stable worker URL as its OIDC audience. An isolated invalid-theme operation must be claimed exactly once and persisted as failed, exercising authentication and database execution without contacting an AI or content provider. The task and database fixture are removed afterwards. A timeout or failure blocks promotion; this is a deployment transport smoke, not a replacement for full local E2E.
 

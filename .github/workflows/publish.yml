@@ -15,7 +15,6 @@ concurrency:
 env:
   GCP_PROJECT: vibelog-prod-h6t9m2
   GCP_REGION: asia-east1
-  IMAGE_REPOSITORY: asia-east1-docker.pkg.dev/vibelog-prod-h6t9m2/vibelog-prod/vibelog-app
   PULUMI_STACK: EastSun5566/vibelog/prod
   PULUMI_ENABLE_STREAMING_JSON_PREVIEW: "true"
   DEPLOY_SHA: ${{ github.sha }}
@@ -46,7 +45,6 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: docker/setup-buildx-action@v3
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vibelog/core build
       - run: pnpm --filter @vibelog/app build
@@ -65,19 +63,8 @@ jobs:
         run: |
           test "$(pnpm exec pulumi config get vibelog:deploymentPhase --cwd packages/infra --stack "$PULUMI_STACK")" = application
           test -n "$GOOGLE_OAUTH_ACCESS_TOKEN"
-          test -n "$DATABASE_MIGRATION_URL"
       - name: Authenticate Docker to Artifact Registry
         run: printf '%s' "$GOOGLE_OAUTH_ACCESS_TOKEN" | docker login --username oauth2accesstoken --password-stdin "https://${GCP_REGION}-docker.pkg.dev"
-      - name: Build and push immutable application image
-        id: image
-        run: |
-          image="${IMAGE_REPOSITORY}:${DEPLOY_SHA}"
-          docker buildx build --platform linux/amd64 --file packages/app/Dockerfile --tag "$image" --push --metadata-file "$RUNNER_TEMP/image-metadata.json" .
-          digest="$(node -p "JSON.parse(require('node:fs').readFileSync(process.env.RUNNER_TEMP + '/image-metadata.json'))['containerimage.digest']")"
-          test -n "$digest"
-          echo "reference=${IMAGE_REPOSITORY}@${digest}" >> "$GITHUB_OUTPUT"
-      - name: Run PostgreSQL migration with the direct connection
-        run: pnpm --filter @vibelog/app db:migrate
       - name: Keep existing revisions active while staging the candidate
         run: |
           web_revision="$(pnpm exec pulumi stack output webServingRevision --cwd packages/infra --stack "$PULUMI_STACK" 2>/dev/null || true)"
@@ -88,8 +75,6 @@ jobs:
           else
             echo "No active revisions exist yet; the bootstrap deployment cannot use a zero-traffic candidate."
           fi
-      - name: Set immutable deployment input
-        run: pnpm exec pulumi config set vibelog:imageDigest "${{ steps.image.outputs.reference }}" --cwd packages/infra --stack "$PULUMI_STACK"
       - name: Preview candidate deployment
         run: pnpm exec pulumi preview --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --json > "$RUNNER_TEMP/candidate-preview.jsonl"
       - name: Guard candidate deployment
@@ -103,6 +88,10 @@ jobs:
           curl --fail --show-error --retry 6 --retry-all-errors --max-time 20 "$candidate_url/health"
       - name: Smoke test private candidate worker through Cloud Tasks
         run: |
+          database_migration_url="$(pnpm exec pulumi stack output databaseMigrationUrl --show-secrets --cwd packages/infra --stack "$PULUMI_STACK")"
+          test -n "$database_migration_url"
+          echo "::add-mask::$database_migration_url"
+          export DATABASE_MIGRATION_URL="$database_migration_url"
           export WORKER_SMOKE_URL="$(pnpm exec pulumi stack output candidateWorkerUrl --cwd packages/infra --stack "$PULUMI_STACK")"
           export WORKER_AUDIENCE="$(pnpm exec pulumi stack output workerUrl --cwd packages/infra --stack "$PULUMI_STACK")"
           export CLOUD_TASKS_QUEUE_PATH="$(pnpm exec pulumi stack output taskQueuePath --cwd packages/infra --stack "$PULUMI_STACK")"

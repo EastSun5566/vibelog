@@ -12,3 +12,6 @@ overrides:
   "mdast-util-to-hast@<13.2.1": 13.2.1
   "picomatch@<2.3.2": 2.3.2
   "postcss@<8.5.10": 8.5.16
+
+onlyBuiltDependencies:
+  - "@pulumi/neon"
