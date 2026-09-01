@@ -35,6 +35,9 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
     const workerAccount = new gcp.serviceaccount.Account(`${name}-worker-sa`, { project: args.project, accountId: `vibelog-worker-${args.environment}`, displayName: 'VibeLog worker runtime' }, resourceOptions);
     const tasksAccount = new gcp.serviceaccount.Account(`${name}-tasks-sa`, { project: args.project, accountId: `vibelog-tasks-${args.environment}`, displayName: 'Cloud Tasks caller' }, resourceOptions);
     const deployerMember = pulumi.interpolate`serviceAccount:${args.deployerServiceAccountEmail}`;
+    for (const [kind, account] of Object.entries({ web: webAccount, worker: workerAccount, tasks: tasksAccount })) {
+      new gcp.serviceaccount.IAMMember(`${name}-deployer-${kind}-admin`, { serviceAccountId: account.name, role: 'roles/iam.serviceAccountAdmin', member: deployerMember }, resourceOptions);
+    }
     const deployerActAs = {
       web: new gcp.serviceaccount.IAMMember(`${name}-deployer-web-identity`, { serviceAccountId: webAccount.name, role: 'roles/iam.serviceAccountUser', member: deployerMember }, resourceOptions),
       worker: new gcp.serviceaccount.IAMMember(`${name}-deployer-worker-identity`, { serviceAccountId: workerAccount.name, role: 'roles/iam.serviceAccountUser', member: deployerMember }, resourceOptions),

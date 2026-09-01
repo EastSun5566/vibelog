@@ -87,9 +87,11 @@ describe('Pulumi components', () => {
     const queueIamMembers = registrations.filter((item) => item.type.includes('cloudtasks/queueIamMember:QueueIamMember'));
     expect(queueIamMembers).toHaveLength(2);
     expect(queueIamMembers.every((item) => item.inputs.project === 'vibelog-test-project' && item.inputs.location === 'asia-east1' && item.inputs.name === 'vibelog-operations-prod' && item.inputs.role === 'roles/cloudtasks.enqueuer')).toBe(true);
-    const deployerActAs = registrations.filter((item) => item.type.includes('serviceaccount/iAMMember:IAMMember') && item.name.includes('-deployer-'));
-    expect(deployerActAs).toHaveLength(3);
-    expect(deployerActAs.every((item) => item.inputs.role === 'roles/iam.serviceAccountUser' && item.inputs.member === 'serviceAccount:vibelog-deployer@vibelog-test-project.iam.gserviceaccount.com')).toBe(true);
+    const deployerIdentityBindings = registrations.filter((item) => item.type.includes('serviceaccount/iAMMember:IAMMember') && item.name.includes('-deployer-'));
+    expect(deployerIdentityBindings).toHaveLength(6);
+    expect(deployerIdentityBindings.every((item) => item.inputs.member === 'serviceAccount:vibelog-deployer@vibelog-test-project.iam.gserviceaccount.com')).toBe(true);
+    expect(deployerIdentityBindings.filter((item) => item.inputs.role === 'roles/iam.serviceAccountAdmin')).toHaveLength(3);
+    expect(deployerIdentityBindings.filter((item) => item.inputs.role === 'roles/iam.serviceAccountUser')).toHaveLength(3);
     expect(childUrns).toHaveLength(3);
     expect(childUrns.every((urn) => urn.includes('vibelog:infra:GcpContainerRuntime$gcp:'))).toBe(true);
   });
