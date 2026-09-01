@@ -4,7 +4,9 @@ config:
   vibelog:environment: prod
   vibelog:gcpRegion: asia-east1
   vibelog:cloudflareAccountId: 308b37d37d39bc460bcabc4d5644d365
+  vibelog:cloudflareZoneId: ae78a4f9a2cc869f2c9b5617decf1b5b
   vibelog:rootDomain: vibelog.org
+  vibelog:imageDigest: asia-east1-docker.pkg.dev/vibelog-prod-h6t9m2/vibelog-prod/vibelog-app@sha256:9d5c7e9ae6c4f0869a4794c094fdd7aae002d3e023462ac491dbbb8b53c268e9
   vibelog:minInstances: 0
   vibelog:maxInstances: 3
   vibelog:r2Location: apac
