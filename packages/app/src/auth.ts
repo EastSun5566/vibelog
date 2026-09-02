@@ -9,6 +9,9 @@ import { authSchema } from './schema.js';
 
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
 const MAGIC_LINK_TTL_SECONDS = 10 * 60;
+export function magicLinkIdempotencyKey(token: string): string {
+  return `magic-link/${createHash('sha256').update(token).digest('hex')}`;
+}
 export interface AuthUser { id: string; email: string; name: string }
 export interface AppSession { id: string; user: AuthUser; csrfToken: string; expiresAt: string }
 export interface AppVariables { requestId: string; session: AppSession; edgeHost?: string }
@@ -29,7 +32,7 @@ export function createAuth(database: AppDatabase, config: AppConfig, emailSender
     plugins: [magicLink({
       expiresIn: MAGIC_LINK_TTL_SECONDS,
       sendMagicLink: async ({ email, token, url }) => {
-        await emailSender.sendMagicLink({ to: email, url, expiresAt: new Date(Date.now() + MAGIC_LINK_TTL_SECONDS * 1000), idempotencyKey: createHash('sha256').update(token).digest('hex') });
+        await emailSender.sendMagicLink({ to: email, url, expiresAt: new Date(Date.now() + MAGIC_LINK_TTL_SECONDS * 1000), idempotencyKey: magicLinkIdempotencyKey(token) });
       },
     })],
   });

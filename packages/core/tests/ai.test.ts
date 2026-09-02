@@ -12,9 +12,9 @@ function subject(responses: Parameters<ReturnType<typeof fauxProvider>['setRespo
 afterEach(() => vi.restoreAllMocks());
 describe('PiAiProvider theme proposal', () => {
   it('supports the OpenCode Go provider catalog', () => {
-    const provider = createAiProvider('opencode-go', 'deepseek-v4-flash');
+    const provider = createAiProvider('opencode-go', 'qwen3.8-flash');
     expect(provider.name).toBe('opencode-go');
-    expect(provider.modelId).toBe('deepseek-v4-flash');
+    expect(provider.modelId).toBe('qwen3.8-flash');
   });
   it('returns a valid single tool proposal', async () => {
     const response = fauxAssistantMessage(fauxToolCall('propose_theme', DEFAULT_THEME), { stopReason: 'toolUse' });

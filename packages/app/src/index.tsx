@@ -5,6 +5,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { renderThemeCss } from '@vibelog/core';
+import { findArtifactObject } from './artifact-serving.js';
 import { createAuth, readSession, type AppVariables } from './auth.js';
 import { blogIdentitySchema, blogLanguageSchema } from './blog-sync.js';
 import { CLIENT_SCRIPT } from './client.js';
@@ -13,7 +14,7 @@ import { AiQuotaExceededError, AppDatabase, type BlogRecord, type OperationRecor
 import { AppError, assertCsrfToken, assertMutationOrigin, jsonError, requestContext } from './http.js';
 import type { OperationDispatcher } from './ports/operation-queue.js';
 import { operationMessage, operationProgress } from './operation-status.js';
-import type { ArtifactStore, StoredObject } from './ports/artifact-store.js';
+import type { ArtifactStore } from './ports/artifact-store.js';
 import type { TransactionalEmailSender } from './ports/transactional-email.js';
 import { editorUrlWithPreviewPath, safePreviewPath } from './preview-path.js';
 import { hashToken, randomToken } from './security/crypto.js';
@@ -38,18 +39,8 @@ function siteUrl(config: AppConfig, username: string): string { const origin = n
 function releaseEtag(releaseId: string, requestPath: string): string { return `"${createHash('sha256').update(releaseId).update('\0').update(requestPath).digest('base64url')}"`; }
 function matchesEtag(value: string | undefined, etag: string): boolean { return value?.split(',').some((candidate) => { const tag = candidate.trim(); return tag === '*' || tag === etag || tag === `W/${etag}`; }) ?? false; }
 function contentType(path: string): string { const extension = path.split('.').at(-1)?.toLowerCase(); return ({ html: 'text/html; charset=utf-8', css: 'text/css; charset=utf-8', js: 'text/javascript; charset=utf-8', json: 'application/json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', ico: 'image/x-icon', xml: 'application/xml; charset=utf-8' } as Record<string, string>)[extension ?? ''] ?? 'application/octet-stream'; }
-function safeObjectPath(requestPath: string): string {
-  if (/%(?:2f|5c|2e)/i.test(requestPath)) throw new AppError('unsafe_path', 'Unsafe path', 400);
-  const path = decodeURIComponent(requestPath.replace(/^\/+/, '') || 'index.html').replaceAll('\\', '/');
-  if (path.split('/').some((part) => !part || part === '.' || part === '..')) throw new AppError('unsafe_path', 'Unsafe path', 400);
-  return path;
-}
-async function findObject(store: ArtifactStore, artifactId: string, requestPath: string): Promise<{ path: string; object: StoredObject } | null> {
-  const path = safeObjectPath(requestPath); const direct = await store.readObject(artifactId, path); if (direct) return { path, object: direct };
-  const index = await store.readObject(artifactId, `${path.replace(/\/$/, '')}/index.html`); return index ? { path: `${path}/index.html`, object: index } : null;
-}
 async function artifactResponse(c: AppContext, store: ArtifactStore, artifactId: string, requestPath: string, cache: string, etag?: string, transformHtml?: (html: string) => string): Promise<Response> {
-  const found = await findObject(store, artifactId, requestPath); if (!found) throw new AppError('site_not_found', 'Page not found', 404);
+  const found = await findArtifactObject(store, artifactId, requestPath); if (!found) throw new AppError('site_not_found', 'Page not found', 404);
   const type = found.object.contentType ?? contentType(found.path); c.header('Content-Type', type); c.header('Cache-Control', cache);
   if (etag) { c.header('ETag', etag); if (matchesEtag(c.req.header('if-none-match'), etag)) return new Response(null, { status: 304, headers: c.res.headers }); }
   if (transformHtml && type.startsWith('text/html')) return new Response(transformHtml(await new Response(found.object.body).text()), { headers: c.res.headers });

@@ -5,6 +5,7 @@ import * as pulumi from '@pulumi/pulumi';
 import { ApplicationImage } from './application-image.js';
 import { CloudflareDelivery } from './cloudflare-delivery.js';
 import { DatabaseMigration } from './database-migration.js';
+import { EmailFoundation } from './resend-foundation.js';
 import { GcpContainerRuntime } from './gcp-container-runtime.js';
 import { ProductionFoundation } from './production-foundation.js';
 
@@ -17,10 +18,13 @@ const environment = config.require('environment');
 const project = gcpConfig.require('project');
 const region = config.require('gcpRegion');
 const accountId = config.require('cloudflareAccountId');
+const zoneId = config.require('cloudflareZoneId');
+const rootDomain = config.require('rootDomain');
 const bucketName = config.get('r2BucketName') ?? `vibelog-${environment}-artifacts`;
 const deployerServiceAccountEmail = `vibelog-deployer@${project}.iam.gserviceaccount.com`;
 const gcpProvider = new gcp.Provider('gcp', { project });
 const cloudflareR2Provider = new cloudflare.Provider('cloudflare-r2', { apiToken: config.requireSecret('cloudflareR2ApiToken') });
+const cloudflareDeliveryProvider = new cloudflare.Provider('cloudflare-delivery', { apiToken: config.requireSecret('cloudflareDeliveryApiToken') });
 const neonProvider = new neon.Provider('neon', { apiKey: config.requireSecret('neonApiKey') });
 const foundation = new ProductionFoundation('foundation', {
   project,
@@ -36,6 +40,15 @@ const foundation = new ProductionFoundation('foundation', {
   cloudflareProvider: cloudflareR2Provider,
   neonProvider,
 }, { providers: [gcpProvider, cloudflareR2Provider, neonProvider] });
+const forwardingDestination = config.requireSecret('supportForwardingDestination');
+const email = new EmailFoundation('email', {
+  accountId,
+  zoneId,
+  rootDomain,
+  forwardingDestination,
+  resendManagementApiKey: config.requireSecret('resendManagementApiKey'),
+  cloudflareProvider: cloudflareDeliveryProvider,
+}, { providers: [cloudflareDeliveryProvider] });
 
 function securePostgresUrl(uri: pulumi.Output<string>): pulumi.Output<string> {
   return uri.apply((value) => {
@@ -50,10 +63,7 @@ const databaseUrl = securePostgresUrl(foundation.database.connectionUriPooler);
 const directDatabaseUrl = securePostgresUrl(foundation.database.connectionUri);
 
 function createApplication() {
-  const rootDomain = config.require('rootDomain');
-  const zoneId = config.require('cloudflareZoneId');
   const edgeSharedSecret = config.requireSecret('edgeSharedSecret');
-  const cloudflareDeliveryProvider = new cloudflare.Provider('cloudflare-delivery', { apiToken: config.requireSecret('cloudflareDeliveryApiToken') });
   const image = new ApplicationImage('application-image', {
     project,
     region,
@@ -74,13 +84,11 @@ function createApplication() {
     previewOrigin: pulumi.interpolate`https://preview.${rootDomain}`,
     objectStoreEndpoint: pulumi.interpolate`https://${accountId}.r2.cloudflarestorage.com`,
     objectStoreBucket: foundation.bucket.name,
-    githubClientId: config.require('githubClientId'),
-    googleClientId: config.require('googleClientId'),
     aiProvider: config.get('aiProvider') ?? 'openai',
     aiModel: config.get('aiModel') ?? 'gpt-4o-mini',
     aiApiKeyEnv: config.get('aiApiKeyEnv') ?? 'OPENAI_API_KEY',
-    emailFrom: config.require('emailFrom'),
-    emailReplyTo: config.require('emailReplyTo'),
+    emailFrom: `VibeLog <login@send.${rootDomain}>`,
+    emailReplyTo: `support@${rootDomain}`,
     minInstances: config.getNumber('minInstances') ?? 0,
     maxInstances: config.getNumber('maxInstances') ?? 3,
     webActiveRevision: config.get('webActiveRevision'),
@@ -90,10 +98,8 @@ function createApplication() {
       databaseUrl,
       objectStoreAccessKeyId: config.requireSecret('objectStoreAccessKeyId'),
       objectStoreSecretAccessKey: config.requireSecret('objectStoreSecretAccessKey'),
-      resendApiKey: config.requireSecret('resendApiKey'),
+      resendApiKey: email.runtimeApiKeyToken,
       betterAuthSecret: config.requireSecret('betterAuthSecret'),
-      githubClientSecret: config.requireSecret('githubClientSecret'),
-      googleClientSecret: config.requireSecret('googleClientSecret'),
       aiApiKey: config.requireSecret('aiApiKey'),
       edgeSharedSecret,
     },
@@ -104,6 +110,9 @@ function createApplication() {
     rootDomain,
     originUrl: runtime.webUrl,
     edgeSharedSecret,
+    supportAddress: `support@${rootDomain}`,
+    forwardingDestination,
+    forwardingAddress: email.forwardingAddress,
     provider: cloudflareDeliveryProvider,
   }, { providers: [cloudflareDeliveryProvider] });
   return { runtime, image };
@@ -116,12 +125,13 @@ export const artifactRepository = foundation.repository.repositoryId;
 export const r2Bucket = foundation.bucket.name;
 export const databaseProjectId = foundation.database.id;
 export const databaseMigrationUrl = directDatabaseUrl;
-export const webUrl = application?.runtime.webUrl;
-export const deployedImage = application?.image.reference;
-export const webServingRevision = application?.runtime.webServingRevision;
-export const workerServingRevision = application?.runtime.workerServingRevision;
-export const candidateWebUrl = application?.runtime.candidateWebUrl;
-export const candidateWorkerUrl = application?.runtime.candidateWorkerUrl;
-export const workerUrl = application?.runtime.workerUrl;
-export const taskQueuePath = application?.runtime.taskQueuePath;
-export const taskInvokerEmail = application?.runtime.taskInvokerEmail;
+export const resendDomainId = email.domain.id;
+export const resendDomainStatus = email.verification.status;
+export const emailRoutingStatus = email.routingDns.status;
+export const webUrl = application?.runtime.webUrl ?? pulumi.output('');
+export const deployedImage = application?.image.reference ?? pulumi.output('');
+export const candidateWebUrl = application?.runtime.candidateWebUrl ?? pulumi.output('');
+export const candidateWorkerUrl = application?.runtime.candidateWorkerUrl ?? pulumi.output('');
+export const workerUrl = application?.runtime.workerUrl ?? pulumi.output('');
+export const taskQueuePath = application?.runtime.taskQueuePath ?? pulumi.output('');
+export const taskInvokerEmail = application?.runtime.taskInvokerEmail ?? pulumi.output('');

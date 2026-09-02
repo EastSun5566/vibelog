@@ -18,6 +18,7 @@ env:
   PULUMI_STACK: EastSun5566/vibelog/prod
   PULUMI_ENABLE_STREAMING_JSON_PREVIEW: "true"
   DEPLOY_SHA: ${{ github.sha }}
+  IMAGE_RESOURCE_URN: 'urn:pulumi:prod::vibelog::vibelog:infra:ApplicationImage$docker-build:index:Image::application-image-build'
 
 jobs:
   deploy:
@@ -67,14 +68,31 @@ jobs:
         run: printf '%s' "$GOOGLE_OAUTH_ACCESS_TOKEN" | docker login --username oauth2accesstoken --password-stdin "https://${GCP_REGION}-docker.pkg.dev"
       - name: Keep existing revisions active while staging the candidate
         run: |
-          web_revision="$(pnpm exec pulumi stack output webServingRevision --cwd packages/infra --stack "$PULUMI_STACK" 2>/dev/null || true)"
-          worker_revision="$(pnpm exec pulumi stack output workerServingRevision --cwd packages/infra --stack "$PULUMI_STACK" 2>/dev/null || true)"
+          if web_traffic="$(gcloud run services describe vibelog-web-prod --project="$GCP_PROJECT" --region="$GCP_REGION" '--format=json(status.traffic)' --quiet 2>/dev/null)"; then
+            web_revision="$(jq -er '.status.traffic[] | select(.percent == 100) | .revisionName' <<< "$web_traffic")"
+          else
+            web_revision=""
+          fi
+          if worker_traffic="$(gcloud run services describe vibelog-worker-prod --project="$GCP_PROJECT" --region="$GCP_REGION" '--format=json(status.traffic)' --quiet 2>/dev/null)"; then
+            worker_revision="$(jq -er '.status.traffic[] | select(.percent == 100) | .revisionName' <<< "$worker_traffic")"
+          else
+            worker_revision=""
+          fi
           if test -n "$web_revision" && test -n "$worker_revision"; then
             pnpm exec pulumi config set vibelog:webActiveRevision "$web_revision" --cwd packages/infra --stack "$PULUMI_STACK"
             pnpm exec pulumi config set vibelog:workerActiveRevision "$worker_revision" --cwd packages/infra --stack "$PULUMI_STACK"
-          else
+          elif test -z "$web_revision" && test -z "$worker_revision"; then
             echo "No active revisions exist yet; the bootstrap deployment cannot use a zero-traffic candidate."
+          else
+            echo "::error::Web and worker active revisions must either both exist or both be absent."
+            exit 1
           fi
+      - name: Preview application image build
+        run: pnpm exec pulumi preview --cwd packages/infra --stack "$PULUMI_STACK" --target "$IMAGE_RESOURCE_URN" --non-interactive --json > "$RUNNER_TEMP/image-preview.jsonl"
+      - name: Guard application image build
+        run: node .github/scripts/guard-pulumi-preview.mjs "$RUNNER_TEMP/image-preview.jsonl"
+      - name: Build and push the application image
+        run: pnpm exec pulumi up --cwd packages/infra --stack "$PULUMI_STACK" --target "$IMAGE_RESOURCE_URN" --non-interactive --yes
       - name: Preview candidate deployment
         run: pnpm exec pulumi preview --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --json > "$RUNNER_TEMP/candidate-preview.jsonl"
       - name: Guard candidate deployment

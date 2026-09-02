@@ -8,8 +8,9 @@ The Pulumi program manages:
 - Cloud Tasks, Cloud Scheduler, service accounts, IAM, and Secret Manager
 - a private Cloudflare R2 bucket, edge Worker, and explicit routes for application, preview, and public-blog hostnames
 - a Neon PostgreSQL project and its default branch, database, role, and compute endpoint
+- a Resend sending domain and domain-scoped runtime key, plus Cloudflare Email Routing for support mail
 
-The R2 bucket, Artifact Registry repository, Neon project, and Secret Manager secrets are protected resources. The program does not create the GCP project, cloud-provider accounts, email account, or OAuth applications.
+The R2 bucket, Artifact Registry repository, Neon project, Resend domain, and Secret Manager secrets are protected resources. The program does not create the GCP project or cloud-provider accounts.
 
 ## Configuration
 
@@ -22,6 +23,8 @@ config:
   vibelog:environment: prod
   vibelog:gcpRegion: <gcp-region>
   vibelog:cloudflareAccountId: <cloudflare-account-id>
+  vibelog:cloudflareZoneId: <cloudflare-zone-id>
+  vibelog:rootDomain: example.org
   vibelog:neonOrgId: <neon-organization-id>
   vibelog:neonRegionId: aws-ap-southeast-1
   vibelog:minInstances: 0
@@ -35,15 +38,18 @@ Required non-secret `vibelog:` configuration:
 
 - `deploymentPhase`: exactly `foundation` or `application`
 - `environment`, `gcpRegion`, `cloudflareAccountId`, `neonOrgId`, and `neonRegionId`
+- `rootDomain` and `cloudflareZoneId`
 - optional `neonProjectName`; defaults to `vibelog-<environment>`
-- application only: `rootDomain` and `cloudflareZoneId`
-- application only: `githubClientId`, `googleClientId`, `emailFrom`, and `emailReplyTo`
+- optional application AI settings: `aiProvider`, `aiModel`, and `aiApiKeyEnv`
 
 Required secret `vibelog:` configuration, normally supplied through Pulumi ESC:
 
 - `cloudflareR2ApiToken` for the foundation R2 provider
 - `neonApiKey` for the Neon provider
-- application only: `objectStoreAccessKeyId`, `objectStoreSecretAccessKey`, `resendApiKey`, `betterAuthSecret`, OAuth client secrets, `aiApiKey`, `edgeSharedSecret`, and `cloudflareDeliveryApiToken`
+- `cloudflareDeliveryApiToken` for Resend DNS, Email Routing, Workers, routes, and application DNS
+- `resendManagementApiKey` for stack-managed Resend domain and runtime-key lifecycle
+- `supportForwardingDestination`, which remains secret even though Cloudflare must receive it
+- application only: `objectStoreAccessKeyId`, `objectStoreSecretAccessKey`, `betterAuthSecret`, `aiApiKey`, and `edgeSharedSecret`
 
 The deployment environment must also expose:
 
@@ -53,9 +59,11 @@ Pulumi derives both PostgreSQL URLs from the managed Neon project. The pooled UR
 
 Keep the R2 administrative token, Worker/DNS delivery token, and bucket-scoped object-store credentials separate. Never expose them as non-secret stack outputs.
 
-The foundation token needs only the account-scoped `Workers R2 Storage Write` permission for the intended Cloudflare account. Create it as a dedicated custom API token rather than reusing Wrangler's user OAuth credential.
+The Resend management key is a bootstrap credential. Pulumi uses it to create and verify `send.<rootDomain>` and to create a `sending_access` runtime key scoped to that exact domain. The runtime token is returned once, marked as a Pulumi secret output, and injected into Cloud Run without being copied to ESC or stack configuration. Resend DNS records are created unproxied from the exact API response; the program does not synthesize DKIM or regional MX values.
 
-The `foundation` phase always manages the protected Artifact Registry repository, private R2 bucket, and Neon database without evaluating application configuration. The `application` phase retains those same resources, builds and pushes the application image after Artifact Registry exists, applies checked-in Drizzle migrations, and then adds the runtime and delivery components. A fresh application stack can therefore create storage, database, image, schema, runtime, and edge delivery in one `pulumi up`. GCP service APIs, a running Docker daemon, and registry authentication are operator prerequisites; the deployment service account is not granted Service Usage Admin.
+The R2 token needs only the account-scoped `Workers R2 Storage Write` permission for the intended Cloudflare account. The delivery token needs Workers Scripts Write for the account, DNS Write and Workers Routes Write for the zone, Email Routing Addresses/Rules Read and Write, and Zone Settings Read and Write. Create both as dedicated custom API tokens rather than reusing Wrangler's user OAuth credential.
+
+The `foundation` phase always manages the protected Artifact Registry repository, private R2 bucket, Neon database, Resend domain/runtime key, and Cloudflare Email Routing foundation without evaluating application secrets. The `application` phase retains those same resources, builds and pushes the application image after Artifact Registry exists, applies checked-in Drizzle migrations, and then adds the runtime, support forwarding rule, and edge delivery components. A fresh application stack can therefore create storage, database, email delivery, image, schema, runtime, and edge delivery in one `pulumi up`. GCP service APIs, a running Docker daemon, and registry authentication are operator prerequisites; the deployment service account is not granted Service Usage Admin.
 
 The application phase expects the bootstrap identity to be `vibelog-deployer@<gcp-project-id>.iam.gserviceaccount.com`. Pulumi grants that identity `roles/iam.serviceAccountAdmin` and `roles/iam.serviceAccountUser` only on the three service accounts it creates for web, worker, and task invocation. The admin role lets later updates manage those exact identities; the user role lets Cloud Run and Scheduler attach them. Web and worker receive `roles/cloudtasks.enqueuer` only on the application operation queue.
 
@@ -101,11 +109,11 @@ Before the first deployment, complete these gates in order:
 1. Create a fresh GCP project and link the existing billing account. Recreating a project does not restart Free Trial credits or extend the trial. Do not upgrade or close the account as part of project replacement.
 2. Create the empty Pulumi `prod` stack and ESC `prod` environment. Configure the ESC GCP identity and narrowly scoped deployment permissions; no runtime service needs ESC credentials.
 3. Enable the explicitly approved GCP APIs with the project owner account. Do not grant Service Usage Admin to the deployment service account.
-4. Set `deploymentPhase: foundation`, add the purpose-specific R2 management and Neon API tokens through encrypted ESC configuration, and preview the allowlisted foundation graph. Pulumi creates and owns the protected Artifact Registry repository, private R2 bucket, and Neon project from their first update; Wrangler and Neon CLI are only used for inspection and smoke tests.
+4. Set `deploymentPhase: foundation`; add the purpose-specific R2, Cloudflare delivery, Neon, and Resend management tokens plus the forwarding destination through encrypted ESC configuration; then preview the allowlisted foundation graph. Pulumi creates and owns the protected Artifact Registry repository, private R2 bucket, Neon project, Resend domain/key, and Email Routing foundation from their first update. Wrangler and Neon CLI are only used for inspection and smoke tests.
 5. Create Object Read & Write credentials scoped to `vibelog-prod-artifacts`, store them in ESC, and verify them with the application's S3 integration test. Do not reuse the R2 management token as runtime credentials.
-6. Finish domain registration and collect the Cloudflare zone ID. Supply the delivery token, Resend sender credentials, OAuth client credentials, and AI key through encrypted ESC inputs. Do not paste secrets into workflow YAML or commit them.
-7. Change `deploymentPhase` to `application` and review the complete preview. The Pulumi update builds the checked-out source, pushes it under the stack-managed tag, and passes the resulting digest-pinned reference to migrations and Cloud Run. On the first application deployment there is no previous serving revision, so the candidate cannot be isolated at zero traffic.
-8. Verify apex login, real OAuth/email delivery, preview, sync, publish, and a public author page over HTTPS. The workflow's apex `/health` smoke alone does not verify preview or wildcard author TLS.
+6. Click the Cloudflare destination verification email. Confirm that the Resend domain is verified and Email Routing is ready before creating the forwarding rule.
+7. Supply Better Auth, edge, and AI secrets through encrypted ESC inputs, change `deploymentPhase` to `application`, and review the complete preview. The Pulumi update builds the checked-out source, pushes it under the stack-managed tag, and passes the resulting digest-pinned reference to migrations and Cloud Run. On the first application deployment there is no previous serving revision, so the candidate cannot be isolated at zero traffic.
+8. Verify apex magic-link login, support forwarding, preview, sync, publish, and a public author page over HTTPS. First use `delivered@resend.dev` for delivery acceptance, then a controlled real inbox for the clickable end-to-end login. The workflow's apex `/health` smoke alone does not verify preview or wildcard author TLS.
 
 Cloud account credentials and the ESC identity are prerequisites, not resources this application stack creates. The Neon project itself is stack-owned. An empty stack or environment is not a completed bootstrap.
 

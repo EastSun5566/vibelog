@@ -3,14 +3,23 @@
   "version": "0.7.0",
   "private": true,
   "type": "module",
-  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit", "test": "vitest run tests" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run tests"
+  },
   "dependencies": {
     "@pulumi/cloudflare": "6.20.0",
     "@pulumi/command": "1.2.1",
     "@pulumi/docker-build": "0.0.22",
     "@pulumi/gcp": "9.35.1",
     "@pulumi/neon": "file:sdks/neon",
-    "@pulumi/pulumi": "3.260.0"
+    "@pulumi/pulumi": "3.260.0",
+    "resend": "6.25.0"
   },
-  "devDependencies": { "@types/node": "^24.0.0", "typescript": "6.0.3", "vitest": "3.2.7" }
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "6.0.3",
+    "vitest": "3.2.7"
+  }
 }

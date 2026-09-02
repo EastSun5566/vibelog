@@ -7,6 +7,7 @@ import * as pulumi from '@pulumi/pulumi';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { CloudflareDelivery } from '../src/cloudflare-delivery.js';
 import { DatabaseMigration } from '../src/database-migration.js';
+import { EmailFoundation } from '../src/resend-foundation.js';
 import { GcpContainerRuntime } from '../src/gcp-container-runtime.js';
 import { ApplicationImage } from '../src/application-image.js';
 import { ProductionFoundation } from '../src/production-foundation.js';
@@ -31,8 +32,18 @@ beforeAll(async () => {
         state.digest = 'sha256:abc';
         state.ref = 'asia-east1-docker.pkg.dev/project/repository/vibelog-app:pulumi-prod@sha256:abc';
       }
+      if (args.name.endsWith('-domain')) Object.assign(state, {
+        status: 'pending', dkimName: 'resend._domainkey.send.example.com', dkimType: 'TXT', dkimValue: 'dkim-value',
+        spfMxName: 'send.example.com', spfMxValue: 'feedback-smtp.ap-northeast-1.amazonses.com', spfMxPriority: 10,
+        spfTxtName: 'send.example.com', spfTxtValue: 'v=spf1 include:amazonses.com ~all',
+      });
+      if (args.name.endsWith('-domain-verification')) state.status = 'verified';
+      if (args.name.endsWith('-runtime-key')) state.token = 're_runtime';
       const traffics = Array.isArray(inputs.traffics) ? inputs.traffics.map(record) : [];
-      if (args.type.includes('cloudrunv2/service:Service')) state.trafficStatuses = traffics.map((traffic) => ({ ...traffic, revision: traffic.revision ?? `${args.name}-revision`, uri: `https://${typeof traffic.tag === 'string' ? `${traffic.tag}---` : ''}${args.name}.run.test` }));
+      if (args.type.includes('cloudrunv2/service:Service')) {
+        state.latestReadyRevision = `projects/project/locations/asia-east1/services/${args.name}/revisions/${args.name}-latest`;
+        state.trafficStatuses = traffics.map((traffic) => ({ ...traffic, revision: traffic.type === 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST' ? '' : traffic.revision, uri: `https://${typeof traffic.tag === 'string' ? `${traffic.tag}---` : ''}${args.name}.run.test` }));
+      }
       return { id: `${args.name}-id`, state };
     },
     call: (args) => record(args.inputs),
@@ -48,10 +59,10 @@ describe('Pulumi components', () => {
       project: 'vibelog-test-project', region: 'asia-east1', environment: 'prod', imageDigest: 'asia-east1-docker.pkg.dev/project/repo/app@sha256:abc',
       deployerServiceAccountEmail: 'vibelog-deployer@vibelog-test-project.iam.gserviceaccount.com',
       appOrigin: 'https://example.com', previewOrigin: 'https://preview.example.com', objectStoreEndpoint: 'https://account.r2.cloudflarestorage.com',
-      objectStoreBucket: 'artifacts', githubClientId: 'github-id', googleClientId: 'google-id', aiProvider: 'openai', aiModel: 'gpt-4o-mini',
+      objectStoreBucket: 'artifacts', aiProvider: 'openai', aiModel: 'gpt-4o-mini',
       aiApiKeyEnv: 'OPENAI_API_KEY', emailFrom: 'VibeLog <login@send.example.com>', emailReplyTo: 'support@example.com',
       minInstances: 0, maxInstances: 3, webActiveRevision: 'web-stable', workerActiveRevision: 'worker-stable', provider,
-      secrets: { databaseUrl: pulumi.secret('database'), objectStoreAccessKeyId: pulumi.secret('key'), objectStoreSecretAccessKey: pulumi.secret('secret'), resendApiKey: pulumi.secret('resend'), betterAuthSecret: pulumi.secret('auth'), githubClientSecret: pulumi.secret('github'), googleClientSecret: pulumi.secret('google'), aiApiKey: pulumi.secret('ai'), edgeSharedSecret: pulumi.secret('edge') },
+      secrets: { databaseUrl: pulumi.secret('database'), objectStoreAccessKeyId: pulumi.secret('key'), objectStoreSecretAccessKey: pulumi.secret('secret'), resendApiKey: pulumi.secret('resend'), betterAuthSecret: pulumi.secret('auth'), aiApiKey: pulumi.secret('ai'), edgeSharedSecret: pulumi.secret('edge') },
       }, { providers: [provider] });
       await resolveOutput(runtime.webUrl);
       expect(await resolveOutput(runtime.candidateWorkerUrl)).toBe('https://candidate---test-runtime-worker.run.test');
@@ -105,6 +116,30 @@ describe('Pulumi components', () => {
     expect(deployerIdentityBindings.filter((item) => item.inputs.role === 'roles/iam.serviceAccountUser')).toHaveLength(3);
     expect(childUrns).toHaveLength(3);
     expect(childUrns.every((urn) => urn.includes('vibelog:infra:GcpContainerRuntime$gcp:'))).toBe(true);
+  });
+  it('owns the Resend sending domain, exact DNS records, runtime key, and Email Routing foundation', async () => {
+    await pulumi.runtime.runInPulumiStack(async () => {
+      const provider = new cloudflare.Provider('email-cloudflare', { apiToken: pulumi.secret('token') });
+      const email = new EmailFoundation('test-email', {
+        accountId: 'account', zoneId: 'zone', rootDomain: 'example.com', forwardingDestination: pulumi.secret('owner@example.net'),
+        resendManagementApiKey: pulumi.secret('re_management'), cloudflareProvider: provider,
+      }, { providers: [provider] });
+      expect(await resolveOutput(email.verification.status)).toBe('verified');
+      expect(await resolveOutput(email.runtimeApiKeyToken)).toBe('re_runtime');
+      expect(await pulumi.isSecret(email.runtimeApiKeyToken)).toBe(true);
+    });
+    const dynamicNames = registrations.filter((item) => item.name.startsWith('test-email-') && item.type.includes('dynamic')).map((item) => item.name).sort();
+    expect(dynamicNames).toEqual(['test-email-domain', 'test-email-domain-verification', 'test-email-runtime-key']);
+    const dns = registrations.filter((item) => item.name.startsWith('test-email-resend-'));
+    expect(dns).toHaveLength(3);
+    expect(dns.map((item) => item.inputs.type).sort()).toEqual(['MX', 'TXT', 'TXT']);
+    expect(dns.every((item) => item.inputs.proxied === false)).toBe(true);
+    const forwardingAddress = registrations.find((item) => item.name === 'test-email-forwarding-destination');
+    expect(forwardingAddress?.inputs.accountId).toBe('account');
+    expect(record(forwardingAddress?.inputs.email).value).toBe('owner@example.net');
+    const routingDns = registrations.find((item) => item.name === 'test-email-routing-dns');
+    expect(routingDns?.inputs.zoneId).toBe('zone');
+    expect(routingDns?.inputs).not.toHaveProperty('name');
   });
   it('creates only the protected repository, private R2 bucket, and Neon database in the foundation', async () => {
     const childUrns: string[] = [];
@@ -166,18 +201,23 @@ describe('Pulumi components', () => {
     });
     const image = registrations.find((item) => item.type === 'docker-build:index:Image');
     expect(image?.inputs).toMatchObject({
-      context: { location: '../..' },
-      dockerfile: { location: '../../packages/app/Dockerfile' },
       platforms: ['linux/amd64'],
       push: true,
       buildOnPreview: false,
     });
+    expect(image?.inputs.context.location).toBe(fileURLToPath(new URL('../../../', import.meta.url)));
+    expect(image?.inputs.dockerfile.location).toBe(fileURLToPath(new URL('../../app/Dockerfile', import.meta.url)));
     expect(image?.inputs.tags).toEqual(['asia-east1-docker.pkg.dev/vibelog-test-project/vibelog-prod/vibelog-app:pulumi-prod']);
   });
   it('routes both the apex and first-level hosts through the edge without owning R2', async () => {
     await pulumi.runtime.runInPulumiStack(async () => {
       const provider = new cloudflare.Provider('test-cloudflare', { apiToken: pulumi.secret('token') });
-      const delivery = new CloudflareDelivery('test-delivery', { accountId: 'account', zoneId: 'zone', rootDomain: 'example.com', originUrl: 'https://web.run.test', edgeSharedSecret: pulumi.secret('edge'), provider, bundlePath: fileURLToPath(new URL('./fixture-worker.js', import.meta.url)) }, { providers: [provider] });
+      const forwardingAddress = new cloudflare.EmailRoutingAddress('test-forwarding-address', { accountId: 'account', email: 'owner@example.net' }, { provider });
+      const delivery = new CloudflareDelivery('test-delivery', {
+        accountId: 'account', zoneId: 'zone', rootDomain: 'example.com', originUrl: 'https://web.run.test', edgeSharedSecret: pulumi.secret('edge'),
+        supportAddress: 'support@example.com', forwardingDestination: pulumi.secret('owner@example.net'), forwardingAddress,
+        provider, bundlePath: fileURLToPath(new URL('./fixture-worker.js', import.meta.url)),
+      }, { providers: [provider] });
       await resolveOutput(delivery.script.scriptName);
       await Promise.all(delivery.routes.map((route) => resolveOutput(route.pattern)));
     });
@@ -191,5 +231,8 @@ describe('Pulumi components', () => {
     const dns = registrations.filter((item) => item.type.includes('dnsRecord:DnsRecord'));
     expect(dns.map((item) => item.inputs.name).sort()).toEqual(['*.example.com', 'example.com']);
     expect(dns.every((item) => item.inputs.proxied === true)).toBe(true);
+    const forwardingRule = registrations.find((item) => item.name === 'test-delivery-support-forwarding');
+    expect(forwardingRule?.inputs).toMatchObject({ zoneId: 'zone', enabled: true, matchers: [{ type: 'literal', field: 'to', value: 'support@example.com' }] });
+    expect(record(forwardingRule?.inputs.actions).value).toEqual([{ type: 'forward', values: ['owner@example.net'] }]);
   });
 });
