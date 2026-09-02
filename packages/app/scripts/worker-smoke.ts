@@ -3,12 +3,12 @@ import { setTimeout } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { Pool } from 'pg';
 
-interface SmokeConfig { candidateUrl: string; audience: string; queuePath: string; invokerEmail: string; accessToken: string }
+interface SmokeConfig { workerUrl: string; queuePath: string; invokerEmail: string; accessToken: string }
 interface SmokeDatabase {
   query(text: string, values?: unknown[]): Promise<{ rows: { status?: string; attempts?: number }[] }>;
 }
 
-/** Exercise candidate transport, IAM, DB claim and terminal persistence without paid AI/content calls. */
+/** Exercise production worker transport, IAM, DB claim and terminal persistence without paid AI/content calls. */
 export async function smokeWorker(config: SmokeConfig, database: SmokeDatabase, dependencies: { fetch?: typeof fetch; wait?: () => Promise<void>; polls?: number } = {}): Promise<void> {
   const request = dependencies.fetch ?? fetch;
   const wait = dependencies.wait ?? (() => setTimeout(2000));
@@ -23,7 +23,7 @@ export async function smokeWorker(config: SmokeConfig, database: SmokeDatabase, 
     if (!response.ok && response.status !== 404) throw new Error(`Worker smoke task cleanup failed (${String(response.status)})`);
   };
   try {
-    // One statement is atomic. No outbox: only this candidate-targeted task may execute the fixture.
+    // One statement is atomic. No outbox: only this explicitly created smoke task may execute the fixture.
     await database.query(`with smoke_user as (
       insert into "user" (id, name, email) values ($1, 'Deployment smoke', $4) returning id
     ), smoke_blog as (
@@ -36,9 +36,9 @@ export async function smokeWorker(config: SmokeConfig, database: SmokeDatabase, 
     const response = await request(`${api}${config.queuePath}/tasks`, {
       method: 'POST', headers, signal: AbortSignal.timeout(15000),
       body: JSON.stringify({ task: { name: taskName, dispatchDeadline: '60s', httpRequest: {
-        httpMethod: 'POST', url: `${config.candidateUrl.replace(/\/$/, '')}/tasks/operations`,
+        httpMethod: 'POST', url: `${config.workerUrl.replace(/\/$/, '')}/tasks/operations`,
         headers: { 'Content-Type': 'application/json' },
-        oidcToken: { serviceAccountEmail: config.invokerEmail, audience: config.audience },
+        oidcToken: { serviceAccountEmail: config.invokerEmail, audience: config.workerUrl },
         body: Buffer.from(JSON.stringify({ version: 1, operationId, traceId: randomUUID(), createdAt: new Date().toISOString() })).toString('base64'),
       } } }),
     });
@@ -49,7 +49,7 @@ export async function smokeWorker(config: SmokeConfig, database: SmokeDatabase, 
       if (!operation || operation.status === 'succeeded' || (operation.attempts ?? 0) > 1) throw new Error('Worker smoke produced an unexpected result');
       await wait();
     }
-    throw new Error('Candidate worker did not persist the expected terminal result in time');
+    throw new Error('Worker did not persist the expected terminal result in time');
   } finally {
     try {
       await removeTask();
@@ -63,11 +63,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const required = (name: string): string => { const value = process.env[name]; if (!value) throw new Error(`Missing ${name}`); return value; };
   const database = new Pool({ connectionString: required('DATABASE_MIGRATION_URL'), max: 1, connectionTimeoutMillis: 10000, query_timeout: 15000 });
   try {
-    await smokeWorker({ candidateUrl: required('WORKER_SMOKE_URL'), audience: required('WORKER_AUDIENCE'), queuePath: required('CLOUD_TASKS_QUEUE_PATH'), invokerEmail: required('CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL'), accessToken: required('GOOGLE_OAUTH_ACCESS_TOKEN') }, database);
-    console.log('Candidate worker smoke passed: authenticated delivery, claim and terminal persistence.');
+    await smokeWorker({ workerUrl: required('WORKER_URL'), queuePath: required('CLOUD_TASKS_QUEUE_PATH'), invokerEmail: required('CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL'), accessToken: required('GOOGLE_OAUTH_ACCESS_TOKEN') }, database);
+    console.log('Worker smoke passed: authenticated delivery, claim and terminal persistence.');
   } catch {
     // Do not print provider/DB errors, which can contain credentials or connection URLs.
-    console.error('Candidate worker smoke failed; traffic promotion is blocked. Inspect worker logs and deployment identity permissions.');
+    console.error('Worker smoke failed. Inspect worker logs and deployment identity permissions.');
     process.exitCode = 1;
   } finally { await database.end(); }
 }

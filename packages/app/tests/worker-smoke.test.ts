@@ -1,21 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
 import { smokeWorker } from '../scripts/worker-smoke.js';
 
-const config = { candidateUrl: 'https://candidate---worker.run.app', audience: 'https://worker.run.app', queuePath: 'projects/test/locations/region/queues/operations', invokerEmail: 'tasks@test.iam.gserviceaccount.com', accessToken: 'test-token' };
+const config = { workerUrl: 'https://worker.run.app', queuePath: 'projects/test/locations/region/queues/operations', invokerEmail: 'tasks@test.iam.gserviceaccount.com', accessToken: 'test-token' };
 function fixture(status: string) {
   const query = vi.fn((sql: string, _values?: unknown[]) => Promise.resolve({ rows: sql.startsWith('select') ? [{ status, attempts: status === 'queued' ? 0 : 1 }] : [] }));
   const request = vi.fn<typeof fetch>(() => Promise.resolve(new Response(null, { status: 200 })));
   const wait = vi.fn(() => Promise.resolve());
   return { database: { query }, dependencies: { fetch: request, wait, polls: 2 } };
 }
-describe('candidate worker deployment smoke', () => {
-  it('targets only the candidate with the stable audience, then removes its isolated fixture', async () => {
+describe('worker deployment smoke', () => {
+  it('targets the production worker with its stable audience, then removes its isolated fixture', async () => {
     const { database, dependencies } = fixture('failed');
     await smokeWorker(config, database, dependencies);
     const options = dependencies.fetch.mock.calls[0]?.[1];
     if (typeof options?.body !== 'string') throw new Error('Missing task body');
     const body = JSON.parse(options.body) as { task: { name: string; httpRequest: { url: string; oidcToken: { audience: string; serviceAccountEmail: string }; body: string } } };
-    expect(body.task.httpRequest).toMatchObject({ url: `${config.candidateUrl}/tasks/operations`, oidcToken: { audience: config.audience, serviceAccountEmail: config.invokerEmail } });
+    expect(body.task.httpRequest).toMatchObject({ url: `${config.workerUrl}/tasks/operations`, oidcToken: { audience: config.workerUrl, serviceAccountEmail: config.invokerEmail } });
     expect(JSON.parse(Buffer.from(body.task.httpRequest.body, 'base64').toString())).toMatchObject({ version: 1 });
     expect(dependencies.fetch.mock.calls[1]).toEqual([`https://cloudtasks.googleapis.com/v2/${body.task.name}`, expect.objectContaining({ method: 'DELETE' })]);
     expect(database.query.mock.calls.at(-1)?.[0]).toBe('delete from "user" where id = $1');

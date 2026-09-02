@@ -61,11 +61,10 @@ describe('Pulumi components', () => {
       appOrigin: 'https://example.com', previewOrigin: 'https://preview.example.com', objectStoreEndpoint: 'https://account.r2.cloudflarestorage.com',
       objectStoreBucket: 'artifacts', aiProvider: 'openai', aiModel: 'gpt-4o-mini',
       aiApiKeyEnv: 'OPENAI_API_KEY', emailFrom: 'VibeLog <login@send.example.com>', emailReplyTo: 'support@example.com',
-      minInstances: 0, maxInstances: 3, webActiveRevision: 'web-stable', workerActiveRevision: 'worker-stable', provider,
+      minInstances: 0, maxInstances: 3, provider,
       secrets: { databaseUrl: pulumi.secret('database'), objectStoreAccessKeyId: pulumi.secret('key'), objectStoreSecretAccessKey: pulumi.secret('secret'), resendApiKey: pulumi.secret('resend'), betterAuthSecret: pulumi.secret('auth'), aiApiKey: pulumi.secret('ai'), edgeSharedSecret: pulumi.secret('edge') },
       }, { providers: [provider] });
       await resolveOutput(runtime.webUrl);
-      expect(await resolveOutput(runtime.candidateWorkerUrl)).toBe('https://candidate---test-runtime-worker.run.test');
       expect(await resolveOutput(runtime.workerUrl)).toBe('https://test-runtime-worker.run.test');
       expect(await resolveOutput(runtime.taskQueuePath)).toBe('projects/vibelog-test-project/locations/asia-east1/queues/vibelog-operations-prod');
       expect(await resolveOutput(runtime.taskInvokerEmail)).toBe('test-runtime-tasks-sa@project.iam.gserviceaccount.com');
@@ -86,8 +85,7 @@ describe('Pulumi components', () => {
       const template = service.inputs.template as { scaling: { minInstanceCount: number; maxInstanceCount: number }; containers: { envs: { name: string; value?: string; valueSource?: unknown }[] }[] };
       expect(template.scaling).toMatchObject({ minInstanceCount: 0, maxInstanceCount: 3 });
       expect(service.inputs.traffics).toEqual([
-        { type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION', revision: service.name.endsWith('-web') ? 'web-stable' : 'worker-stable', percent: 100 },
-        { type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', percent: 0, tag: 'candidate' },
+        { type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', percent: 100 },
       ]);
       const secretNames = new Set(['DATABASE_URL', 'RESEND_API_KEY', 'BETTER_AUTH_SECRET', 'OBJECT_STORE_SECRET_ACCESS_KEY']);
       const [container] = template.containers; if (!container) throw new Error('Cloud Run container missing');

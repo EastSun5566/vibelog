@@ -91,8 +91,6 @@ function createApplication() {
     emailReplyTo: `support@${rootDomain}`,
     minInstances: config.getNumber('minInstances') ?? 0,
     maxInstances: config.getNumber('maxInstances') ?? 3,
-    webActiveRevision: config.get('webActiveRevision'),
-    workerActiveRevision: config.get('workerActiveRevision'),
     provider: gcpProvider,
     secrets: {
       databaseUrl,
@@ -130,8 +128,6 @@ export const resendDomainStatus = email.verification.status;
 export const emailRoutingStatus = email.routingDns.status;
 export const webUrl = application?.runtime.webUrl ?? pulumi.output('');
 export const deployedImage = application?.image.reference ?? pulumi.output('');
-export const candidateWebUrl = application?.runtime.candidateWebUrl ?? pulumi.output('');
-export const candidateWorkerUrl = application?.runtime.candidateWorkerUrl ?? pulumi.output('');
 export const workerUrl = application?.runtime.workerUrl ?? pulumi.output('');
 export const taskQueuePath = application?.runtime.taskQueuePath ?? pulumi.output('');
 export const taskInvokerEmail = application?.runtime.taskInvokerEmail ?? pulumi.output('');

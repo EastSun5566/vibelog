@@ -16,6 +16,7 @@ playwright-report
 docs
 packages/edge
 packages/infra
+packages/app/scripts
 .data
 *.sqlite
 *.sqlite-shm

@@ -12,7 +12,7 @@ export interface GcpContainerRuntimeArgs {
   objectStoreBucket: pulumi.Input<string>;
   aiProvider: pulumi.Input<string>; aiModel: pulumi.Input<string>; aiApiKeyEnv: pulumi.Input<string>;
   emailFrom: pulumi.Input<string>; emailReplyTo: pulumi.Input<string>; minInstances: pulumi.Input<number>;
-  maxInstances: pulumi.Input<number>; webActiveRevision?: pulumi.Input<string>; workerActiveRevision?: pulumi.Input<string>;
+  maxInstances: pulumi.Input<number>;
   secrets: RuntimeSecretInputs; provider: gcp.Provider;
 }
 export class GcpContainerRuntime extends pulumi.ComponentResource {
@@ -20,8 +20,6 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
   readonly worker: gcp.cloudrunv2.Service;
   readonly queue: gcp.cloudtasks.Queue;
   readonly webUrl: pulumi.Output<string>;
-  readonly candidateWebUrl: pulumi.Output<string>;
-  readonly candidateWorkerUrl: pulumi.Output<string>;
   readonly workerUrl: pulumi.Output<string>;
   readonly taskQueuePath: pulumi.Output<string>;
   readonly taskInvokerEmail: pulumi.Output<string>;
@@ -72,15 +70,12 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
       { name: 'PREVIEW_ORIGIN', value: args.previewOrigin },
       { name: 'EMAIL_FROM', value: args.emailFrom }, { name: 'EMAIL_REPLY_TO', value: args.emailReplyTo },
     ];
-    const service = (kind: 'web' | 'worker', account: gcp.serviceaccount.Account, command: string, activeRevision: pulumi.Input<string> | undefined, extraEnv: gcp.types.input.cloudrunv2.ServiceTemplateContainerEnv[]) =>
+    const service = (kind: 'web' | 'worker', account: gcp.serviceaccount.Account, command: string, extraEnv: gcp.types.input.cloudrunv2.ServiceTemplateContainerEnv[]) =>
       new gcp.cloudrunv2.Service(`${name}-${kind}`, {
         project: args.project, location: args.region, name: `vibelog-${kind}-${args.environment}`,
         ingress: kind === 'web' ? 'INGRESS_TRAFFIC_ALL' : 'INGRESS_TRAFFIC_INTERNAL_ONLY',
         template: { serviceAccount: account.email, timeout: kind === 'worker' ? '3600s' : '300s', scaling: { minInstanceCount: args.minInstances, maxInstanceCount: args.maxInstances }, containers: [{ image: args.imageDigest, commands: ['node'], args: [command], envs: [...operationEnv, ...(kind === 'web' ? webEnv : []), ...secretEnv(kind), ...extraEnv], startupProbe: { httpGet: { path: '/health' }, initialDelaySeconds: 0, timeoutSeconds: 3, periodSeconds: 3, failureThreshold: 20 }, resources: { limits: { cpu: kind === 'worker' ? '2' : '1', memory: kind === 'worker' ? '2Gi' : '512Mi' }, cpuIdle: true } }] },
-        traffics: activeRevision ? [
-          { type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION', revision: activeRevision, percent: 100 },
-          { type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', percent: 0, tag: 'candidate' },
-        ] : [{ type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', percent: 100, tag: 'candidate' }],
+        traffics: [{ type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', percent: 100 }],
       }, { ...resourceOptions, dependsOn: deployerActAs[kind] });
     const projectInfo = gcp.organizations.getProjectOutput({ projectId: args.project }, { provider: args.provider });
     const workerServiceUrl = pulumi.interpolate`https://vibelog-worker-${args.environment}-${projectInfo.number}.${args.region}.run.app`;
@@ -90,8 +85,8 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
       { name: 'WORKER_URL', value: workerUrl },
       { name: 'CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL', value: tasksAccount.email },
     ];
-    this.worker = service('worker', workerAccount, 'dist/worker-main.js', args.workerActiveRevision, [{ name: 'TASK_QUEUE_NAME', value: this.queue.name }, ...queueEnv(workerServiceUrl)]);
-    this.web = service('web', webAccount, 'dist/web-main.js', args.webActiveRevision, queueEnv(this.worker.uri));
+    this.worker = service('worker', workerAccount, 'dist/worker-main.js', [{ name: 'TASK_QUEUE_NAME', value: this.queue.name }, ...queueEnv(workerServiceUrl)]);
+    this.web = service('web', webAccount, 'dist/web-main.js', queueEnv(this.worker.uri));
     new gcp.cloudrunv2.ServiceIamMember(`${name}-web-public`, { project: args.project, location: args.region, name: this.web.name, role: 'roles/run.invoker', member: 'allUsers' }, resourceOptions);
     new gcp.cloudrunv2.ServiceIamMember(`${name}-worker-tasks`, { project: args.project, location: args.region, name: this.worker.name, role: 'roles/run.invoker', member: pulumi.interpolate`serviceAccount:${tasksAccount.email}` }, resourceOptions);
     new gcp.cloudtasks.QueueIamMember(`${name}-web-enqueuer`, { project: args.project, location: args.region, name: this.queue.name, role: 'roles/cloudtasks.enqueuer', member: pulumi.interpolate`serviceAccount:${webAccount.email}` }, resourceOptions);
@@ -100,11 +95,9 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
     new gcp.serviceaccount.IAMMember(`${name}-worker-task-identity`, { serviceAccountId: tasksAccount.name, role: 'roles/iam.serviceAccountUser', member: pulumi.interpolate`serviceAccount:${workerAccount.email}` }, resourceOptions);
     for (const [schedule, path] of [['outbox', '/tasks/outbox'], ['maintenance', '/tasks/maintenance']] as const) new gcp.cloudscheduler.Job(`${name}-${schedule}`, { project: args.project, region: args.region, name: `vibelog-${schedule}-${args.environment}`, schedule: schedule === 'outbox' ? '*/5 * * * *' : '17 * * * *', timeZone: 'Etc/UTC', httpTarget: { httpMethod: 'POST', uri: pulumi.interpolate`${this.worker.uri}${path}`, oidcToken: { serviceAccountEmail: tasksAccount.email, audience: this.worker.uri } } }, { ...resourceOptions, dependsOn: [this.worker, deployerActAs.tasks] });
     this.webUrl = this.web.uri;
-    this.candidateWebUrl = this.web.trafficStatuses.apply((statuses) => statuses.find((status) => status.tag === 'candidate')?.uri ?? '');
-    this.candidateWorkerUrl = this.worker.trafficStatuses.apply((statuses) => statuses.find((status) => status.tag === 'candidate')?.uri ?? '');
     this.workerUrl = this.worker.uri;
     this.taskQueuePath = pulumi.interpolate`projects/${args.project}/locations/${args.region}/queues/${this.queue.name}`;
     this.taskInvokerEmail = tasksAccount.email;
-    this.registerOutputs({ webUrl: this.webUrl, candidateWebUrl: this.candidateWebUrl, candidateWorkerUrl: this.candidateWorkerUrl, workerUrl: this.workerUrl, taskQueuePath: this.taskQueuePath, taskInvokerEmail: this.taskInvokerEmail, workerName: this.worker.name, queueName: this.queue.name });
+    this.registerOutputs({ webUrl: this.webUrl, workerUrl: this.workerUrl, taskQueuePath: this.taskQueuePath, taskInvokerEmail: this.taskInvokerEmail, workerName: this.worker.name, queueName: this.queue.name });
   }
 }

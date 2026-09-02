@@ -13,12 +13,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GCP_PROJECT: vibelog-prod-h6t9m2
   GCP_REGION: asia-east1
   PULUMI_STACK: EastSun5566/vibelog/prod
   PULUMI_ENABLE_STREAMING_JSON_PREVIEW: "true"
   DEPLOY_SHA: ${{ github.sha }}
-  IMAGE_RESOURCE_URN: 'urn:pulumi:prod::vibelog::vibelog:infra:ApplicationImage$docker-build:index:Image::application-image-build'
 
 jobs:
   deploy:
@@ -66,68 +64,25 @@ jobs:
           test -n "$GOOGLE_OAUTH_ACCESS_TOKEN"
       - name: Authenticate Docker to Artifact Registry
         run: printf '%s' "$GOOGLE_OAUTH_ACCESS_TOKEN" | docker login --username oauth2accesstoken --password-stdin "https://${GCP_REGION}-docker.pkg.dev"
-      - name: Keep existing revisions active while staging the candidate
-        run: |
-          if web_traffic="$(gcloud run services describe vibelog-web-prod --project="$GCP_PROJECT" --region="$GCP_REGION" '--format=json(status.traffic)' --quiet 2>/dev/null)"; then
-            web_revision="$(jq -er '.status.traffic[] | select(.percent == 100) | .revisionName' <<< "$web_traffic")"
-          else
-            web_revision=""
-          fi
-          if worker_traffic="$(gcloud run services describe vibelog-worker-prod --project="$GCP_PROJECT" --region="$GCP_REGION" '--format=json(status.traffic)' --quiet 2>/dev/null)"; then
-            worker_revision="$(jq -er '.status.traffic[] | select(.percent == 100) | .revisionName' <<< "$worker_traffic")"
-          else
-            worker_revision=""
-          fi
-          if test -n "$web_revision" && test -n "$worker_revision"; then
-            pnpm exec pulumi config set vibelog:webActiveRevision "$web_revision" --cwd packages/infra --stack "$PULUMI_STACK"
-            pnpm exec pulumi config set vibelog:workerActiveRevision "$worker_revision" --cwd packages/infra --stack "$PULUMI_STACK"
-          elif test -z "$web_revision" && test -z "$worker_revision"; then
-            echo "No active revisions exist yet; the bootstrap deployment cannot use a zero-traffic candidate."
-          else
-            echo "::error::Web and worker active revisions must either both exist or both be absent."
-            exit 1
-          fi
-      - name: Preview application image build
-        run: pnpm exec pulumi preview --cwd packages/infra --stack "$PULUMI_STACK" --target "$IMAGE_RESOURCE_URN" --non-interactive --json > "$RUNNER_TEMP/image-preview.jsonl"
-      - name: Guard application image build
-        run: node .github/scripts/guard-pulumi-preview.mjs "$RUNNER_TEMP/image-preview.jsonl"
-      - name: Build and push the application image
-        run: pnpm exec pulumi up --cwd packages/infra --stack "$PULUMI_STACK" --target "$IMAGE_RESOURCE_URN" --non-interactive --yes
-      - name: Preview candidate deployment
-        run: pnpm exec pulumi preview --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --json > "$RUNNER_TEMP/candidate-preview.jsonl"
-      - name: Guard candidate deployment
-        run: node .github/scripts/guard-pulumi-preview.mjs "$RUNNER_TEMP/candidate-preview.jsonl"
-      - name: Stage candidate at zero traffic
-        run: pnpm exec pulumi up --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --yes --strict
-      - name: Smoke test candidate revision
-        run: |
-          candidate_url="$(pnpm exec pulumi stack output candidateWebUrl --cwd packages/infra --stack "$PULUMI_STACK")"
-          test -n "$candidate_url"
-          curl --fail --show-error --retry 6 --retry-all-errors --max-time 20 "$candidate_url/health"
-      - name: Smoke test private candidate worker through Cloud Tasks
-        run: |
-          database_migration_url="$(pnpm exec pulumi stack output databaseMigrationUrl --show-secrets --cwd packages/infra --stack "$PULUMI_STACK")"
-          test -n "$database_migration_url"
-          echo "::add-mask::$database_migration_url"
-          export DATABASE_MIGRATION_URL="$database_migration_url"
-          export WORKER_SMOKE_URL="$(pnpm exec pulumi stack output candidateWorkerUrl --cwd packages/infra --stack "$PULUMI_STACK")"
-          export WORKER_AUDIENCE="$(pnpm exec pulumi stack output workerUrl --cwd packages/infra --stack "$PULUMI_STACK")"
-          export CLOUD_TASKS_QUEUE_PATH="$(pnpm exec pulumi stack output taskQueuePath --cwd packages/infra --stack "$PULUMI_STACK")"
-          export CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL="$(pnpm exec pulumi stack output taskInvokerEmail --cwd packages/infra --stack "$PULUMI_STACK")"
-          node packages/app/scripts/worker-smoke.ts
-      - name: Select the verified candidate for traffic
-        run: |
-          pnpm exec pulumi config rm vibelog:webActiveRevision --cwd packages/infra --stack "$PULUMI_STACK" || true
-          pnpm exec pulumi config rm vibelog:workerActiveRevision --cwd packages/infra --stack "$PULUMI_STACK" || true
-      - name: Preview candidate promotion
-        run: pnpm exec pulumi preview --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --json > "$RUNNER_TEMP/promotion-preview.jsonl"
-      - name: Guard candidate promotion
-        run: node .github/scripts/guard-pulumi-preview.mjs "$RUNNER_TEMP/promotion-preview.jsonl"
-      - name: Promote the verified revisions
-        run: pnpm exec pulumi up --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --yes --strict
+      - name: Preview application deployment
+        run: pnpm exec pulumi preview --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --json > "$RUNNER_TEMP/preview.json"
+      - name: Guard application deployment
+        run: node .github/scripts/guard-pulumi-preview.mjs "$RUNNER_TEMP/preview.json"
+      - name: Update production stack
+        run: pnpm exec pulumi up --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --yes
       - name: Smoke test Cloud Run and apex edge routing
         run: |
           web_url="$(pnpm exec pulumi stack output webUrl --cwd packages/infra --stack "$PULUMI_STACK")"
           root_domain="$(pnpm exec pulumi config get vibelog:rootDomain --cwd packages/infra --stack "$PULUMI_STACK")"
           curl --fail --show-error --retry 6 --retry-all-errors --max-time 20 "$web_url/health"
           curl --fail --show-error --retry 6 --retry-all-errors --max-time 20 "https://${root_domain}/health"
+      - name: Smoke test private worker through Cloud Tasks
+        run: |
+          database_migration_url="$(pnpm exec pulumi stack output databaseMigrationUrl --show-secrets --cwd packages/infra --stack "$PULUMI_STACK")"
+          test -n "$database_migration_url"
+          echo "::add-mask::$database_migration_url"
+          export DATABASE_MIGRATION_URL="$database_migration_url"
+          export WORKER_URL="$(pnpm exec pulumi stack output workerUrl --cwd packages/infra --stack "$PULUMI_STACK")"
+          export CLOUD_TASKS_QUEUE_PATH="$(pnpm exec pulumi stack output taskQueuePath --cwd packages/infra --stack "$PULUMI_STACK")"
+          export CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL="$(pnpm exec pulumi stack output taskInvokerEmail --cwd packages/infra --stack "$PULUMI_STACK")"
+          node packages/app/scripts/worker-smoke.ts

@@ -131,7 +131,7 @@ describe.skipIf(!url)('operation crash recovery', () => {
       expect(await response.json()).toMatchObject({ failed: true });
       return new Response('{}');
     };
-    await smokeWorker({ candidateUrl: 'https://candidate---worker.run.app', audience: 'https://worker.run.app', queuePath: 'projects/test/locations/region/queues/operations', invokerEmail: 'tasks@test', accessToken: 'fake' }, database.pool, { fetch: request, polls: 1 });
+    await smokeWorker({ workerUrl: 'https://worker.run.app', queuePath: 'projects/test/locations/region/queues/operations', invokerEmail: 'tasks@test', accessToken: 'fake' }, database.pool, { fetch: request, polls: 1 });
     expect(operationId).not.toBe('');
     expect(await database.getOperation(operationId)).toBeNull();
   });
