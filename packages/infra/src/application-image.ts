@@ -1,4 +1,3 @@
-import { fileURLToPath } from 'node:url';
 import * as dockerBuild from '@pulumi/docker-build';
 import * as gcp from '@pulumi/gcp';
 import * as pulumi from '@pulumi/pulumi';
@@ -17,11 +16,13 @@ export class ApplicationImage extends pulumi.ComponentResource {
 
   constructor(name: string, args: ApplicationImageArgs, opts?: pulumi.ComponentResourceOptions) {
     super('vibelog:infra:ApplicationImage', name, {}, opts);
-    const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url));
+    // Keep these inputs relative to the Pulumi project so state is portable
+    // between local checkouts and GitHub-hosted runners.
+    const repositoryRoot = '../..';
     const tag = pulumi.interpolate`${args.region}-docker.pkg.dev/${args.project}/${args.repository.repositoryId}/vibelog-app:pulumi-${args.environment}`;
     this.image = new dockerBuild.Image(`${name}-build`, {
       context: { location: repositoryRoot },
-      dockerfile: { location: fileURLToPath(new URL('../../../packages/app/Dockerfile', import.meta.url)) },
+      dockerfile: { location: '../../packages/app/Dockerfile' },
       platforms: [dockerBuild.Platform.Linux_amd64],
       tags: [tag],
       push: true,

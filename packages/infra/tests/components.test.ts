@@ -203,8 +203,8 @@ describe('Pulumi components', () => {
       push: true,
       buildOnPreview: false,
     });
-    expect(image?.inputs.context.location).toBe(fileURLToPath(new URL('../../../', import.meta.url)));
-    expect(image?.inputs.dockerfile.location).toBe(fileURLToPath(new URL('../../app/Dockerfile', import.meta.url)));
+    expect(image?.inputs.context.location).toBe('../..');
+    expect(image?.inputs.dockerfile.location).toBe('../../packages/app/Dockerfile');
     expect(image?.inputs.tags).toEqual(['asia-east1-docker.pkg.dev/vibelog-test-project/vibelog-prod/vibelog-app:pulumi-prod']);
   });
   it('routes both the apex and first-level hosts through the edge without owning R2', async () => {
