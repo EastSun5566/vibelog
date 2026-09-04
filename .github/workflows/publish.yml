@@ -53,7 +53,8 @@ jobs:
         uses: pulumi/auth-actions@v2
         with:
           organization: EastSun5566
-          requested-token-type: urn:pulumi:token-type:access_token:organization
+          requested-token-type: urn:pulumi:token-type:access_token:personal
+          scope: user:EastSun5566
       - name: Load short-lived GCP credentials and secrets from ESC
         uses: pulumi/esc-action@v3
         with:
