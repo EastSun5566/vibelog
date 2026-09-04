@@ -40,6 +40,12 @@ function isFoundationResource(urn) {
     || emailFoundationType.test(urn);
 }
 
+/** @param {string} operation @param {string} urn */
+function isApplicationMigrationReplacement(operation, urn) {
+  return operation === 'delete-replaced'
+    && /::vibelog:infra:DatabaseMigration\$command:local:Command::database-migration-run$/.test(urn);
+}
+
 /** @param {string} lines @param {'application' | 'foundation'} [profile] @returns {string[]} */
 export function findUnsafeChanges(lines, profile = 'application') {
   if (profile !== 'application' && profile !== 'foundation') throw new Error(`Unknown Pulumi preview profile: ${profile}`);
@@ -52,7 +58,9 @@ export function findUnsafeChanges(lines, profile = 'application') {
     const next = record(metadata.new);
     const inputs = Object.hasOwn(next, 'inputs') ? record(next.inputs) : next;
 
-    if (operation.includes('delete')) failures.push(`${operation}: ${urn}`);
+    const allowedMigrationReplacement = profile === 'application'
+      && isApplicationMigrationReplacement(operation, urn);
+    if (operation.includes('delete') && !allowedMigrationReplacement) failures.push(`${operation}: ${urn}`);
     if (operation.includes('replace') && statefulType.test(urn)) failures.push(`${operation} of stateful resource: ${urn}`);
     if (publicR2Type.test(urn)) failures.push(`public R2 exposure: ${urn}`);
     if (profile === 'foundation' && !isFoundationResource(urn)) failures.push(`resource outside foundation profile: ${urn}`);

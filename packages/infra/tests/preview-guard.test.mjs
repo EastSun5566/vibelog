@@ -26,6 +26,20 @@ describe('Pulumi preview safety gate', () => {
     expect(findUnsafeChanges(preview)).toHaveLength(5);
   });
 
+  it('allows only the migration command replacement bookkeeping in application mode', () => {
+    const migrationUrn = 'urn:pulumi:prod::vibelog::vibelog:infra:DatabaseMigration$command:local:Command::database-migration-run';
+    const otherCommandUrn = 'urn:pulumi:prod::vibelog::command:local:Command::other-command';
+    expect(findUnsafeChanges([
+      event('delete-replaced', migrationUrn),
+      event('delete-replaced', otherCommandUrn),
+    ].join('\n'))).toEqual([
+      `delete-replaced: ${otherCommandUrn}`,
+    ]);
+    expect(findUnsafeChanges(event('delete', migrationUrn))).toEqual([
+      `delete: ${migrationUrn}`,
+    ]);
+  });
+
   it('allows only the protected foundation graph in foundation mode', () => {
     const preview = [
       event('create', 'urn:pulumi:prod::vibelog::pulumi:providers:gcp::gcp'),
