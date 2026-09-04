@@ -16,13 +16,13 @@ export class ApplicationImage extends pulumi.ComponentResource {
 
   constructor(name: string, args: ApplicationImageArgs, opts?: pulumi.ComponentResourceOptions) {
     super('vibelog:infra:ApplicationImage', name, {}, opts);
-    // Keep these inputs relative to the Pulumi project so state is portable
-    // between local checkouts and GitHub-hosted runners.
+    // Keep the context relative to the Pulumi project and the Dockerfile
+    // relative to that context so state is portable across checkouts.
     const repositoryRoot = '../..';
     const tag = pulumi.interpolate`${args.region}-docker.pkg.dev/${args.project}/${args.repository.repositoryId}/vibelog-app:pulumi-${args.environment}`;
     this.image = new dockerBuild.Image(`${name}-build`, {
       context: { location: repositoryRoot },
-      dockerfile: { location: '../../packages/app/Dockerfile' },
+      dockerfile: { location: 'packages/app/Dockerfile' },
       platforms: [dockerBuild.Platform.Linux_amd64],
       tags: [tag],
       push: true,
