@@ -45,12 +45,6 @@ jobs:
       - name: Read deployment phase
         id: phase
         run: echo "value=$(pnpm exec pulumi config get vibelog:deploymentPhase --cwd packages/infra --stack EastSun5566/vibelog/prod)" >> "$GITHUB_OUTPUT"
-      - name: Reuse the currently deployed immutable image
-        if: steps.phase.outputs.value == 'application'
-        run: |
-          image="$(pnpm exec pulumi stack output deployedImage --cwd packages/infra --stack EastSun5566/vibelog/prod)"
-          test -n "$image"
-          pnpm exec pulumi config set vibelog:imageDigest "$image" --cwd packages/infra --stack EastSun5566/vibelog/prod
       - name: Preview infrastructure as JSON
         run: pnpm exec pulumi preview --cwd packages/infra --stack EastSun5566/vibelog/prod --non-interactive --json > "$RUNNER_TEMP/pulumi-preview.jsonl"
       - name: Reject destructive or public-state changes
