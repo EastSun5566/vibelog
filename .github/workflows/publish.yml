@@ -66,7 +66,11 @@ jobs:
       - name: Authenticate Docker to Artifact Registry
         run: printf '%s' "$GOOGLE_OAUTH_ACCESS_TOKEN" | docker login --username oauth2accesstoken --password-stdin "https://${GCP_REGION}-docker.pkg.dev"
       - name: Preview application deployment
-        run: pnpm exec pulumi preview --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --json > "$RUNNER_TEMP/preview.json"
+        run: |
+          if ! pnpm exec pulumi preview --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --json > "$RUNNER_TEMP/preview.json"; then
+            jq -r '.. | objects | select(.severity? == "error") | .message? // empty' "$RUNNER_TEMP/preview.json"
+            exit 1
+          fi
       - name: Guard application deployment
         run: node .github/scripts/guard-pulumi-preview.mjs "$RUNNER_TEMP/preview.json"
       - name: Update production stack
