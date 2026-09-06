@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.8.0](https://github.com/EastSun5566/vibelog/compare/v0.7.0...v0.8.0) (2026-09-06)
+
+### ⚠ BREAKING CHANGES
+
+* **app:** SQLite data, password auth, and persistent application disk layouts are no longer supported. Start from the PostgreSQL baseline.
+
+* **app:** adopt stateless PostgreSQL runtime ([0db1c23](https://github.com/EastSun5566/vibelog/commit/0db1c23d394753e2fa7632baf9f6d1367cbe778e))
+
+### Features
+
+* **infra:** add Pulumi cloud runtime and edge deployment ([6812bb9](https://github.com/EastSun5566/vibelog/commit/6812bb9ba3cbc813247432748af5b7428f5b3eec))
+* **infra:** establish protected production foundation ([d9fa466](https://github.com/EastSun5566/vibelog/commit/d9fa4661e3042be4297e8be02add272450977b25))
+* **infra:** manage complete production stack ([7f4bebd](https://github.com/EastSun5566/vibelog/commit/7f4bebd4a78ac717c7dcc92f7155c4094908504a))
+* **prod:** finish beta production rollout ([8e42bdf](https://github.com/EastSun5566/vibelog/commit/8e42bdfbef7614a2a25c2a9999067c9a7ab31ab6))
+* **selfhost:** add single-VPS Docker Compose deployment ([27c9f55](https://github.com/EastSun5566/vibelog/commit/27c9f5558be04ef5cf800b6333c3e2d29d5e5875))
+
+### Bug Fixes
+
+* **ci:** allow migration preview replacement ([211f286](https://github.com/EastSun5566/vibelog/commit/211f286e6f0b2cbae1dbeb524cda3fa4937262f7))
+* **ci:** keep Pulumi previews read-only ([13b24f4](https://github.com/EastSun5566/vibelog/commit/13b24f4771a0d884f00535a276a3e35725d7e31c))
+* **ci:** support Pulumi OIDC on individual tier ([0f321fa](https://github.com/EastSun5566/vibelog/commit/0f321fad39455c9be58df8dfd0561f03a169b593))
+* **deploy:** gate promotion on candidate worker smoke ([ffcd2ff](https://github.com/EastSun5566/vibelog/commit/ffcd2ff1ee5128e93b90c0706050b8b986ae890b))
+* **deps:** patch production dependency advisories ([967c2de](https://github.com/EastSun5566/vibelog/commit/967c2def5fd22eb05201d69329ed9520cd535182))
+* **infra:** bootstrap scoped service account admin ([8b28d5a](https://github.com/EastSun5566/vibelog/commit/8b28d5ac63a73ee41e01d494b3952345eb2f5099))
+* **infra:** make image paths checkout-independent ([8b3270c](https://github.com/EastSun5566/vibelog/commit/8b3270ce5c1dce951d6ddfd54e400bc2fb3484cf))
+* **infra:** resolve Dockerfile from build context ([1881905](https://github.com/EastSun5566/vibelog/commit/1881905b4c90e715472c8901054116e528cce0fc))
+* **infra:** resolve image paths from module ([193edf1](https://github.com/EastSun5566/vibelog/commit/193edf12fc653d6ec45e58d00e90e7360192bc00))
+* **runtime:** recover interrupted operations and fence stale leases ([3e95f43](https://github.com/EastSun5566/vibelog/commit/3e95f4397f4b27b37db6f9f3e1e072f4aa3f69cc))
 ## [0.7.0](https://github.com/EastSun5566/vibelog/compare/v0.6.0...v0.7.0) (2026-08-28)
 
 ### Features
