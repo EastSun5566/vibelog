@@ -6,9 +6,9 @@
     "node": ">=24.0.0"
   },
   "dependencies": {
-    "astro": "6.4.8",
-    "@astrojs/mdx": "^5.0.6",
-    "@astrojs/rss": "^4.0.12",
-    "@astrojs/sitemap": "^3.7.3"
+    "astro": "7.3.1",
+    "@astrojs/mdx": "^8.0.0",
+    "@astrojs/rss": "^4.0.19",
+    "@astrojs/sitemap": "^3.7.4"
   }
 }
