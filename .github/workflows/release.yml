@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/eastsun5566/vibelog-app
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Validate release version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! printf '%s' "$TAG" | grep --extended-regexp --quiet '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Release tag must match v<major>.<minor>.<patch>."
+            exit 1
+          fi
+          version="${TAG#v}"
+          node --input-type=module - "$version" <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const version = process.argv[2];
+          const manifests = [
+            'package.json',
+            'packages/core/package.json',
+            'packages/app/package.json',
+            'packages/edge/package.json',
+            'packages/infra/package.json',
+          ];
+          const mismatches = manifests.flatMap((file) => {
+            const actual = JSON.parse(readFileSync(file, 'utf8')).version;
+            return actual === version ? [] : [`${file}: expected ${version}, found ${String(actual)}`];
+          });
+          if (mismatches.length > 0) {
+            console.error(`Release version mismatch:\n${mismatches.join('\n')}`);
+            process.exit(1);
+          }
+          NODE
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - name: Require tag commit on main
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Require successful CI for exact tag commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ci_passed="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+            -f branch=main -f event=push -f head_sha="$GITHUB_SHA" -F per_page=100 \
+            --jq '.workflow_runs | any(.head_sha == "'"$GITHUB_SHA"'" and .status == "completed" and .conclusion == "success")')"
+          if test "$ci_passed" != true; then
+            echo "::error::CI must finish successfully for ${GITHUB_SHA} on main before release."
+            exit 1
+          fi
+
+  image:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish versioned multi-architecture image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/app/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.IMAGE }}:${{ needs.validate.outputs.version }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
+      - name: Attest image provenance
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - name: Verify architectures and anonymous pull
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE:$VERSION" | grep --quiet 'linux/amd64'
+          docker buildx imagetools inspect "$IMAGE:$VERSION" | grep --quiet 'linux/arm64'
+          docker logout ghcr.io
+          docker pull --platform linux/amd64 "$IMAGE:$VERSION"
+
+  release:
+    needs: [validate, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Create or reuse GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release $TAG already exists."
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$TAG"
+          fi
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)" = "$TAG"

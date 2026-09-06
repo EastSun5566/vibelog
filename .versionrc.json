@@ -2,11 +2,15 @@
   "packageFiles": [
     "package.json",
     "packages/core/package.json",
-    "packages/app/package.json"
+    "packages/app/package.json",
+    "packages/edge/package.json",
+    "packages/infra/package.json"
   ],
   "bumpFiles": [
     "package.json",
     "packages/core/package.json",
-    "packages/app/package.json"
+    "packages/app/package.json",
+    "packages/edge/package.json",
+    "packages/infra/package.json"
   ]
 }
