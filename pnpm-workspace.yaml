@@ -13,7 +13,7 @@ overrides:
   "js-yaml@4.3.0": 4.3.1
   "mdast-util-to-hast@<13.2.1": 13.2.1
   "picomatch@<2.3.2": 2.3.2
-  "postcss@<8.5.10": 8.5.16
+  "postcss@<8.5.10": 8.5.23
   "svgo@4.0.1": 4.0.2
 
 onlyBuiltDependencies:
