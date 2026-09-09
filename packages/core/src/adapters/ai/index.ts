@@ -1,7 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { Type, createModels, createProvider, validateToolCall, type Api, type Context, type Model, type Models, type MutableModels, type ProviderEnv, type ProviderStreams, type SimpleStreamOptions, type Tool } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { builtinModels, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all';
-import type { AiProvider, ThemeConfig, ThemeProposalInput } from '../../types.js';
+import type { AiGenerationContext, AiProvider, ThemeConfig, ThemeProposalInput } from '../../types.js';
 import { validateThemeConfig } from '../../theme.js';
 import { logger } from '../../core/index.js';
 
@@ -9,6 +10,8 @@ const THEME_TOOL_NAME = 'propose_theme';
 const OLLAMA_PROVIDER = 'ollama';
 const OLLAMA_BASE_URL = 'http://localhost:11434/v1';
 const KEYLESS_OLLAMA_TRANSPORT_KEY = 'ollama-local';
+const OPENCODE_PROVIDERS = new Set(['opencode', 'opencode-go']);
+const VIBELOG_USER_AGENT = 'VibeLog';
 const enumType = <T extends string>(values: readonly T[]) => Type.Union(values.map((value) => Type.Literal(value)));
 const themeTool: Tool = {
   name: THEME_TOOL_NAME,
@@ -51,6 +54,9 @@ function safeProviderError(error: unknown): string {
   const secrets = Object.entries(process.env).flatMap(([name, value]) => value && value.length >= 8 && /(?:token|secret|api.?key|password)/i.test(name) ? [value] : []);
   return secrets.reduce((output, secret) => output.replaceAll(secret, '[REDACTED]'), message).replaceAll(/(?:sk-|Bearer\s+)[A-Za-z0-9._-]+/gi, '[REDACTED]').slice(0, 500);
 }
+export class AiProviderRequestError extends Error {
+  constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = 'AiProviderRequestError'; }
+}
 export function getAiProviderNames(): string[] { return [...getBuiltinProviders(), OLLAMA_PROVIDER]; }
 
 export class PiAiProvider implements AiProvider {
@@ -62,15 +68,21 @@ export class PiAiProvider implements AiProvider {
     this.model = model;
     logger.info(`AI provider: ${name} (${modelId})`);
   }
-  private async generateOnce(input: ThemeProposalInput, previousError?: string): Promise<ThemeConfig> {
+  private async generateOnce(input: ThemeProposalInput, sessionId: string, previousError?: string): Promise<ThemeConfig> {
     const context: Context = {
       systemPrompt: `You are VibeLog's theme designer. Call ${THEME_TOOL_NAME} exactly once with a complete theme, including headerStyle, postListStyle, and codeBlockStyle. Never return CSS, HTML, fonts, URLs, or plain text. Ensure text and accent colors each have WCAG AA contrast against the background.${previousError ? ` Previous proposal error: ${previousError}. Correct it.` : ''}`,
       messages: [{ role: 'user', content: JSON.stringify(input), timestamp: Date.now() }], tools: [themeTool],
     };
     let response;
-    try { response = await this.models.complete(this.model, context, { temperature: 0.2, env: requestEnv(this.name) }); }
-    catch (error) { throw new Error(`AI provider request failed: ${safeProviderError(error)}`); }
-    if (response.stopReason === 'error' || response.stopReason === 'aborted') throw new Error(`AI provider request failed: ${safeProviderError(response.errorMessage ?? response.stopReason)}`);
+    const openCode = OPENCODE_PROVIDERS.has(this.name);
+    try {
+      response = await this.models.complete(this.model, context, {
+        temperature: 0.2,
+        env: requestEnv(this.name),
+        ...(openCode ? { sessionId, headers: { 'user-agent': VIBELOG_USER_AGENT, 'x-opencode-session': sessionId } } : {}),
+      });
+    } catch (error) { throw new AiProviderRequestError(`AI provider request failed: ${safeProviderError(error)}`, { cause: error }); }
+    if (response.stopReason === 'error' || response.stopReason === 'aborted') throw new AiProviderRequestError(`AI provider request failed: ${safeProviderError(response.errorMessage ?? response.stopReason)}`);
     if (response.stopReason === 'length') throw new Error('AI response exceeded the model output limit.');
     const toolCalls = response.content.filter((block) => block.type === 'toolCall');
     if (response.stopReason !== 'toolUse' || toolCalls.length !== 1) throw new Error(`AI must call ${THEME_TOOL_NAME} exactly once.`);
@@ -81,12 +93,16 @@ export class PiAiProvider implements AiProvider {
     catch { throw new Error(`AI returned invalid arguments for ${THEME_TOOL_NAME}.`); }
     return validateThemeConfig(candidate);
   }
-  async generate(input: ThemeProposalInput): Promise<ThemeConfig> {
-    try { return await this.generateOnce(input); }
+  async generate(input: ThemeProposalInput, context?: AiGenerationContext): Promise<ThemeConfig> {
+    const sessionId = context?.sessionId ?? randomUUID();
+    try { return await this.generateOnce(input, sessionId); }
     catch (firstError) {
-      if (firstError instanceof Error && (firstError.message.startsWith('AI provider request failed:') || firstError.message === 'AI response exceeded the model output limit.')) throw firstError;
-      try { return await this.generateOnce(input, safeProviderError(firstError)); }
-      catch { throw new Error('AI could not create a safe theme. Your current design was not changed.'); }
+      if (firstError instanceof AiProviderRequestError) throw firstError;
+      try { return await this.generateOnce(input, sessionId, safeProviderError(firstError)); }
+      catch (secondError) {
+        if (secondError instanceof AiProviderRequestError) throw secondError;
+        throw new Error('AI could not create a safe theme. Your current design was not changed.');
+      }
     }
   }
 }

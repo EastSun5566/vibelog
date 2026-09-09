@@ -16,6 +16,7 @@ export {
 export type { HackMdSourceErrorCode } from './adapters/content/index.js';
 
 export {
+  AiProviderRequestError,
   PiAiProvider,
   createAiProvider,
   getAiProviderNames,
@@ -29,6 +30,7 @@ export type {
   ContentSource,
   ThemeConfig,
   ThemeProposalInput,
+  AiGenerationContext,
   ThemeColors,
   ThemeHeaderStyle,
   ThemePostListStyle,

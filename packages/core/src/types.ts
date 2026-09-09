@@ -77,8 +77,12 @@ export interface ThemeProposalInput {
   prompt: string;
 }
 
+export interface AiGenerationContext {
+  sessionId: string;
+}
+
 export interface AiProvider {
   readonly name: string;
   readonly modelId: string;
-  generate(input: ThemeProposalInput): Promise<ThemeConfig>
+  generate(input: ThemeProposalInput, context?: AiGenerationContext): Promise<ThemeConfig>
 }
