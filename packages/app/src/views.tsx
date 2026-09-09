@@ -27,7 +27,7 @@ export function document(title: string, content: unknown, session?: AppSession, 
               <input type="hidden" name="csrfToken" value={session.csrfToken}/>
               <button class="btn" data-variant="outline" data-size="compact" type="submit">Sign out</button>
             </form>
-          </> : null}
+          </> : <a class="btn" data-variant="outline" data-size="compact" href="/auth/login">Sign in</a>}
           </nav>
         </header>
         <main class="app-main">{content}</main>
@@ -42,30 +42,30 @@ export function landingPage() {
     <header class="landing-hero">
       <p class="auth-kicker">Open beta</p>
       <h1>Keep writing in HackMD.<br/>Publish a real blog.</h1>
-      <p class="landing-intro">VibeLog turns your public HackMD articles into a fast static site without moving your writing workflow.</p>
+      <p class="landing-intro">Turn your public articles into a fast, customizable site without moving your writing workflow.</p>
       <div class="landing-actions">
-        <a class="btn" href="/auth/login">Create your blog</a>
-        <a class="btn" data-variant="outline" href="/auth/login">Sign in</a>
+        <a class="btn" href="/auth/login">Start publishing</a>
       </div>
     </header>
     <ul class="landing-points">
       <li><strong>Keep your workflow</strong><span>Write and publish in HackMD as usual.</span></li>
-      <li><strong>Ship a fast static blog</strong><span>Get RSS, metadata, archives, and a username subdomain.</span></li>
-      <li><strong>Preview and roll back safely</strong><span>Review every draft, then restore any retained release. AI themes stay optional.</span></li>
+      <li><strong>Review before publishing</strong><span>Content changes stay in a private preview until you approve them.</span></li>
+      <li><strong>Make it yours</strong><span>Choose a theme, publish to your subdomain, and restore earlier releases.</span></li>
     </ul>
   </section>);
 }
 
 export function loginPage(input: { github: boolean; google: boolean; message?: string; sent?: boolean }) {
+  const hasSocialLogin = input.github || input.google;
   return document('Sign in', <section class="auth-shell card">
-    <header><p class="auth-kicker">Publishing desk</p><h1>Sign in to VibeLog</h1><p>Use a social account or a one-time email link.</p></header>
+    <header><p class="auth-kicker">Welcome back</p><h1>Sign in to VibeLog</h1><p>{hasSocialLogin ? 'Choose an account or use a one-time email link.' : 'We’ll email you a one-time sign-in link.'}</p></header>
     <section class="stack">
       {input.message ? <div class="alert" data-variant="destructive" role="alert"><section>{input.message}</section></div> : null}
       {input.sent ? <div class="alert" role="status"><section>Check your email. The link expires in 10 minutes.</section></div> : null}
       {input.github ? <form method="post" action="/auth/oauth/github"><button class="btn" data-variant="outline" type="submit">Continue with GitHub</button></form> : null}
       {input.google ? <form method="post" action="/auth/oauth/google"><button class="btn" data-variant="outline" type="submit">Continue with Google</button></form> : null}
       <form class="stack" method="post" action="/auth/magic-link">
-        <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" required maxlength={320} autocomplete="email" autofocus/></div>
+        <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" required maxlength={320} autocomplete="email"/></div>
         <button class="btn" type="submit">Email me a sign-in link</button>
       </form>
     </section>
@@ -77,37 +77,26 @@ export function guidePage(session?: AppSession) {
     <header>
       <p class="auth-kicker">Writer guide</p>
       <h1>From HackMD to your own blog</h1>
-      <p>VibeLog imports public HackMD articles, builds a private preview, and publishes only when you approve a release.</p>
-      <a class="btn" href={session ? '/editor' : '/auth/login'}>{session ? 'Open your editor' : 'Create your blog'}</a>
+      <p>Connect your public writing, review the result, and decide when it goes live.</p>
+      <a class="btn" href={session ? '/editor' : '/auth/login'}>{session ? 'Open your editor' : 'Start publishing'}</a>
     </header>
     <section aria-labelledby="first-release">
       <h2 id="first-release">Publish your first release</h2>
       <ol>
-        <li>Create an account. Your username becomes your permanent VibeLog subdomain.</li>
-        <li>Enter your public HackMD username and blog language.</li>
-        <li>Review the imported articles and exclude anything that should not appear.</li>
-        <li>Set the blog title and description, then review the static preview.</li>
-        <li>Optionally adjust safe theme controls or ask AI for a visual direction.</li>
-        <li>Publish the release when the preview is ready.</li>
+        <li>Connect a public HackMD profile and choose a blog address.</li>
+        <li>Choose articles, set the blog details, and review the private preview.</li>
+        <li>Optionally adjust the theme, then publish when the draft is ready.</li>
       </ol>
       <p>Only public, published HackMD notes are imported. A failed sync never replaces the last working draft or live release.</p>
     </section>
     <section aria-labelledby="updates">
       <h2 id="updates">Update and restore safely</h2>
-      <ul>
-        <li><strong>Sync HackMD again</strong> rebuilds the draft from current public content.</li>
-        <li>Syncing never changes the live site; publishing is always explicit.</li>
-        <li>Release history keeps the live release plus the 19 newest inactive releases.</li>
-        <li>Restoring changes only the live site. Your draft and preview theme remain unchanged.</li>
-      </ul>
+      <p>Syncing rebuilds only the draft. Publishing is always explicit, and release history lets you restore an earlier live version without changing your draft.</p>
     </section>
     <section aria-labelledby="ai-privacy">
       <h2 id="ai-privacy">AI themes and privacy</h2>
       <p>AI receives only your blog identity, current theme, and design prompt. Article bodies are never sent to the AI provider, and AI cannot write arbitrary CSS or HTML.</p>
-    </section>
-    <section aria-labelledby="account-safety">
-      <h2 id="account-safety">Account safety</h2>
-      <p>VibeLog does not store passwords. Sign in with GitHub, Google, or a short-lived email link.</p>
+      <p>VibeLog stores no passwords. A short-lived email link is always available for sign-in.</p>
     </section>
   </article>, session);
 }
@@ -135,16 +124,16 @@ function OperationOutput({ operation, successUrl }: { operation?: OperationRecor
   </div>;
 }
 
-export function onboardingPage(session: AppSession, blog: BlogRecord | null, operation: OperationRecord | null) {
+export function onboardingPage(session: AppSession, blog: BlogRecord | null, operation: OperationRecord | null, appHostname: string) {
   const failed = blog?.state === 'failed' ? blog.lastError : null;
   const busy = operation?.status === 'queued' || operation?.status === 'running';
   return document('Connect HackMD', <section class="auth-shell card">
-    <header><p class="auth-kicker">Step 1 of 1</p><h1>Connect your HackMD</h1><p id="hackmd-help">Enter a public HackMD username. VibeLog imports only published articles anyone can read.</p></header>
+    <header><p class="auth-kicker">Start publishing</p><h1>Connect your HackMD</h1><p id="hackmd-help">VibeLog imports only published articles anyone can read.</p></header>
     <section class="stack">
     {failed ? <div id="hackmd-error" class="alert" data-variant="destructive" role="alert"><section>{failed}</section></div> : null}
     <form class="stack" method="post" action="/actions/blog/connect" data-operation data-success-url="/editor" aria-busy={busy ? 'true' : undefined}>
       <input type="hidden" name="csrfToken" value={session.csrfToken}/>
-      <div class="field"><label for="username">Blog handle</label><input id="username" name="username" required minlength={3} maxlength={32} pattern="[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])" value={blog?.username ?? ''} readonly={Boolean(blog)}/><p>This becomes your public subdomain and is separate from your login identity.</p></div>
+      <div class="field"><label for="username">Blog address</label><input id="username" name="username" required minlength={3} maxlength={32} pattern="[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])" value={blog?.username ?? ''} readonly={Boolean(blog)} data-blog-handle/><p>Your site will be <strong data-blog-hostname data-host-suffix={appHostname}>{blog?.username ?? 'your-name'}.{appHostname}</strong>.</p></div>
       <div class="field"><label for="hackmdUsername">HackMD username</label><input
         id="hackmdUsername"
         name="hackmdUsername"
@@ -153,7 +142,7 @@ export function onboardingPage(session: AppSession, blog: BlogRecord | null, ope
         value={blog?.hackmdUsername ?? ''}
         aria-describedby={`hackmd-help${failed ? ' hackmd-error' : ''}`}
       /></div>
-      <div class="field"><label for="blogLanguage">Blog language</label><input id="blogLanguage" name="language" required pattern="[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*" value={blog?.language ?? 'en'} aria-describedby="blog-language-help"/><p id="blog-language-help">A BCP 47 tag such as en, en-US, or zh-Hant.</p></div>
+      <div class="field"><label for="blogLanguage">Blog language</label><input id="blogLanguage" name="language" required pattern="[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*" value={blog?.language ?? 'en'} list="language-suggestions" aria-describedby="blog-language-help"/><datalist id="language-suggestions"><option value="en"/><option value="zh-Hant"/><option value="ja"/><option value="ko"/></datalist><p id="blog-language-help">Choose a suggestion or enter a language tag such as en-US.</p></div>
       <button class="btn" type="submit" disabled={busy}>{blog ? 'Retry sync' : 'Sync and build preview'}</button>
       <OperationOutput operation={operation ?? undefined}/>
     </form>
@@ -251,7 +240,7 @@ function PublicationSummary({ blog, activeTheme, published, liveTheme, hasChange
         {diff.identityChanges.length ? <p>Blog {diff.identityChanges.map((field) => identityLabels[field]).join(', ')} changed.</p> : null}
         {diff.themeChanged ? <p>Theme: {liveTheme?.description ?? 'Published theme'} → {activeTheme.description}</p> : null}
         {diff.rebuilt ? <p>The draft was rebuilt, including template upgrades.</p> : null}
-        {articleChangeCount ? <details class="publication-details" open>
+        {articleChangeCount ? <details class="publication-details">
           <summary>Article changes ({articleChangeCount})</summary>
           <div class="publication-change-list">
             <PublicationArticles label="Added" posts={diff.added} variant="added"/>
@@ -282,46 +271,50 @@ export function editorPage(input: EditorPageInput) {
   const themeSuccessUrl = editorUrlWithPreviewPath(input.previewPath);
 
   return document('Edit blog', <div class="editor">
-    <section class="controls" aria-label="Blog controls">
-      <header class="workspace-summary">
+    <header class="workspace-summary">
+      <div>
         <p class="workspace-kicker">Publishing workspace</p>
         <div class="workspace-title-row">
           <h1 class="workspace-title">{blog.title ?? blog.username}</h1>
           <span class="badge" data-variant={publication.variant}>{publication.label}</span>
         </div>
-        <p class="workspace-meta">Source: @{blog.hackmdUsername} · {blog.state === 'syncing' ? 'Syncing' : blog.lastError ? 'Last sync failed; the existing draft is safe' : 'Content synced'}</p>
-        {blog.lastError ? <div class="alert" data-variant="destructive" role="alert"><section>{blog.lastError}</section></div> : null}
-        {published ? <div class="workspace-links"><a href={input.publicUrl} target="_blank" rel="noreferrer">View published site</a><span class="muted">Last published: {new Date(published.createdAt).toLocaleString('en')}</span></div> : null}
-      </header>
+      </div>
+      <div class="workspace-status">
+        <p class="workspace-meta">@{blog.hackmdUsername} on HackMD · {blog.state === 'syncing' ? 'Syncing' : blog.lastError ? 'Last sync failed; your existing draft is safe' : 'Content synced'}</p>
+        {published ? <div class="workspace-links"><a href={input.publicUrl} target="_blank" rel="noreferrer">View live site</a><span class="muted">Published {new Date(published.createdAt).toLocaleString('en')}</span></div> : null}
+      </div>
+      {blog.lastError ? <div class="alert" data-variant="destructive" role="alert"><section>{blog.lastError}</section></div> : null}
+    </header>
 
-      <section class="card section-card">
-        <header><h2>Blog details</h2><p>Used by the site title, search metadata, Open Graph, RSS, and document language. Saving also fetches the latest HackMD content.</p></header>
-        <section><form method="post" action="/actions/blog/identity" data-operation aria-busy={identityOperation ? 'true' : undefined}>
-          <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
-          <div class="field">
-            <label for="blogTitle">Blog title</label>
-            <input id="blogTitle" name="title" required minlength={1} maxlength={80} value={blog.title ?? ''} aria-describedby="blog-title-help" aria-errormessage="blog-title-error"/>
-            <span id="blog-title-error" class="validation-error"><span aria-hidden="true">!</span> Enter a title between 1 and 80 characters.</span>
-            <p id="blog-title-help">Up to 80 characters.</p>
-          </div>
-          <div class="field">
-            <label for="blogDescription">Blog description</label>
-            <textarea id="blogDescription" name="description" maxlength={240} aria-describedby="blog-description-help">{blog.description ?? ''}</textarea>
-            <p id="blog-description-help">Up to 240 characters; optional.</p>
-          </div>
-          <div class="field"><label for="blogLanguage">Blog language</label><input id="blogLanguage" name="language" required pattern="[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*" value={blog.language} aria-describedby="blog-language-help"/><p id="blog-language-help">A BCP 47 tag such as en, en-US, or zh-Hant.</p></div>
-          <button class="btn" type="submit" disabled={busy}>Save and rebuild draft</button>
-          <OperationOutput operation={identityOperation}/>
-        </form></section>
-      </section>
+    <section class="preview-panel" aria-label="Blog preview">
+      <div class="preview-heading">
+        <div><p class="preview-label">Draft preview</p><small class="muted">Theme controls update here. Content changes require a sync.</small></div>
+        <span class="preview-address">{blog.username}.{input.appHostname}</span>
+      </div>
+      <div class="preview-frame">
+        {input.previewUrl
+          ? <iframe class="preview" src={input.previewUrl} data-preview-url={input.previewUrl} data-preview-origin={input.previewOrigin} title={`Live preview of ${blog.title ?? blog.username}`} sandbox="allow-same-origin allow-scripts"></iframe>
+          : <div class="preview-empty"><p>Your preview appears after the first content sync.</p><a href="#content">Go to content</a></div>}
+      </div>
+    </section>
 
-      <section class="card section-card">
-        <header><h2>Sync content</h2><p>{blog.lastSyncedAt ? <>Last successful sync: <time datetime={blog.lastSyncedAt}>{new Date(blog.lastSyncedAt).toLocaleString('en')}</time></> : 'No sync summary yet. Sync to load the article list.'}</p></header>
-        <section class="content-summary">
-          {blog.contentManifest ? <form method="post" action="/actions/blog/selection" data-operation aria-busy={selectionOperation ? 'true' : undefined}>
-            <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
-            <details>
-              <summary>Imported articles ({blog.contentManifest.length}) · {includedPosts} selected</summary>
+    <section class="controls" aria-label="Blog controls">
+      <section class="workflow-section" id="content" aria-labelledby="content-title">
+        <header class="workflow-heading"><span class="step-number" aria-hidden="true">1</span><div><h2 id="content-title">Content</h2><p>Sync public articles and choose what belongs on your blog.</p></div></header>
+        <div class="card workflow-card">
+          <section class="action-row">
+            <div><strong>HackMD source</strong><p class="muted">{blog.lastSyncedAt ? <>Last synced <time datetime={blog.lastSyncedAt}>{new Date(blog.lastSyncedAt).toLocaleString('en')}</time></> : 'No successful sync yet.'}</p></div>
+            <form class="compact-stack action-form" method="post" action="/actions/blog/sync" data-operation aria-busy={contentOperation ? 'true' : undefined}>
+              <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
+              <button class="btn" data-variant="outline" type="submit" disabled={busy}>Sync now</button>
+              <OperationOutput operation={contentOperation}/>
+            </form>
+          </section>
+
+          {blog.contentManifest ? <details class="editor-disclosure">
+            <summary><span>Articles</span><small>{includedPosts} of {blog.contentManifest.length} included</small></summary>
+            <div class="disclosure-body"><form method="post" action="/actions/blog/selection" data-operation aria-busy={selectionOperation ? 'true' : undefined}>
+              <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
               {blog.contentManifest.length > 0 ? <fieldset class="fieldset content-list">
                 <legend>Select articles for the blog</legend>
                 {blog.contentManifest.map((post) => <label class="content-choice">
@@ -340,123 +333,136 @@ export function editorPage(input: EditorPageInput) {
                   </span>
                 </label>)}
               </fieldset> : <p class="muted">This sync contains no articles.</p>}
-            </details>
-            <p class="field-hint">New public articles are selected by default. Changes affect only the draft until you publish.</p>
-            <button class="btn" type="submit" disabled={busy || blog.contentManifest.length === 0}>Save selection and rebuild draft</button>
-            <OperationOutput operation={selectionOperation}/>
-          </form> : null}
-        </section>
-        <footer><form class="stack" method="post" action="/actions/blog/sync" data-operation aria-busy={contentOperation ? 'true' : undefined}>
-          <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
-          <button class="btn" data-variant="outline" type="submit" disabled={busy}>Sync HackMD again</button>
-          <OperationOutput operation={contentOperation}/>
-        </form></footer>
-      </section>
+              <p class="field-hint">New public articles are included by default. Your live site changes only when you publish.</p>
+              <button class="btn" type="submit" disabled={busy || blog.contentManifest.length === 0}>Save article selection</button>
+              <OperationOutput operation={selectionOperation}/>
+            </form></div>
+          </details> : null}
 
-      <section class="card section-card studio-card">
-        <header><p class="workspace-kicker">Optional AI</p><h2>Theme Studio</h2><p>Describe the reading experience, then refine it with safe controls. AI never edits articles or writes arbitrary CSS.</p></header>
-        <section><form method="post" action="/actions/theme/apply" data-operation data-mixed-actions data-theme-studio>
-          <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
-          <input type="hidden" name="previewToken" value={input.previewToken}/>
-          <input type="hidden" name="previewPath" value={input.previewPath} data-preview-path-input/>
-          <div class="field"><label for="prompt">Describe the feel you want</label><textarea id="prompt" name="prompt" maxlength={1000} placeholder="For example: make long articles feel like a restrained independent magazine"></textarea></div>
-          <div class="prompt-starters" aria-label="Prompt suggestions">
-            {['A restrained independent magazine', 'Make long articles easier to read', 'Keep it minimal but add personality', 'A dark theme for night reading'].map((prompt) => <button class="btn prompt-chip" data-variant="secondary" data-size="compact" type="button" data-prompt-starter={prompt} aria-controls="prompt">{prompt}</button>)}
-          </div>
-          <button class="btn studio-primary-action" type="submit" formaction="/actions/theme/generate" data-operation-submit disabled={busy}>Generate with AI</button>
-
-          <details class="theme-controls">
-            <summary>Adjust safe theme controls</summary>
-            <div class="theme-control-stack">
-              <ChoiceGroup legend="Layout preset" name="preset" options={CONTROL_OPTIONS.preset} value={controls.preset}/>
-              <ChoiceGroup legend="Header" name="headerStyle" options={CONTROL_OPTIONS.headerStyle} value={controls.headerStyle}/>
-              <ChoiceGroup legend="Article list" name="postListStyle" options={CONTROL_OPTIONS.postListStyle} value={controls.postListStyle}/>
-              <ChoiceGroup legend="Code blocks" name="codeBlockStyle" options={CONTROL_OPTIONS.codeBlockStyle} value={controls.codeBlockStyle}/>
-              <fieldset class="fieldset">
-                <legend>Color palette</legend>
-                {!controls.palette ? <p class="muted">The current palette came from AI. Choose one below to replace it.</p> : null}
-                <div class="choice-grid">{Object.entries(THEME_PALETTES).map(([name, palette]) => <label class={`choice palette-choice palette-${name}`}>
-                  <span class="palette-label"><input type="radio" name="palette" value={name} checked={controls.palette === name} data-theme-control/> {palette.label}</span>
-                  <span class="swatches" aria-hidden="true"><span class="swatch"></span><span class="swatch"></span><span class="swatch"></span></span>
-                </label>)}</div>
-              </fieldset>
-              <ChoiceGroup legend="Body font" name="bodyFont" options={CONTROL_OPTIONS.bodyFont} value={controls.bodyFont}/>
-              <ChoiceGroup legend="Heading font" name="headingFont" options={CONTROL_OPTIONS.headingFont} value={controls.headingFont}/>
-              <ChoiceGroup legend="Type scale" name="scale" options={CONTROL_OPTIONS.scale} value={controls.scale}/>
-              <ChoiceGroup legend="Content width" name="contentWidth" options={CONTROL_OPTIONS.contentWidth} value={controls.contentWidth}/>
-              <ChoiceGroup legend="Spacing" name="density" options={CONTROL_OPTIONS.density} value={controls.density}/>
-              <ChoiceGroup legend="Corners" name="radius" options={CONTROL_OPTIONS.radius} value={controls.radius}/>
-            </div>
-          </details>
-          <button class="btn" data-variant="outline" type="submit" disabled={busy}>Save as a new version</button>
-          <p class="unsaved-note" data-unsaved-note hidden>These theme changes are not saved. Save before publishing.</p>
-          <OperationOutput operation={input.operation?.type === 'generate_theme' ? input.operation : undefined} successUrl={themeSuccessUrl}/>
-        </form></section>
-      </section>
-
-      <section class="card section-card">
-        <header><h2>Theme versions</h2><p>Every AI or manual save stays available as a version you can preview.</p></header>
-        <section><details class="history">
-          <summary>Theme history ({themes.length})</summary>
-          <div class="revision-list">{themes.map((theme) => <div class="revision">
-            <div>
-              <strong>{theme.description}</strong>
-              <div class="markers">
-                <span class="badge" data-variant="neutral">{SOURCE_LABEL[theme.source]}</span>
-                {theme.active ? <span class="badge" data-variant="pending">Previewing</span> : null}
-                {published?.themeRevisionId === theme.id ? <span class="badge" data-variant="live">Published</span> : null}
-              </div>
-              <small class="muted">{new Date(theme.createdAt).toLocaleString('zh-TW')}</small>
-            </div>
-            {theme.active ? null : <form method="post" action={`/actions/theme/${theme.id}/activate`}>
+          <details class="editor-disclosure">
+            <summary><span>Blog details</span><small>Title, description, and language</small></summary>
+            <div class="disclosure-body"><form method="post" action="/actions/blog/identity" data-operation aria-busy={identityOperation ? 'true' : undefined}>
               <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
-              <input type="hidden" name="previewPath" value={input.previewPath} data-preview-path-input/>
-              <button class="btn" data-variant="outline" data-size="compact" type="submit" disabled={busy}>Preview this version</button>
-            </form>}
-          </div>)}</div>
-        </details></section>
-      </section>
-
-      <section class="card section-card">
-        <header><h2>Publish</h2><p>Publishing freezes the current content and theme. The live site stays unchanged until the next release.</p></header>
-        <section><PublicationSummary blog={blog} activeTheme={activeTheme} published={published} liveTheme={liveTheme} hasChanges={hasChanges}/>
-        <form class="stack" method="post" action="/actions/publish" data-operation>
-          <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
-          <input type="hidden" name="previewToken" value={input.previewToken}/>
-          <button class="btn" type="submit" data-publish-button disabled={!blog.draftArtifactId || !hasChanges || busy}>{publishLabel} to {blog.username}.{input.appHostname}</button>
-          <OperationOutput operation={input.operation?.type === 'publish' ? input.operation : undefined}/>
-        </form>
-        {releases.length > 0 ? <details class="history">
-          <summary>Release history ({releases.length}/20)</summary>
-          <div class="revision-list">{releases.map((release) => {
-            const theme = themesById.get(release.themeRevisionId);
-            return <div class="revision">
-              <div>
-                <strong>{theme?.description ?? 'Published theme'}</strong>
-                <div class="markers">
-                  {theme ? <span class="badge" data-variant="neutral">{SOURCE_LABEL[theme.source]}</span> : null}
-                  {release.active ? <span class="badge" data-variant="live">Live now</span> : null}
-                </div>
-                <small class="muted">{new Date(release.createdAt).toLocaleString('zh-TW')}</small>
+              <div class="field">
+                <label for="blogTitle">Blog title</label>
+                <input id="blogTitle" name="title" required minlength={1} maxlength={80} value={blog.title ?? ''} aria-describedby="blog-title-help" aria-errormessage="blog-title-error"/>
+                <span id="blog-title-error" class="validation-error"><span aria-hidden="true">!</span> Enter a title between 1 and 80 characters.</span>
+                <p id="blog-title-help">Up to 80 characters.</p>
               </div>
-              {release.active ? null : <form method="post" action={`/actions/releases/${release.id}/activate`}>
-                <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
-                <button class="btn" data-variant="outline" data-size="compact" type="submit" disabled={busy}>Restore as live</button>
-              </form>}
-            </div>;
-          })}</div>
-        </details> : null}</section>
+              <div class="field">
+                <label for="blogDescription">Blog description</label>
+                <textarea id="blogDescription" name="description" maxlength={240} aria-describedby="blog-description-help">{blog.description ?? ''}</textarea>
+                <p id="blog-description-help">Optional, up to 240 characters.</p>
+              </div>
+              <div class="field"><label for="blogLanguage">Blog language</label><input id="blogLanguage" name="language" required pattern="[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*" value={blog.language} list="editor-language-suggestions" aria-describedby="blog-language-help"/><datalist id="editor-language-suggestions"><option value="en"/><option value="zh-Hant"/><option value="ja"/><option value="ko"/></datalist><p id="blog-language-help">Choose a suggestion or enter a language tag such as en-US.</p></div>
+              <button class="btn" type="submit" disabled={busy}>Save blog details</button>
+              <OperationOutput operation={identityOperation}/>
+            </form></div>
+          </details>
+        </div>
       </section>
-    </section>
 
-    <section class="preview-panel" aria-label="Blog preview">
-      <div class="preview-heading"><div><p class="preview-label">Draft preview</p><small class="muted">Theme controls update live; content changes require a sync.</small></div></div>
-      <div class="preview-frame">
-        <div class="preview-chrome">{blog.username}.{input.appHostname}</div>
-        {input.previewUrl
-          ? <iframe class="preview" src={input.previewUrl} data-preview-url={input.previewUrl} data-preview-origin={input.previewOrigin} title={`Live preview of ${blog.title ?? blog.username}`} sandbox="allow-same-origin allow-scripts"></iframe>
-          : <div class="preview-empty card"><section><p>Your preview appears here after the first content sync.</p></section></div>}
-      </div>
+      <section class="workflow-section" id="appearance" aria-labelledby="appearance-title">
+        <header class="workflow-heading"><span class="step-number" aria-hidden="true">2</span><div><h2 id="appearance-title">Appearance</h2><p>Keep the current theme or shape a new version.</p></div></header>
+        <div class="card workflow-card">
+          <section class="theme-summary"><div><strong>{activeTheme.description}</strong><p class="muted">Current draft theme</p></div><span class="badge" data-variant="neutral">{SOURCE_LABEL[activeTheme.source]}</span></section>
+          <form method="post" action="/actions/theme/apply" data-operation data-mixed-actions data-theme-studio>
+            <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
+            <input type="hidden" name="previewToken" value={input.previewToken}/>
+            <input type="hidden" name="previewPath" value={input.previewPath} data-preview-path-input/>
+
+            <details class="editor-disclosure">
+              <summary><span>Generate with AI</span><small>Optional visual direction</small></summary>
+              <div class="disclosure-body">
+                <div class="field"><label for="prompt">Describe the reading experience</label><textarea id="prompt" name="prompt" maxlength={1000} placeholder="A restrained independent magazine for long articles"></textarea><p>AI sees your blog details, theme, and this prompt. It never receives article bodies.</p></div>
+                <button class="btn" data-variant="outline" type="submit" formaction="/actions/theme/generate" data-operation-submit disabled={busy}>Generate theme</button>
+              </div>
+            </details>
+
+            <details class="editor-disclosure">
+              <summary><span>Fine-tune theme</span><small>Layout, type, color, and spacing</small></summary>
+              <div class="disclosure-body theme-control-stack">
+                <ChoiceGroup legend="Layout preset" name="preset" options={CONTROL_OPTIONS.preset} value={controls.preset}/>
+                <ChoiceGroup legend="Header" name="headerStyle" options={CONTROL_OPTIONS.headerStyle} value={controls.headerStyle}/>
+                <ChoiceGroup legend="Article list" name="postListStyle" options={CONTROL_OPTIONS.postListStyle} value={controls.postListStyle}/>
+                <ChoiceGroup legend="Code blocks" name="codeBlockStyle" options={CONTROL_OPTIONS.codeBlockStyle} value={controls.codeBlockStyle}/>
+                <fieldset class="fieldset">
+                  <legend>Color palette</legend>
+                  {!controls.palette ? <p class="muted">Choose a palette to replace the current AI colors.</p> : null}
+                  <div class="choice-grid">{Object.entries(THEME_PALETTES).map(([name, palette]) => <label class={`choice palette-choice palette-${name}`}>
+                    <span class="palette-label"><input type="radio" name="palette" value={name} checked={controls.palette === name} data-theme-control/> {palette.label}</span>
+                    <span class="swatches" aria-hidden="true"><span class="swatch"></span><span class="swatch"></span><span class="swatch"></span></span>
+                  </label>)}</div>
+                </fieldset>
+                <ChoiceGroup legend="Body font" name="bodyFont" options={CONTROL_OPTIONS.bodyFont} value={controls.bodyFont}/>
+                <ChoiceGroup legend="Heading font" name="headingFont" options={CONTROL_OPTIONS.headingFont} value={controls.headingFont}/>
+                <ChoiceGroup legend="Type scale" name="scale" options={CONTROL_OPTIONS.scale} value={controls.scale}/>
+                <ChoiceGroup legend="Content width" name="contentWidth" options={CONTROL_OPTIONS.contentWidth} value={controls.contentWidth}/>
+                <ChoiceGroup legend="Spacing" name="density" options={CONTROL_OPTIONS.density} value={controls.density}/>
+                <ChoiceGroup legend="Corners" name="radius" options={CONTROL_OPTIONS.radius} value={controls.radius}/>
+                <button class="btn" type="submit" disabled={busy}>Save theme version</button>
+              </div>
+            </details>
+            <p class="unsaved-note" data-unsaved-note hidden>Save these theme changes before publishing.</p>
+            <OperationOutput operation={input.operation?.type === 'generate_theme' ? input.operation : undefined} successUrl={themeSuccessUrl}/>
+          </form>
+
+          <details class="editor-disclosure history">
+            <summary><span>Theme history</span><small>{themes.length} versions</small></summary>
+            <div class="disclosure-body revision-list">{themes.map((theme) => <div class="revision">
+              <div>
+                <strong>{theme.description}</strong>
+                <div class="markers">
+                  <span class="badge" data-variant="neutral">{SOURCE_LABEL[theme.source]}</span>
+                  {theme.active ? <span class="badge" data-variant="pending">Previewing</span> : null}
+                  {published?.themeRevisionId === theme.id ? <span class="badge" data-variant="live">Published</span> : null}
+                </div>
+                <small class="muted">{new Date(theme.createdAt).toLocaleString('en')}</small>
+              </div>
+              {theme.active ? null : <form method="post" action={`/actions/theme/${theme.id}/activate`}>
+                <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
+                <input type="hidden" name="previewPath" value={input.previewPath} data-preview-path-input/>
+                <button class="btn" data-variant="outline" data-size="compact" type="submit" disabled={busy}>Preview version</button>
+              </form>}
+            </div>)}</div>
+          </details>
+        </div>
+      </section>
+
+      <section class="workflow-section" id="publish" aria-labelledby="publish-title">
+        <header class="workflow-heading"><span class="step-number" aria-hidden="true">3</span><div><h2 id="publish-title">Publish</h2><p>Review the draft changes, then decide when they go live.</p></div></header>
+        <div class="card workflow-card publish-card">
+          <section><PublicationSummary blog={blog} activeTheme={activeTheme} published={published} liveTheme={liveTheme} hasChanges={hasChanges}/>
+            <form class="stack" method="post" action="/actions/publish" data-operation>
+              <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
+              <input type="hidden" name="previewToken" value={input.previewToken}/>
+              <button class="btn" type="submit" data-publish-button disabled={!blog.draftArtifactId || !hasChanges || busy}>{publishLabel}</button>
+              <p class="publish-destination">{blog.username}.{input.appHostname}</p>
+              <OperationOutput operation={input.operation?.type === 'publish' ? input.operation : undefined}/>
+            </form>
+          </section>
+          {releases.length > 0 ? <details class="editor-disclosure history">
+            <summary><span>Release history</span><small>{releases.length} saved</small></summary>
+            <div class="disclosure-body revision-list">{releases.map((release) => {
+              const theme = themesById.get(release.themeRevisionId);
+              return <div class="revision">
+                <div>
+                  <strong>{theme?.description ?? 'Published theme'}</strong>
+                  <div class="markers">
+                    {theme ? <span class="badge" data-variant="neutral">{SOURCE_LABEL[theme.source]}</span> : null}
+                    {release.active ? <span class="badge" data-variant="live">Live now</span> : null}
+                  </div>
+                  <small class="muted">{new Date(release.createdAt).toLocaleString('en')}</small>
+                </div>
+                {release.active ? null : <form method="post" action={`/actions/releases/${release.id}/activate`}>
+                  <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
+                  <button class="btn" data-variant="outline" data-size="compact" type="submit" disabled={busy}>Restore live</button>
+                </form>}
+              </div>;
+            })}</div>
+          </details> : null}
+        </div>
+      </section>
     </section>
   </div>, input.session, true);
 }

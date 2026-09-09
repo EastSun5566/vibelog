@@ -54,6 +54,17 @@ if (editorUrl.pathname === '/editor' && editorUrl.searchParams.has('previewPath'
   history.replaceState(history.state, '', editorUrl.pathname + editorUrl.search + editorUrl.hash);
 }
 
+const blogHandle = document.querySelector('[data-blog-handle]');
+const blogHostname = document.querySelector('[data-blog-hostname]');
+if (blogHandle instanceof HTMLInputElement && blogHostname) {
+  const updateBlogHostname = () => {
+    const handle = blogHandle.value.trim().toLowerCase() || 'your-name';
+    blogHostname.textContent = handle + '.' + blogHostname.dataset.hostSuffix;
+  };
+  blogHandle.addEventListener('input', updateBlogHostname);
+  updateBlogHostname();
+}
+
 const syncAriaInvalid = (control) => {
   if (!(control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)) return;
   if (!control.checkValidity()) control.setAttribute('aria-invalid', 'true');
@@ -168,15 +179,6 @@ if (studio) {
     });
   }
 
-  for (const starter of studio.querySelectorAll('[data-prompt-starter]')) {
-    starter.addEventListener('click', () => {
-      const prompt = studio.querySelector('#prompt');
-      if (prompt instanceof HTMLTextAreaElement) {
-        prompt.value = starter.dataset.promptStarter ?? '';
-        prompt.focus();
-      }
-    });
-  }
 }
 
 for (const statusNode of document.querySelectorAll('[data-poll-url]')) {
