@@ -1,70 +1,68 @@
+<p align="center">
+  <img src="./logo.svg" alt="VibeLog" width="72" height="72">
+</p>
+
 # VibeLog
 
-VibeLog turns HackMD content into a production-ready, AI-styled blog. This repository is a pnpm monorepo containing the core builder, the web and worker containers, a Cloudflare edge Worker, and Pulumi infrastructure.
+VibeLog turns public HackMD articles into a fast, customizable blog. Writers keep using HackMD; VibeLog handles the preview, theme, release history, and hosting.
 
-## Architecture
+## How it works
 
-The application keeps provider-specific code at its external I/O boundaries:
+1. Connect a public HackMD profile.
+2. Choose articles and review the private preview.
+3. Publish an immutable release to a personal subdomain.
 
-- PostgreSQL through `pg` and Drizzle (`DATABASE_URL` for runtime, `DATABASE_MIGRATION_URL` for migrations)
-- S3-compatible object storage through `ArtifactStore` (R2 in production, MinIO locally)
-- Cloud Tasks through `OperationQueue` (PostgreSQL outbox worker for Compose)
-- Resend or local Mailpit through `TransactionalEmailSender`
-- Cloud Run through two ordinary Node.js HTTP containers
+Content changes never update the live site until the writer publishes. Failed syncs keep the last working draft and release intact.
 
-The web process accepts user traffic and enqueues operations. The private worker executes an operation by ID and is safe under duplicate delivery. PostgreSQL is the source of truth for operations, the transactional outbox, artifact state, and the active release. Containers do not contain persistent application state.
+## Run locally
 
-## Local full-stack environment
-
-Requirements: Node.js 24, pnpm 10, and Docker. On a new machine, install the E2E browser once with `pnpm exec playwright install chromium`.
+Requirements: Node.js 24, pnpm 10, Docker, and Chromium for Playwright.
 
 ```sh
 cp .env.example .env
 pnpm install
+pnpm exec playwright install chromium
 docker compose up --build
 ```
 
-The app is available at `http://app.localtest.me:3000`; Mailpit captures local sign-in email at `http://localhost:8025`. PostgreSQL and MinIO data persist in Docker volumes; deleting and recreating the web or worker container does not delete application data.
-
-This Compose file is intended for local development, integration tests, and container smoke tests. It uses local credentials and development hostnames; the web and worker are separate processes, with PostgreSQL providing durable operation delivery.
+Open `http://app.localtest.me:3000`. Mailpit captures sign-in emails at `http://localhost:8025`.
 
 Useful commands:
 
 ```sh
-pnpm dev
-pnpm db:migrate
-pnpm check
-pnpm test:e2e # isolated Compose stack: login, sync, preview, publish, public site
+pnpm dev          # web process with direct background jobs
+pnpm db:migrate   # apply local database migrations
+pnpm check        # lint, typecheck, tests, and schema checks
+pnpm test:e2e     # isolated Compose publish flow
 ```
 
-`pnpm test:e2e` creates and removes its own PostgreSQL, MinIO, Mailpit, web, worker, and deterministic HackMD fixture. It exercises the real application boundaries without calling external services. This is a clean PostgreSQL baseline; SQLite data and migrations are intentionally not imported.
+## Architecture
 
-## Container image
+The production image contains three Node.js entrypoints:
 
-The production build publishes one application image containing three entrypoints:
+- `web-main.js` serves the management app, previews, and published artifacts.
+- `worker-main.js` executes durable background operations.
+- `migrate.js` applies checked-in PostgreSQL migrations before a release.
 
-- `node dist/web-main.js` (the default command)
-- `node dist/worker-main.js`
-- `node dist/migrate.js`
+PostgreSQL is the source of truth. Static artifacts live in S3-compatible storage. The web process writes operations to a transactional outbox; a separate worker executes them safely under duplicate delivery.
 
-The image deliberately does not bundle PostgreSQL, object storage, or an edge proxy.
+The monorepo is split by responsibility:
 
-## Self-hosting on a VPS
-
-[`compose.selfhost.yml`](compose.selfhost.yml) runs the released image as separate migration, web, and durable PostgreSQL-backed worker roles. It also includes private PostgreSQL and MinIO services with persistent volumes. Copy [`.env.selfhost.example`](.env.selfhost.example) to `.env.selfhost`, replace every placeholder, pin `VIBELOG_IMAGE` to an immutable release, then run:
-
-```sh
-docker compose --env-file .env.selfhost -f compose.selfhost.yml pull
-docker compose --env-file .env.selfhost -f compose.selfhost.yml up -d
-docker compose --env-file .env.selfhost -f compose.selfhost.yml ps
-```
-
-Only the web port binds to `127.0.0.1`; PostgreSQL, MinIO, and the worker stay private. Put your existing reverse proxy in front of that port with wildcard TLS, preserve the original `Host`, and route `APP_ORIGIN`, `PREVIEW_ORIGIN`, and every `*.<APP_ORIGIN hostname>` request to it. Cloudflare Worker/Pulumi infrastructure is not required for self-hosting.
-
-Back up both named volumes and `.env.selfhost` before upgrades. The manifest is a simple single-VPS topology, not a high-availability database or object-storage setup.
+| Package | Purpose |
+| --- | --- |
+| [`packages/core`](packages/core) | HackMD import and static Astro site builder |
+| [`packages/app`](packages/app) | Web app, worker, database, and provider adapters |
+| [`packages/edge`](packages/edge) | Cloudflare hostname routing and origin signing |
+| [`packages/infra`](packages/infra) | Pulumi-managed production infrastructure |
 
 ## Deployment
 
-Infrastructure lives in [`packages/infra`](packages/infra/README.md) and is owned by Pulumi. There is one cloud `prod` stack; development runs locally. The stack owns Neon PostgreSQL, R2, Artifact Registry, the application image, Cloud Run, and edge delivery; its application phase builds and pushes one image, applies Drizzle migrations, then updates both runtime services with the immutable digest. The **Deploy production** workflow is manually dispatched on `main` and requires CI to have passed for that exact commit. Pushing code does not automatically deploy. Do not deploy Cloud Run separately with `gcloud run deploy`, because that creates two owners for the same revision configuration.
+Local development uses Compose. The cloud `prod` stack uses Neon PostgreSQL, Cloudflare R2 and Workers, GCP Cloud Run and Cloud Tasks, and Resend.
 
-Pulumi ESC supplies deployment credentials and external SaaS secrets. Pulumi materializes runtime secrets into GCP Secret Manager; the application does not depend on Pulumi or ESC at runtime.
+Production deploys are manual. The GitHub workflow checks the exact commit's CI result, runs a guarded Pulumi preview, then performs one `pulumi up`. See the [infrastructure guide](packages/infra/README.md) for normal operation and the [bootstrap runbook](packages/infra/RUNBOOK.md) for a new stack.
+
+For a single VPS, [`compose.selfhost.yml`](compose.selfhost.yml) runs the released image with private PostgreSQL and MinIO services. Copy [`.env.selfhost.example`](.env.selfhost.example), replace every placeholder, and pin `VIBELOG_IMAGE` to an immutable version.
+
+## License
+
+[MIT](LICENSE)

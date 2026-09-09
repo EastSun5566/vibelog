@@ -1,24 +1,23 @@
 # VibeLog application
 
-This package builds two HTTP entrypoints from the same production image:
+This package builds the management app and its background worker from one image.
 
-- `dist/web-main.js`: public management app, authentication, previews, and published artifact serving
-- `dist/worker-main.js`: private operation, outbox-dispatch, and maintenance endpoints
+## Entrypoints
 
-Both processes use `PORT`, handle `SIGTERM`, and keep no durable state in the container filesystem. Runtime queries use the pooled `DATABASE_URL`; only `dist/migrate.js` reads `DATABASE_MIGRATION_URL`.
+- `dist/web-main.js`: authentication, editor, previews, and published sites.
+- `dist/worker-main.js`: operations, outbox delivery, and maintenance.
+- `dist/migrate.js`: checked-in PostgreSQL migrations.
 
-The same immutable image contains the web, worker, and migration entrypoints; deployments select the role by overriding the command. PostgreSQL and S3-compatible object storage remain external services and are never embedded in the image.
+The containers keep no durable state on disk. Runtime queries use pooled `DATABASE_URL`; migrations use the direct `DATABASE_MIGRATION_URL`. PostgreSQL stores application state and S3-compatible storage holds generated sites.
 
-Provider-neutral ports are under `src/ports`, and concrete integrations are under `src/adapters`. The composition root is `src/runtime-dependencies.ts`.
+## Boundaries
 
-Authentication supports GitHub, Google, and magic links. Production and self-hosting use Resend; local Compose uses Mailpit so the complete sign-in path works without sending real email. A user chooses a separate public blog handle during onboarding; passwords and username-based authentication are intentionally unsupported.
+Provider-neutral interfaces live in `src/ports`; integrations live in `src/adapters`; `src/runtime-dependencies.ts` connects them. Production uses R2, Cloud Tasks, and Resend. Local Compose substitutes MinIO, a PostgreSQL outbox worker, and Mailpit.
 
-Queue modes are deliberately small:
+Queue modes are intentionally small:
 
-- `direct`: in-process execution for `pnpm dev` only
-- `postgres`: a separate worker consumes the transactional outbox for Compose/self-host deployments
-- `cloud-tasks`: Cloud Tasks pushes operation IDs to the private worker in the managed-cloud deployment
+- `direct`: in-process jobs for `pnpm dev`.
+- `postgres`: durable Compose and self-hosted worker.
+- `cloud-tasks`: managed delivery to the private production worker.
 
-Both durable modes use the same operation lease and idempotency rules. Redis is not required.
-
-See the repository [`.env.example`](../../.env.example) for configuration.
+Every durable mode uses the same operation lease and idempotency rules. See [`.env.example`](../../.env.example) for configuration and the [root README](../../README.md) for commands.
