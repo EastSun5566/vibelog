@@ -11,13 +11,15 @@ export function document(title: string, content: unknown, session?: AppSession, 
     <head>
       <meta charset="utf-8"/>
       <meta name="viewport" content="width=device-width, initial-scale=1"/>
+      <meta name="description" content="Turn public HackMD articles into a fast, customizable blog."/>
       <title>{title} · VibeLog</title>
+      <link rel="icon" type="image/svg+xml" href="/assets/logo.svg"/>
       <link rel="stylesheet" href="/assets/app.css"/>
     </head>
     <body>
       <div class="app-shell">
         <header class="app-header">
-          <a class="app-brand" href={session ? '/editor' : '/'}>VibeLog</a>
+          <a class="app-brand" href={session ? '/editor' : '/'}><img src="/assets/logo.svg" width="28" height="28" alt="" aria-hidden="true"/><span>VibeLog</span></a>
           <nav class="account-nav" aria-label={session ? 'Account' : 'Site'}>
             <a class="btn" data-variant="ghost" data-size="compact" href="/guide">Guide</a>
           {session ? <>

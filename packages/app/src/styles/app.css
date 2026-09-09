@@ -45,8 +45,8 @@ textarea { resize: vertical; }
 
 .app-shell { width: min(100% - 2rem, 96rem); margin-inline: auto; padding-block: 1rem 2rem; }
 .app-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 3.75rem; border-bottom: 1px solid var(--border); }
-.app-brand { display: inline-flex; align-items: center; gap: 0.6rem; color: var(--proof-ink); font-weight: 780; letter-spacing: -0.025em; text-decoration: none; }
-.app-brand::before { width: 0.7rem; height: 1.45rem; content: ""; background: var(--primary); box-shadow: 0.27rem 0 #8ca4f4; }
+.app-brand { display: inline-flex; align-items: center; gap: 0.55rem; color: var(--proof-ink); font-weight: 780; letter-spacing: -0.025em; text-decoration: none; }
+.app-brand img { display: block; width: 1.75rem; height: 1.75rem; }
 .account-nav, .account-nav form, .header-actions { display: flex; align-items: center; gap: 0.55rem; margin: 0; }
 .app-main { padding-block-start: 1.25rem; }
 
