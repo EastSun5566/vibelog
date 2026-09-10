@@ -5,6 +5,10 @@ interface MailpitMessage { text?: string; Text?: string }
 
 async function requestMagicLink(page: Page, request: APIRequestContext, mailpitUrl: string, email: string): Promise<string> {
   await page.goto('/auth/login');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  await expect(page.getByLabel('Email')).toHaveCSS('font-size', '16px');
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByLabel('Email').fill(email);
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await expect(page).toHaveURL(/\/auth\/login\?sent=1$/u);
@@ -50,6 +54,11 @@ async function expectPreviewPath(page: Page, path: string): Promise<void> {
   await expect.poll(() => page.frames().find((frame) => frame.url().includes('preview.'))?.url(), { timeout: 30_000 }).toContain(path);
 }
 
+async function expectNoHorizontalOverflow(page: Page): Promise<void> {
+  const dimensions = await page.evaluate(() => ({ clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
+}
+
 async function openDisclosure(page: Page, key: string): Promise<void> {
   const details = page.locator(`details[data-disclosure-key="${key}"]`);
   if (!await details.evaluate((node) => (node as HTMLDetailsElement).open)) await details.locator('summary').click();
@@ -68,10 +77,27 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(page.getByRole('heading', { name: /Keep writing in HackMD/ })).toBeVisible();
   await expect(page.locator('.app-brand img')).toHaveAttribute('src', '/assets/logo.svg');
   await expect(page.getByRole('link', { name: 'Start publishing' })).toHaveCount(1);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused();
+  await expect(page.getByRole('link', { name: 'Skip to content' })).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#main-content')).toBeFocused();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/guide');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  await expect(page.getByText('Generate a theme with AI or fine-tune it, then publish when the draft is ready.')).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   const magicLink = await requestMagicLink(page, request, mailpitUrl, 'writer@example.com');
   await page.goto(magicLink);
   await expect(page).toHaveURL(/\/onboarding$/u);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  await expect(page.getByLabel('Blog address')).toHaveCSS('font-size', '16px');
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByLabel('Blog address').fill('alice');
   await expect(page.locator('[data-blog-hostname]')).toHaveText(/alice\./u);
   const profile = page.locator('[data-hackmd-profile]');
@@ -89,7 +115,15 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(page.getByRole('heading', { name: 'Appearance', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Publish', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: '@alice-hackmd on HackMD' })).toHaveAttribute('href', 'https://hackmd.io/@alice-hackmd');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  await expect(page.getByLabel('Describe the reading experience')).toHaveCSS('font-size', '16px');
+  await page.setViewportSize({ width: 1280, height: 720 });
   const appUrl = new URL(page.url());
+  const publicSiteUrl = `${appUrl.protocol}//alice.${appUrl.host}`;
+  const publishDestination = page.locator('#publish .publish-destination');
+  await expect(publishDestination).toHaveText(`Will publish at ${publicSiteUrl}`);
+  await expect(publishDestination.getByRole('link')).toHaveCount(0);
   const iframe = page.locator('iframe[data-preview-url]');
   const previewUrl = new URL(await iframe.getAttribute('src') ?? '');
   expect(previewUrl.hostname).toBe(`preview.${appUrl.hostname}`);
@@ -103,6 +137,8 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await page.keyboard.press('Enter');
   await expect(page.getByLabel('Describe the reading experience')).toHaveValue('A restrained independent magazine');
   await expect(page.getByLabel('Describe the reading experience')).toBeFocused();
+  await expect(page.getByLabel('Describe the reading experience')).toHaveAttribute('required', '');
+  await expect(page.getByLabel('Describe the reading experience')).toHaveAttribute('minlength', '1');
 
   let aiPolls = 0;
   await page.route('**/actions/theme/generate', (route) => route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ pollUrl: '/api/operations/mock-ai', successUrl: '/editor' }) }));
@@ -114,16 +150,36 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const aiBefore = await iframe.getAttribute('src');
+  await page.evaluate(() => {
+    const status = document.querySelector('.studio-primary [data-feedback-slot="ai"] [data-operation-status]');
+    if (!status) throw new Error('AI feedback status is missing');
+    new MutationObserver(() => {
+      if (status.textContent === 'Theme ready') document.documentElement.dataset.aiSuccessFeedback = 'ai';
+    }).observe(status, { childList: true, characterData: true, subtree: true });
+  });
   await page.getByRole('button', { name: 'Generate with AI' }).click();
-  await expect(page.getByText('AI is designing a new theme…')).toBeVisible();
-  await expect(page.locator('[data-state="running"] [data-operation-progress]')).toBeHidden();
-  await expect(page.locator('[data-state="running"] .operation-indicator')).toHaveCSS('animation-name', 'none');
+  const aiFeedback = page.locator('.studio-primary [data-feedback-slot="ai"]');
+  await expect(aiFeedback.getByText('AI is designing a new theme…')).toBeVisible();
+  await expect(aiFeedback.locator('[data-operation-progress]')).toBeHidden();
+  await expect(aiFeedback.locator('.operation-indicator')).toHaveCSS('animation-name', 'none');
+  await expect(page.locator('details[data-disclosure-key="fine-tune"] [data-feedback-slot="ai"]')).toHaveCount(0);
+  await expect(page.locator('html')).toHaveAttribute('data-ai-success-feedback', 'ai');
   await expect.poll(() => iframe.getAttribute('src'), { timeout: 30_000 }).not.toBe(aiBefore);
   await expectNoPageReload(page);
   await expectPreviewPath(page, '/blog/hello-vibelog/');
   await page.unroute('**/actions/theme/generate');
   await page.unroute('**/api/operations/mock-ai');
   await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+  await page.route('**/actions/theme/generate', (route) => route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ pollUrl: '/api/operations/mock-ai-failed', successUrl: '/editor' }) }));
+  await page.route('**/api/operations/mock-ai-failed', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'failed', message: 'AI service is temporarily unavailable', progress: { kind: 'indeterminate' } }) }));
+  await page.getByLabel('Describe the reading experience').fill('A quiet reading room');
+  await page.getByRole('button', { name: 'Generate with AI' }).click();
+  await expect(page.locator('.studio-primary [data-feedback-slot="ai"]')).toContainText('AI service is temporarily unavailable');
+  await expect(page.locator('[data-feedback-slot="fine-tune"]')).not.toContainText('AI service is temporarily unavailable');
+  await expectNoPageReload(page);
+  await page.unroute('**/actions/theme/generate');
+  await page.unroute('**/api/operations/mock-ai-failed');
 
   let syncPolls = 0;
   await page.route('**/actions/blog/sync', (route) => route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ pollUrl: '/api/operations/mock-sync', successUrl: '/editor' }) }));
@@ -154,7 +210,16 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
 
   await openDisclosure(page, 'fine-tune');
   await page.getByLabel('Editorial').check();
-  await expect(page.getByText('Preview updated; changes are not saved')).toBeVisible();
+  const fineTuneFeedback = page.locator('details[data-disclosure-key="fine-tune"] [data-feedback-slot="fine-tune"]');
+  await expect(fineTuneFeedback).toContainText('Preview updated; changes are not saved');
+  const fineTuneFeedbackBox = await fineTuneFeedback.boundingBox();
+  const saveThemeButtonBox = await page.getByRole('button', { name: 'Save theme version' }).boundingBox();
+  expect(Math.abs((fineTuneFeedbackBox?.x ?? 0) - (saveThemeButtonBox?.x ?? 0))).toBeLessThanOrEqual(1);
+  await page.route('**/actions/theme/apply', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Could not save the theme' } }) }));
+  await page.getByRole('button', { name: 'Save theme version' }).click();
+  await expect(fineTuneFeedback).toContainText('Could not save the theme');
+  await expect(page.locator('.studio-primary [data-feedback-slot="ai"]')).not.toContainText('Could not save the theme');
+  await page.unroute('**/actions/theme/apply');
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Save theme version' }));
   await expectPreviewPath(page, '/blog/hello-vibelog/');
 
@@ -182,7 +247,12 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
 
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Publish first release' }));
   await expect(page.getByText('Live version is current')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'View live site' })).toHaveAttribute('href', `${appUrl.protocol}//alice.${appUrl.host}`);
+  await expect(page.getByRole('link', { name: 'View live site' })).toHaveAttribute('href', publicSiteUrl);
+  const inlineLiveLink = page.locator('#publish .publish-destination a');
+  await expect(inlineLiveLink).toHaveText(publicSiteUrl);
+  await expect(inlineLiveLink).toHaveAttribute('href', publicSiteUrl);
+  await expect(inlineLiveLink).toHaveAttribute('target', '_blank');
+  await expect(inlineLiveLink).toHaveAttribute('rel', 'noreferrer');
 
   await openDisclosure(page, 'fine-tune');
   await page.getByLabel('Notebook').check();
@@ -196,9 +266,21 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   publicUrl.hostname = `alice.${publicUrl.hostname}`;
   publicUrl.pathname = '/';
   await page.goto(publicUrl.toString());
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: 'Skip to main content' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#main-content')).toBeFocused();
+  await page.setViewportSize({ width: 1280, height: 720 });
   await expect(page.getByRole('heading', { name: "Alice's updated blog", level: 1 })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Hello VibeLog' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'A Second Note' })).toHaveCount(0);
+  await page.getByRole('link', { name: 'Hello VibeLog' }).click();
+  await expect(page).toHaveURL(/\/blog\/hello-vibelog\/$/u);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   await page.goto(`${appUrl.origin}/editor`);
   await page.getByRole('button', { name: 'Sign out' }).click();

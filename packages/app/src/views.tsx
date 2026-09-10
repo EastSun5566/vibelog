@@ -17,6 +17,7 @@ export function document(title: string, content: unknown, session?: AppSession, 
       <link rel="stylesheet" href="/assets/app.css"/>
     </head>
     <body>
+      <a class="app-skip-link" href="#main-content">Skip to content</a>
       <div class="app-shell">
         <header class="app-header">
           <a class="app-brand" href={session ? '/editor' : '/'}><img src="/assets/logo.svg" width="28" height="28" alt="" aria-hidden="true"/><span>VibeLog</span></a>
@@ -30,7 +31,7 @@ export function document(title: string, content: unknown, session?: AppSession, 
           </> : <a class="btn" data-variant="outline" data-size="compact" href="/auth/login">Sign in</a>}
           </nav>
         </header>
-        <main class="app-main">{content}</main>
+        <main class="app-main" id="main-content" tabindex={-1}>{content}</main>
       </div>
       {editor ? <script type="module" src="/assets/client.js"></script> : null}
     </body>
@@ -91,7 +92,7 @@ export function guidePage(session?: AppSession) {
       <ol>
         <li>Connect a public HackMD profile and choose a blog address.</li>
         <li>Choose articles, set the blog details, and review the private preview.</li>
-        <li>Optionally adjust the theme, then publish when the draft is ready.</li>
+        <li>Generate a theme with AI or fine-tune it, then publish when the draft is ready.</li>
       </ol>
       <p>Only public, published HackMD notes are imported. A failed sync never replaces the last working draft or live release.</p>
     </section>
@@ -107,11 +108,11 @@ export function guidePage(session?: AppSession) {
   </article>, session);
 }
 
-function OperationOutput({ operation, successUrl }: { operation?: OperationRecord; successUrl?: string }) {
+function OperationOutput({ operation, successUrl, feedbackKey }: { operation?: OperationRecord; successUrl?: string; feedbackKey?: string }) {
   const pending = operation && (operation.status === 'queued' || operation.status === 'running');
   const progress = operation ? operationProgress(operation) : null;
   const state = operation?.status ?? 'idle';
-  return <div class="operation-feedback" data-operation-feedback data-state={state}>
+  return <div class="operation-feedback" data-operation-feedback data-feedback-slot={feedbackKey} data-state={state}>
     <div class="operation-status-row">
       <span class="operation-indicator" aria-hidden="true"></span>
       <output
@@ -138,7 +139,7 @@ const LANGUAGE_SUGGESTIONS = ['en', 'en-US', 'en-GB', 'zh-Hant', 'zh-Hans', 'ja'
 
 function BlogLanguageField({ value, id, listId }: { value: string; id: string; listId: string }) {
   const helpId = `${id}-help`;
-  return <div class="field"><label for={id}>Blog language</label><input id={id} name="language" required pattern="[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*" value={value} list={listId} aria-describedby={helpId}/><datalist id={listId}>{LANGUAGE_SUGGESTIONS.map((language) => <option value={language}/>)}</datalist><p id={helpId}>Choose a suggestion or enter any valid language tag.</p></div>;
+  return <div class="field"><label for={id}>Blog language</label><input id={id} name="language" required pattern="[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*" value={value} list={listId} autocomplete="off" autocapitalize="none" spellcheck={false} aria-describedby={helpId}/><datalist id={listId}>{LANGUAGE_SUGGESTIONS.map((language) => <option value={language}/>)}</datalist><p id={helpId}>Choose a suggestion or enter any valid language tag.</p></div>;
 }
 
 function PreviewPathInput({ value }: { value: string }) {
@@ -154,13 +155,16 @@ export function onboardingPage(session: AppSession, blog: BlogRecord | null, ope
     {failed ? <div id="hackmd-error" class="alert" data-variant="destructive" role="alert"><section>{failed}</section></div> : null}
     <form class="stack" method="post" action="/actions/blog/connect" data-operation data-success-url="/editor" aria-busy={busy ? 'true' : undefined}>
       <input type="hidden" name="csrfToken" value={session.csrfToken}/>
-      <div class="field"><label for="username">Blog address</label><input id="username" name="username" required minlength={3} maxlength={32} pattern="[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])" value={blog?.username ?? ''} readonly={Boolean(blog)} data-blog-handle aria-errormessage="blog-address-error"/><span id="blog-address-error" class="inline-error" data-blog-address-error hidden></span><p>Your site will be <strong data-blog-hostname data-host-suffix={appHostname}>{blog?.username ?? 'your-name'}.{appHostname}</strong>.</p></div>
+      <div class="field"><label for="username">Blog address</label><input id="username" name="username" required minlength={3} maxlength={32} pattern="[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])" value={blog?.username ?? ''} readonly={Boolean(blog)} autocomplete="off" autocapitalize="none" spellcheck={false} data-blog-handle aria-errormessage="blog-address-error"/><span id="blog-address-error" class="inline-error" data-blog-address-error hidden></span><p>Your site will be <strong data-blog-hostname data-host-suffix={appHostname}>{blog?.username ?? 'your-name'}.{appHostname}</strong>.</p></div>
       <div class="field"><label for="hackmdUsername">HackMD username</label><input
         id="hackmdUsername"
         name="hackmdUsername"
         required
         maxlength={100}
         value={blog?.hackmdUsername ?? ''}
+        autocomplete="off"
+        autocapitalize="none"
+        spellcheck={false}
         aria-describedby={`hackmd-help${failed ? ' hackmd-error' : ''}`}
       /><p><a data-hackmd-profile href={blog?.hackmdUsername ? `https://hackmd.io/@${encodeURIComponent(blog.hackmdUsername)}` : undefined} aria-disabled={!blog?.hackmdUsername} target="_blank" rel="noreferrer">{blog?.hackmdUsername ? `https://hackmd.io/@${blog.hackmdUsername}` : 'https://hackmd.io/@username'}</a></p></div>
       <BlogLanguageField id="blogLanguage" listId="language-suggestions" value={blog?.language ?? 'en'}/>
@@ -398,11 +402,12 @@ export function editorPage(input: EditorPageInput) {
             <section class="studio-primary">
               <header><strong>Generate with AI</strong><p>Start with a direction or write your own.</p></header>
               <div class="studio-primary-body">
-                <div class="field"><label for="prompt">Describe the reading experience</label><textarea id="prompt" name="prompt" maxlength={1000} placeholder="A restrained independent magazine for long articles"></textarea><p>AI sees your blog details, theme, and this prompt. It never receives article bodies.</p></div>
+                <div class="field"><label for="prompt">Describe the reading experience</label><textarea id="prompt" name="prompt" required minlength={1} maxlength={1000} placeholder="A restrained independent magazine for long articles" aria-describedby="prompt-help"></textarea><p id="prompt-help">AI sees your blog details, theme, and this prompt. It never receives article bodies.</p></div>
                 <div class="prompt-starters" aria-label="Prompt starters">
                   {['A restrained independent magazine', 'Make long articles easier to read', 'Keep it minimal but add personality', 'A dark theme for night reading'].map((prompt) => <button class="btn prompt-chip" data-variant="outline" data-size="compact" type="button" data-prompt-starter={prompt}>{prompt}</button>)}
                 </div>
-                <button class="btn studio-primary-action" type="submit" formaction="/actions/theme/generate" data-operation-submit data-focus-key="generate" disabled={busy}>Generate with AI</button>
+                <button class="btn studio-primary-action" type="submit" formaction="/actions/theme/generate" data-operation-submit data-feedback-target="ai" data-focus-key="generate" disabled={busy}>Generate with AI</button>
+                <OperationOutput operation={input.operation?.type === 'generate_theme' ? input.operation : undefined} successUrl={themeSuccessUrl} feedbackKey="ai"/>
               </div>
             </section>
 
@@ -427,11 +432,11 @@ export function editorPage(input: EditorPageInput) {
                 <ChoiceGroup legend="Content width" name="contentWidth" options={CONTROL_OPTIONS.contentWidth} value={controls.contentWidth}/>
                 <ChoiceGroup legend="Spacing" name="density" options={CONTROL_OPTIONS.density} value={controls.density}/>
                 <ChoiceGroup legend="Corners" name="radius" options={CONTROL_OPTIONS.radius} value={controls.radius}/>
-                <button class="btn" type="submit" disabled={busy} data-editor-submit data-focus-key="save-theme">Save theme version</button>
+                <button class="btn" type="submit" formnovalidate disabled={busy} data-editor-submit data-feedback-target="fine-tune" data-focus-key="save-theme">Save theme version</button>
+                <OperationOutput feedbackKey="fine-tune"/>
               </div>
             </details>
             <p class="unsaved-note" data-unsaved-note hidden>Save these theme changes before publishing.</p>
-            <OperationOutput operation={input.operation?.type === 'generate_theme' ? input.operation : undefined} successUrl={themeSuccessUrl}/>
           </form>
 
           <details class="editor-disclosure history" data-disclosure-key="theme-history">
@@ -465,7 +470,9 @@ export function editorPage(input: EditorPageInput) {
               <input type="hidden" name="previewToken" value={input.previewToken}/>
               <PreviewPathInput value={input.previewPath}/>
               <button class="btn" type="submit" data-publish-button data-focus-key="publish" disabled={!blog.draftArtifactId || !hasChanges || busy}>{publishLabel}</button>
-              <p class="publish-destination">{blog.username}.{input.appHostname}</p>
+              <p class="publish-destination">{published
+                ? <>Live at <a href={input.publicUrl} target="_blank" rel="noreferrer">{input.publicUrl}</a></>
+                : <>Will publish at {input.publicUrl}</>}</p>
               <OperationOutput operation={input.operation?.type === 'publish' ? input.operation : undefined}/>
             </form>
           </section>

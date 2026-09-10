@@ -46,6 +46,14 @@ const showStatus = (node, message, state = 'running') => {
   if (state === 'failed') node.focus();
 };
 
+const feedbackStatus = (root, trigger) => {
+  const key = trigger?.dataset.feedbackTarget;
+  const feedback = key
+    ? root.querySelector('[data-feedback-slot="' + CSS.escape(key) + '"]')
+    : root.querySelector('[data-operation-feedback]');
+  return feedback?.querySelector('[data-operation-status]');
+};
+
 const updateProgress = (statusNode, progress = { kind: 'indeterminate' }) => {
   const node = statusNode?.closest('[data-operation-feedback]')?.querySelector('[data-operation-progress]');
   if (!(node instanceof HTMLProgressElement)) return;
@@ -185,7 +193,7 @@ const initializeOperations = (root) => {
       event.preventDefault();
       const buttons = [...form.querySelectorAll('button[type="submit"]')];
       const button = submitter instanceof HTMLButtonElement ? submitter : buttons[0];
-      const statusNode = form.querySelector('[data-operation-status]');
+      const statusNode = feedbackStatus(form, button);
       const buttonLabel = button?.textContent;
       form.setAttribute('aria-busy', 'true');
       for (const item of buttons) item.disabled = true;
@@ -241,7 +249,7 @@ const initializeEditorSubmits = (root) => {
         })
         .catch((error) => {
           const message = error instanceof Error ? error.message : 'Could not save the change';
-          const statusNode = form.querySelector('[data-operation-status]');
+          const statusNode = feedbackStatus(form, button);
           announce(message);
           if (statusNode) showStatus(statusNode, message, 'failed');
           else if (!form.querySelector('.inline-error')) form.insertAdjacentHTML('beforeend', '<p class="inline-error" role="alert">Could not save the change. Please try again.</p>');
@@ -255,7 +263,7 @@ const initializeStudio = (root) => {
   const studio = root.querySelector('form[data-theme-studio]');
   if (!studio || studio.dataset.studioBound) return;
   studio.dataset.studioBound = 'true';
-  const statusNode = studio.querySelector('[data-operation-status]');
+  const statusNode = studio.querySelector('[data-feedback-slot="fine-tune"] [data-operation-status]');
   const publishButton = root.querySelector('[data-publish-button]');
   const unsavedNote = studio.querySelector('[data-unsaved-note]');
   const publishInitiallyDisabled = publishButton?.disabled ?? true;

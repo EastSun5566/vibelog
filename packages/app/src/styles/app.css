@@ -45,6 +45,21 @@ textarea { resize: vertical; }
 time { font-variant-numeric: tabular-nums; }
 :focus-visible { outline: 0.18rem solid var(--ring); outline-offset: 0.18rem; }
 
+.app-skip-link {
+  position: fixed;
+  inset-block-start: 0.75rem;
+  inset-inline-start: 0.75rem;
+  z-index: 20;
+  padding: 0.55rem 0.75rem;
+  transform: translateY(calc(-100% - 1rem));
+  border-radius: var(--radius);
+  background: var(--foreground);
+  color: var(--card);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+.app-skip-link:focus { transform: translateY(0); }
+
 .app-shell { width: min(100% - 2rem, 90rem); margin-inline: auto; padding-block: 1rem 2.5rem; }
 .app-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 3.75rem; border-bottom: 1px solid var(--border); }
 .app-brand { display: inline-flex; align-items: center; gap: 0.55rem; color: var(--proof-ink); font-weight: 780; letter-spacing: -0.025em; text-decoration: none; }
@@ -96,7 +111,7 @@ time { font-variant-numeric: tabular-nums; }
 .field { display: grid; gap: 0.38rem; }
 .field > label, .fieldset > legend { color: var(--foreground); font-size: 0.88rem; font-weight: 680; }
 .field > p, .field-hint { margin: 0; color: var(--muted-foreground); font-size: 0.82rem; }
-.field > input, .field > textarea { width: 100%; min-height: 2.75rem; }
+.field > input, .field > textarea { width: 100%; min-height: 2.75rem; font-size: 1rem; }
 .field > textarea { min-height: 6.5rem; }
 .field > input:user-invalid, .field > textarea:user-invalid { border-color: var(--destructive); box-shadow: 0 0 0 0.18rem rgb(180 35 24 / 0.13); }
 .validation-error { display: none; color: var(--destructive); font-size: 0.82rem; }
@@ -190,6 +205,7 @@ time { font-variant-numeric: tabular-nums; }
 .publication-change-group { display: grid; gap: 0.45rem; }
 .publication-change-group ul { display: grid; gap: 0.25rem; margin: 0; padding-inline-start: 1.35rem; color: var(--muted-foreground); font-size: 0.84rem; }
 .publish-destination { margin: -0.5rem 0 0; color: var(--muted-foreground); font: 600 0.75rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.publish-destination a { color: var(--primary); }
 
 .badge[data-variant="pending"] { border: 1px solid #d7a322; background: #fff8d8; color: #684a00; }
 .badge[data-variant="live"], .badge[data-variant="added"] { border: 1px solid #79b68b; background: #e8f7ec; color: #185c2d; }
