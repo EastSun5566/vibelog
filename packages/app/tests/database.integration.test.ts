@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
 import { DEFAULT_THEME } from '@vibelog/core';
-import { AppDatabase, MAX_OPERATION_ATTEMPTS, OperationLeaseLostError } from '../src/database.js';
+import { AppDatabase, BlogAddressTakenError, MAX_OPERATION_ATTEMPTS, OperationLeaseLostError } from '../src/database.js';
 import { AppOperationExecutor, OutboxDispatcher, RetryableOperationError } from '../src/jobs.js';
 import { loadWorkerConfig } from '../src/config.js';
 import { smokeWorker } from '../scripts/worker-smoke.js';
@@ -36,6 +36,19 @@ describe.skipIf(!url)('PostgreSQL operation repository', () => {
     const at = new Date('2026-08-29T00:00:00.000Z');
     expect((await Promise.all([database.consumeRateLimit(rateKey, 1, 60, at), database.consumeRateLimit(rateKey, 1, 60, at)])).sort()).toEqual([false, true]);
     expect(await database.consumeRateLimit(rateKey, 1, 60, new Date('2026-08-29T00:01:00.000Z'))).toBe(true);
+  });
+  it('allows only one user to claim a blog address', async () => {
+    const ids = [randomUUID(), randomUUID()];
+    const username = `shared-${randomUUID().slice(0, 8)}`;
+    try {
+      await database.db.insert(user).values(ids.map((id) => ({ id, name: 'Writer', email: `${id}@example.com` })));
+      const results = await Promise.allSettled(ids.map((id) => database.createBlog(id, username, 'writer')));
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const rejected = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+      expect(rejected?.reason).toBeInstanceOf(BlogAddressTakenError);
+    } finally {
+      for (const id of ids) await database.db.delete(user).where(eq(user.id, id));
+    }
   });
 });
 

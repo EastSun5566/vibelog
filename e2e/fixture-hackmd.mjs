@@ -11,6 +11,14 @@ const responses = new Map([
       publishType: 'view',
       publishedAt: '2026-08-29T01:00:00Z',
       permalink: 'hello-vibelog',
+    }, {
+      id: 'second',
+      title: 'A Second Note',
+      tags: ['Writing'],
+      lastchangeAt: '2026-08-31T01:00:00Z',
+      publishType: 'view',
+      publishedAt: '2026-08-31T01:00:00Z',
+      permalink: 'second-note',
     }] }),
   }],
   ['/info/@alice-hackmd', {
@@ -20,6 +28,10 @@ const responses = new Map([
   ['/hello/download', {
     type: 'text/markdown; charset=utf-8',
     body: '# Hello VibeLog\n\nThis article came through the complete local publishing path.\n',
+  }],
+  ['/second/download', {
+    type: 'text/markdown; charset=utf-8',
+    body: '# A Second Note\n\nThis article can be excluded in the editor.\n',
   }],
 ]);
 

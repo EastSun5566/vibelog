@@ -10,7 +10,7 @@ import { createAuth, readSession, type AppVariables } from './auth.js';
 import { blogIdentitySchema, blogLanguageSchema } from './blog-sync.js';
 import { CLIENT_SCRIPT } from './client.js';
 import { loadAppConfig, type AppConfig } from './config.js';
-import { AiQuotaExceededError, AppDatabase, type BlogRecord, type OperationRecord, type OperationType } from './database.js';
+import { AiQuotaExceededError, AppDatabase, BlogAddressTakenError, type BlogRecord, type OperationRecord, type OperationType } from './database.js';
 import { AppError, assertCsrfToken, assertMutationOrigin, jsonError, requestContext } from './http.js';
 import type { OperationDispatcher } from './ports/operation-queue.js';
 import { operationMessage, operationProgress } from './operation-status.js';
@@ -96,7 +96,7 @@ export function createApp(options: CreateAppOptions) {
   const internalAuthPost = async (c: AppContext, path: string, body: Record<string, unknown>) => { const headers = new Headers({ 'content-type': 'application/json', origin: config.appOrigin }); const cookie = c.req.header('cookie'); if (cookie) headers.set('cookie', cookie); return auth.handler(new Request(new URL(`/api/auth${path}`, config.appOrigin), { method: 'POST', headers, body: JSON.stringify(body) })); };
   const copyCookies = (c: AppContext, response: Response) => { for (const cookie of response.headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true }); };
 
-  app.get('/auth/login', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId) })));
+  app.get('/auth/login', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), sent: c.req.query('sent') === '1' })));
   app.post('/auth/magic-link', async (c) => {
     assertMutationOrigin(c, config); const body = await c.req.parseBody().catch(() => ({})); const parsed = emailInput.safeParse(formValue(body, 'email')?.trim().toLowerCase());
     if (!parsed.success) return c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Enter a valid email address.' }), 400);
@@ -104,7 +104,7 @@ export function createApp(options: CreateAppOptions) {
     if (!await database.consumeRateLimit(`magic:minute:${key}`, 1, 60) || !await database.consumeRateLimit(`magic:hour:${key}`, 3, 3600)) return c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Please wait before requesting another link.' }), 429);
     const response = await internalAuthPost(c, '/sign-in/magic-link', { email: parsed.data, name: parsed.data.split('@')[0], callbackURL: '/editor' });
     if (!response.ok) throw new AppError('magic_link_failed', 'Could not send a sign-in link.', 502);
-    return c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), sent: true }));
+    return c.redirect('/auth/login?sent=1', 303);
   });
   app.post('/auth/oauth/:provider', async (c) => {
     assertMutationOrigin(c, config); const provider = c.req.param('provider');
@@ -130,8 +130,8 @@ export function createApp(options: CreateAppOptions) {
     const blog = await ownedBlog(c); const previewPath = typeof payload.previewPath === 'string' ? payload.previewPath : '/';
     try {
       const operation = type === 'generate_theme' ? await database.createThemeOperation(blog.userId, blog.id, String(payload.prompt), payload.baseTheme, { userDailyLimit: config.aiUserDailyLimit, globalDailyLimit: config.aiGlobalDailyLimit }, previewPath)
-        : type === 'publish' ? await database.createPublishOperation(blog.userId, blog.id, hashToken(String(payload.previewToken))) : await database.createSyncOperation(blog.userId, blog.id, payload);
-      return await dispatchAndRedirect(c, operation, type === 'generate_theme' ? editorUrlWithPreviewPath(previewPath) : '/editor');
+        : type === 'publish' ? await database.createPublishOperation(blog.userId, blog.id, hashToken(String(payload.previewToken)), previewPath) : await database.createSyncOperation(blog.userId, blog.id, payload);
+      return await dispatchAndRedirect(c, operation, editorUrlWithPreviewPath(previewPath));
     } catch (error) {
       if (error instanceof AiQuotaExceededError) throw new AppError('ai_quota_exceeded', 'Today’s AI theme quota is exhausted.', 429, { 'Retry-After': String(error.retryAfter) });
       const known: Record<string, [string, string, number]> = {
@@ -153,12 +153,18 @@ export function createApp(options: CreateAppOptions) {
     const body = await mutationBody(c); const input = z.object({ username: handleInput, hackmdUsername: hackmdInput.shape.hackmdUsername, language: blogLanguageSchema }).safeParse({ username: formValue(body, 'username'), hackmdUsername: formValue(body, 'hackmdUsername'), language: formValue(body, 'language') });
     if (!input.success || RESERVED.has(input.data.username)) throw new AppError('invalid_blog_source', 'Check the blog handle, HackMD username, and language.', 400);
     const session = c.get('session'); const blog = await database.getBlogForUser(session.user.id); if (blog?.draftArtifactId) throw new AppError('source_locked', 'The HackMD source cannot change after the first successful sync.', 409);
-    const operation = blog ? await database.retryInitialSync(session.user.id, input.data.hackmdUsername, input.data.language) : (await database.createBlog(session.user.id, input.data.username, input.data.hackmdUsername, input.data.language)).operation;
+    let operation: OperationRecord;
+    try {
+      operation = blog ? await database.retryInitialSync(session.user.id, input.data.hackmdUsername, input.data.language) : (await database.createBlog(session.user.id, input.data.username, input.data.hackmdUsername, input.data.language)).operation;
+    } catch (error) {
+      if (error instanceof BlogAddressTakenError) throw new AppError('blog_address_taken', 'That blog address is already taken. Choose another one.', 409);
+      throw error;
+    }
     return dispatchAndRedirect(c, operation);
   });
-  app.post('/actions/blog/sync', async (c) => { await mutationBody(c); return enqueue(c, 'sync', { intent: 'content' }); });
-  app.post('/actions/blog/identity', async (c) => { const body = await mutationBody(c); const input = blogIdentitySchema.safeParse({ title: formValue(body, 'title'), description: formValue(body, 'description') ?? '', language: formValue(body, 'language') }); if (!input.success) throw new AppError('invalid_blog_identity', 'Check the blog details.', 400); return enqueue(c, 'sync', { intent: 'identity', site: input.data }); });
-  app.post('/actions/blog/selection', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); if (!blog.contentManifest?.length) throw new AppError('article_selection_unavailable', 'Finish the first content sync.', 409); const included = new Set(Object.entries(body).filter(([name, value]) => name.startsWith('article:') && value === 'included').map(([name]) => name.slice(8))); const excludedSlugs = blog.contentManifest.filter((post) => !included.has(post.slug)).map((post) => post.slug); return enqueue(c, 'sync', { intent: 'selection', excludedSlugs }); });
+  app.post('/actions/blog/sync', async (c) => { const body = await mutationBody(c); return enqueue(c, 'sync', { intent: 'content', previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
+  app.post('/actions/blog/identity', async (c) => { const body = await mutationBody(c); const input = blogIdentitySchema.safeParse({ title: formValue(body, 'title'), description: formValue(body, 'description') ?? '', language: formValue(body, 'language') }); if (!input.success) throw new AppError('invalid_blog_identity', 'Check the blog details.', 400); return enqueue(c, 'sync', { intent: 'identity', site: input.data, previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
+  app.post('/actions/blog/selection', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); if (!blog.contentManifest?.length) throw new AppError('article_selection_unavailable', 'Finish the first content sync.', 409); const included = new Set(Object.entries(body).filter(([name, value]) => name.startsWith('article:') && value === 'included').map(([name]) => name.slice(8))); const excludedSlugs = blog.contentManifest.filter((post) => !included.has(post.slug)).map((post) => post.slug); return enqueue(c, 'sync', { intent: 'selection', excludedSlugs, previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
   async function themeFromBody(c: AppContext, body: Record<string, string | File>) { const blog = await ownedBlog(c); const activeTheme = await database.getActiveTheme(blog.id); if (!activeTheme) throw new AppError('theme_not_found', 'Theme not found', 404); return { blog, theme: themeFromControls(activeTheme.config, body) }; }
   function readPreviewToken(body: Record<string, string | File>): string { const token = previewTokenInput.safeParse(formValue(body, 'previewToken')); if (!token.success) throw new AppError('preview_session_expired', 'The preview expired. Refresh the editor.', 409); return token.data; }
   async function assertOwnedPreview(blog: BlogRecord, token: string): Promise<void> { const preview = await database.getPreviewSession(hashToken(token)); if (!preview || preview.userId !== blog.userId || preview.blogId !== blog.id) throw new AppError('preview_session_expired', 'The preview expired. Refresh the editor.', 409); }
@@ -166,8 +172,8 @@ export function createApp(options: CreateAppOptions) {
   app.post('/actions/theme/apply', async (c) => { const body = await mutationBody(c); const { blog, theme } = await themeFromBody(c, body); await assertOwnedPreview(blog, readPreviewToken(body)); await database.createManualTheme(blog.userId, blog.id, theme); return c.redirect(editorUrlWithPreviewPath(safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin)), 303); });
   app.post('/actions/theme/generate', async (c) => { const body = await mutationBody(c); const input = themeInput.safeParse({ prompt: formValue(body, 'prompt') }); if (!input.success) throw new AppError('invalid_theme_prompt', 'Describe the theme in 1–1000 characters.', 400); const { blog, theme } = await themeFromBody(c, body); await assertOwnedPreview(blog, readPreviewToken(body)); const previewPath = safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin); return enqueue(c, 'generate_theme', { ...input.data, baseTheme: theme, previewPath }); });
   app.post('/actions/theme/:id/activate', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); const id = uuidInput.parse(c.req.param('id')); await database.activateTheme(id, blog.id); return c.redirect(editorUrlWithPreviewPath(safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin)), 303); });
-  app.post('/actions/publish', async (c) => { const body = await mutationBody(c); return enqueue(c, 'publish', { previewToken: readPreviewToken(body) }); });
-  app.post('/actions/releases/:id/activate', async (c) => { await mutationBody(c); const blog = await ownedBlog(c); const release = await database.getRelease(uuidInput.parse(c.req.param('id')), blog.id); if (!release || !(await database.getArtifact(release.artifactId))?.readyAt) throw new AppError('release_unavailable', 'This release artifact is unavailable.', 409); await database.activateExistingRelease(release.id, blog.id); return c.redirect('/editor', 303); });
+  app.post('/actions/publish', async (c) => { const body = await mutationBody(c); return enqueue(c, 'publish', { previewToken: readPreviewToken(body), previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
+  app.post('/actions/releases/:id/activate', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); const release = await database.getRelease(uuidInput.parse(c.req.param('id')), blog.id); if (!release || !(await database.getArtifact(release.artifactId))?.readyAt) throw new AppError('release_unavailable', 'This release artifact is unavailable.', 409); await database.activateExistingRelease(release.id, blog.id); return c.redirect(editorUrlWithPreviewPath(safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin)), 303); });
   app.get('/editor', async (c) => {
     const blog = await database.getBlogForUser(c.get('session').user.id); if (!blog?.draftArtifactId) return c.redirect('/onboarding');
     const themes = await database.listThemes(blog.id); const activeTheme = themes.find((theme) => theme.active); if (!activeTheme) throw new AppError('theme_not_found', 'Theme not found', 404);
@@ -176,7 +182,7 @@ export function createApp(options: CreateAppOptions) {
     const [published, releases, operation] = await Promise.all([database.getActiveRelease(blog.id), database.listReleases(blog.id), database.getActiveOperation(blog.id, blog.userId)]);
     return c.html(editorPage({ session: c.get('session'), blog, themes, activeTheme, published, releases, previewUrl: accessUrl.toString(), previewToken: token, previewOrigin: config.previewOrigin, previewPath, publicUrl: siteUrl(config, blog.username), appHostname: config.appHostname, operation }));
   });
-  app.get('/operations/:id', async (c) => { const operation = await database.getOperation(uuidInput.parse(c.req.param('id')), c.get('session').user.id); if (!operation) throw new AppError('operation_not_found', 'Operation not found.', 404); const blog = await database.getBlog(operation.blogId); const previewPath = operation.type === 'generate_theme' ? safePreviewPath(operation.payload.previewPath, config.previewOrigin) : '/'; return c.html(operationPage(c.get('session'), operation, blog?.draftArtifactId ? '/editor' : '/onboarding', editorUrlWithPreviewPath(previewPath))); });
+  app.get('/operations/:id', async (c) => { const operation = await database.getOperation(uuidInput.parse(c.req.param('id')), c.get('session').user.id); if (!operation) throw new AppError('operation_not_found', 'Operation not found.', 404); const blog = await database.getBlog(operation.blogId); const previewPath = safePreviewPath(operation.payload.previewPath, config.previewOrigin); return c.html(operationPage(c.get('session'), operation, blog?.draftArtifactId ? '/editor' : '/onboarding', editorUrlWithPreviewPath(previewPath))); });
   app.get('/api/session', (c) => c.json({ user: c.get('session').user, csrfToken: c.get('session').csrfToken }));
   app.get('/api/operations/:id', async (c) => { const operation = await database.getOperation(uuidInput.parse(c.req.param('id')), c.get('session').user.id); if (!operation) throw new AppError('operation_not_found', 'Operation not found.', 404); return c.json({ status: operation.status, message: operationMessage(operation), progress: operationProgress(operation) }); });
   app.get('/preview-access/:token', async (c) => { const preview = await database.getPreviewSession(hashToken(c.req.param('token'))); if (!preview) throw new AppError('preview_access_denied', 'Preview access expired or invalid', 403); setCookie(c, 'vibelog_preview', c.req.param('token'), { httpOnly: true, secure: config.secureCookies, sameSite: 'Lax', path: '/', maxAge: 900 }); return c.redirect(safePreviewPath(c.req.query('returnTo'), config.previewOrigin)); });

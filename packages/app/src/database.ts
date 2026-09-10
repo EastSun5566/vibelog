@@ -29,6 +29,7 @@ export interface PreviewSessionRecord { tokenHash: string; userId: string; blogI
 export interface AiQuotaLimits { userDailyLimit: number; globalDailyLimit: number; at?: Date }
 export interface OutboxRecord { id: string; operationId: string; message: OperationMessage }
 export class AiQuotaExceededError extends Error { constructor(readonly retryAfter: number) { super('AI daily quota exceeded'); this.name = 'AiQuotaExceededError'; } }
+export class BlogAddressTakenError extends Error { constructor(readonly username: string) { super(`Blog address is already taken: ${username}`); this.name = 'BlogAddressTakenError'; } }
 
 export const MAX_OPERATION_ATTEMPTS = 3;
 const OPERATION_LEASE_SECONDS = 35 * 60;
@@ -87,7 +88,9 @@ export class AppDatabase {
   async createBlog(userId: string, username: string, hackmdUsername: string, language = 'en'): Promise<{ blog: BlogRecord; operation: OperationRecord }> {
     const id = randomUUID(); const op = newOperation(userId, id, 'sync', { intent: 'content', excludedSlugs: [] });
     return this.db.transaction(async (tx) => {
-      const [blog] = await tx.insert(schema.blogs).values({ id, userId, username, hackmdUsername, language, state: 'syncing' }).returning();
+      const [blog] = await tx.insert(schema.blogs).values({ id, userId, username, hackmdUsername, language, state: 'syncing' })
+        .onConflictDoNothing({ target: schema.blogs.username }).returning();
+      if (!blog) throw new BlogAddressTakenError(username);
       await tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId: id, config: DEFAULT_THEME, description: DEFAULT_THEME.description, source: 'system', active: true });
       const [operation] = await tx.insert(schema.operations).values(op).returning();
       await insertOutbox(tx, operation.id);
@@ -178,15 +181,15 @@ export class AppDatabase {
       if (excludedSlugs.length === blog.contentManifest.length) throw new Error('No articles selected');
       const old = [...currentExcluded].sort(); if (old.length === excludedSlugs.length && old.every((slug, index) => slug === excludedSlugs[index])) throw new Error('Nothing to update article selection');
     }
-    return this.createOperation(userId, blogId, 'sync', { ...parsed, excludedSlugs });
+    return this.createOperation(userId, blogId, 'sync', { ...parsed, excludedSlugs, previewPath: typeof payload.previewPath === 'string' ? payload.previewPath : '/' });
   }
-  async createPublishOperation(userId: string, blogId: string, previewTokenHash: string): Promise<OperationRecord> {
+  async createPublishOperation(userId: string, blogId: string, previewTokenHash: string, previewPath = '/'): Promise<OperationRecord> {
     const blog = await this.getBlog(blogId); if (!blog || blog.userId !== userId || !blog.draftArtifactId) throw new Error('Blog has no synced content');
     const theme = await this.getActiveTheme(blogId); if (!theme) throw new Error('Active theme not found');
     const preview = await this.getPreviewSession(previewTokenHash); if (!preview || preview.userId !== userId || preview.blogId !== blogId) throw new Error('Preview session expired or invalid');
     if (preview.themeConfig && JSON.stringify(preview.themeConfig) !== JSON.stringify(theme.config)) throw new Error('Preview has unsaved theme changes');
     const release = await this.getActiveRelease(blogId); if (release?.contentVersion === blog.contentVersion && release.themeRevisionId === theme.id) throw new Error('Nothing to publish');
-    return this.createOperation(userId, blogId, 'publish', { contentVersion: blog.contentVersion, themeRevisionId: theme.id });
+    return this.createOperation(userId, blogId, 'publish', { contentVersion: blog.contentVersion, themeRevisionId: theme.id, previewPath });
   }
   async createThemeOperation(userId: string, blogId: string, prompt: string, baseTheme: unknown, limits: AiQuotaLimits, previewPath = '/'): Promise<OperationRecord> {
     const validatedBase = validateThemeConfig(baseTheme); const at = limits.at ?? new Date(); const window = quotaWindow(at);

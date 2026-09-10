@@ -57,11 +57,17 @@ export function landingPage() {
 
 export function loginPage(input: { github: boolean; google: boolean; message?: string; sent?: boolean }) {
   const hasSocialLogin = input.github || input.google;
+  if (input.sent) return document('Check your email', <section class="auth-shell card">
+    <header><p class="auth-kicker">One more step</p><h1>Check your email</h1><p>We sent a one-time sign-in link. It expires in 10 minutes.</p></header>
+    <section class="stack">
+      <p class="muted">You can close this tab after opening the link.</p>
+      <a href="/auth/login">Use a different email</a>
+    </section>
+  </section>);
   return document('Sign in', <section class="auth-shell card">
     <header><p class="auth-kicker">Welcome back</p><h1>Sign in to VibeLog</h1><p>{hasSocialLogin ? 'Choose an account or use a one-time email link.' : 'We’ll email you a one-time sign-in link.'}</p></header>
     <section class="stack">
       {input.message ? <div class="alert" data-variant="destructive" role="alert"><section>{input.message}</section></div> : null}
-      {input.sent ? <div class="alert" role="status"><section>Check your email. The link expires in 10 minutes.</section></div> : null}
       {input.github ? <form method="post" action="/auth/oauth/github"><button class="btn" data-variant="outline" type="submit">Continue with GitHub</button></form> : null}
       {input.google ? <form method="post" action="/auth/oauth/google"><button class="btn" data-variant="outline" type="submit">Continue with Google</button></form> : null}
       <form class="stack" method="post" action="/auth/magic-link">
@@ -104,24 +110,39 @@ export function guidePage(session?: AppSession) {
 function OperationOutput({ operation, successUrl }: { operation?: OperationRecord; successUrl?: string }) {
   const pending = operation && (operation.status === 'queued' || operation.status === 'running');
   const progress = operation ? operationProgress(operation) : null;
-  return <div class="operation-feedback">
+  const state = operation?.status ?? 'idle';
+  return <div class="operation-feedback" data-operation-feedback data-state={state}>
+    <div class="operation-status-row">
+      <span class="operation-indicator" aria-hidden="true"></span>
+      <output
+        class="operation-status"
+        data-variant={operation?.status === 'failed' ? 'destructive' : undefined}
+        aria-live="polite"
+        tabindex={-1}
+        data-operation-status
+        data-poll-url={pending ? `/api/operations/${operation.id}` : undefined}
+        data-success-url={successUrl}
+      >{operation ? operationMessage(operation) : ''}</output>
+    </div>
     <progress
       data-operation-progress
       aria-label="Operation progress"
-      hidden={!operation}
+      hidden={progress?.kind !== 'determinate'}
       max={progress?.kind === 'determinate' ? progress.max : undefined}
       value={progress?.kind === 'determinate' ? progress.value : undefined}
     ></progress>
-    <output
-      class="alert operation-status"
-      data-variant={operation?.status === 'failed' ? 'destructive' : undefined}
-      aria-live="polite"
-      tabindex={-1}
-      data-operation-status
-      data-poll-url={pending ? `/api/operations/${operation.id}` : undefined}
-      data-success-url={successUrl}
-    >{operation ? operationMessage(operation) : ''}</output>
   </div>;
+}
+
+const LANGUAGE_SUGGESTIONS = ['en', 'en-US', 'en-GB', 'zh-Hant', 'zh-Hans', 'ja', 'ko', 'es', 'fr', 'de', 'pt-BR', 'it'];
+
+function BlogLanguageField({ value, id, listId }: { value: string; id: string; listId: string }) {
+  const helpId = `${id}-help`;
+  return <div class="field"><label for={id}>Blog language</label><input id={id} name="language" required pattern="[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*" value={value} list={listId} aria-describedby={helpId}/><datalist id={listId}>{LANGUAGE_SUGGESTIONS.map((language) => <option value={language}/>)}</datalist><p id={helpId}>Choose a suggestion or enter any valid language tag.</p></div>;
+}
+
+function PreviewPathInput({ value }: { value: string }) {
+  return <input type="hidden" name="previewPath" value={value} data-preview-path-input/>;
 }
 
 export function onboardingPage(session: AppSession, blog: BlogRecord | null, operation: OperationRecord | null, appHostname: string) {
@@ -133,7 +154,7 @@ export function onboardingPage(session: AppSession, blog: BlogRecord | null, ope
     {failed ? <div id="hackmd-error" class="alert" data-variant="destructive" role="alert"><section>{failed}</section></div> : null}
     <form class="stack" method="post" action="/actions/blog/connect" data-operation data-success-url="/editor" aria-busy={busy ? 'true' : undefined}>
       <input type="hidden" name="csrfToken" value={session.csrfToken}/>
-      <div class="field"><label for="username">Blog address</label><input id="username" name="username" required minlength={3} maxlength={32} pattern="[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])" value={blog?.username ?? ''} readonly={Boolean(blog)} data-blog-handle/><p>Your site will be <strong data-blog-hostname data-host-suffix={appHostname}>{blog?.username ?? 'your-name'}.{appHostname}</strong>.</p></div>
+      <div class="field"><label for="username">Blog address</label><input id="username" name="username" required minlength={3} maxlength={32} pattern="[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])" value={blog?.username ?? ''} readonly={Boolean(blog)} data-blog-handle aria-errormessage="blog-address-error"/><span id="blog-address-error" class="inline-error" data-blog-address-error hidden></span><p>Your site will be <strong data-blog-hostname data-host-suffix={appHostname}>{blog?.username ?? 'your-name'}.{appHostname}</strong>.</p></div>
       <div class="field"><label for="hackmdUsername">HackMD username</label><input
         id="hackmdUsername"
         name="hackmdUsername"
@@ -141,8 +162,8 @@ export function onboardingPage(session: AppSession, blog: BlogRecord | null, ope
         maxlength={100}
         value={blog?.hackmdUsername ?? ''}
         aria-describedby={`hackmd-help${failed ? ' hackmd-error' : ''}`}
-      /></div>
-      <div class="field"><label for="blogLanguage">Blog language</label><input id="blogLanguage" name="language" required pattern="[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*" value={blog?.language ?? 'en'} list="language-suggestions" aria-describedby="blog-language-help"/><datalist id="language-suggestions"><option value="en"/><option value="zh-Hant"/><option value="ja"/><option value="ko"/></datalist><p id="blog-language-help">Choose a suggestion or enter a language tag such as en-US.</p></div>
+      /><p><a data-hackmd-profile href={blog?.hackmdUsername ? `https://hackmd.io/@${encodeURIComponent(blog.hackmdUsername)}` : undefined} aria-disabled={!blog?.hackmdUsername} target="_blank" rel="noreferrer">{blog?.hackmdUsername ? `https://hackmd.io/@${blog.hackmdUsername}` : 'https://hackmd.io/@username'}</a></p></div>
+      <BlogLanguageField id="blogLanguage" listId="language-suggestions" value={blog?.language ?? 'en'}/>
       <button class="btn" type="submit" disabled={busy}>{blog ? 'Retry sync' : 'Sync and build preview'}</button>
       <OperationOutput operation={operation ?? undefined}/>
     </form>
@@ -270,7 +291,7 @@ export function editorPage(input: EditorPageInput) {
   const includedPosts = blog.contentManifest?.filter((post) => post.included).length ?? 0;
   const themeSuccessUrl = editorUrlWithPreviewPath(input.previewPath);
 
-  return document('Edit blog', <div class="editor">
+  return document('Edit blog', <><p class="visually-hidden" aria-live="polite" data-page-status></p><div class="editor" data-editor-root>
     <header class="workspace-summary">
       <div>
         <p class="workspace-kicker">Publishing workspace</p>
@@ -280,7 +301,7 @@ export function editorPage(input: EditorPageInput) {
         </div>
       </div>
       <div class="workspace-status">
-        <p class="workspace-meta">@{blog.hackmdUsername} on HackMD · {blog.state === 'syncing' ? 'Syncing' : blog.lastError ? 'Last sync failed; your existing draft is safe' : 'Content synced'}</p>
+        <p class="workspace-meta"><a href={`https://hackmd.io/@${encodeURIComponent(blog.hackmdUsername)}`} target="_blank" rel="noreferrer">@{blog.hackmdUsername} on HackMD</a> · {blog.state === 'syncing' ? 'Syncing' : blog.lastError ? 'Last sync failed; your existing draft is safe' : 'Content synced'}</p>
         {published ? <div class="workspace-links"><a href={input.publicUrl} target="_blank" rel="noreferrer">View live site</a><span class="muted">Published {new Date(published.createdAt).toLocaleString('en')}</span></div> : null}
       </div>
       {blog.lastError ? <div class="alert" data-variant="destructive" role="alert"><section>{blog.lastError}</section></div> : null}
@@ -306,15 +327,17 @@ export function editorPage(input: EditorPageInput) {
             <div><strong>HackMD source</strong><p class="muted">{blog.lastSyncedAt ? <>Last synced <time datetime={blog.lastSyncedAt}>{new Date(blog.lastSyncedAt).toLocaleString('en')}</time></> : 'No successful sync yet.'}</p></div>
             <form class="compact-stack action-form" method="post" action="/actions/blog/sync" data-operation aria-busy={contentOperation ? 'true' : undefined}>
               <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
-              <button class="btn" data-variant="outline" type="submit" disabled={busy}>Sync now</button>
+              <PreviewPathInput value={input.previewPath}/>
+              <button class="btn" data-variant="outline" type="submit" disabled={busy} data-focus-key="sync">Sync now</button>
               <OperationOutput operation={contentOperation}/>
             </form>
           </section>
 
-          {blog.contentManifest ? <details class="editor-disclosure">
+          {blog.contentManifest ? <details class="editor-disclosure" data-disclosure-key="articles">
             <summary><span>Articles</span><small>{includedPosts} of {blog.contentManifest.length} included</small></summary>
             <div class="disclosure-body"><form method="post" action="/actions/blog/selection" data-operation aria-busy={selectionOperation ? 'true' : undefined}>
               <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
+              <PreviewPathInput value={input.previewPath}/>
               {blog.contentManifest.length > 0 ? <fieldset class="fieldset content-list">
                 <legend>Select articles for the blog</legend>
                 {blog.contentManifest.map((post) => <label class="content-choice">
@@ -334,15 +357,16 @@ export function editorPage(input: EditorPageInput) {
                 </label>)}
               </fieldset> : <p class="muted">This sync contains no articles.</p>}
               <p class="field-hint">New public articles are included by default. Your live site changes only when you publish.</p>
-              <button class="btn" type="submit" disabled={busy || blog.contentManifest.length === 0}>Save article selection</button>
+              <button class="btn" type="submit" disabled={busy || blog.contentManifest.length === 0} data-focus-key="selection">Save article selection</button>
               <OperationOutput operation={selectionOperation}/>
             </form></div>
           </details> : null}
 
-          <details class="editor-disclosure">
+          <details class="editor-disclosure" data-disclosure-key="blog-details">
             <summary><span>Blog details</span><small>Title, description, and language</small></summary>
             <div class="disclosure-body"><form method="post" action="/actions/blog/identity" data-operation aria-busy={identityOperation ? 'true' : undefined}>
               <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
+              <PreviewPathInput value={input.previewPath}/>
               <div class="field">
                 <label for="blogTitle">Blog title</label>
                 <input id="blogTitle" name="title" required minlength={1} maxlength={80} value={blog.title ?? ''} aria-describedby="blog-title-help" aria-errormessage="blog-title-error"/>
@@ -354,8 +378,8 @@ export function editorPage(input: EditorPageInput) {
                 <textarea id="blogDescription" name="description" maxlength={240} aria-describedby="blog-description-help">{blog.description ?? ''}</textarea>
                 <p id="blog-description-help">Optional, up to 240 characters.</p>
               </div>
-              <div class="field"><label for="blogLanguage">Blog language</label><input id="blogLanguage" name="language" required pattern="[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*" value={blog.language} list="editor-language-suggestions" aria-describedby="blog-language-help"/><datalist id="editor-language-suggestions"><option value="en"/><option value="zh-Hant"/><option value="ja"/><option value="ko"/></datalist><p id="blog-language-help">Choose a suggestion or enter a language tag such as en-US.</p></div>
-              <button class="btn" type="submit" disabled={busy}>Save blog details</button>
+              <BlogLanguageField id="editorBlogLanguage" listId="editor-language-suggestions" value={blog.language}/>
+              <button class="btn" type="submit" disabled={busy} data-focus-key="identity">Save blog details</button>
               <OperationOutput operation={identityOperation}/>
             </form></div>
           </details>
@@ -366,20 +390,23 @@ export function editorPage(input: EditorPageInput) {
         <header class="workflow-heading"><span class="step-number" aria-hidden="true">2</span><div><h2 id="appearance-title">Appearance</h2><p>Keep the current theme or shape a new version.</p></div></header>
         <div class="card workflow-card">
           <section class="theme-summary"><div><strong>{activeTheme.description}</strong><p class="muted">Current draft theme</p></div><span class="badge" data-variant="neutral">{SOURCE_LABEL[activeTheme.source]}</span></section>
-          <form method="post" action="/actions/theme/apply" data-operation data-mixed-actions data-theme-studio>
+          <form method="post" action="/actions/theme/apply" data-operation data-editor-submit data-mixed-actions data-theme-studio>
             <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
             <input type="hidden" name="previewToken" value={input.previewToken}/>
-            <input type="hidden" name="previewPath" value={input.previewPath} data-preview-path-input/>
+            <PreviewPathInput value={input.previewPath}/>
 
-            <details class="editor-disclosure">
-              <summary><span>Generate with AI</span><small>Optional visual direction</small></summary>
-              <div class="disclosure-body">
+            <section class="studio-primary">
+              <header><strong>Generate with AI</strong><p>Start with a direction or write your own.</p></header>
+              <div class="studio-primary-body">
                 <div class="field"><label for="prompt">Describe the reading experience</label><textarea id="prompt" name="prompt" maxlength={1000} placeholder="A restrained independent magazine for long articles"></textarea><p>AI sees your blog details, theme, and this prompt. It never receives article bodies.</p></div>
-                <button class="btn" data-variant="outline" type="submit" formaction="/actions/theme/generate" data-operation-submit disabled={busy}>Generate theme</button>
+                <div class="prompt-starters" aria-label="Prompt starters">
+                  {['A restrained independent magazine', 'Make long articles easier to read', 'Keep it minimal but add personality', 'A dark theme for night reading'].map((prompt) => <button class="btn prompt-chip" data-variant="outline" data-size="compact" type="button" data-prompt-starter={prompt}>{prompt}</button>)}
+                </div>
+                <button class="btn studio-primary-action" type="submit" formaction="/actions/theme/generate" data-operation-submit data-focus-key="generate" disabled={busy}>Generate with AI</button>
               </div>
-            </details>
+            </section>
 
-            <details class="editor-disclosure">
+            <details class="editor-disclosure" data-disclosure-key="fine-tune">
               <summary><span>Fine-tune theme</span><small>Layout, type, color, and spacing</small></summary>
               <div class="disclosure-body theme-control-stack">
                 <ChoiceGroup legend="Layout preset" name="preset" options={CONTROL_OPTIONS.preset} value={controls.preset}/>
@@ -400,14 +427,14 @@ export function editorPage(input: EditorPageInput) {
                 <ChoiceGroup legend="Content width" name="contentWidth" options={CONTROL_OPTIONS.contentWidth} value={controls.contentWidth}/>
                 <ChoiceGroup legend="Spacing" name="density" options={CONTROL_OPTIONS.density} value={controls.density}/>
                 <ChoiceGroup legend="Corners" name="radius" options={CONTROL_OPTIONS.radius} value={controls.radius}/>
-                <button class="btn" type="submit" disabled={busy}>Save theme version</button>
+                <button class="btn" type="submit" disabled={busy} data-editor-submit data-focus-key="save-theme">Save theme version</button>
               </div>
             </details>
             <p class="unsaved-note" data-unsaved-note hidden>Save these theme changes before publishing.</p>
             <OperationOutput operation={input.operation?.type === 'generate_theme' ? input.operation : undefined} successUrl={themeSuccessUrl}/>
           </form>
 
-          <details class="editor-disclosure history">
+          <details class="editor-disclosure history" data-disclosure-key="theme-history">
             <summary><span>Theme history</span><small>{themes.length} versions</small></summary>
             <div class="disclosure-body revision-list">{themes.map((theme) => <div class="revision">
               <div>
@@ -419,10 +446,10 @@ export function editorPage(input: EditorPageInput) {
                 </div>
                 <small class="muted">{new Date(theme.createdAt).toLocaleString('en')}</small>
               </div>
-              {theme.active ? null : <form method="post" action={`/actions/theme/${theme.id}/activate`}>
+              {theme.active ? null : <form method="post" action={`/actions/theme/${theme.id}/activate`} data-editor-submit>
                 <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
-                <input type="hidden" name="previewPath" value={input.previewPath} data-preview-path-input/>
-                <button class="btn" data-variant="outline" data-size="compact" type="submit" disabled={busy}>Preview version</button>
+                <PreviewPathInput value={input.previewPath}/>
+                <button class="btn" data-variant="outline" data-size="compact" type="submit" disabled={busy} data-focus-key="activate-theme">Preview version</button>
               </form>}
             </div>)}</div>
           </details>
@@ -436,12 +463,13 @@ export function editorPage(input: EditorPageInput) {
             <form class="stack" method="post" action="/actions/publish" data-operation>
               <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
               <input type="hidden" name="previewToken" value={input.previewToken}/>
-              <button class="btn" type="submit" data-publish-button disabled={!blog.draftArtifactId || !hasChanges || busy}>{publishLabel}</button>
+              <PreviewPathInput value={input.previewPath}/>
+              <button class="btn" type="submit" data-publish-button data-focus-key="publish" disabled={!blog.draftArtifactId || !hasChanges || busy}>{publishLabel}</button>
               <p class="publish-destination">{blog.username}.{input.appHostname}</p>
               <OperationOutput operation={input.operation?.type === 'publish' ? input.operation : undefined}/>
             </form>
           </section>
-          {releases.length > 0 ? <details class="editor-disclosure history">
+          {releases.length > 0 ? <details class="editor-disclosure history" data-disclosure-key="release-history">
             <summary><span>Release history</span><small>{releases.length} saved</small></summary>
             <div class="disclosure-body revision-list">{releases.map((release) => {
               const theme = themesById.get(release.themeRevisionId);
@@ -454,9 +482,10 @@ export function editorPage(input: EditorPageInput) {
                   </div>
                   <small class="muted">{new Date(release.createdAt).toLocaleString('en')}</small>
                 </div>
-                {release.active ? null : <form method="post" action={`/actions/releases/${release.id}/activate`}>
+                {release.active ? null : <form method="post" action={`/actions/releases/${release.id}/activate`} data-editor-submit>
                   <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
-                  <button class="btn" data-variant="outline" data-size="compact" type="submit" disabled={busy}>Restore live</button>
+                  <PreviewPathInput value={input.previewPath}/>
+                  <button class="btn" data-variant="outline" data-size="compact" type="submit" disabled={busy} data-focus-key="restore-release">Restore live</button>
                 </form>}
               </div>;
             })}</div>
@@ -464,7 +493,7 @@ export function editorPage(input: EditorPageInput) {
         </div>
       </section>
     </section>
-  </div>, input.session, true);
+  </div></>, input.session, true);
 }
 
 export function operationPage(session: AppSession, operation: OperationRecord, backUrl: string, successUrl = '/editor') {
