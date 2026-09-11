@@ -96,6 +96,10 @@ time { font-variant-numeric: tabular-nums; }
 .landing-points li { display: grid; gap: 0.4rem; padding: 1.25rem 1.25rem 1.25rem 0; }
 .landing-points li + li { padding-inline-start: 1.25rem; border-inline-start: 1px solid var(--border); }
 .landing-points span { color: var(--muted-foreground); }
+.landing-footer { display: flex; justify-content: flex-end; width: min(100%, 66rem); margin: 2rem auto 0; padding-block-start: 1rem; border-top: 1px solid var(--border); }
+.github-link { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; color: var(--muted-foreground); border-radius: 50%; }
+.github-link:hover { color: var(--foreground); background: var(--muted); }
+.github-link svg { display: block; }
 
 .guide { display: grid; gap: 2.25rem; width: min(100%, 48rem); margin: clamp(2rem, 7vh, 5rem) auto 0; }
 .guide > header { display: grid; justify-items: start; gap: 1rem; }
@@ -179,6 +183,7 @@ time { font-variant-numeric: tabular-nums; }
 .prompt-starters { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .prompt-chip { min-height: 2.25rem; border-radius: 999px; white-space: normal; text-align: start; }
 .studio-primary-action { width: 100%; }
+.shortcut-hint { margin: -0.45rem 0 0; color: var(--muted-foreground); font: 600 0.72rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: end; }
 
 .content-list { gap: 0.45rem; }
 .content-choice { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 0.12rem 0.6rem; min-height: 3rem; padding: 0.55rem 0.65rem; cursor: pointer; border: 1px solid var(--border); border-radius: var(--radius); }

@@ -9,7 +9,7 @@ config:
   vibelog:minInstances: "0"
   vibelog:maxInstances: "3"
   vibelog:aiProvider: opencode-go
-  vibelog:aiModel: qwen3.8-flash
+  vibelog:aiModel: deepseek-v4.1-flash
   vibelog:aiApiKeyEnv: OPENCODE_API_KEY
   vibelog:r2Location: apac
   vibelog:neonOrgId: org-solitary-cake-20442223

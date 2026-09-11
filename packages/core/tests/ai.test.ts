@@ -17,9 +17,10 @@ function instrumentedSubject(providerName: string, responses: Parameters<ReturnT
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 describe('PiAiProvider theme proposal', () => {
   it('supports the OpenCode Go provider catalog', () => {
-    const provider = createAiProvider('opencode-go', 'qwen3.8-flash');
+    const provider = createAiProvider('opencode-go', 'deepseek-v4.1-flash');
     expect(provider.name).toBe('opencode-go');
-    expect(provider.modelId).toBe('qwen3.8-flash');
+    expect(provider.modelId).toBe('deepseek-v4.1-flash');
+    expect(provider.model.api).toBe('openai-completions');
   });
   it('returns a valid single tool proposal', async () => {
     const response = fauxAssistantMessage(fauxToolCall('propose_theme', DEFAULT_THEME), { stopReason: 'toolUse' });
@@ -68,6 +69,25 @@ describe('PiAiProvider theme proposal', () => {
 
     const provider = createAiProvider('opencode-go', 'qwen3.8-flash');
     await expect(provider.generate(input, { sessionId: 'operation-1' })).rejects.toBeInstanceOf(AiProviderRequestError);
+    expect(requestHeaders?.get('x-opencode-session')).toBe('operation-1');
+    expect(requestHeaders?.get('user-agent')).toBe('VibeLog');
+  });
+  it('sends DeepSeek V4.1 Flash through the OpenCode Go chat completions transport', async () => {
+    vi.stubEnv('OPENCODE_API_KEY', 'test-key');
+    let requestUrl: string | undefined;
+    let requestHeaders: Headers | undefined;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((request, options) => {
+      requestUrl = request instanceof Request ? request.url : String(request);
+      requestHeaders = request instanceof Request ? request.headers : new Headers(options?.headers);
+      return Promise.resolve(new Response(JSON.stringify({ error: { message: 'offline test' } }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      }));
+    });
+
+    const provider = createAiProvider('opencode-go', 'deepseek-v4.1-flash');
+    await expect(provider.generate(input, { sessionId: 'operation-1' })).rejects.toBeInstanceOf(AiProviderRequestError);
+    expect(requestUrl).toBe('https://opencode.ai/zen/go/v1/chat/completions');
     expect(requestHeaders?.get('x-opencode-session')).toBe('operation-1');
     expect(requestHeaders?.get('user-agent')).toBe('VibeLog');
   });

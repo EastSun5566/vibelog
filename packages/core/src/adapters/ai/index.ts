@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Type, createModels, createProvider, validateToolCall, type Api, type Context, type Model, type Models, type MutableModels, type ProviderEnv, type ProviderStreams, type SimpleStreamOptions, type Tool } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { builtinModels, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all';
+import { opencodeGoProvider } from '@earendil-works/pi-ai/providers/opencode-go';
 import type { AiGenerationContext, AiProvider, ThemeConfig, ThemeProposalInput } from '../../types.js';
 import { validateThemeConfig } from '../../theme.js';
 import { logger } from '../../core/index.js';
@@ -10,6 +11,7 @@ const THEME_TOOL_NAME = 'propose_theme';
 const OLLAMA_PROVIDER = 'ollama';
 const OLLAMA_BASE_URL = 'http://localhost:11434/v1';
 const KEYLESS_OLLAMA_TRANSPORT_KEY = 'ollama-local';
+const DEEPSEEK_V41_FLASH = 'deepseek-v4.1-flash';
 const OPENCODE_PROVIDERS = new Set(['opencode', 'opencode-go']);
 const VIBELOG_USER_AGENT = 'VibeLog';
 const enumType = <T extends string>(values: readonly T[]) => Type.Union(values.map((value) => Type.Literal(value)));
@@ -47,7 +49,21 @@ function createOllamaProvider(modelId: string) {
   const model: Model<'openai-completions'> = { id: modelId, name: `${modelId} (Ollama)`, api: 'openai-completions', provider: OLLAMA_PROVIDER, baseUrl, reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128_000, maxTokens: 32_000, compat: { supportsDeveloperRole: false, supportsReasoningEffort: false } };
   return createProvider({ id: OLLAMA_PROVIDER, name: 'Ollama', baseUrl, auth: { apiKey: { name: 'Ollama', resolve: () => Promise.resolve({ auth: {} }) } }, models: [model], api: keylessOpenAICompletionsApi() });
 }
-function defaultModels(provider: string, modelId: string): MutableModels { const models = provider === OLLAMA_PROVIDER ? createModels() : builtinModels(); if (provider === OLLAMA_PROVIDER) models.setProvider(createOllamaProvider(modelId)); return models; }
+function createOpenCodeGoCompatibilityProvider() {
+  const model: Model<'openai-completions'> = {
+    id: DEEPSEEK_V41_FLASH, name: 'DeepSeek V4.1 Flash', api: 'openai-completions', provider: 'opencode-go', baseUrl: 'https://opencode.ai/zen/go/v1', reasoning: true, input: ['text', 'image'],
+    cost: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 }, contextWindow: 1_000_000, maxTokens: 384_000,
+    compat: { supportsStore: false, supportsDeveloperRole: false, maxTokensField: 'max_tokens', requiresReasoningContentOnAssistantMessages: true, thinkingFormat: 'deepseek' },
+    thinkingLevelMap: { minimal: null, low: 'low', medium: null, high: 'high', max: 'max' },
+  };
+  return createProvider({ id: 'opencode-go', name: 'OpenCode Go', auth: opencodeGoProvider().auth, models: [model], api: openAICompletionsApi() });
+}
+function defaultModels(provider: string, modelId: string): MutableModels {
+  const models = provider === OLLAMA_PROVIDER ? createModels() : builtinModels();
+  if (provider === OLLAMA_PROVIDER) models.setProvider(createOllamaProvider(modelId));
+  else if (provider === 'opencode-go' && modelId === DEEPSEEK_V41_FLASH && !models.getModel(provider, modelId)) models.setProvider(createOpenCodeGoCompatibilityProvider());
+  return models;
+}
 function requestEnv(provider: string): ProviderEnv | undefined { const legacy = process.env.GOOGLE_GENERATIVE_AI_API_KEY; return provider === 'google' && !process.env.GEMINI_API_KEY && legacy ? { GEMINI_API_KEY: legacy } : undefined; }
 function safeProviderError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);

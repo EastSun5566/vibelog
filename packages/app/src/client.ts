@@ -305,6 +305,13 @@ const initializeStudio = (root) => {
     const prompt = studio.querySelector('#prompt');
     if (prompt instanceof HTMLTextAreaElement) { prompt.value = starter.dataset.promptStarter ?? ''; prompt.focus(); }
   });
+  const prompt = studio.querySelector('#prompt');
+  const generateButton = studio.querySelector('[data-operation-submit][data-feedback-target="ai"]');
+  if (prompt instanceof HTMLTextAreaElement && generateButton instanceof HTMLButtonElement) prompt.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey) || event.altKey || event.isComposing || generateButton.disabled) return;
+    event.preventDefault();
+    studio.requestSubmit(generateButton);
+  });
 };
 
 function initializeEditor(root = document) {

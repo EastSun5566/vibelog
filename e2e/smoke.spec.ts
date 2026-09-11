@@ -13,6 +13,7 @@ async function requestMagicLink(page: Page, request: APIRequestContext, mailpitU
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await expect(page).toHaveURL(/\/auth\/login\?sent=1$/u);
   await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('We sent a one-time sign-in link. It expires in 10 minutes.');
   await expect(page.getByLabel('Email')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Use a different email' })).toBeVisible();
 
@@ -77,6 +78,10 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(page.getByRole('heading', { name: /Keep writing in HackMD/ })).toBeVisible();
   await expect(page.locator('.app-brand img')).toHaveAttribute('src', '/assets/logo.svg');
   await expect(page.getByRole('link', { name: 'Start publishing' })).toHaveCount(1);
+  const sourceLink = page.getByRole('link', { name: 'VibeLog source code on GitHub' });
+  await expect(sourceLink).toHaveAttribute('href', 'https://github.com/EastSun5566/vibelog');
+  await expect(sourceLink).toHaveAttribute('target', '_blank');
+  await expect(sourceLink).toHaveAttribute('rel', 'noreferrer');
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
   await page.keyboard.press('Tab');
@@ -89,6 +94,8 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
   await expect(page.getByText('Generate a theme with AI or fine-tune it, then publish when the draft is ready.')).toBeVisible();
+  await expect(page.getByText('AI cannot write arbitrary CSS or HTML')).toHaveCount(0);
+  await expect(page.getByText('VibeLog stores no passwords')).toHaveCount(0);
   await page.setViewportSize({ width: 1280, height: 720 });
 
   const magicLink = await requestMagicLink(page, request, mailpitUrl, 'writer@example.com');
@@ -139,6 +146,8 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(page.getByLabel('Describe the reading experience')).toBeFocused();
   await expect(page.getByLabel('Describe the reading experience')).toHaveAttribute('required', '');
   await expect(page.getByLabel('Describe the reading experience')).toHaveAttribute('minlength', '1');
+  await expect(page.getByRole('button', { name: 'Generate with AI' })).toHaveAttribute('aria-keyshortcuts', 'Meta+Enter Control+Enter');
+  await expect(page.getByText('⌘/Ctrl + Enter')).toBeVisible();
 
   let aiPolls = 0;
   await page.route('**/actions/theme/generate', (route) => route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ pollUrl: '/api/operations/mock-ai', successUrl: '/editor' }) }));
@@ -157,7 +166,7 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
       if (status.textContent === 'Theme ready') document.documentElement.dataset.aiSuccessFeedback = 'ai';
     }).observe(status, { childList: true, characterData: true, subtree: true });
   });
-  await page.getByRole('button', { name: 'Generate with AI' }).click();
+  await page.getByLabel('Describe the reading experience').press('Control+Enter');
   const aiFeedback = page.locator('.studio-primary [data-feedback-slot="ai"]');
   await expect(aiFeedback.getByText('AI is designing a new theme…')).toBeVisible();
   await expect(aiFeedback.locator('[data-operation-progress]')).toBeHidden();
