@@ -67,9 +67,14 @@ async function openDisclosure(page: Page, key: string): Promise<void> {
 
 test('publishes a fixture HackMD blog through the complete local stack', async ({ page, request }) => {
   test.setTimeout(300_000);
+  const browserErrors: string[] = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
   const mailpitUrl = process.env.E2E_MAILPIT_URL;
   if (!mailpitUrl) throw new Error('E2E_MAILPIT_URL is required');
 
+  const clientResponse = await request.get('/assets/client.js');
+  expect(clientResponse.ok()).toBe(true);
+  expect(clientResponse.headers()['content-type']).toContain('text/javascript');
   const logoResponse = await request.get('/assets/logo.svg');
   expect(logoResponse.ok()).toBe(true);
   expect(logoResponse.headers()['content-type']).toContain('image/svg+xml');
@@ -301,4 +306,5 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(page.locator('[data-blog-address-error]')).toHaveText('That blog address is already taken. Choose another one.');
   await expect(page.getByLabel('Blog address')).toHaveAttribute('aria-invalid', 'true');
   await expect(page).toHaveURL(/\/onboarding$/u);
+  expect(browserErrors).toEqual([]);
 });

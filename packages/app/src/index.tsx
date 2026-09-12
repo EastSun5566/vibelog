@@ -8,7 +8,6 @@ import { renderThemeCss } from '@vibelog/core';
 import { findArtifactObject } from './artifact-serving.js';
 import { createAuth, readSession, type AppVariables } from './auth.js';
 import { blogIdentitySchema, blogLanguageSchema } from './blog-sync.js';
-import { CLIENT_SCRIPT } from './client.js';
 import { loadAppConfig, type AppConfig } from './config.js';
 import { AiQuotaExceededError, AppDatabase, BlogAddressTakenError, type BlogRecord, type OperationRecord, type OperationType } from './database.js';
 import { AppError, assertCsrfToken, assertMutationOrigin, jsonError, requestContext } from './http.js';
@@ -89,7 +88,7 @@ export function createApp(options: CreateAppOptions) {
     throw new AppError('unknown_host', 'Unknown VibeLog host', 404);
   });
   app.use('*', async (c, next) => { await next(); if (c.res.headers.get('content-type')?.includes('text/html')) c.header('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src ${config.previewOrigin}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`); });
-  app.get('/assets/client.js', (c) => { c.header('Content-Type', 'text/javascript; charset=utf-8'); c.header('Cache-Control', 'no-store'); return c.body(CLIENT_SCRIPT); });
+  app.get('/assets/client.js', async (c) => { c.header('Content-Type', 'text/javascript; charset=utf-8'); c.header('Cache-Control', 'no-store'); return c.body(new Uint8Array(await readFile(new URL('../dist/assets/client.js', import.meta.url)))); });
   app.get('/assets/app.css', async (c) => { c.header('Content-Type', 'text/css; charset=utf-8'); c.header('Cache-Control', 'no-cache'); return c.body(new Uint8Array(await readFile(new URL('../dist/assets/app.css', import.meta.url)))); });
   app.get('/assets/logo.svg', async (c) => { c.header('Content-Type', 'image/svg+xml'); c.header('Cache-Control', 'public, max-age=3600'); return c.body(new Uint8Array(await readFile(new URL('../dist/assets/logo.svg', import.meta.url)))); });
   app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw));

@@ -17,5 +17,5 @@
     "tests",
     "scripts"
   ],
-  "exclude": ["dist", "coverage"]
+  "exclude": ["dist", "coverage", "src/browser"]
 }

@@ -16,8 +16,9 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "pnpm css:build && tsx --env-file=../../.env src/main.ts",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -R src/drizzle dist/drizzle && pnpm css:build --minify && cp ../../logo.svg dist/assets/logo.svg",
+    "dev": "pnpm css:build && pnpm client:build && tsx --env-file=../../.env src/main.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -R src/drizzle dist/drizzle && pnpm css:build --minify && pnpm client:build --minify && cp ../../logo.svg dist/assets/logo.svg",
+    "client:build": "tsc -p tsconfig.client.json && esbuild src/browser/main.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/assets/client.js",
     "css:build": "tailwindcss -i src/styles/app.css -o dist/assets/app.css",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:check": "drizzle-kit check --config drizzle.config.ts",
@@ -25,7 +26,7 @@
     "start:worker": "node dist/worker-main.js",
     "db:migrate": "node dist/migrate.js",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.client.json"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1121.0",
@@ -45,6 +46,7 @@
     "@types/pg": "8.15.5",
     "basecoat-css": "1.0.2",
     "drizzle-kit": "0.31.10",
+    "esbuild": "0.28.1",
     "tailwindcss": "4.3.3",
     "tsx": "^4.19.4",
     "typescript": "7.0.2"
