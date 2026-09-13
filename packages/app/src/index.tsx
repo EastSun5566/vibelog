@@ -18,7 +18,7 @@ import type { TransactionalEmailSender } from './ports/transactional-email.js';
 import { editorUrlWithPreviewPath, safePreviewPath } from './preview-path.js';
 import { hashToken, randomToken } from './security/crypto.js';
 import { themeFromControls } from './theme-studio.js';
-import { editorPage, guidePage, landingPage, loginPage, onboardingPage, operationPage } from './views.js';
+import { editorPage, guidePage, landingPage, loginPage, onboardingPage, operationPage, type AnalyticsDocumentConfig } from './views.js';
 
 const RESERVED = new Set(['preview', 'www', 'api', 'admin', 'assets']);
 const handleInput = z.string().trim().toLowerCase().min(3).max(32).regex(/^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/);
@@ -27,7 +27,7 @@ const hackmdInput = z.object({ hackmdUsername: z.string().trim().min(1).max(100)
 const themeInput = z.object({ prompt: z.string().trim().min(1).max(1000) });
 const previewTokenInput = z.string().min(32).max(512);
 const uuidInput = z.uuid();
-interface AppEnv { Variables: AppVariables }
+interface AppEnv { Variables: AppVariables & { analyticsNonce?: string } }
 type AppContext = Context<AppEnv>;
 interface CreateAppOptions { config?: AppConfig; database?: AppDatabase; artifactStore: ArtifactStore; emailSender: TransactionalEmailSender; dispatcher: OperationDispatcher }
 const formValue = (body: Record<string, string | File>, key: string) => typeof body[key] === 'string' ? body[key] : undefined;
@@ -87,20 +87,35 @@ export function createApp(options: CreateAppOptions) {
     }
     throw new AppError('unknown_host', 'Unknown VibeLog host', 404);
   });
-  app.use('*', async (c, next) => { await next(); if (c.res.headers.get('content-type')?.includes('text/html')) c.header('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src ${config.previewOrigin}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`); });
+  app.use('*', async (c, next) => {
+    await next();
+    if (!c.res.headers.get('content-type')?.includes('text/html')) return;
+    const nonce = c.get('analyticsNonce');
+    const scriptSources = nonce ? `'nonce-${nonce}' 'strict-dynamic' 'self' https://www.googletagmanager.com` : "'self'";
+    const imageSources = nonce ? "'self' data: https://*.google-analytics.com https://www.googletagmanager.com" : "'self' data:";
+    const connectSources = nonce ? "'self' https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com" : "'self'";
+    c.header('Content-Security-Policy', `default-src 'self'; script-src ${scriptSources}; style-src 'self'; img-src ${imageSources}; connect-src ${connectSources}; frame-src ${config.previewOrigin}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`);
+  });
   app.get('/assets/client.js', async (c) => { c.header('Content-Type', 'text/javascript; charset=utf-8'); c.header('Cache-Control', 'no-store'); return c.body(new Uint8Array(await readFile(new URL('../dist/assets/client.js', import.meta.url)))); });
+  app.get('/assets/analytics.js', async (c) => { c.header('Content-Type', 'text/javascript; charset=utf-8'); c.header('Cache-Control', 'no-store'); return c.body(new Uint8Array(await readFile(new URL('../dist/assets/analytics.js', import.meta.url)))); });
   app.get('/assets/app.css', async (c) => { c.header('Content-Type', 'text/css; charset=utf-8'); c.header('Cache-Control', 'no-cache'); return c.body(new Uint8Array(await readFile(new URL('../dist/assets/app.css', import.meta.url)))); });
   app.get('/assets/logo.svg', async (c) => { c.header('Content-Type', 'image/svg+xml'); c.header('Cache-Control', 'public, max-age=3600'); return c.body(new Uint8Array(await readFile(new URL('../dist/assets/logo.svg', import.meta.url)))); });
   app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw));
   const internalAuthPost = async (c: AppContext, path: string, body: Record<string, unknown>) => { const headers = new Headers({ 'content-type': 'application/json', origin: config.appOrigin }); const cookie = c.req.header('cookie'); if (cookie) headers.set('cookie', cookie); return auth.handler(new Request(new URL(`/api/auth${path}`, config.appOrigin), { method: 'POST', headers, body: JSON.stringify(body) })); };
   const copyCookies = (c: AppContext, response: Response) => { for (const cookie of response.headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true }); };
 
-  app.get('/auth/login', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), sent: c.req.query('sent') === '1' })));
+  const analyticsDocument = (c: AppContext): AnalyticsDocumentConfig | undefined => {
+    if (!config.googleAnalyticsMeasurementId) return undefined;
+    const nonce = randomBytes(18).toString('base64');
+    c.set('analyticsNonce', nonce);
+    return { measurementId: config.googleAnalyticsMeasurementId, nonce };
+  };
+  app.get('/auth/login', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), sent: c.req.query('sent') === '1' }, analyticsDocument(c))));
   app.post('/auth/magic-link', async (c) => {
     assertMutationOrigin(c, config); const body = await c.req.parseBody().catch(() => ({})); const parsed = emailInput.safeParse(formValue(body, 'email')?.trim().toLowerCase());
-    if (!parsed.success) return c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Enter a valid email address.' }), 400);
+    if (!parsed.success) return c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Enter a valid email address.' }, analyticsDocument(c)), 400);
     const key = createHmacKey(config.betterAuthSecret, parsed.data);
-    if (!await database.consumeRateLimit(`magic:minute:${key}`, 1, 60) || !await database.consumeRateLimit(`magic:hour:${key}`, 3, 3600)) return c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Please wait before requesting another link.' }), 429);
+    if (!await database.consumeRateLimit(`magic:minute:${key}`, 1, 60) || !await database.consumeRateLimit(`magic:hour:${key}`, 3, 3600)) return c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Please wait before requesting another link.' }, analyticsDocument(c)), 429);
     const response = await internalAuthPost(c, '/sign-in/magic-link', { email: parsed.data, name: parsed.data.split('@')[0], callbackURL: '/editor' });
     if (!response.ok) throw new AppError('magic_link_failed', 'Could not send a sign-in link.', 502);
     return c.redirect('/auth/login?sent=1', 303);
@@ -114,8 +129,8 @@ export function createApp(options: CreateAppOptions) {
   const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => { const session = await readSession(c, auth, config); if (!session) return c.redirect('/auth/login'); c.set('session', session); await next(); };
   for (const path of ['/editor', '/onboarding', '/operations/*', '/actions/*', '/api/*', '/auth/logout']) app.use(path, requireSession);
   app.post('/auth/logout', async (c) => { const body = await c.req.parseBody(); assertMutationOrigin(c, config); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); const response = await internalAuthPost(c, '/sign-out', {}); copyCookies(c, response); return c.redirect('/auth/login', 303); });
-  app.get('/', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(landingPage()));
-  app.get('/guide', async (c) => c.html(guidePage((await readSession(c, auth, config)) ?? undefined)));
+  app.get('/', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(landingPage(analyticsDocument(c))));
+  app.get('/guide', async (c) => { const session = (await readSession(c, auth, config)) ?? undefined; return c.html(guidePage(session, session ? undefined : analyticsDocument(c))); });
   app.get('/onboarding', async (c) => { const blog = await database.getBlogForUser(c.get('session').user.id); if (blog?.draftArtifactId) return c.redirect('/editor'); const operation = blog ? await database.getActiveOperation(blog.id, blog.userId) : null; return c.html(onboardingPage(c.get('session'), blog, operation, config.appHostname)); });
 
   async function ownedBlog(c: AppContext): Promise<BlogRecord> { const blog = await database.getBlogForUser(c.get('session').user.id); if (!blog) throw new AppError('blog_not_found', 'Connect HackMD first.', 404); return blog; }

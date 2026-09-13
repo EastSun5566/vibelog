@@ -11,6 +11,7 @@ export interface GcpContainerRuntimeArgs {
   appOrigin: pulumi.Input<string>; previewOrigin: pulumi.Input<string>; objectStoreEndpoint: pulumi.Input<string>;
   objectStoreBucket: pulumi.Input<string>;
   aiProvider: pulumi.Input<string>; aiModel: pulumi.Input<string>; aiApiKeyEnv: pulumi.Input<string>;
+  googleAnalyticsMeasurementId?: pulumi.Input<string>;
   emailFrom: pulumi.Input<string>; emailReplyTo: pulumi.Input<string>; minInstances: pulumi.Input<number>;
   maxInstances: pulumi.Input<number>;
   secrets: RuntimeSecretInputs; provider: gcp.Provider;
@@ -69,6 +70,7 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
     const webEnv = [
       { name: 'PREVIEW_ORIGIN', value: args.previewOrigin },
       { name: 'EMAIL_FROM', value: args.emailFrom }, { name: 'EMAIL_REPLY_TO', value: args.emailReplyTo },
+      ...(args.googleAnalyticsMeasurementId ? [{ name: 'GOOGLE_ANALYTICS_MEASUREMENT_ID', value: args.googleAnalyticsMeasurementId }] : []),
     ];
     const service = (kind: 'web' | 'worker', account: gcp.serviceaccount.Account, command: string, extraEnv: gcp.types.input.cloudrunv2.ServiceTemplateContainerEnv[]) =>
       new gcp.cloudrunv2.Service(`${name}-${kind}`, {

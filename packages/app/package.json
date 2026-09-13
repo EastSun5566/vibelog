@@ -18,7 +18,7 @@
   "scripts": {
     "dev": "pnpm css:build && pnpm client:build && tsx --env-file=../../.env src/main.ts",
     "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -R src/drizzle dist/drizzle && pnpm css:build --minify && pnpm client:build --minify && cp ../../logo.svg dist/assets/logo.svg",
-    "client:build": "tsc -p tsconfig.client.json && esbuild src/browser/main.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/assets/client.js",
+    "client:build": "tsc -p tsconfig.client.json && node scripts/build-browser.ts",
     "css:build": "tailwindcss -i src/styles/app.css -o dist/assets/app.css",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:check": "drizzle-kit check --config drizzle.config.ts",

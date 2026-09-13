@@ -87,6 +87,7 @@ function createApplication() {
     aiProvider: config.get('aiProvider') ?? 'openai',
     aiModel: config.get('aiModel') ?? 'gpt-4o-mini',
     aiApiKeyEnv: config.get('aiApiKeyEnv') ?? 'OPENAI_API_KEY',
+    googleAnalyticsMeasurementId: config.get('googleAnalyticsMeasurementId'),
     emailFrom: `VibeLog <login@send.${rootDomain}>`,
     emailReplyTo: `support@${rootDomain}`,
     minInstances: config.getNumber('minInstances') ?? 0,

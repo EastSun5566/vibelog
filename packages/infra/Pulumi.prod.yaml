@@ -11,6 +11,7 @@ config:
   vibelog:aiProvider: opencode-go
   vibelog:aiModel: deepseek-v4.1-flash
   vibelog:aiApiKeyEnv: OPENCODE_API_KEY
+  vibelog:googleAnalyticsMeasurementId: G-K826ZT9KZD
   vibelog:r2Location: apac
   vibelog:neonOrgId: org-solitary-cake-20442223
   vibelog:neonRegionId: aws-ap-southeast-1

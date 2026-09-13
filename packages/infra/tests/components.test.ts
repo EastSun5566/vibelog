@@ -60,7 +60,7 @@ describe('Pulumi components', () => {
       deployerServiceAccountEmail: 'vibelog-deployer@vibelog-test-project.iam.gserviceaccount.com',
       appOrigin: 'https://example.com', previewOrigin: 'https://preview.example.com', objectStoreEndpoint: 'https://account.r2.cloudflarestorage.com',
       objectStoreBucket: 'artifacts', aiProvider: 'openai', aiModel: 'gpt-4o-mini',
-      aiApiKeyEnv: 'OPENAI_API_KEY', emailFrom: 'VibeLog <login@send.example.com>', emailReplyTo: 'support@example.com',
+      aiApiKeyEnv: 'OPENAI_API_KEY', googleAnalyticsMeasurementId: 'G-TEST123', emailFrom: 'VibeLog <login@send.example.com>', emailReplyTo: 'support@example.com',
       minInstances: 0, maxInstances: 3, provider,
       secrets: { databaseUrl: pulumi.secret('database'), objectStoreAccessKeyId: pulumi.secret('key'), objectStoreSecretAccessKey: pulumi.secret('secret'), resendApiKey: pulumi.secret('resend'), betterAuthSecret: pulumi.secret('auth'), aiApiKey: pulumi.secret('ai'), edgeSharedSecret: pulumi.secret('edge') },
       }, { providers: [provider] });
@@ -92,7 +92,10 @@ describe('Pulumi components', () => {
       for (const env of container.envs.filter((item) => secretNames.has(item.name))) { expect(env.value).toBeUndefined(); expect(env.valueSource).toBeDefined(); }
     }
     const workerTemplate = worker.inputs.template as { containers: { envs: { name: string }[] }[] };
+    const webTemplate = web.inputs.template as { containers: { envs: { name: string; value?: string }[] }[] };
+    expect(webTemplate.containers[0]?.envs).toContainEqual({ name: 'GOOGLE_ANALYTICS_MEASUREMENT_ID', value: 'G-TEST123' });
     const workerSecretNames = new Set(workerTemplate.containers[0]?.envs.map((env) => env.name) ?? []);
+    expect(workerSecretNames.has('GOOGLE_ANALYTICS_MEASUREMENT_ID')).toBe(false);
     expect(workerSecretNames.has('RESEND_API_KEY')).toBe(false);
     expect(workerSecretNames.has('BETTER_AUTH_SECRET')).toBe(false);
     expect(workerSecretNames.has('GITHUB_CLIENT_SECRET')).toBe(false);

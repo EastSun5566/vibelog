@@ -101,6 +101,41 @@ time { font-variant-numeric: tabular-nums; }
 .github-link:hover { color: var(--foreground); background: var(--muted); }
 .github-link svg { display: block; }
 
+.analytics-consent {
+  position: fixed;
+  inset-inline: 1rem;
+  inset-block-end: 1rem;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: min(calc(100% - 2rem), 38rem);
+  margin-inline: auto;
+  padding: 1rem;
+  box-shadow: 0 0.75rem 2rem rgb(23 32 51 / 0.16);
+}
+.analytics-consent[hidden], .analytics-settings[hidden] { display: none; }
+.analytics-consent > section { display: grid; gap: 0.2rem; padding: 0; }
+.analytics-consent p { margin: 0; color: var(--muted-foreground); font-size: 0.86rem; }
+.analytics-consent > footer { display: flex; flex: none; gap: 0.4rem; padding: 0; }
+.analytics-settings {
+  position: fixed;
+  inset-inline-start: 0.75rem;
+  inset-block-end: 0.6rem;
+  z-index: 20;
+  min-height: 2.75rem;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 0.75rem;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+.analytics-settings:hover { color: var(--foreground); }
+
 .guide { display: grid; gap: 2.25rem; width: min(100%, 48rem); margin: clamp(2rem, 7vh, 5rem) auto 0; }
 .guide > header { display: grid; justify-items: start; gap: 1rem; }
 .guide h1 { max-width: 16ch; margin: 0; font-size: clamp(2.4rem, 7vw, 4.6rem); line-height: 0.99; letter-spacing: -0.05em; }
@@ -268,6 +303,8 @@ time { font-variant-numeric: tabular-nums; }
   .action-row, .theme-summary, .revision { align-items: flex-start; flex-direction: column; }
   .action-form, .action-form .btn, .revision form, .revision .btn { width: 100%; }
   .editor-disclosure > summary small { display: block; float: none; margin: 0.2rem 0 0 1rem; }
+  .analytics-consent { align-items: stretch; flex-direction: column; }
+  .analytics-consent > footer { justify-content: flex-end; }
 }
 
 @media (pointer: coarse) {

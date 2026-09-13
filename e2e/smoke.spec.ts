@@ -68,18 +68,29 @@ async function openDisclosure(page: Page, key: string): Promise<void> {
 test('publishes a fixture HackMD blog through the complete local stack', async ({ page, request }) => {
   test.setTimeout(300_000);
   const browserErrors: string[] = [];
+  let analyticsScriptRequests = 0;
   page.on('pageerror', (error) => browserErrors.push(error.message));
+  await page.route('https://www.googletagmanager.com/gtag/js**', async (route) => {
+    analyticsScriptRequests += 1;
+    await route.fulfill({ contentType: 'text/javascript', body: '' });
+  });
   const mailpitUrl = process.env.E2E_MAILPIT_URL;
   if (!mailpitUrl) throw new Error('E2E_MAILPIT_URL is required');
 
   const clientResponse = await request.get('/assets/client.js');
   expect(clientResponse.ok()).toBe(true);
   expect(clientResponse.headers()['content-type']).toContain('text/javascript');
+  const analyticsResponse = await request.get('/assets/analytics.js');
+  expect(analyticsResponse.ok()).toBe(true);
+  expect(analyticsResponse.headers()['content-type']).toContain('text/javascript');
   const logoResponse = await request.get('/assets/logo.svg');
   expect(logoResponse.ok()).toBe(true);
   expect(logoResponse.headers()['content-type']).toContain('image/svg+xml');
 
-  await page.goto('/');
+  const landingResponse = await page.goto('/');
+  expect(landingResponse?.headers()['content-security-policy']).toContain("script-src 'nonce-");
+  expect(landingResponse?.headers()['content-security-policy']).toContain("'strict-dynamic'");
+  expect(landingResponse?.headers()['content-security-policy']).toContain('https://*.google-analytics.com');
   await expect(page.getByRole('heading', { name: /Keep writing in HackMD/ })).toBeVisible();
   await expect(page.locator('.app-brand img')).toHaveAttribute('src', '/assets/logo.svg');
   await expect(page.getByRole('link', { name: 'Start publishing' })).toHaveCount(1);
@@ -95,7 +106,18 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await page.keyboard.press('Enter');
   await expect(page.locator('#main-content')).toBeFocused();
   await page.setViewportSize({ width: 1280, height: 720 });
+  const analyticsConsent = page.getByRole('region', { name: 'Allow analytics?' });
+  await expect(analyticsConsent).toBeVisible();
+  expect(analyticsScriptRequests).toBe(0);
+  await analyticsConsent.getByRole('button', { name: 'Not now' }).click();
+  await expect(analyticsConsent).toBeHidden();
+  expect(analyticsScriptRequests).toBe(0);
+  await page.getByRole('button', { name: 'Analytics settings' }).click();
+  await analyticsConsent.getByRole('button', { name: 'Allow analytics' }).click();
+  await expect.poll(() => analyticsScriptRequests).toBe(1);
+  await expect(analyticsConsent).toBeHidden();
   await page.goto('/guide');
+  await expect.poll(() => analyticsScriptRequests).toBe(2);
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
   await expect(page.getByText('Generate a theme with AI or fine-tune it, then publish when the draft is ready.')).toBeVisible();
@@ -104,8 +126,11 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await page.setViewportSize({ width: 1280, height: 720 });
 
   const magicLink = await requestMagicLink(page, request, mailpitUrl, 'writer@example.com');
+  const analyticsRequestsBeforeSignIn = analyticsScriptRequests;
   await page.goto(magicLink);
   await expect(page).toHaveURL(/\/onboarding$/u);
+  await expect(page.locator('[data-analytics-loader]')).toHaveCount(0);
+  expect(analyticsScriptRequests).toBe(analyticsRequestsBeforeSignIn);
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
   await expect(page.getByLabel('Blog address')).toHaveCSS('font-size', '16px');
@@ -279,7 +304,9 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   const publicUrl = new URL(page.url());
   publicUrl.hostname = `alice.${publicUrl.hostname}`;
   publicUrl.pathname = '/';
-  await page.goto(publicUrl.toString());
+  const publicBlogResponse = await page.goto(publicUrl.toString());
+  expect(publicBlogResponse?.headers()['content-security-policy']).toContain("script-src 'none'");
+  await expect(page.locator('[data-analytics-loader]')).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
   await page.keyboard.press('Tab');

@@ -17,6 +17,7 @@ docs
 packages/edge
 packages/infra
 packages/app/scripts
+!packages/app/scripts/build-browser.ts
 .data
 *.sqlite
 *.sqlite-shm

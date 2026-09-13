@@ -6,7 +6,9 @@ import { editorUrlWithPreviewPath } from './preview-path.js';
 import { calculatePublicationDiff } from './publication-diff.js';
 import { THEME_PALETTES, themeControlValues } from './theme-studio.js';
 
-export function document(title: string, content: unknown, session?: AppSession, editor = false) {
+export interface AnalyticsDocumentConfig { measurementId: string; nonce: string }
+
+export function document(title: string, content: unknown, session?: AppSession, editor = false, analytics?: AnalyticsDocumentConfig) {
   return <html lang="en">
     <head>
       <meta charset="utf-8"/>
@@ -34,11 +36,25 @@ export function document(title: string, content: unknown, session?: AppSession, 
         <main class="app-main" id="main-content" tabindex={-1}>{content}</main>
       </div>
       {editor ? <script type="module" src="/assets/client.js"></script> : null}
+      {analytics ? <>
+        <aside class="analytics-consent card" role="region" aria-labelledby="analytics-consent-title" aria-describedby="analytics-consent-description" data-analytics-consent hidden>
+          <section>
+            <strong id="analytics-consent-title">Allow analytics?</strong>
+            <p id="analytics-consent-description">Help us understand visits and improve VibeLog. Google Analytics stays off unless you allow it.</p>
+          </section>
+          <footer>
+            <button class="btn" data-variant="ghost" type="button" data-analytics-deny>Not now</button>
+            <button class="btn" type="button" data-analytics-allow>Allow analytics</button>
+          </footer>
+        </aside>
+        <button class="analytics-settings" type="button" data-analytics-settings hidden>Analytics settings</button>
+        <script type="module" src="/assets/analytics.js" nonce={analytics.nonce} data-analytics-loader data-measurement-id={analytics.measurementId}></script>
+      </> : null}
     </body>
   </html>;
 }
 
-export function landingPage() {
+export function landingPage(analytics?: AnalyticsDocumentConfig) {
   return document('Publish your HackMD as a blog', <>
     <section class="landing">
       <header class="landing-hero">
@@ -60,10 +76,10 @@ export function landingPage() {
         <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.5-2.01.38-2.53-.5-2.69-.96-.09-.24-.48-.97-.82-1.16-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.83.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.21-3.64-.91-3.64-4.02 0-.89.31-1.62.82-2.19-.08-.21-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.45 7.45 0 0 1 8 3.91c.68 0 1.36.09 2 .27 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.95.08 2.16.51.57.82 1.3.82 2.19 0 3.12-1.87 3.81-3.65 4.02.29.25.54.74.54 1.5 0 1.08-.01 1.95-.01 2.22 0 .22.15.47.55.39A8.14 8.14 0 0 0 16 8.13C16 3.64 12.42 0 8 0Z"/></svg>
       </a>
     </footer>
-  </>);
+  </>, undefined, false, analytics);
 }
 
-export function loginPage(input: { github: boolean; google: boolean; message?: string; sent?: boolean }) {
+export function loginPage(input: { github: boolean; google: boolean; message?: string; sent?: boolean }, analytics?: AnalyticsDocumentConfig) {
   const hasSocialLogin = input.github || input.google;
   if (input.sent) return document('Check your email', <section class="auth-shell card">
     <header><p class="auth-kicker">One more step</p><h1>Check your email</h1></header>
@@ -72,7 +88,7 @@ export function loginPage(input: { github: boolean; google: boolean; message?: s
       <p class="muted">You can close this tab after opening the link.</p>
       <a href="/auth/login">Use a different email</a>
     </section>
-  </section>);
+  </section>, undefined, false, analytics);
   return document('Sign in', <section class="auth-shell card">
     <header><p class="auth-kicker">Welcome back</p><h1>Sign in to VibeLog</h1><p>{hasSocialLogin ? 'Choose an account or use a one-time email link.' : 'We’ll email you a one-time sign-in link.'}</p></header>
     <section class="stack">
@@ -84,10 +100,10 @@ export function loginPage(input: { github: boolean; google: boolean; message?: s
         <button class="btn" type="submit">Email me a sign-in link</button>
       </form>
     </section>
-  </section>);
+  </section>, undefined, false, analytics);
 }
 
-export function guidePage(session?: AppSession) {
+export function guidePage(session?: AppSession, analytics?: AnalyticsDocumentConfig) {
   return document('Guide', <article class="guide">
     <header>
       <p class="auth-kicker">Writer guide</p>
@@ -112,7 +128,7 @@ export function guidePage(session?: AppSession) {
       <h2 id="ai-privacy">AI themes and privacy</h2>
       <p>AI receives only your blog identity, current theme, and design prompt. Article bodies are never sent to the AI provider.</p>
     </section>
-  </article>, session);
+  </article>, session, false, analytics);
 }
 
 function OperationOutput({ operation, successUrl, feedbackKey }: { operation?: OperationRecord; successUrl?: string; feedbackKey?: string }) {
