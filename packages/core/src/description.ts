@@ -31,7 +31,7 @@ function inlineText(node: PhrasingContent): string {
 function paragraphText(paragraph: Paragraph): string {
   if (paragraph.children.length === 1 && paragraph.children[0]?.type === 'text') {
     const value = paragraph.children[0].value.trim();
-    if (HTML_BLOCK.test(value) || HTML_COMMENT.test(value) || HTML_SINGLE_TAG.test(value)) return '';
+    if (value.toUpperCase() === '[TOC]' || HTML_BLOCK.test(value) || HTML_COMMENT.test(value) || HTML_SINGLE_TAG.test(value)) return '';
   }
   return paragraph.children.map(inlineText).join('').replace(/\s+/gu, ' ').trim();
 }

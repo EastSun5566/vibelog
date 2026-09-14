@@ -108,11 +108,11 @@ describe('DevBuilder content summary', () => {
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 6 });
+    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 7 });
     expect(await readFile(join(root, '.vibelog', 'src', 'styles', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
   });
 
-  it('builds the V6 reading experience with reliable descriptions and long-form navigation', { timeout: 20_000 }, async () => {
+  it('builds the V7 reading experience with reliable descriptions and long-form navigation', { timeout: 20_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-public-')); roots.push(root);
     const posts = Array.from({ length: 6 }, (_, index) => {
       const number = index + 1;
@@ -253,5 +253,49 @@ describe('DevBuilder content summary', () => {
     const tagIndex = await readFile(join(output, 'tags', 'index.html'), 'utf8');
     expect(home).not.toContain('>主題</a>');
     expect(tagIndex).toContain('目前沒有文章主題。');
+  });
+
+  it('renders common HackMD Markdown without adding client scripts', { timeout: 20_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-hackmd-markdown-')); roots.push(root);
+    const content = await readFile(join(import.meta.dirname, 'fixtures', 'content', 'hackmd-compatibility.md'), 'utf8');
+    const source: ContentSource = {
+      name: ContentSourceName.HACKMD,
+      getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
+      getPosts: () => Promise.resolve({ posts: [{
+        id: 'compatibility',
+        title: 'HackMD compatibility',
+        slug: 'compatibility',
+        date: '2026-01-01T00:00:00Z',
+        content,
+      }] }),
+    };
+    const builder = createDevBuilder({ root, contentSource: source });
+    await builder.prepare({ installDependencies: false });
+    await builder.fetchContent();
+    const output = join(root, 'public');
+
+    await buildFromVibelog({ vibelogDir: join(root, '.vibelog'), outDir: output, site: 'https://writer.example.com' });
+
+    const article = await readFile(join(output, 'blog', 'compatibility', 'index.html'), 'utf8');
+    for (const type of ['info', 'success', 'warning', 'danger', 'note', 'tip', 'important', 'caution']) {
+      expect(article).toContain(`callout-${type}`);
+    }
+    expect(article).toContain('<aside aria-label="Background" class="callout callout-info">');
+    expect(article).toContain('<details class="spoiler"><summary class="spoiler-title">Show the answer</summary>');
+    expect(article).toContain('<dl>');
+    expect(article).toContain('<dt>Term</dt>');
+    expect(article).toMatch(/<dd>A concise definition\.\s*<\/dd>/u);
+    expect(article).toContain('✨');
+    expect(article).toContain('<math xmlns="http://www.w3.org/1998/Math/MathML"');
+    expect(article).toContain('class="katex-error"');
+    expect(article).toContain('data-language="javascript"');
+    expect(article).toContain(':::warning');
+    expect(article).toContain('Keep an inline [TOC] reference visible.');
+    expect(article).not.toMatch(/<p>\[TOC\]<\/p>/u);
+    expect(article).toContain('Custom heading');
+    expect(article).toContain('Unknown directives keep their content.');
+    expect(article).not.toContain('custom-element');
+    expect(article).not.toContain('<script');
+    expect(article).toContain('<meta name="description" content="Keep an inline [TOC] reference visible.">');
   });
 });

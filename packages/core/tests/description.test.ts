@@ -32,6 +32,11 @@ describe('extractPostDescription', () => {
     expect(extractPostDescription('Useful &lt;span&gt;inline&lt;/span&gt; text.', 'Fallback')).toBe('Useful inline text.');
   });
 
+  it('skips a standalone HackMD table-of-contents marker', () => {
+    expect(extractPostDescription('[TOC]\n\nThe article introduction.', 'Fallback')).toBe('The article introduction.');
+    expect(extractPostDescription('An inline [TOC] reference.', 'Fallback')).toBe('An inline [TOC] reference.');
+  });
+
   it('ignores URL-only links and continues to the next paragraph', () => {
     const markdown = '<https://example.com/private>\n\nA useful paragraph.';
 

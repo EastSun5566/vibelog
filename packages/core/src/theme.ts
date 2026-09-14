@@ -134,6 +134,48 @@ const CODE_BLOCK_STYLES = {
   panel: `/* Code blocks: panel */
 .prose pre { background: var(--theme-surface); border: 1px solid var(--theme-border); border-radius: var(--theme-radius); box-shadow: 0 0.4rem 1.2rem rgb(0 0 0 / 0.06); }`,
 };
+const MARKDOWN_STYLES = `/* Extended Markdown */
+.prose .callout, .prose .spoiler, .prose dl { margin-block: 1.35em; }
+.prose .callout {
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border);
+  border-inline-start: 0.25rem solid var(--theme-accent);
+  border-radius: var(--theme-radius);
+  padding: 0.85rem 1rem;
+}
+.prose .callout-title {
+  color: var(--theme-accent);
+  font-family: var(--theme-heading-font);
+  font-weight: 750;
+  margin-block: 0 0.35rem;
+}
+.prose .callout > :last-child, .prose .spoiler > :last-child { margin-block-end: 0; }
+.prose .spoiler {
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border);
+  border-radius: var(--theme-radius);
+  padding: 0.75rem 1rem;
+}
+.prose .spoiler-title {
+  color: var(--theme-text);
+  cursor: pointer;
+  font-family: var(--theme-heading-font);
+  font-weight: 700;
+}
+.prose .spoiler[open] .spoiler-title { margin-block-end: 0.75rem; }
+.prose dl { display: grid; gap: 0.45rem; }
+.prose dt { font-family: var(--theme-heading-font); font-weight: 750; }
+.prose dd { margin-inline-start: var(--theme-space); }
+.prose .katex { max-width: 100%; }
+.prose math[display="block"] {
+  display: block;
+  margin-inline: auto;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-block: 0.35rem;
+}
+.prose .katex-error { color: var(--theme-accent); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+`;
 
 export function renderThemeCss(input: ThemeConfig): string {
   const theme = validateThemeConfig(input);
@@ -172,5 +214,6 @@ ${PRESETS[theme.preset]}
 ${HEADER_STYLES[theme.headerStyle]}
 ${POST_LIST_STYLES[theme.postListStyle]}
 ${CODE_BLOCK_STYLES[theme.codeBlockStyle]}
+${MARKDOWN_STYLES}
 `;
 }

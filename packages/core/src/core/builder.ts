@@ -4,18 +4,25 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { build as astroBuild } from 'astro';
 import mdx from '@astrojs/mdx';
+import { unified } from '@astrojs/markdown-remark';
 import sitemap from '@astrojs/sitemap';
 import fs from 'fs-extra';
 import matter from 'gray-matter';
+import rehypeKatex from 'rehype-katex';
+import { defListHastHandlers, remarkDefinitionList } from 'remark-definition-list';
+import remarkDirective from 'remark-directive';
+import remarkGemoji from 'remark-gemoji';
+import remarkMath from 'remark-math';
 import { z } from 'zod';
 
 import { extractPostDescription } from '../description.js';
+import { remarkHackmdCompatibility } from '../markdown/hackmd.js';
 import { generateSlug, slugify } from './utils.js';
 import { logger } from './logger.js';
 import type { ContentSource } from '../types.js';
 import { loadConfig } from './config.js';
 
-const TEMPLATE_VERSION = 6;
+const TEMPLATE_VERSION = 7;
 const postSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
@@ -133,7 +140,10 @@ export class DevBuilder {
     const runtimeNodeModules = await fs.exists(join(directNodeModules, '@astrojs', 'rss'))
       ? directNodeModules
       : resolve(packageRoot, '../..');
-    for (const requiredPackage of [join('astro', 'package.json'), join('@astrojs', 'rss', 'package.json')]) {
+    for (const requiredPackage of [
+      join('astro', 'package.json'),
+      join('@astrojs', 'rss', 'package.json'),
+    ]) {
       if (!await fs.exists(join(runtimeNodeModules, requiredPackage))) {
         throw new Error(`Packaged template runtime is incomplete: ${requiredPackage}`);
       }
@@ -381,6 +391,24 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
       outDir: tempOutDir,
       site: siteUrl.href,
       integrations: [mdx(), sitemap()],
+      markdown: {
+        processor: unified({
+          remarkPlugins: [
+            remarkDirective,
+            remarkHackmdCompatibility,
+            remarkMath,
+            remarkGemoji,
+            remarkDefinitionList,
+          ],
+          rehypePlugins: [[rehypeKatex, {
+            output: 'mathml',
+            strict: 'ignore',
+            throwOnError: false,
+            trust: false,
+          }]],
+          remarkRehype: { handlers: defListHastHandlers },
+        }),
+      },
       vite: {
         logLevel: 'warn',
       },
