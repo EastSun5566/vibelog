@@ -56,7 +56,7 @@ export interface ThemeControlValues {
 
 const OPTIONS = {
   preset: ['minimal', 'editorial', 'notebook'],
-  bodyFont: ['system-sans', 'system-serif'],
+  bodyFont: ['system-sans', 'system-serif', 'system-mono'],
   headingFont: ['system-sans', 'system-serif', 'system-mono'],
   scale: ['compact', 'comfortable', 'large'],
   contentWidth: ['narrow', 'medium', 'wide'],
@@ -106,7 +106,7 @@ function enumValue<const T extends readonly string[]>(input: Record<string, unkn
 
 const LABELS = {
   preset: { minimal: 'Minimal', editorial: 'Editorial', notebook: 'Notebook' },
-  bodyFont: { 'system-sans': 'Sans', 'system-serif': 'Serif' },
+  bodyFont: { 'system-sans': 'Sans', 'system-serif': 'Serif', 'system-mono': 'Mono' },
   headingFont: { 'system-sans': 'Sans', 'system-serif': 'Serif', 'system-mono': 'Mono' },
   scale: { compact: 'Compact', comfortable: 'Medium', large: 'Large' },
   headerStyle: { compact: 'Compact header', centered: 'Centered header' },

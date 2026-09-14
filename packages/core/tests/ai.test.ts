@@ -26,6 +26,26 @@ describe('PiAiProvider theme proposal', () => {
     const response = fauxAssistantMessage(fauxToolCall('propose_theme', DEFAULT_THEME), { stopReason: 'toolUse' });
     await expect(subject([response]).generate(input)).resolves.toEqual(DEFAULT_THEME);
   });
+  it('accepts a monospaced body for a terminal theme', async () => {
+    const terminalTheme = { ...DEFAULT_THEME, appearance: 'dark' as const, bodyFont: 'system-mono' as const, headingFont: 'system-mono' as const };
+    const response = fauxAssistantMessage(fauxToolCall('propose_theme', terminalTheme), { stopReason: 'toolUse' });
+    await expect(subject([response]).generate({ ...input, prompt: 'dark blue that feel like terminal' })).resolves.toEqual(terminalTheme);
+  });
+  it('passes a concise validation path to the corrective request and final internal error', async () => {
+    const invalid = { ...DEFAULT_THEME, bodyFont: 'display' };
+    const bad = fauxAssistantMessage(fauxToolCall('propose_theme', invalid), { stopReason: 'toolUse' });
+    const good = fauxAssistantMessage(fauxToolCall('propose_theme', DEFAULT_THEME), { stopReason: 'toolUse' });
+    const { provider, complete } = instrumentedSubject('opencode-go', [bad, good]);
+
+    await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toEqual(DEFAULT_THEME);
+    const correctionPrompt = complete.mock.calls[1]?.[1].systemPrompt;
+    expect(correctionPrompt).toContain('bodyFont');
+    expect(correctionPrompt).not.toContain('Received arguments');
+    expect(correctionPrompt).not.toContain('display');
+
+    await expect(instrumentedSubject('opencode-go', [bad, bad]).provider.generate(input, { sessionId: 'operation-2' }))
+      .rejects.toThrow(/bodyFont.*current design was not changed/su);
+  });
   it('retries one invalid contrast proposal and preserves a stable final error', async () => {
     const invalid = { ...DEFAULT_THEME, colors: { ...DEFAULT_THEME.colors, text: '#eeeeee' } };
     const bad = fauxAssistantMessage(fauxToolCall('propose_theme', invalid), { stopReason: 'toolUse' });

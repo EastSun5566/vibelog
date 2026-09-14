@@ -36,8 +36,8 @@ export interface ContentSource {
 
 export type ThemePreset = 'minimal' | 'editorial' | 'notebook';
 export type ThemeAppearance = 'light' | 'dark';
-export type ThemeBodyFont = 'system-sans' | 'system-serif';
-export type ThemeHeadingFont = ThemeBodyFont | 'system-mono';
+export type ThemeBodyFont = 'system-sans' | 'system-serif' | 'system-mono';
+export type ThemeHeadingFont = ThemeBodyFont;
 export type ThemeScale = 'compact' | 'comfortable' | 'large';
 export type ThemeContentWidth = 'narrow' | 'medium' | 'wide';
 export type ThemeDensity = 'compact' | 'comfortable';

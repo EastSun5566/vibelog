@@ -36,6 +36,11 @@ describe('theme contract', () => {
     expect(() => validateThemeConfig({ ...DEFAULT_THEME, colors: { ...DEFAULT_THEME.colors, accent: 'url(https://example.com)' } })).toThrow('accent');
     expect(() => validateThemeConfig({ ...DEFAULT_THEME, colors: { ...DEFAULT_THEME.colors, text: '#eeeeee' } })).toThrow('contrast');
   });
+  it('supports a monospaced body for terminal themes', () => {
+    const theme = validateThemeConfig({ ...DEFAULT_THEME, bodyFont: 'system-mono' });
+    expect(theme.bodyFont).toBe('system-mono');
+    expect(renderThemeCss(theme)).toContain('--theme-body-font: ui-monospace');
+  });
   it('normalizes complete legacy themes and rejects partial V2 themes', () => {
     const { headerStyle: _header, postListStyle: _list, codeBlockStyle: _code, ...legacy } = DEFAULT_THEME;
     expect(validateThemeConfig(legacy)).toMatchObject({ headerStyle: 'compact', postListStyle: 'divided', codeBlockStyle: 'plain' });

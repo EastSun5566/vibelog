@@ -216,7 +216,7 @@ interface EditorPageInput {
 
 const CONTROL_OPTIONS = {
   preset: [['minimal', 'Minimal'], ['editorial', 'Editorial'], ['notebook', 'Notebook']],
-  bodyFont: [['system-sans', 'Sans'], ['system-serif', 'Serif']],
+  bodyFont: [['system-sans', 'Sans'], ['system-serif', 'Serif'], ['system-mono', 'Mono']],
   headingFont: [['system-sans', 'Sans'], ['system-serif', 'Serif'], ['system-mono', 'Mono']],
   scale: [['compact', 'Compact'], ['comfortable', 'Medium'], ['large', 'Large']],
   contentWidth: [['narrow', 'Narrow'], ['medium', 'Medium'], ['wide', 'Wide']],

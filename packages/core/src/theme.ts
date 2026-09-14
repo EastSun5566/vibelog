@@ -3,7 +3,7 @@ import type { ThemeConfig } from './types.js';
 const HEX = /^#[0-9a-f]{6}$/i;
 const ENUMS = {
   preset: ['minimal', 'editorial', 'notebook'], appearance: ['light', 'dark'],
-  bodyFont: ['system-sans', 'system-serif'], headingFont: ['system-sans', 'system-serif', 'system-mono'],
+  bodyFont: ['system-sans', 'system-serif', 'system-mono'], headingFont: ['system-sans', 'system-serif', 'system-mono'],
   scale: ['compact', 'comfortable', 'large'], contentWidth: ['narrow', 'medium', 'wide'],
   density: ['compact', 'comfortable'], radius: ['none', 'soft', 'round'],
   headerStyle: ['compact', 'centered'], postListStyle: ['divided', 'cards', 'numbered'], codeBlockStyle: ['plain', 'panel'],

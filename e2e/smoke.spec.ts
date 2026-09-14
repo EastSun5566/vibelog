@@ -249,6 +249,7 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
 
   await openDisclosure(page, 'fine-tune');
   await page.getByLabel('Editorial').check();
+  await page.getByRole('group', { name: 'Body font' }).getByLabel('Mono').check();
   const fineTuneFeedback = page.locator('details[data-disclosure-key="fine-tune"] [data-feedback-slot="fine-tune"]');
   await expect(fineTuneFeedback).toContainText('Preview updated; changes are not saved');
   const fineTuneFeedbackBox = await fineTuneFeedback.boundingBox();

@@ -28,6 +28,12 @@ describe('Theme Studio controls', () => {
     expect(paletteForTheme(theme)).toBeNull();
   });
 
+  it('supports a monospaced body through Fine-tune controls', () => {
+    const theme = themeFromControls(DEFAULT_THEME, { ...controls, bodyFont: 'system-mono' });
+    expect(theme.bodyFont).toBe('system-mono');
+    expect(theme.description).toContain('Mono / Sans');
+  });
+
   it('ships six palettes with readable text and links', () => {
     expect(Object.keys(THEME_PALETTES)).toEqual(['paper', 'newsprint', 'mist', 'pine', 'midnight', 'charcoal']);
     for (const palette of Object.values(THEME_PALETTES)) {

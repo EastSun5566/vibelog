@@ -21,7 +21,7 @@ const themeTool: Tool = {
   parameters: Type.Object({
     preset: enumType(['minimal', 'editorial', 'notebook']), appearance: enumType(['light', 'dark']),
     colors: Type.Object({ background: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), surface: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), text: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), muted: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), accent: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), border: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }) }, { additionalProperties: false }),
-    bodyFont: enumType(['system-sans', 'system-serif']), headingFont: enumType(['system-sans', 'system-serif', 'system-mono']),
+    bodyFont: enumType(['system-sans', 'system-serif', 'system-mono']), headingFont: enumType(['system-sans', 'system-serif', 'system-mono']),
     scale: enumType(['compact', 'comfortable', 'large']), contentWidth: enumType(['narrow', 'medium', 'wide']), density: enumType(['compact', 'comfortable']), radius: enumType(['none', 'soft', 'round']),
     headerStyle: enumType(['compact', 'centered']), postListStyle: enumType(['divided', 'cards', 'numbered']), codeBlockStyle: enumType(['plain', 'panel']),
     description: Type.String({ minLength: 1, maxLength: 240 }),
@@ -70,6 +70,10 @@ function safeProviderError(error: unknown): string {
   const secrets = Object.entries(process.env).flatMap(([name, value]) => value && value.length >= 8 && /(?:token|secret|api.?key|password)/i.test(name) ? [value] : []);
   return secrets.reduce((output, secret) => output.replaceAll(secret, '[REDACTED]'), message).replaceAll(/(?:sk-|Bearer\s+)[A-Za-z0-9._-]+/gi, '[REDACTED]').slice(0, 500);
 }
+function safeToolValidationError(error: unknown): string {
+  const [message] = safeProviderError(error).split('\n\nReceived arguments:');
+  return message || 'Unknown validation error';
+}
 export class AiProviderRequestError extends Error {
   constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = 'AiProviderRequestError'; }
 }
@@ -106,7 +110,7 @@ export class PiAiProvider implements AiProvider {
     if (toolCall.name !== THEME_TOOL_NAME) throw new Error(`AI called an unexpected tool: ${toolCall.name}`);
     let candidate: unknown;
     try { candidate = validateToolCall([themeTool], toolCall); }
-    catch { throw new Error(`AI returned invalid arguments for ${THEME_TOOL_NAME}.`); }
+    catch (error) { throw new Error(`AI returned invalid arguments for ${THEME_TOOL_NAME}: ${safeToolValidationError(error)}`); }
     return validateThemeConfig(candidate);
   }
   async generate(input: ThemeProposalInput, context?: AiGenerationContext): Promise<ThemeConfig> {
@@ -117,7 +121,7 @@ export class PiAiProvider implements AiProvider {
       try { return await this.generateOnce(input, sessionId, safeProviderError(firstError)); }
       catch (secondError) {
         if (secondError instanceof AiProviderRequestError) throw secondError;
-        throw new Error('AI could not create a safe theme. Your current design was not changed.');
+        throw new Error(`AI could not create a safe theme after one correction: ${safeProviderError(secondError)}. Your current design was not changed.`, { cause: secondError });
       }
     }
   }
