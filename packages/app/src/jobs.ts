@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AiProviderRequestError, HackMdSource, buildFromVibelog, createAiProvider, createDevBuilder, isHackMdSourceError, renderThemeCss, validateThemeConfig } from '@vibelog/core';
+import { AiProviderRequestError, AiProviderTimeoutError, HackMdSource, buildFromVibelog, createAiProvider, createDevBuilder, isHackMdSourceError, renderThemeCss, validateThemeConfig } from '@vibelog/core';
 import type { AiProvider, ContentSource } from '@vibelog/core';
 import { parseSyncOperationPayload } from './blog-sync.js';
 import type { OperationRuntimeConfig } from './config.js';
@@ -34,9 +34,11 @@ export function operationPublicError(type: OperationRecord['type'], error: unkno
     if (message.includes('No articles selected')) return 'Select at least one article before building the blog draft.';
     return 'Sync failed. Confirm that your HackMD content is publicly readable and try again.';
   }
-  if (type === 'generate_theme') return error instanceof AiProviderRequestError
-    ? 'AI service is temporarily unavailable. Your previous design is unchanged; try again shortly.'
-    : 'AI could not produce a valid theme. Your previous design is unchanged; adjust the prompt and try again.';
+  if (type === 'generate_theme') return error instanceof AiProviderTimeoutError
+    ? 'AI took too long to respond. Your previous design is unchanged; please try again.'
+    : error instanceof AiProviderRequestError
+      ? 'AI service is temporarily unavailable. Your previous design is unchanged; try again shortly.'
+      : 'AI could not produce a valid theme. Your previous design is unchanged; adjust the prompt and try again.';
   return 'Publishing failed. Your draft and current live site are unchanged; please try again.';
 }
 export class TerminalOperationError extends Error {

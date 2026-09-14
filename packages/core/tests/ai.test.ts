@@ -1,6 +1,6 @@
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AiProviderRequestError, PiAiProvider, createAiProvider } from '../src/adapters/ai/index.js';
+import { AiProviderRequestError, AiProviderTimeoutError, PiAiProvider, createAiProvider } from '../src/adapters/ai/index.js';
 import { DEFAULT_THEME } from '../src/theme.js';
 
 const input = { blog: { title: 'Blog', description: 'Writing', author: 'Writer' }, currentTheme: DEFAULT_THEME, prompt: 'Editorial' };
@@ -110,6 +110,27 @@ describe('PiAiProvider theme proposal', () => {
     expect(requestUrl).toBe('https://opencode.ai/zen/go/v1/chat/completions');
     expect(requestHeaders?.get('x-opencode-session')).toBe('operation-1');
     expect(requestHeaders?.get('user-agent')).toBe('VibeLog');
+  });
+  it('aborts a provider that does not respond before the generation deadline', async () => {
+    vi.stubEnv('OPENCODE_API_KEY', 'test-key');
+    let requestStarted!: () => void;
+    const started = new Promise<void>((resolve) => { requestStarted = resolve; });
+    vi.spyOn(globalThis, 'fetch').mockImplementation((request, options) => {
+      const signal = request instanceof Request ? request.signal : options?.signal;
+      requestStarted();
+      return new Promise((_resolve, reject) => {
+        if (!signal) { reject(new Error('Missing abort signal')); return; }
+        const rejectAbort = () => { reject(signal.reason instanceof Error ? signal.reason : new Error('Request aborted')); };
+        if (signal.aborted) { rejectAbort(); return; }
+        signal.addEventListener('abort', () => { rejectAbort(); }, { once: true });
+      });
+    });
+    const controller = new AbortController();
+    const pending = createAiProvider('opencode-go', 'deepseek-v4.1-flash').generate(input, { sessionId: 'operation-1', signal: controller.signal });
+    await started;
+    controller.abort(new DOMException('AI deadline reached', 'TimeoutError'));
+
+    await expect(pending).rejects.toBeInstanceOf(AiProviderTimeoutError);
   });
   it('preserves provider failures from the corrective request', async () => {
     const invalid = { ...DEFAULT_THEME, colors: { ...DEFAULT_THEME.colors, text: '#eeeeee' } };

@@ -1,4 +1,4 @@
-import { AiProviderRequestError, DEFAULT_THEME } from '@vibelog/core';
+import { AiProviderRequestError, AiProviderTimeoutError, DEFAULT_THEME } from '@vibelog/core';
 import type { AiProvider } from '@vibelog/core';
 import { describe, expect, it, vi } from 'vitest';
 import type { OperationRuntimeConfig } from '../src/config.js';
@@ -51,8 +51,10 @@ describe('AI operation execution', () => {
 
   it('distinguishes provider failures from invalid theme responses', () => {
     const providerMessage = operationPublicError('generate_theme', new AiProviderRequestError('AI provider request failed'));
+    const timeoutMessage = operationPublicError('generate_theme', new AiProviderTimeoutError());
     const validationMessage = operationPublicError('generate_theme', new Error('Invalid theme'));
     expect(providerMessage).toContain('temporarily unavailable');
+    expect(timeoutMessage).toContain('too long to respond');
     expect(validationMessage).toContain('valid theme');
   });
 });

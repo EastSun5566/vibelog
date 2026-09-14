@@ -17,6 +17,7 @@ export type { HackMdSourceErrorCode } from './adapters/content/index.js';
 
 export {
   AiProviderRequestError,
+  AiProviderTimeoutError,
   PiAiProvider,
   createAiProvider,
   getAiProviderNames,

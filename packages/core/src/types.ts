@@ -79,6 +79,7 @@ export interface ThemeProposalInput {
 
 export interface AiGenerationContext {
   sessionId: string;
+  signal?: AbortSignal;
 }
 
 export interface AiProvider {

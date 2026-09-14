@@ -14,6 +14,7 @@ const KEYLESS_OLLAMA_TRANSPORT_KEY = 'ollama-local';
 const DEEPSEEK_V41_FLASH = 'deepseek-v4.1-flash';
 const OPENCODE_PROVIDERS = new Set(['opencode', 'opencode-go']);
 const VIBELOG_USER_AGENT = 'VibeLog';
+const AI_GENERATION_TIMEOUT_MS = 120_000;
 const enumType = <T extends string>(values: readonly T[]) => Type.Union(values.map((value) => Type.Literal(value)));
 const themeTool: Tool = {
   name: THEME_TOOL_NAME,
@@ -77,6 +78,9 @@ function safeToolValidationError(error: unknown): string {
 export class AiProviderRequestError extends Error {
   constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = 'AiProviderRequestError'; }
 }
+export class AiProviderTimeoutError extends AiProviderRequestError {
+  constructor(options?: ErrorOptions) { super('AI provider request timed out', options); this.name = 'AiProviderTimeoutError'; }
+}
 export function getAiProviderNames(): string[] { return [...getBuiltinProviders(), OLLAMA_PROVIDER]; }
 
 export class PiAiProvider implements AiProvider {
@@ -88,7 +92,7 @@ export class PiAiProvider implements AiProvider {
     this.model = model;
     logger.info(`AI provider: ${name} (${modelId})`);
   }
-  private async generateOnce(input: ThemeProposalInput, sessionId: string, previousError?: string): Promise<ThemeConfig> {
+  private async generateOnce(input: ThemeProposalInput, sessionId: string, signal: AbortSignal, previousError?: string): Promise<ThemeConfig> {
     const context: Context = {
       systemPrompt: `You are VibeLog's theme designer. Call ${THEME_TOOL_NAME} exactly once with a complete theme, including headerStyle, postListStyle, and codeBlockStyle. Never return CSS, HTML, fonts, URLs, or plain text. Ensure text and accent colors each have WCAG AA contrast against the background.${previousError ? ` Previous proposal error: ${previousError}. Correct it.` : ''}`,
       messages: [{ role: 'user', content: JSON.stringify(input), timestamp: Date.now() }], tools: [themeTool],
@@ -97,11 +101,15 @@ export class PiAiProvider implements AiProvider {
     const openCode = OPENCODE_PROVIDERS.has(this.name);
     try {
       response = await this.models.complete(this.model, context, {
-        temperature: 0.2,
+        temperature: 0.2, signal,
         env: requestEnv(this.name),
         ...(openCode ? { sessionId, headers: { 'user-agent': VIBELOG_USER_AGENT, 'x-opencode-session': sessionId } } : {}),
       });
-    } catch (error) { throw new AiProviderRequestError(`AI provider request failed: ${safeProviderError(error)}`, { cause: error }); }
+    } catch (error) {
+      if (signal.aborted && signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError') throw new AiProviderTimeoutError({ cause: error });
+      throw new AiProviderRequestError(`AI provider request failed: ${safeProviderError(error)}`, { cause: error });
+    }
+    if (response.stopReason === 'aborted' && signal.aborted && signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError') throw new AiProviderTimeoutError();
     if (response.stopReason === 'error' || response.stopReason === 'aborted') throw new AiProviderRequestError(`AI provider request failed: ${safeProviderError(response.errorMessage ?? response.stopReason)}`);
     if (response.stopReason === 'length') throw new Error('AI response exceeded the model output limit.');
     const toolCalls = response.content.filter((block) => block.type === 'toolCall');
@@ -115,10 +123,11 @@ export class PiAiProvider implements AiProvider {
   }
   async generate(input: ThemeProposalInput, context?: AiGenerationContext): Promise<ThemeConfig> {
     const sessionId = context?.sessionId ?? randomUUID();
-    try { return await this.generateOnce(input, sessionId); }
+    const signal = context?.signal ?? AbortSignal.timeout(AI_GENERATION_TIMEOUT_MS);
+    try { return await this.generateOnce(input, sessionId, signal); }
     catch (firstError) {
       if (firstError instanceof AiProviderRequestError) throw firstError;
-      try { return await this.generateOnce(input, sessionId, safeProviderError(firstError)); }
+      try { return await this.generateOnce(input, sessionId, signal, safeProviderError(firstError)); }
       catch (secondError) {
         if (secondError instanceof AiProviderRequestError) throw secondError;
         throw new Error(`AI could not create a safe theme after one correction: ${safeProviderError(secondError)}. Your current design was not changed.`, { cause: secondError });
