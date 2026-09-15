@@ -11,8 +11,7 @@ exports[`theme contract > renders each repository-owned preset deterministically
 .blog-list-item { background: transparent; border: 0; border-bottom: 1px solid var(--theme-border); border-radius: 0; padding: var(--theme-space) 0; }
 .blog-list-item:first-child { border-top: 1px solid var(--theme-border); }
 /* Code blocks: plain */
-.prose pre { background: transparent; border-color: transparent; border-inline-start: 0.2rem solid var(--theme-border); border-radius: 0; }
-.prose pre code { background: transparent; }
+.prose pre { border-color: transparent; border-inline-start: 0.2rem solid var(--theme-border); border-radius: 0; }
 /* Extended Markdown */
 .prose .callout, .prose .spoiler, .prose dl { margin-block: 1.35em; }
 .prose .callout {
@@ -76,8 +75,7 @@ h1, h2, h3 { letter-spacing: -0.045em; }
 .blog-list-item { background: transparent; border: 0; border-bottom: 1px solid var(--theme-border); border-radius: 0; padding: var(--theme-space) 0; }
 .blog-list-item:first-child { border-top: 1px solid var(--theme-border); }
 /* Code blocks: plain */
-.prose pre { background: transparent; border-color: transparent; border-inline-start: 0.2rem solid var(--theme-border); border-radius: 0; }
-.prose pre code { background: transparent; }
+.prose pre { border-color: transparent; border-inline-start: 0.2rem solid var(--theme-border); border-radius: 0; }
 /* Extended Markdown */
 .prose .callout, .prose .spoiler, .prose dl { margin-block: 1.35em; }
 .prose .callout {
@@ -144,8 +142,7 @@ body {
 .blog-list-item { background: transparent; border: 0; border-bottom: 1px solid var(--theme-border); border-radius: 0; padding: var(--theme-space) 0; }
 .blog-list-item:first-child { border-top: 1px solid var(--theme-border); }
 /* Code blocks: plain */
-.prose pre { background: transparent; border-color: transparent; border-inline-start: 0.2rem solid var(--theme-border); border-radius: 0; }
-.prose pre code { background: transparent; }
+.prose pre { border-color: transparent; border-inline-start: 0.2rem solid var(--theme-border); border-radius: 0; }
 /* Extended Markdown */
 .prose .callout, .prose .spoiler, .prose dl { margin-block: 1.35em; }
 .prose .callout {

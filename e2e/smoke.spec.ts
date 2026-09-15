@@ -328,8 +328,21 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(page.getByRole('heading', { name: "Alice's updated blog", level: 1 })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Hello VibeLog' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'A Second Note' })).toHaveCount(0);
+  const footerNavigation = page.getByRole('navigation', { name: 'Other ways to read' });
+  await expect(footerNavigation.getByRole('link', { name: 'RSS' })).toHaveAttribute('href', '/rss.xml');
+  await expect(footerNavigation.getByRole('link', { name: 'llms.txt' })).toHaveAttribute('href', '/llms.txt');
   await page.getByRole('link', { name: 'Hello VibeLog' }).click();
   await expect(page).toHaveURL(/\/blog\/hello-vibelog\/$/u);
+  const highlightedCode = page.locator('pre.astro-code');
+  await expect(highlightedCode).toHaveCount(1);
+  await expect(highlightedCode).not.toHaveAttribute('style');
+  await expect(highlightedCode.locator('code span[style]')).toHaveCount(0);
+  const tokenColors = await highlightedCode.locator('code span[class*="syntax-style-"]')
+    .evaluateAll((tokens) => tokens.map((token) => getComputedStyle(token).color));
+  expect(new Set(tokenColors).size).toBeGreaterThan(1);
+  const syntaxResponse = await request.get(`${publicUrl.origin}/syntax.css`);
+  expect(syntaxResponse.ok()).toBe(true);
+  expect(syntaxResponse.headers()['content-type']).toContain('text/css');
   const articleJsonLd = await page.locator('script[type="application/ld+json"]').textContent();
   expect(JSON.parse(articleJsonLd ?? '{}')).toMatchObject({ '@type': 'BlogPosting', headline: 'Hello VibeLog', author: { name: 'Alice Writer' } });
   const markdownResponse = await request.get(`${publicUrl.origin}/blog/hello-vibelog/index.md`);

@@ -27,7 +27,7 @@ const responses = new Map([
   }],
   ['/hello/download', {
     type: 'text/markdown; charset=utf-8',
-    body: '# Hello VibeLog\n\nThis article came through the complete local publishing path.\n\n這是一篇中文搜尋測試。\n',
+    body: '# Hello VibeLog\n\nThis article came through the complete local publishing path.\n\n這是一篇中文搜尋測試。\n\n```ts\nconst greeting = "hello";\n```\n',
   }],
   ['/second/download', {
     type: 'text/markdown; charset=utf-8',

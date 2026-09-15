@@ -113,11 +113,11 @@ describe('DevBuilder content summary', () => {
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 8 });
+    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 9 });
     expect(await readFile(join(root, '.vibelog', 'src', 'styles', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
   });
 
-  it('builds the V8 reading experience with reliable descriptions, search, and machine-readable content', { timeout: 20_000 }, async () => {
+  it('builds the V9 reading experience with reliable descriptions, search, and machine-readable content', { timeout: 20_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-public-')); roots.push(root);
     const posts = Array.from({ length: 6 }, (_, index) => {
       const number = index + 1;
@@ -132,6 +132,8 @@ describe('DevBuilder content summary', () => {
           ? `![Private image](https://images.example.com/private.png)\n\n# Ignored heading\n\n### Preface details\n\nA **reliable** summary with [readable text](https://example.com/hidden) and \`code\`.\n\n## Main section\n\nBody for article ${String(number)}.\n\n### Implementation details\n\nMore details.\n\n#### Ignored nested heading\n\nClosing note.`
           : number === 5
             ? `Body for article ${String(number)}.\n\n## Only section\n\nA single section does not need a table of contents.`
+            : number === 4
+              ? `Body for article ${String(number)}.\n\n\`\`\`ts\nconst greeting = "hello";\n\`\`\`\n\n\`\`\`bash\nnpm run build\n\`\`\``
             : `Body for article ${String(number)}.`,
       };
     });
@@ -166,6 +168,7 @@ describe('DevBuilder content summary', () => {
     expect(jsonLd(home)).toMatchObject({ '@type': 'Blog', name: 'Writer Journal', author: { name: 'Writer' } });
     expect(home).not.toContain('pagefind-component-ui.js');
     expect(home).toContain('href="/search"');
+    expect(home).toContain('<nav aria-label="其他閱讀方式"><ul class="footer-links" role="list"><li><a href="/rss.xml">RSS</a></li><li><a href="/llms.txt">llms.txt</a></li></ul></nav>');
     expect(home).not.toContain('data-pagefind-body');
     for (const number of [6, 5, 4, 3, 2]) expect(home).toContain(`Article ${String(number)}`);
     expect(home).not.toContain('Article 1');
@@ -197,6 +200,14 @@ describe('DevBuilder content summary', () => {
     expect(article).not.toContain('pagefind-component-ui.js');
     expect(article).toContain('data-pagefind-body');
     expect(article).toContain('data-pagefind-meta="title"');
+    expect(article).toMatch(/<pre class="astro-code[^"<]*"[^>]*data-language="ts"/u);
+    expect(article).toMatch(/<pre class="astro-code[^"<]*"[^>]*data-language="bash"/u);
+    expect(article).toContain('<link rel="stylesheet" href="/syntax.css">');
+    expect(article).toMatch(/<span class="syntax-style-[a-f0-9]+"/u);
+    expect(article).not.toMatch(/<span style="--shiki-/u);
+    const syntaxCss = await readFile(join(output, 'syntax.css'), 'utf8');
+    expect(syntaxCss).toContain('--shiki-light:');
+    expect(syntaxCss).toContain('--shiki-dark:');
     expect(article).toContain('<link rel="alternate" type="text/markdown" href="https://writer.example.com/blog/article-4/index.md">');
     expect(article).toContain('<link rel="describedby" href="https://writer.example.com/llms.txt">');
     const sameDayArticle = await readFile(join(output, 'blog', 'article-5', 'index.html'), 'utf8');

@@ -23,7 +23,7 @@ import { logger } from './logger.js';
 import type { ContentSource } from '../types.js';
 import { loadConfig } from './config.js';
 
-const TEMPLATE_VERSION = 8;
+const TEMPLATE_VERSION = 9;
 const postSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
@@ -88,6 +88,40 @@ function normalizePostTags(posts: z.infer<typeof postSchema>[]): BuildPostTag[][
 function isPathInside(root: string, target: string): boolean {
   const pathFromRoot = relative(root, target);
   return pathFromRoot !== '' && !pathFromRoot.startsWith(`..${sep}`) && pathFromRoot !== '..' && !isAbsolute(pathFromRoot);
+}
+
+async function externalizeShikiStyles(outDir: string): Promise<void> {
+  const styles = new Map<string, string>();
+
+  async function visit(directory: string): Promise<void> {
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path);
+      } else if (entry.isFile() && entry.name.endsWith('.html')) {
+        const html = await fs.readFile(path, 'utf8');
+        const converted = html.replace(/<pre\b[^>]*\bclass="[^"]*\bastro-code\b[^"]*"[^>]*>[\s\S]*?<\/pre>/g, (block) =>
+          block.replace(/<(?:pre|span)\b[^>]*\bstyle="[^"]*"[^>]*>/g, (tag) => {
+            const style = /\sstyle="([^"]*)"/.exec(tag)?.[1];
+            if (!style) return tag;
+            if (!/^[\s;:#A-Za-z0-9-]+$/.test(style)) throw new Error('Unexpected Shiki style');
+            const className = `syntax-style-${createHash('sha256').update(style).digest('hex').slice(0, 12)}`;
+            styles.set(className, style);
+            const withoutStyle = tag.replace(/\sstyle="[^"]*"/, '');
+            return /\bclass="[^"]*"/.test(withoutStyle)
+              ? withoutStyle.replace(/\bclass="([^"]*)"/, `class="$1 ${className}"`)
+              : withoutStyle.replace(/^<(pre|span)\b/, `<$1 class="${className}"`);
+          }));
+        if (converted !== html) await fs.writeFile(path, converted);
+      }
+    }
+  }
+
+  await visit(outDir);
+  const css = [...styles].sort(([left], [right]) => left.localeCompare(right))
+    .map(([className, style]) => `.${className}{${style}}`)
+    .join('\n');
+  await fs.writeFile(join(outDir, 'syntax.css'), css);
 }
 
 async function findTemplateDir() {
@@ -393,6 +427,13 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
       site: siteUrl.href,
       integrations: [mdx(), sitemap({ filter: (page) => new URL(page).pathname !== '/search/' })],
       markdown: {
+        shikiConfig: {
+          themes: {
+            light: 'github-light-high-contrast',
+            dark: 'github-dark-high-contrast',
+          },
+          defaultColor: false,
+        },
         processor: unified({
           remarkPlugins: [
             remarkDirective,
@@ -414,6 +455,8 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
         logLevel: 'warn',
       },
     });
+
+    await externalizeShikiStyles(tempOutDir);
 
     logger.info('Indexing selected articles with Pagefind...');
     const created = await pagefind.createIndex({ verbose: false });

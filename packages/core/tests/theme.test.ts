@@ -41,6 +41,19 @@ describe('theme contract', () => {
     expect(theme.bodyFont).toBe('system-mono');
     expect(renderThemeCss(theme)).toContain('--theme-body-font: ui-monospace');
   });
+  it('selects Shiki token colors by theme appearance without changing code block shape', () => {
+    const light = renderThemeCss(DEFAULT_THEME);
+    const dark = renderThemeCss({ ...DEFAULT_THEME, appearance: 'dark' });
+    expect(light).toContain('color: var(--shiki-light) !important; background-color: var(--shiki-light-bg) !important;');
+    expect(dark).toContain('color: var(--shiki-dark) !important; background-color: var(--shiki-dark-bg) !important;');
+    for (const appearance of ['light', 'dark'] as const) {
+      for (const codeBlockStyle of ['plain', 'panel'] as const) {
+        const css = renderThemeCss({ ...DEFAULT_THEME, appearance, codeBlockStyle });
+        expect(css).toContain('.astro-code code { background: transparent; }');
+        expect(css).toContain(`/* Code blocks: ${codeBlockStyle} */`);
+      }
+    }
+  });
   it('normalizes complete legacy themes and rejects partial V2 themes', () => {
     const { headerStyle: _header, postListStyle: _list, codeBlockStyle: _code, ...legacy } = DEFAULT_THEME;
     expect(validateThemeConfig(legacy)).toMatchObject({ headerStyle: 'compact', postListStyle: 'divided', codeBlockStyle: 'plain' });

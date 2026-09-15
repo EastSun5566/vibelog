@@ -129,10 +129,9 @@ const POST_LIST_STYLES = {
 };
 const CODE_BLOCK_STYLES = {
   plain: `/* Code blocks: plain */
-.prose pre { background: transparent; border-color: transparent; border-inline-start: 0.2rem solid var(--theme-border); border-radius: 0; }
-.prose pre code { background: transparent; }`,
+.prose pre { border-color: transparent; border-inline-start: 0.2rem solid var(--theme-border); border-radius: 0; }`,
   panel: `/* Code blocks: panel */
-.prose pre { background: var(--theme-surface); border: 1px solid var(--theme-border); border-radius: var(--theme-radius); box-shadow: 0 0.4rem 1.2rem rgb(0 0 0 / 0.06); }`,
+.prose pre { border: 1px solid var(--theme-border); border-radius: var(--theme-radius); box-shadow: 0 0.4rem 1.2rem rgb(0 0 0 / 0.06); }`,
 };
 const MARKDOWN_STYLES = `/* Extended Markdown */
 .prose .callout, .prose .spoiler, .prose dl { margin-block: 1.35em; }
@@ -209,6 +208,8 @@ small, time, .muted, .eyebrow, .blog-item-description, .blog-item-date, .blog-po
 .table-of-contents summary { color: var(--theme-text); font-family: var(--theme-heading-font); }
 .table-of-contents-link, .article-back-to-start { color: var(--theme-accent); }
 pre, code, blockquote, .prose th, .prose td { background: var(--theme-surface); border-color: var(--theme-border); border-radius: var(--theme-radius); }
+.astro-code, .astro-code span { color: var(--shiki-${theme.appearance}) !important; background-color: var(--shiki-${theme.appearance}-bg) !important; }
+.astro-code code { background: transparent; }
 .skip-link { background: var(--theme-text); color: var(--theme-background); border-radius: var(--theme-radius); }
 ${PRESETS[theme.preset]}
 ${HEADER_STYLES[theme.headerStyle]}

@@ -1,4 +1,6 @@
 ---
+import { text } from "../localization";
+
 const today = new Date();
 
 interface Props {
@@ -10,4 +12,10 @@ const { name } = Astro.props;
 
 <footer class="site-footer">
   <small>&copy; {today.getFullYear()} {name}</small>
+  <nav aria-label={text.footerNavigation}>
+    <ul class="footer-links" role="list">
+      <li><a href="/rss.xml">RSS</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul>
+  </nav>
 </footer>

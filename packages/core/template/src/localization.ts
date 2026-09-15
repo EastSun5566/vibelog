@@ -6,6 +6,7 @@ export const text = isTraditionalChinese
   ? {
       skipToContent: "跳至主要內容",
       primaryNavigation: "主要導覽",
+      footerNavigation: "其他閱讀方式",
       home: "首頁",
       posts: "文章",
       search: "搜尋",
@@ -43,6 +44,7 @@ export const text = isTraditionalChinese
   : {
       skipToContent: "Skip to main content",
       primaryNavigation: "Primary navigation",
+      footerNavigation: "Other ways to read",
       home: "Home",
       posts: "Posts",
       search: "Search",
