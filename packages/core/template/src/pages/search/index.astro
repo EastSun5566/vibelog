@@ -1,0 +1,19 @@
+---
+import SiteLayout from "../../layouts/SiteLayout.astro";
+import { SITE_TITLE } from "../../consts";
+import { text } from "../../localization";
+---
+
+<SiteLayout title={`${text.search} · ${SITE_TITLE}`} description={text.searchDescription} robots="noindex, follow" searchAssets>
+  <section class="search-page">
+    <header class="page-heading">
+      <p class="eyebrow">{SITE_TITLE}</p>
+      <h1>{text.search}</h1>
+      <p>{text.searchDescription}</p>
+    </header>
+    <pagefind-input placeholder={text.searchPlaceholder}></pagefind-input>
+    <pagefind-summary></pagefind-summary>
+    <pagefind-results></pagefind-results>
+    <noscript><p>{text.searchNeedsJavaScript} <a href="/blog/">{text.allPosts}</a></p></noscript>
+  </section>
+</SiteLayout>

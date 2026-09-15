@@ -68,8 +68,12 @@ async function openDisclosure(page: Page, key: string): Promise<void> {
 test('publishes a fixture HackMD blog through the complete local stack', async ({ page, request }) => {
   test.setTimeout(300_000);
   const browserErrors: string[] = [];
+  const searchErrors: string[] = [];
   let analyticsScriptRequests = 0;
   page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error' && /Pagefind|WebAssembly|Content Security Policy/iu.test(message.text())) searchErrors.push(message.text());
+  });
   await page.route('https://www.googletagmanager.com/gtag/js**', async (route) => {
     analyticsScriptRequests += 1;
     await route.fulfill({ contentType: 'text/javascript', body: '' });
@@ -167,6 +171,12 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   const preview = page.frameLocator('iframe[data-preview-url]');
   await expect(preview.getByRole('heading', { name: "Alice Writer's blog", level: 1 })).toBeVisible({ timeout: 30_000 });
   await preview.getByRole('link', { name: 'Hello VibeLog' }).click();
+  await expectPreviewPath(page, '/blog/hello-vibelog/');
+  await preview.getByRole('link', { name: 'Search' }).click();
+  await expectPreviewPath(page, '/search');
+  await preview.locator('pagefind-input input').fill('complete local publishing path');
+  await expect(preview.locator('pagefind-results a[href="/blog/hello-vibelog/"]')).toBeVisible({ timeout: 30_000 });
+  await preview.locator('pagefind-results a[href="/blog/hello-vibelog/"]').click();
   await expectPreviewPath(page, '/blog/hello-vibelog/');
   await markPage(page);
 
@@ -320,8 +330,40 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(page.getByRole('link', { name: 'A Second Note' })).toHaveCount(0);
   await page.getByRole('link', { name: 'Hello VibeLog' }).click();
   await expect(page).toHaveURL(/\/blog\/hello-vibelog\/$/u);
+  const articleJsonLd = await page.locator('script[type="application/ld+json"]').textContent();
+  expect(JSON.parse(articleJsonLd ?? '{}')).toMatchObject({ '@type': 'BlogPosting', headline: 'Hello VibeLog', author: { name: 'Alice Writer' } });
+  const markdownResponse = await request.get(`${publicUrl.origin}/blog/hello-vibelog/index.md`);
+  expect(markdownResponse.ok()).toBe(true);
+  expect(markdownResponse.headers()['content-type']).toContain('text/markdown');
+  expect(await markdownResponse.text()).toContain('This article came through the complete local publishing path.');
+  const llmsResponse = await request.get(`${publicUrl.origin}/llms.txt`);
+  expect(llmsResponse.ok()).toBe(true);
+  expect(llmsResponse.headers()['content-type']).toContain('text/plain');
+  expect(await llmsResponse.text()).toContain(`${publicUrl.origin}/blog/hello-vibelog/index.md`);
+  const robotsResponse = await request.get(`${publicUrl.origin}/robots.txt`);
+  expect(robotsResponse.ok()).toBe(true);
+  expect(robotsResponse.headers()['content-type']).toContain('text/plain');
+  expect(await robotsResponse.text()).toContain(`Sitemap: ${publicUrl.origin}/sitemap-index.xml`);
+  const pagefindScript = await request.get(`${publicUrl.origin}/pagefind/pagefind-component-ui.js`);
+  expect(pagefindScript.ok()).toBe(true);
+  expect(pagefindScript.headers()['content-type']).toContain('text/javascript');
+  const pagefindWorker = await request.get(`${publicUrl.origin}/pagefind/pagefind-worker.js`);
+  expect(pagefindWorker.ok()).toBe(true);
+  expect(pagefindWorker.headers()['content-security-policy']).toContain("'wasm-unsafe-eval'");
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
+  await page.goto(`${publicUrl.origin}/search/`);
+  expect((await page.request.get(page.url())).headers()['content-security-policy']).toContain("script-src 'self' 'wasm-unsafe-eval'");
+  await expectNoHorizontalOverflow(page);
+  const searchInput = page.locator('pagefind-input input');
+  await expect(searchInput).toHaveCSS('font-size', '16px');
+  await searchInput.fill('complete local publishing path');
+  const searchResult = page.locator('pagefind-results a[href="/blog/hello-vibelog/"]');
+  await expect(searchResult).toBeVisible({ timeout: 30_000 });
+  await searchInput.press('ArrowDown');
+  await expect(searchResult).toBeFocused();
+  await searchResult.press('Enter');
+  await expect(page).toHaveURL(/\/blog\/hello-vibelog\/$/u);
   await page.setViewportSize({ width: 1280, height: 720 });
 
   await page.goto(`${appUrl.origin}/editor`);
@@ -334,5 +376,15 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(page.locator('[data-blog-address-error]')).toHaveText('That blog address is already taken. Choose another one.');
   await expect(page.getByLabel('Blog address')).toHaveAttribute('aria-invalid', 'true');
   await expect(page).toHaveURL(/\/onboarding$/u);
+  await page.getByLabel('Blog address').fill('alice-zh');
+  await page.getByLabel('Blog language').fill('zh-Hant');
+  await page.getByRole('button', { name: 'Sync and build preview' }).click();
+  await expect(page).toHaveURL(/\/editor(?:\?|$)/u, { timeout: 120_000 });
+  const chinesePreview = page.frameLocator('iframe[data-preview-url]');
+  await chinesePreview.getByRole('link', { name: '搜尋' }).click();
+  await expectPreviewPath(page, '/search');
+  await chinesePreview.locator('pagefind-input input').fill('中文搜尋測試');
+  await expect(chinesePreview.locator('pagefind-results a[href="/blog/hello-vibelog/"]')).toBeVisible({ timeout: 30_000 });
   expect(browserErrors).toEqual([]);
+  expect(searchErrors).toEqual([]);
 });

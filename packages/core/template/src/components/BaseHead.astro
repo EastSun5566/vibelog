@@ -2,7 +2,7 @@
 // Import the global.css file here so that it is included on
 // all pages through the use of the <BaseHead /> component.
 import "../styles/global.css";
-import { SITE_LANGUAGE, SITE_TITLE } from "../consts";
+import { SITE_DESCRIPTION, SITE_LANGUAGE, SITE_TITLE } from "../consts";
 
 interface Props {
   title: string;
@@ -11,6 +11,10 @@ interface Props {
   publishedAt?: Date;
   modifiedAt?: Date;
   tags?: string[];
+  articleTitle?: string;
+  authorName?: string;
+  robots?: string;
+  searchAssets?: boolean;
 }
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
@@ -22,7 +26,39 @@ const {
   publishedAt,
   modifiedAt,
   tags = [],
+  articleTitle,
+  authorName,
+  robots,
+  searchAssets = false,
 } = Astro.props;
+const markdownURL = kind === "article" ? new URL("index.md", canonicalURL) : undefined;
+const structuredData = kind === "article" && publishedAt
+  ? {
+      "@context": "https://schema.org",
+      "@type": "BlogPosting",
+      headline: articleTitle ?? title,
+      description,
+      url: canonicalURL.href,
+      mainEntityOfPage: canonicalURL.href,
+      datePublished: publishedAt.toISOString(),
+      ...(modifiedAt && modifiedAt > publishedAt ? { dateModified: modifiedAt.toISOString() } : {}),
+      inLanguage: SITE_LANGUAGE,
+      ...(authorName ? { author: { "@type": "Person", name: authorName } } : {}),
+      ...(tags.length ? { keywords: tags } : {}),
+      isPartOf: { "@type": "Blog", name: SITE_TITLE, url: new URL("/", Astro.site).href },
+    }
+  : kind === "website" && Astro.url.pathname === "/"
+    ? {
+        "@context": "https://schema.org",
+        "@type": "Blog",
+        name: SITE_TITLE,
+        description: SITE_DESCRIPTION,
+        url: canonicalURL.href,
+        inLanguage: SITE_LANGUAGE,
+        ...(authorName ? { author: { "@type": "Person", name: authorName } } : {}),
+      }
+    : undefined;
+const structuredDataJSON = structuredData && JSON.stringify(structuredData).replaceAll("<", "\\u003c");
 ---
 
 <!-- Global Metadata -->
@@ -31,6 +67,8 @@ const {
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="sitemap" href="/sitemap-index.xml" />
 <link rel="stylesheet" href="/theme.css" />
+{searchAssets && <link rel="stylesheet" href="/pagefind/pagefind-component-ui.css" />}
+{searchAssets && <script is:inline type="module" src="/pagefind/pagefind-component-ui.js"></script>}
 <link
   rel="alternate"
   type="application/rss+xml"
@@ -41,6 +79,10 @@ const {
 
 <!-- Canonical URL -->
 <link rel="canonical" href={canonicalURL} />
+{markdownURL && <link rel="alternate" type="text/markdown" href={markdownURL} />}
+{markdownURL && <link rel="describedby" href={new URL("/llms.txt", Astro.site)} />}
+{robots && <meta name="robots" content={robots} />}
+{structuredDataJSON && <script type="application/ld+json" set:html={structuredDataJSON} />}
 
 <!-- Primary Meta Tags -->
 <title>{title}</title>

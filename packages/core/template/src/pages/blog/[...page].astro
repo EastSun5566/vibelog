@@ -1,0 +1,44 @@
+---
+import type { Page } from "astro";
+import { type CollectionEntry, getCollection } from "astro:content";
+
+import PostList from "../../components/PostList.astro";
+import SiteLayout from "../../layouts/SiteLayout.astro";
+import { SITE_DESCRIPTION, SITE_TITLE } from "../../consts";
+import { text } from "../../localization";
+
+export async function getStaticPaths({ paginate }) {
+  const posts = (await getCollection("blog")).sort(
+    (a, b) => b.data.date.valueOf() - a.data.date.valueOf() || a.id.localeCompare(b.id),
+  );
+  return paginate(posts, { pageSize: 10 });
+}
+
+interface Props {
+  page: Page<CollectionEntry<"blog">>;
+}
+
+const { page } = Astro.props;
+const pageTitle = page.currentPage === 1
+  ? text.allPosts
+  : `${text.allPosts} · ${text.pageLabel(page.currentPage)}`;
+const canonicalArchivePath = (path: string) => path.endsWith("/") ? path : `${path}/`;
+---
+
+<SiteLayout title={`${pageTitle} · ${SITE_TITLE}`} description={SITE_DESCRIPTION}>
+  <header class="page-heading">
+    <p class="eyebrow">{SITE_TITLE}</p>
+    <h1>{text.allPosts}</h1>
+    <p>{text.postsByDate(page.total)}</p>
+  </header>
+  <PostList posts={page.data} />
+  {
+    page.lastPage > 1 && (
+      <nav class="archive-pagination" aria-label={text.pagination}>
+        {page.url.prev ? <a href={canonicalArchivePath(page.url.prev)}>{text.previousPage}</a> : <span />}
+        <span aria-current="page">{text.pageOf(page.currentPage, page.lastPage)}</span>
+        {page.url.next ? <a href={canonicalArchivePath(page.url.next)}>{text.nextPage}</a> : <span />}
+      </nav>
+    )
+  }
+</SiteLayout>

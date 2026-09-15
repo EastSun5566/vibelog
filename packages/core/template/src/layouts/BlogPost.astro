@@ -31,15 +31,16 @@ const showTableOfContents = headings.length >= 2;
   title={`${title} · ${SITE_TITLE}`}
   {description}
   kind="article"
+  articleTitle={title}
   publishedAt={date}
   modifiedAt={updatedDate}
   tags={tags.map((tag) => tag.name)}
 >
   <article class="blog-post">
-    <div class="blog-post-content">
+    <div class="blog-post-content" data-pagefind-body>
       <header class="blog-post-header" id="article-start">
         <p class="blog-post-date"><FormattedDate date={date} /></p>
-        <h1 class="blog-post-title">{title}</h1>
+        <h1 class="blog-post-title" data-pagefind-meta="title">{title}</h1>
         <TagList {tags} />
         {
           showUpdatedDate && (

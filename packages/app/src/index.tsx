@@ -37,7 +37,9 @@ function cookieValue(header: string | undefined, name: string): string | undefin
 function siteUrl(config: AppConfig, username: string): string { const origin = new URL(config.appOrigin); return `${origin.protocol}//${username}.${origin.hostname}${origin.port ? `:${origin.port}` : ''}`; }
 function releaseEtag(releaseId: string, requestPath: string): string { return `"${createHash('sha256').update(releaseId).update('\0').update(requestPath).digest('base64url')}"`; }
 function matchesEtag(value: string | undefined, etag: string): boolean { return value?.split(',').some((candidate) => { const tag = candidate.trim(); return tag === '*' || tag === etag || tag === `W/${etag}`; }) ?? false; }
-function contentType(path: string): string { const extension = path.split('.').at(-1)?.toLowerCase(); return ({ html: 'text/html; charset=utf-8', css: 'text/css; charset=utf-8', js: 'text/javascript; charset=utf-8', json: 'application/json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', ico: 'image/x-icon', xml: 'application/xml; charset=utf-8' } as Record<string, string>)[extension ?? ''] ?? 'application/octet-stream'; }
+function contentType(path: string): string { const extension = path.split('.').at(-1)?.toLowerCase(); return ({ html: 'text/html; charset=utf-8', css: 'text/css; charset=utf-8', js: 'text/javascript; charset=utf-8', json: 'application/json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', ico: 'image/x-icon', xml: 'application/xml; charset=utf-8', md: 'text/markdown; charset=utf-8', txt: 'text/plain; charset=utf-8', wasm: 'application/wasm' } as Record<string, string>)[extension ?? ''] ?? 'application/octet-stream'; }
+function isSearchPage(path: string): boolean { return path === '/search' || path === '/search/'; }
+function usesSearchScripts(path: string): boolean { return isSearchPage(path) || path.startsWith('/pagefind/'); }
 async function artifactResponse(c: AppContext, store: ArtifactStore, artifactId: string, requestPath: string, cache: string, etag?: string, transformHtml?: (html: string) => string): Promise<Response> {
   const found = await findArtifactObject(store, artifactId, requestPath); if (!found) throw new AppError('site_not_found', 'Page not found', 404);
   const type = found.object.contentType ?? contentType(found.path); c.header('Content-Type', type); c.header('Cache-Control', cache);
@@ -75,14 +77,17 @@ export function createApp(options: CreateAppOptions) {
         const theme = await database.getActiveTheme(blog.id); if (!theme) throw new AppError('theme_not_found', 'Theme not found', 404);
         c.header('Content-Type', 'text/css; charset=utf-8'); c.header('Cache-Control', 'private, no-store'); return c.body(renderThemeCss(preview.themeConfig ?? theme.config));
       }
-      const nonce = randomBytes(18).toString('base64'); c.header('Content-Security-Policy', `default-src 'self'; script-src 'nonce-${nonce}'; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors ${config.appOrigin}`);
+      const nonce = randomBytes(18).toString('base64');
+      const previewScripts = usesSearchScripts(c.req.path) ? `'nonce-${nonce}' 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:` : `'nonce-${nonce}'`;
+      c.header('Content-Security-Policy', `default-src 'self'; script-src ${previewScripts}; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors ${config.appOrigin}`);
       return artifactResponse(c, options.artifactStore, blog.draftArtifactId, c.req.path, 'private, no-store', undefined, (html) => injectPreviewBridge(html, previewBridge(config.appOrigin, nonce)));
     }
     const username = publicUsername(c, config);
     if (username) {
       const blog = await database.getBlogByUsername(username); const release = blog ? await database.getActiveRelease(blog.id) : null;
       if (!release) throw new AppError('site_not_found', 'This blog has not been published yet', 404);
-      c.header('Content-Security-Policy', "default-src 'self'; script-src 'none'; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+      const publicScripts = usesSearchScripts(c.req.path) ? "'self' 'wasm-unsafe-eval'; worker-src 'self' blob:" : "'none'";
+      c.header('Content-Security-Policy', `default-src 'self'; script-src ${publicScripts}; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`);
       return artifactResponse(c, options.artifactStore, release.artifactId, c.req.path, 'public, no-cache', releaseEtag(release.id, c.req.path));
     }
     throw new AppError('unknown_host', 'Unknown VibeLog host', 404);

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { build as astroBuild } from 'astro';
 import mdx from '@astrojs/mdx';
+import * as pagefind from 'pagefind';
 import { unified } from '@astrojs/markdown-remark';
 import sitemap from '@astrojs/sitemap';
 import fs from 'fs-extra';
@@ -22,7 +23,7 @@ import { logger } from './logger.js';
 import type { ContentSource } from '../types.js';
 import { loadConfig } from './config.js';
 
-const TEMPLATE_VERSION = 7;
+const TEMPLATE_VERSION = 8;
 const postSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
@@ -390,7 +391,7 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
       cacheDir: join(resolvedVibelogDir, '.astro'),
       outDir: tempOutDir,
       site: siteUrl.href,
-      integrations: [mdx(), sitemap()],
+      integrations: [mdx(), sitemap({ filter: (page) => new URL(page).pathname !== '/search/' })],
       markdown: {
         processor: unified({
           remarkPlugins: [
@@ -413,6 +414,25 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
         logLevel: 'warn',
       },
     });
+
+    logger.info('Indexing selected articles with Pagefind...');
+    const created = await pagefind.createIndex({ verbose: false });
+    if (!created.index || created.errors.length) {
+      await pagefind.close();
+      throw new Error(`Pagefind could not start indexing: ${created.errors.join('; ') || 'index unavailable'}`);
+    }
+    const { index } = created;
+    try {
+      const added = await index.addDirectory({ path: tempOutDir });
+      if (added.errors.length || added.page_count === 0) {
+        throw new Error(`Pagefind could not index the site: ${added.errors.join('; ') || 'no pages found'}`);
+      }
+      const written = await index.writeFiles({ outputPath: join(tempOutDir, 'pagefind') });
+      if (written.errors.length) throw new Error(`Pagefind could not write its index: ${written.errors.join('; ')}`);
+    } finally {
+      await index.deleteIndex();
+      await pagefind.close();
+    }
   } catch (error) {
     await fs.remove(tempOutDir);
     throw error;

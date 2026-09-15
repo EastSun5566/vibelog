@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -9,6 +9,11 @@ import type { ContentSource } from '../src/index.js';
 
 const roots: string[] = [];
 const contentHash = (content: string) => createHash('sha256').update(content, 'utf8').digest('hex');
+function jsonLd(html: string): Record<string, unknown> {
+  const payload = /<script type="application\/ld\+json">([^]*?)<\/script>/u.exec(html)?.[1];
+  if (!payload) throw new Error('Missing JSON-LD');
+  return JSON.parse(payload) as Record<string, unknown>;
+}
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
 describe('DevBuilder content summary', () => {
@@ -108,11 +113,11 @@ describe('DevBuilder content summary', () => {
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 7 });
+    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 8 });
     expect(await readFile(join(root, '.vibelog', 'src', 'styles', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
   });
 
-  it('builds the V7 reading experience with reliable descriptions and long-form navigation', { timeout: 20_000 }, async () => {
+  it('builds the V8 reading experience with reliable descriptions, search, and machine-readable content', { timeout: 20_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-public-')); roots.push(root);
     const posts = Array.from({ length: 6 }, (_, index) => {
       const number = index + 1;
@@ -158,7 +163,10 @@ describe('DevBuilder content summary', () => {
     const home = await readFile(join(output, 'index.html'), 'utf8');
     expect(home).toContain('<h1 id="site-heading">Writer Journal</h1>');
     expect(home).toContain('A short public author bio.');
-    expect(home).not.toContain('<script');
+    expect(jsonLd(home)).toMatchObject({ '@type': 'Blog', name: 'Writer Journal', author: { name: 'Writer' } });
+    expect(home).not.toContain('pagefind-component-ui.js');
+    expect(home).toContain('href="/search"');
+    expect(home).not.toContain('data-pagefind-body');
     for (const number of [6, 5, 4, 3, 2]) expect(home).toContain(`Article ${String(number)}`);
     expect(home).not.toContain('Article 1');
     expect(home).toContain(expectedDescription);
@@ -185,7 +193,12 @@ describe('DevBuilder content summary', () => {
     expect(article).toContain('較舊文章');
     expect(article).toContain('Article 3');
     expect(article).not.toContain('blog-item-description');
-    expect(article).not.toContain('<script');
+    expect(jsonLd(article)).toMatchObject({ '@type': 'BlogPosting', headline: 'Article 4', author: { name: 'Writer' }, datePublished: '2026-01-04T00:00:00.000Z', dateModified: '2026-01-08T12:00:00.000Z', keywords: ['Even', 'Writing'] });
+    expect(article).not.toContain('pagefind-component-ui.js');
+    expect(article).toContain('data-pagefind-body');
+    expect(article).toContain('data-pagefind-meta="title"');
+    expect(article).toContain('<link rel="alternate" type="text/markdown" href="https://writer.example.com/blog/article-4/index.md">');
+    expect(article).toContain('<link rel="describedby" href="https://writer.example.com/llms.txt">');
     const sameDayArticle = await readFile(join(output, 'blog', 'article-5', 'index.html'), 'utf8');
     expect(sameDayArticle).toContain('<meta property="article:modified_time" content="2026-01-05T12:00:00.000Z">');
     expect(sameDayArticle).not.toContain('更新於');
@@ -233,6 +246,27 @@ describe('DevBuilder content summary', () => {
     expect(sitemap).toContain('https://writer.example.com/blog/article-1/');
     expect(sitemap).toContain('https://writer.example.com/blog/article-6/');
     expect(sitemap).toContain('https://writer.example.com/tags/writing/');
+    expect(sitemap).not.toContain('https://writer.example.com/search/');
+    expect(sitemap).not.toContain('.md');
+    const search = await readFile(join(output, 'search', 'index.html'), 'utf8');
+    expect(search).toContain('<meta name="robots" content="noindex, follow">');
+    expect(search).toContain('/pagefind/pagefind-component-ui.js');
+    expect(search).toContain('<pagefind-input');
+    expect(search).toContain('<pagefind-results');
+    expect(search).not.toContain('data-pagefind-body');
+    expect(await stat(join(output, 'pagefind', 'pagefind.js'))).toBeTruthy();
+    expect(await stat(join(output, 'pagefind', 'pagefind-component-ui.js'))).toBeTruthy();
+    expect(await stat(join(output, 'pagefind', 'pagefind-component-ui.css'))).toBeTruthy();
+    const markdown = await readFile(join(output, 'blog', 'article-4', 'index.md'), 'utf8');
+    expect(markdown).toContain('# Article 4\n\nPublished: 2026-01-04\nUpdated: 2026-01-08\nCanonical: https://writer.example.com/blog/article-4/');
+    expect(markdown).toContain('Body for article 4.');
+    expect(markdown).not.toContain('article-navigation');
+    const llms = await readFile(join(output, 'llms.txt'), 'utf8');
+    expect(llms).toContain('# Writer Journal\n\n> Essays from Writer.\n\n## Posts');
+    expect(llms).toContain('https://writer.example.com/blog/article-4/index.md');
+    expect(llms.indexOf('Article 6')).toBeLessThan(llms.indexOf('Article 1'));
+    const robots = await readFile(join(output, 'robots.txt'), 'utf8');
+    expect(robots).toBe('User-agent: *\nAllow: /\n\nSitemap: https://writer.example.com/sitemap-index.xml\n');
   });
 
   it('builds an empty tag index when no posts have tags', { timeout: 20_000 }, async () => {
@@ -253,6 +287,70 @@ describe('DevBuilder content summary', () => {
     const tagIndex = await readFile(join(output, 'tags', 'index.html'), 'utf8');
     expect(home).not.toContain('>主題</a>');
     expect(tagIndex).toContain('目前沒有文章主題。');
+    expect(await readdir(join(output, 'blog'))).not.toContain('2');
+  });
+
+  it('paginates only the post archive at 10 posts and removes stale pages on rebuild', { timeout: 30_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-pagination-')); roots.push(root);
+    let count = 11;
+    const source: ContentSource = {
+      name: ContentSourceName.HACKMD,
+      getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
+      getPosts: () => Promise.resolve({ posts: Array.from({ length: count }, (_, index) => ({
+        id: `post-${String(index + 1)}`,
+        title: `Post ${String(index + 1)}`,
+        slug: `post-${String(index + 1)}`,
+        date: `2026-01-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
+        content: `Unique body ${String(index + 1)}`,
+      })) }),
+    };
+    const builder = createDevBuilder({ root, contentSource: source });
+    await builder.prepare({ installDependencies: false });
+    const output = join(root, 'public');
+    await builder.fetchContent();
+    await buildFromVibelog({ vibelogDir: join(root, '.vibelog'), outDir: output, site: 'https://writer.example.com' });
+
+    const first = await readFile(join(output, 'blog', 'index.html'), 'utf8');
+    const second = await readFile(join(output, 'blog', '2', 'index.html'), 'utf8');
+    expect(first).toContain('Post 11');
+    expect(first).not.toContain('Post 1</');
+    expect(first).toContain('href="/blog/2/"');
+    expect(first).toContain('<link rel="canonical" href="https://writer.example.com/blog/">');
+    expect(second).toContain('Post 1');
+    expect(second).not.toContain('Post 11');
+    expect(second).toContain('href="/blog/"');
+    expect(second).toContain('<link rel="canonical" href="https://writer.example.com/blog/2/">');
+    expect(await readdir(join(output, 'blog'))).not.toContain('1');
+
+    count = 10;
+    await builder.fetchContent();
+    await buildFromVibelog({ vibelogDir: join(root, '.vibelog'), outDir: output, site: 'https://writer.example.com' });
+    const ten = await readFile(join(output, 'blog', 'index.html'), 'utf8');
+    expect(ten).toContain('Post 1');
+    expect(ten).not.toContain('Post 11');
+    expect(ten).not.toContain('archive-pagination');
+    expect(await readdir(join(output, 'blog'))).not.toContain('2');
+  });
+
+  it('keeps hostile article titles inside safely serialized JSON-LD', { timeout: 20_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-jsonld-')); roots.push(root);
+    const title = 'An article </script><script>alert(1)</script>';
+    const source: ContentSource = {
+      name: ContentSourceName.HACKMD,
+      getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
+      getPosts: () => Promise.resolve({ posts: [{ id: 'post', title, slug: 'post', date: '2026-01-01T00:00:00Z', content: 'Body.' }] }),
+    };
+    const builder = createDevBuilder({ root, contentSource: source });
+    await builder.prepare({ installDependencies: false });
+    await builder.fetchContent();
+    const output = join(root, 'public');
+    await buildFromVibelog({ vibelogDir: join(root, '.vibelog'), outDir: output, site: 'https://writer.example.com' });
+    const article = await readFile(join(output, 'blog', 'post', 'index.html'), 'utf8');
+    expect(jsonLd(article).headline).toBe(title);
+    expect(/<script type="application\/ld\+json">([^]*?)<\/script>/u.exec(article)?.[1]).not.toContain('<');
+    expect(article).toContain('\\u003c/script>');
+    const markdown = await readFile(join(output, 'blog', 'post', 'index.md'), 'utf8');
+    expect(markdown).toContain('Canonical: https://writer.example.com/blog/post/');
   });
 
   it('renders common HackMD Markdown without adding client scripts', { timeout: 20_000 }, async () => {
@@ -295,7 +393,8 @@ describe('DevBuilder content summary', () => {
     expect(article).toContain('Custom heading');
     expect(article).toContain('Unknown directives keep their content.');
     expect(article).not.toContain('custom-element');
-    expect(article).not.toContain('<script');
+    expect(article).not.toContain('pagefind-component-ui.js');
+    expect(jsonLd(article)).toMatchObject({ '@type': 'BlogPosting', headline: 'HackMD compatibility' });
     expect(article).toContain('<meta name="description" content="Keep an inline [TOC] reference visible.">');
   });
 });

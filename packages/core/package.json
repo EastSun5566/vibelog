@@ -50,6 +50,7 @@
     "gray-matter": "^4.0.3",
     "kleur": "^4.1.5",
     "mdast-util-from-markdown": "2.0.2",
+    "pagefind": "1.5.2",
     "rehype-katex": "7.0.1",
     "remark-definition-list": "2.0.0",
     "remark-directive": "4.0.0",

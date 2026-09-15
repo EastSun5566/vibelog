@@ -17,6 +17,7 @@ const { hasTags = false } = Astro.props;
     <ul class="site-nav-links" role="list">
       <li><HeaderLink href="/">{text.home}</HeaderLink></li>
       <li><HeaderLink href="/blog">{text.posts}</HeaderLink></li>
+      <li><HeaderLink href="/search">{text.search}</HeaderLink></li>
       {hasTags && <li><HeaderLink href="/tags">{text.tags}</HeaderLink></li>}
     </ul>
   </nav>

@@ -187,6 +187,56 @@ h3 {
   margin-block-end: clamp(2.5rem, 6vw, 4.5rem);
 }
 
+.archive-pagination {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--theme-space);
+  justify-content: space-between;
+  margin-block-start: clamp(2.5rem, 6vw, 4rem);
+}
+
+.archive-pagination a {
+  align-items: center;
+  display: inline-flex;
+  min-height: 2.75rem;
+}
+
+.archive-pagination > span[aria-current="page"] {
+  color: var(--theme-muted);
+  font-size: 0.9rem;
+}
+
+.search-page {
+  --pf-text: var(--theme-text);
+  --pf-text-secondary: var(--theme-muted);
+  --pf-text-muted: var(--theme-muted);
+  --pf-background: var(--theme-background);
+  --pf-border: var(--theme-border);
+  --pf-border-focus: var(--theme-accent);
+  --pf-skeleton: var(--theme-surface);
+  --pf-skeleton-shine: var(--theme-background);
+  --pf-hover: var(--theme-surface);
+  --pf-mark: var(--theme-accent);
+  --pf-outline-focus: var(--theme-accent);
+  --pf-font: var(--theme-body-font);
+  --pf-input-height: 3rem;
+  --pf-input-font-size: 1rem;
+  --pf-border-radius: var(--theme-radius);
+  max-width: 46rem;
+  margin-inline: auto;
+}
+
+.search-page pagefind-input,
+.search-page pagefind-summary,
+.search-page pagefind-results {
+  display: block;
+}
+
+.search-page pagefind-summary {
+  margin-block: 1rem;
+}
+
 .blog-list {
   display: grid;
   gap: 0;
