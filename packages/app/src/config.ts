@@ -6,7 +6,7 @@ export interface OperationRuntimeConfig {
   appOrigin: string; appHostname: string; databaseUrl: string; objectStore: ObjectStoreConfig;
   queueMode: 'direct' | 'postgres' | 'cloud-tasks'; operationPollIntervalMs: number;
   cloudTasks?: { project: string; location: string; queue: string; workerUrl: string; serviceAccountEmail: string };
-  taskQueueName?: string; hackmdBaseUrl: string; aiProvider: string; aiModel: string;
+  taskQueueName?: string; hackmdBaseUrl: string; aiProvider: string; aiModel: string; aiFallbackModels: string[];
 }
 export interface AppConfig extends OperationRuntimeConfig {
   appOrigin: string; appHostname: string; previewOrigin: string; databaseUrl: string; betterAuthSecret: string;
@@ -21,11 +21,24 @@ function optional(env: NodeJS.ProcessEnv, name: string): string | undefined { co
 function parseOrigin(value: string, name: string): URL { const url = new URL(value); if (!['http:', 'https:'].includes(url.protocol) || url.pathname !== '/' || url.search || url.hash) throw new Error(`${name} must be an http(s) origin without a path`); return url; }
 function positiveInteger(value: string | undefined, fallback: number, name: string): number { const parsed = Number(value ?? fallback); if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`${name} must be a positive integer`); return parsed; }
 function boolean(value: string | undefined, fallback: boolean): boolean { if (value === undefined) return fallback; if (value === 'true') return true; if (value === 'false') return false; throw new Error('Boolean configuration must be true or false'); }
+function stringArray(value: string | undefined, name: string): string[] {
+  if (value === undefined || value.trim().length === 0) return [];
+  let parsed: unknown;
+  try { parsed = JSON.parse(value); }
+  catch { throw new Error(`${name} must be a JSON array of model IDs`); }
+  if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string' || item.trim().length === 0)) throw new Error(`${name} must be a JSON array of non-empty model IDs`);
+  const models = parsed.map((item) => (item as string).trim());
+  if (new Set(models).size !== models.length) throw new Error(`${name} must not contain duplicate model IDs`);
+  return models;
+}
 
 function loadOperationRuntimeConfig(env: NodeJS.ProcessEnv): OperationRuntimeConfig {
   const origin = parseOrigin(env.APP_ORIGIN ?? 'http://app.localtest.me:3000', 'APP_ORIGIN');
   const aiProvider = env.VIBELOG_AI_PROVIDER ?? 'openai';
   if (!getAiProviderNames().includes(aiProvider)) throw new Error(`VIBELOG_AI_PROVIDER is not in the pi-ai catalog: ${aiProvider}`);
+  const aiModel = env.VIBELOG_AI_MODEL ?? 'gpt-4o-mini';
+  const aiFallbackModels = stringArray(env.VIBELOG_AI_FALLBACK_MODELS, 'VIBELOG_AI_FALLBACK_MODELS');
+  if (aiFallbackModels.includes(aiModel)) throw new Error('VIBELOG_AI_FALLBACK_MODELS must not repeat VIBELOG_AI_MODEL');
   const queueMode = env.OPERATION_QUEUE ?? 'direct';
   if (!['direct', 'postgres', 'cloud-tasks'].includes(queueMode)) throw new Error('OPERATION_QUEUE must be direct, postgres, or cloud-tasks');
   const cloudTasks = queueMode === 'cloud-tasks' ? {
@@ -38,7 +51,7 @@ function loadOperationRuntimeConfig(env: NodeJS.ProcessEnv): OperationRuntimeCon
     objectStore: { endpoint: required(env, 'OBJECT_STORE_ENDPOINT'), region: env.OBJECT_STORE_REGION ?? 'auto', bucket: required(env, 'OBJECT_STORE_BUCKET'), accessKeyId: required(env, 'OBJECT_STORE_ACCESS_KEY_ID'), secretAccessKey: required(env, 'OBJECT_STORE_SECRET_ACCESS_KEY'), forcePathStyle: boolean(env.OBJECT_STORE_FORCE_PATH_STYLE, false) },
     queueMode: queueMode as OperationRuntimeConfig['queueMode'], operationPollIntervalMs: positiveInteger(env.OPERATION_POLL_INTERVAL_MS, 1000, 'OPERATION_POLL_INTERVAL_MS'),
     cloudTasks, taskQueueName: optional(env, 'TASK_QUEUE_NAME'), hackmdBaseUrl: parseOrigin(env.HACKMD_BASE_URL ?? 'https://hackmd.io', 'HACKMD_BASE_URL').origin,
-    aiProvider, aiModel: env.VIBELOG_AI_MODEL ?? 'gpt-4o-mini',
+    aiProvider, aiModel, aiFallbackModels,
   };
 }
 export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): OperationRuntimeConfig { return loadOperationRuntimeConfig(env); }

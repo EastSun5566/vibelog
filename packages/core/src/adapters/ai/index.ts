@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { Type, createModels, createProvider, validateToolCall, type Api, type Context, type Model, type Models, type MutableModels, type ProviderEnv, type ProviderStreams, type SimpleStreamOptions, type Tool } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { builtinModels, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all';
-import { opencodeGoProvider } from '@earendil-works/pi-ai/providers/opencode-go';
 import type { AiGenerationContext, AiProvider, ThemeConfig, ThemeProposalInput } from '../../types.js';
 import { validateThemeConfig } from '../../theme.js';
 import { logger } from '../../core/index.js';
@@ -11,10 +10,10 @@ const THEME_TOOL_NAME = 'propose_theme';
 const OLLAMA_PROVIDER = 'ollama';
 const OLLAMA_BASE_URL = 'http://localhost:11434/v1';
 const KEYLESS_OLLAMA_TRANSPORT_KEY = 'ollama-local';
-const DEEPSEEK_V41_FLASH = 'deepseek-v4.1-flash';
 const OPENCODE_PROVIDERS = new Set(['opencode', 'opencode-go']);
 const VIBELOG_USER_AGENT = 'VibeLog';
 const AI_GENERATION_TIMEOUT_MS = 120_000;
+const AI_FALLBACK_CANDIDATE_TIMEOUT_MS = 45_000;
 const enumType = <T extends string>(values: readonly T[]) => Type.Union(values.map((value) => Type.Literal(value)));
 const themeTool: Tool = {
   name: THEME_TOOL_NAME,
@@ -50,19 +49,9 @@ function createOllamaProvider(modelId: string) {
   const model: Model<'openai-completions'> = { id: modelId, name: `${modelId} (Ollama)`, api: 'openai-completions', provider: OLLAMA_PROVIDER, baseUrl, reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128_000, maxTokens: 32_000, compat: { supportsDeveloperRole: false, supportsReasoningEffort: false } };
   return createProvider({ id: OLLAMA_PROVIDER, name: 'Ollama', baseUrl, auth: { apiKey: { name: 'Ollama', resolve: () => Promise.resolve({ auth: {} }) } }, models: [model], api: keylessOpenAICompletionsApi() });
 }
-function createOpenCodeGoCompatibilityProvider() {
-  const model: Model<'openai-completions'> = {
-    id: DEEPSEEK_V41_FLASH, name: 'DeepSeek V4.1 Flash', api: 'openai-completions', provider: 'opencode-go', baseUrl: 'https://opencode.ai/zen/go/v1', reasoning: true, input: ['text', 'image'],
-    cost: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 }, contextWindow: 1_000_000, maxTokens: 384_000,
-    compat: { supportsStore: false, supportsDeveloperRole: false, maxTokensField: 'max_tokens', requiresReasoningContentOnAssistantMessages: true, thinkingFormat: 'deepseek' },
-    thinkingLevelMap: { minimal: null, low: 'low', medium: null, high: 'high', max: 'max' },
-  };
-  return createProvider({ id: 'opencode-go', name: 'OpenCode Go', auth: opencodeGoProvider().auth, models: [model], api: openAICompletionsApi() });
-}
 function defaultModels(provider: string, modelId: string): MutableModels {
   const models = provider === OLLAMA_PROVIDER ? createModels() : builtinModels();
   if (provider === OLLAMA_PROVIDER) models.setProvider(createOllamaProvider(modelId));
-  else if (provider === 'opencode-go' && modelId === DEEPSEEK_V41_FLASH && !models.getModel(provider, modelId)) models.setProvider(createOpenCodeGoCompatibilityProvider());
   return models;
 }
 function requestEnv(provider: string): ProviderEnv | undefined { const legacy = process.env.GOOGLE_GENERATIVE_AI_API_KEY; return provider === 'google' && !process.env.GEMINI_API_KEY && legacy ? { GEMINI_API_KEY: legacy } : undefined; }
@@ -75,13 +64,74 @@ function safeToolValidationError(error: unknown): string {
   const [message] = safeProviderError(error).split('\n\nReceived arguments:');
   return message || 'Unknown validation error';
 }
+export type AiProviderFailureKind = 'cancelled' | 'configuration' | 'http' | 'network' | 'timeout' | 'upstream';
+export interface AiProviderRequestErrorOptions extends ErrorOptions {
+  kind?: AiProviderFailureKind;
+  retryable?: boolean;
+  status?: number;
+}
 export class AiProviderRequestError extends Error {
-  constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = 'AiProviderRequestError'; }
+  readonly kind: AiProviderFailureKind;
+  readonly retryable: boolean;
+  readonly status?: number;
+  constructor(message: string, options: AiProviderRequestErrorOptions = {}) {
+    super(message, { cause: options.cause });
+    this.name = 'AiProviderRequestError';
+    this.kind = options.kind ?? 'upstream';
+    this.retryable = options.retryable ?? false;
+    this.status = options.status;
+  }
 }
 export class AiProviderTimeoutError extends AiProviderRequestError {
-  constructor(options?: ErrorOptions) { super('AI provider request timed out', options); this.name = 'AiProviderTimeoutError'; }
+  constructor(options?: ErrorOptions) { super('AI provider request timed out', { ...options, kind: 'timeout', retryable: true }); this.name = 'AiProviderTimeoutError'; }
 }
 export function getAiProviderNames(): string[] { return [...getBuiltinProviders(), OLLAMA_PROVIDER]; }
+
+interface ProviderRequestMetadata {
+  networkFailure: boolean;
+  shouldRetry?: boolean;
+  status?: number;
+}
+function requestMetadataFetch(metadata: ProviderRequestMetadata): typeof globalThis.fetch {
+  const request = globalThis.fetch;
+  return async (input, init) => {
+    try {
+      const response = await request(input, init);
+      metadata.status = response.status;
+      const shouldRetry = response.headers.get('x-should-retry');
+      if (shouldRetry === 'true') metadata.shouldRetry = true;
+      if (shouldRetry === 'false') metadata.shouldRetry = false;
+      return response;
+    } catch (error) {
+      metadata.networkFailure = true;
+      throw error;
+    }
+  };
+}
+function retryableStatus(status: number | undefined): boolean {
+  return status === 404 || status === 408 || status === 409 || status === 429 || (status !== undefined && status >= 500);
+}
+function isTimeoutSignal(signal: AbortSignal): boolean {
+  const reason: unknown = signal.reason;
+  return signal.aborted && typeof reason === 'object' && reason !== null && (reason as Record<string, unknown>).name === 'TimeoutError';
+}
+function providerRequestError(error: unknown, metadata: ProviderRequestMetadata, signal: AbortSignal): AiProviderRequestError {
+  if (signal.aborted) {
+    if (isTimeoutSignal(signal)) return new AiProviderTimeoutError({ cause: error });
+    return new AiProviderRequestError('AI provider request was cancelled', { cause: error, kind: 'cancelled', retryable: false });
+  }
+  const detail = safeProviderError(error);
+  if (/no api key|unknown ai model|unsupported ai provider/iu.test(detail)) {
+    return new AiProviderRequestError('AI provider configuration failed', { cause: error, kind: 'configuration', retryable: false, status: metadata.status });
+  }
+  const retryable = metadata.shouldRetry ?? (metadata.networkFailure || retryableStatus(metadata.status));
+  return new AiProviderRequestError(metadata.status === undefined ? 'AI provider request failed' : `AI provider request failed with HTTP ${String(metadata.status)}`, {
+    cause: error,
+    kind: metadata.networkFailure ? 'network' : metadata.status === undefined ? 'upstream' : 'http',
+    retryable,
+    status: metadata.status,
+  });
+}
 
 export class PiAiProvider implements AiProvider {
   readonly model: Model<Api>;
@@ -99,18 +149,24 @@ export class PiAiProvider implements AiProvider {
     };
     let response;
     const openCode = OPENCODE_PROVIDERS.has(this.name);
+    const requestMetadata: ProviderRequestMetadata = { networkFailure: false };
     try {
       response = await this.models.complete(this.model, context, {
         temperature: 0.2, signal,
         env: requestEnv(this.name),
-        ...(openCode ? { sessionId, headers: { 'user-agent': VIBELOG_USER_AGENT, 'x-opencode-session': sessionId } } : {}),
+        ...(openCode ? { fetch: requestMetadataFetch(requestMetadata), maxRetries: 0, sessionId, headers: { 'user-agent': VIBELOG_USER_AGENT, 'x-opencode-session': sessionId } } : {}),
       });
     } catch (error) {
-      if (signal.aborted && signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError') throw new AiProviderTimeoutError({ cause: error });
-      throw new AiProviderRequestError(`AI provider request failed: ${safeProviderError(error)}`, { cause: error });
+      throw providerRequestError(error, requestMetadata, signal);
     }
-    if (response.stopReason === 'aborted' && signal.aborted && signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError') throw new AiProviderTimeoutError();
-    if (response.stopReason === 'error' || response.stopReason === 'aborted') throw new AiProviderRequestError(`AI provider request failed: ${safeProviderError(response.errorMessage ?? response.stopReason)}`);
+    if (response.stopReason === 'error' || response.stopReason === 'aborted') {
+      const failure = providerRequestError(response.errorMessage ?? response.stopReason, requestMetadata, signal);
+      if (failure instanceof AiProviderTimeoutError || failure.kind === 'cancelled' || failure.kind === 'configuration' || failure.kind === 'network') throw failure;
+      if (requestMetadata.status === undefined || requestMetadata.status < 400) {
+        throw new AiProviderRequestError(failure.message, { cause: failure, kind: 'upstream', retryable: true });
+      }
+      throw failure;
+    }
     if (response.stopReason === 'length') throw new Error('AI response exceeded the model output limit.');
     const toolCalls = response.content.filter((block) => block.type === 'toolCall');
     if (response.stopReason !== 'toolUse' || toolCalls.length !== 1) throw new Error(`AI must call ${THEME_TOOL_NAME} exactly once.`);
@@ -136,3 +192,41 @@ export class PiAiProvider implements AiProvider {
   }
 }
 export function createAiProvider(name: string, modelId: string): PiAiProvider { return new PiAiProvider(name, modelId); }
+
+export class FallbackAiProvider implements AiProvider {
+  readonly modelId: string;
+  private readonly candidates: AiProvider[];
+  constructor(readonly name: string, primaryModelId: string, fallbackModelIds: string[], factory: (name: string, modelId: string) => AiProvider = createAiProvider, private readonly candidateTimeoutMs = AI_FALLBACK_CANDIDATE_TIMEOUT_MS) {
+    const modelIds = [primaryModelId, ...fallbackModelIds];
+    if (modelIds.some((modelId) => modelId.trim().length === 0)) throw new Error('AI model IDs must not be empty');
+    if (new Set(modelIds).size !== modelIds.length) throw new Error('AI fallback models must be unique and must not repeat the primary model');
+    this.modelId = primaryModelId;
+    this.candidates = modelIds.map((modelId) => factory(name, modelId));
+  }
+  async generate(input: ThemeProposalInput, context?: AiGenerationContext): Promise<ThemeConfig> {
+    const operationId = context?.sessionId ?? randomUUID();
+    const startedAt = Date.now();
+    for (const [index, candidate] of this.candidates.entries()) {
+      const timeoutSignal = AbortSignal.timeout(this.candidateTimeoutMs);
+      const signal = context?.signal ? AbortSignal.any([context.signal, timeoutSignal]) : timeoutSignal;
+      try {
+        const theme = await candidate.generate(input, { sessionId: operationId, signal });
+        logger.info(JSON.stringify({ event: 'ai_model_selected', operationId, primaryModel: this.modelId, selectedModel: candidate.modelId, fallback: index > 0, durationMs: Date.now() - startedAt }));
+        return theme;
+      } catch (error) {
+        const failure = error instanceof AiProviderRequestError ? error : undefined;
+        const hasFallback = index + 1 < this.candidates.length;
+        if (failure?.retryable && hasFallback && !context?.signal?.aborted) {
+          logger.warn(JSON.stringify({ event: 'ai_model_fallback', operationId, primaryModel: this.modelId, failedModel: candidate.modelId, nextModel: this.candidates[index + 1]?.modelId, reason: failure.kind, status: failure.status, durationMs: Date.now() - startedAt }));
+          continue;
+        }
+        logger.error(JSON.stringify({ event: 'ai_model_failed', operationId, primaryModel: this.modelId, failedModel: candidate.modelId, reason: failure?.kind ?? 'validation', status: failure?.status, durationMs: Date.now() - startedAt }));
+        throw error;
+      }
+    }
+    throw new AiProviderRequestError('AI provider chain exhausted', { kind: 'upstream', retryable: false });
+  }
+}
+export function createAiProviderChain(name: string, primaryModelId: string, fallbackModelIds: string[] = []): AiProvider {
+  return fallbackModelIds.length === 0 ? createAiProvider(name, primaryModelId) : new FallbackAiProvider(name, primaryModelId, fallbackModelIds);
+}

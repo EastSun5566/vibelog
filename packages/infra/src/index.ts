@@ -86,6 +86,7 @@ function createApplication() {
     objectStoreBucket: foundation.bucket.name,
     aiProvider: config.get('aiProvider') ?? 'openai',
     aiModel: config.get('aiModel') ?? 'gpt-4o-mini',
+    aiFallbackModels: config.getObject<string[]>('aiFallbackModels') ?? [],
     aiApiKeyEnv: config.get('aiApiKeyEnv') ?? 'OPENAI_API_KEY',
     googleAnalyticsMeasurementId: config.get('googleAnalyticsMeasurementId'),
     emailFrom: `VibeLog <login@send.${rootDomain}>`,

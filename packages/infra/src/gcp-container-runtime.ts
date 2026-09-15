@@ -10,7 +10,7 @@ export interface GcpContainerRuntimeArgs {
   deployerServiceAccountEmail: pulumi.Input<string>;
   appOrigin: pulumi.Input<string>; previewOrigin: pulumi.Input<string>; objectStoreEndpoint: pulumi.Input<string>;
   objectStoreBucket: pulumi.Input<string>;
-  aiProvider: pulumi.Input<string>; aiModel: pulumi.Input<string>; aiApiKeyEnv: pulumi.Input<string>;
+  aiProvider: pulumi.Input<string>; aiModel: pulumi.Input<string>; aiFallbackModels: pulumi.Input<pulumi.Input<string>[]>; aiApiKeyEnv: pulumi.Input<string>;
   googleAnalyticsMeasurementId?: pulumi.Input<string>;
   emailFrom: pulumi.Input<string>; emailReplyTo: pulumi.Input<string>; minInstances: pulumi.Input<number>;
   maxInstances: pulumi.Input<number>;
@@ -66,6 +66,7 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
       { name: 'OBJECT_STORE_ENDPOINT', value: args.objectStoreEndpoint }, { name: 'OBJECT_STORE_REGION', value: 'auto' },
       { name: 'OBJECT_STORE_BUCKET', value: args.objectStoreBucket }, { name: 'OBJECT_STORE_FORCE_PATH_STYLE', value: 'false' },
       { name: 'VIBELOG_AI_PROVIDER', value: args.aiProvider }, { name: 'VIBELOG_AI_MODEL', value: args.aiModel },
+      { name: 'VIBELOG_AI_FALLBACK_MODELS', value: pulumi.jsonStringify(args.aiFallbackModels) },
     ];
     const webEnv = [
       { name: 'PREVIEW_ORIGIN', value: args.previewOrigin },

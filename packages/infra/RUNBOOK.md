@@ -34,7 +34,7 @@ environment:
   - <esc-project>/prod
 ```
 
-Optional application settings are `aiProvider`, `aiModel`, `aiApiKeyEnv`, `googleAnalyticsMeasurementId`, and `neonProjectName`. The Neon project name defaults to `vibelog-<environment>`.
+Optional application settings are `aiProvider`, `aiModel`, `aiFallbackModels`, `aiApiKeyEnv`, `googleAnalyticsMeasurementId`, and `neonProjectName`. Fallback models use the same provider and API key as the primary model. The Neon project name defaults to `vibelog-<environment>`.
 
 Store these secret `vibelog:` values in ESC:
 

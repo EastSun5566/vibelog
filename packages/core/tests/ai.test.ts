@@ -1,6 +1,7 @@
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AiProviderRequestError, AiProviderTimeoutError, PiAiProvider, createAiProvider } from '../src/adapters/ai/index.js';
+import { AiProviderRequestError, AiProviderTimeoutError, FallbackAiProvider, PiAiProvider, createAiProvider } from '../src/adapters/ai/index.js';
+import type { AiProvider } from '../src/types.js';
 import { DEFAULT_THEME } from '../src/theme.js';
 
 const input = { blog: { title: 'Blog', description: 'Writing', author: 'Writer' }, currentTheme: DEFAULT_THEME, prompt: 'Editorial' };
@@ -14,13 +15,16 @@ function instrumentedSubject(providerName: string, responses: Parameters<ReturnT
   const models = createModels(); models.setProvider(faux.provider); faux.setResponses(responses);
   return { provider: new PiAiProvider(providerName, 'model', models), complete: vi.spyOn(models, 'complete') };
 }
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.useRealTimers(); });
 describe('PiAiProvider theme proposal', () => {
-  it('supports the OpenCode Go provider catalog', () => {
-    const provider = createAiProvider('opencode-go', 'deepseek-v4.1-flash');
+  it.each([
+    ['qwen3.8-flash', 'anthropic-messages'],
+    ['glm-5.3-flash', 'openai-completions'],
+  ] as const)('supports OpenCode Go model %s', (modelId, api) => {
+    const provider = createAiProvider('opencode-go', modelId);
     expect(provider.name).toBe('opencode-go');
-    expect(provider.modelId).toBe('deepseek-v4.1-flash');
-    expect(provider.model.api).toBe('openai-completions');
+    expect(provider.modelId).toBe(modelId);
+    expect(provider.model.api).toBe(api);
   });
   it('returns a valid single tool proposal', async () => {
     const response = fauxAssistantMessage(fauxToolCall('propose_theme', DEFAULT_THEME), { stopReason: 'toolUse' });
@@ -88,11 +92,42 @@ describe('PiAiProvider theme proposal', () => {
     });
 
     const provider = createAiProvider('opencode-go', 'qwen3.8-flash');
-    await expect(provider.generate(input, { sessionId: 'operation-1' })).rejects.toBeInstanceOf(AiProviderRequestError);
+    const failure = await provider.generate(input, { sessionId: 'operation-1' }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AiProviderRequestError);
+    expect(failure).toMatchObject({ kind: 'http', retryable: false, status: 400 });
     expect(requestHeaders?.get('x-opencode-session')).toBe('operation-1');
     expect(requestHeaders?.get('user-agent')).toBe('VibeLog');
   });
-  it('sends DeepSeek V4.1 Flash through the OpenCode Go chat completions transport', async () => {
+  it.each([404, 408, 409, 429, 500])('classifies OpenCode HTTP %i as retryable', async (status) => {
+    vi.stubEnv('OPENCODE_API_KEY', 'test-key');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ type: 'error', error: { type: 'api_error', message: 'not available' } }), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    }));
+
+    const failure = await createAiProvider('opencode-go', 'qwen3.8-flash').generate(input, { sessionId: 'operation-1' }).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ kind: 'http', retryable: true, status });
+    expect((failure as Error).message).not.toContain('not available');
+  });
+  it('classifies network errors as retryable without exposing their details', async () => {
+    vi.stubEnv('OPENCODE_API_KEY', 'test-key');
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('private transport detail'));
+
+    const failure = await createAiProvider('opencode-go', 'qwen3.8-flash').generate(input, { sessionId: 'operation-1' }).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ kind: 'network', retryable: true });
+    expect((failure as Error).message).not.toContain('private transport detail');
+  });
+  it('honors the provider retry override header', async () => {
+    vi.stubEnv('OPENCODE_API_KEY', 'test-key');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ type: 'error', error: { type: 'api_error', message: 'retry elsewhere' } }), {
+      status: 400,
+      headers: { 'content-type': 'application/json', 'x-should-retry': 'true' },
+    }));
+
+    const failure = await createAiProvider('opencode-go', 'qwen3.8-flash').generate(input, { sessionId: 'operation-1' }).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ kind: 'http', retryable: true, status: 400 });
+  });
+  it('sends GLM-5.3-Flash through the OpenCode Go chat completions transport', async () => {
     vi.stubEnv('OPENCODE_API_KEY', 'test-key');
     let requestUrl: string | undefined;
     let requestHeaders: Headers | undefined;
@@ -105,7 +140,7 @@ describe('PiAiProvider theme proposal', () => {
       }));
     });
 
-    const provider = createAiProvider('opencode-go', 'deepseek-v4.1-flash');
+    const provider = createAiProvider('opencode-go', 'glm-5.3-flash');
     await expect(provider.generate(input, { sessionId: 'operation-1' })).rejects.toBeInstanceOf(AiProviderRequestError);
     expect(requestUrl).toBe('https://opencode.ai/zen/go/v1/chat/completions');
     expect(requestHeaders?.get('x-opencode-session')).toBe('operation-1');
@@ -126,7 +161,7 @@ describe('PiAiProvider theme proposal', () => {
       });
     });
     const controller = new AbortController();
-    const pending = createAiProvider('opencode-go', 'deepseek-v4.1-flash').generate(input, { sessionId: 'operation-1', signal: controller.signal });
+    const pending = createAiProvider('opencode-go', 'qwen3.8-flash').generate(input, { sessionId: 'operation-1', signal: controller.signal });
     await started;
     controller.abort(new DOMException('AI deadline reached', 'TimeoutError'));
 
@@ -137,6 +172,67 @@ describe('PiAiProvider theme proposal', () => {
     const bad = fauxAssistantMessage(fauxToolCall('propose_theme', invalid), { stopReason: 'toolUse' });
     const unavailable = fauxAssistantMessage([], { stopReason: 'error', errorMessage: 'upstream unavailable' });
     await expect(subject([bad, unavailable]).generate(input)).rejects.toBeInstanceOf(AiProviderRequestError);
+  });
+  it('falls back sequentially for retryable provider failures with the same session ID', async () => {
+    const primaryGenerate = vi.fn<AiProvider['generate']>(() => Promise.reject(new AiProviderRequestError('rate limited', { kind: 'http', retryable: true, status: 429 })));
+    const fallbackGenerate = vi.fn<AiProvider['generate']>(() => Promise.resolve(DEFAULT_THEME));
+    const providers = new Map<string, AiProvider>([
+      ['qwen3.8-flash', { name: 'opencode-go', modelId: 'qwen3.8-flash', generate: primaryGenerate }],
+      ['glm-5.3-flash', { name: 'opencode-go', modelId: 'glm-5.3-flash', generate: fallbackGenerate }],
+    ]);
+    const provider = new FallbackAiProvider('opencode-go', 'qwen3.8-flash', ['glm-5.3-flash'], (_name, modelId) => {
+      const candidate = providers.get(modelId);
+      if (!candidate) throw new Error(`Missing test provider: ${modelId}`);
+      return candidate;
+    });
+
+    await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toEqual(DEFAULT_THEME);
+    expect(primaryGenerate).toHaveBeenCalledOnce();
+    expect(fallbackGenerate).toHaveBeenCalledOnce();
+    expect(primaryGenerate.mock.calls[0]?.[1]?.sessionId).toBe('operation-1');
+    expect(fallbackGenerate.mock.calls[0]?.[1]?.sessionId).toBe('operation-1');
+  });
+  it.each([
+    new AiProviderRequestError('bad request', { kind: 'http', retryable: false, status: 400 }),
+    new AiProviderRequestError('unauthorized', { kind: 'http', retryable: false, status: 401 }),
+    new AiProviderRequestError('forbidden', { kind: 'http', retryable: false, status: 403 }),
+    new AiProviderRequestError('cancelled', { kind: 'cancelled', retryable: false }),
+    new Error('invalid theme'),
+  ])('does not fall back for permanent or validation failures: %s', async (failure) => {
+    const primaryGenerate = vi.fn<AiProvider['generate']>(() => Promise.reject(failure));
+    const fallbackGenerate = vi.fn<AiProvider['generate']>(() => Promise.resolve(DEFAULT_THEME));
+    const provider = new FallbackAiProvider('opencode-go', 'qwen3.8-flash', ['glm-5.3-flash'], (_name, modelId) => ({
+      name: 'opencode-go', modelId, generate: modelId === 'qwen3.8-flash' ? primaryGenerate : fallbackGenerate,
+    }));
+
+    await expect(provider.generate(input, { sessionId: 'operation-1' })).rejects.toBe(failure);
+    expect(fallbackGenerate).not.toHaveBeenCalled();
+  });
+  it('falls back when the corrective request encounters an upstream failure', async () => {
+    const invalid = { ...DEFAULT_THEME, colors: { ...DEFAULT_THEME.colors, text: '#eeeeee' } };
+    const bad = fauxAssistantMessage(fauxToolCall('propose_theme', invalid), { stopReason: 'toolUse' });
+    const unavailable = fauxAssistantMessage([], { stopReason: 'error', errorMessage: 'upstream unavailable' });
+    const good = fauxAssistantMessage(fauxToolCall('propose_theme', DEFAULT_THEME), { stopReason: 'toolUse' });
+    const primary = subject([bad, unavailable]);
+    const fallback = subject([good]);
+    const provider = new FallbackAiProvider('test', 'primary', ['fallback'], (_name, modelId) => modelId === 'primary' ? primary : fallback);
+
+    await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toEqual(DEFAULT_THEME);
+  });
+  it('uses a 45-second deadline for each model candidate', async () => {
+    const stalled: AiProvider = {
+      name: 'opencode-go', modelId: 'qwen3.8-flash',
+      generate: (_input, context) => new Promise((_resolve, reject) => context?.signal?.addEventListener('abort', () => { reject(new AiProviderTimeoutError()); }, { once: true })),
+    };
+    const fallbackGenerate = vi.fn<AiProvider['generate']>(() => Promise.resolve(DEFAULT_THEME));
+    const fallback: AiProvider = { name: 'opencode-go', modelId: 'glm-5.3-flash', generate: fallbackGenerate };
+    const provider = new FallbackAiProvider('opencode-go', stalled.modelId, [fallback.modelId], (_name, modelId) => modelId === stalled.modelId ? stalled : fallback, 5);
+    await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toEqual(DEFAULT_THEME);
+    expect(fallbackGenerate).toHaveBeenCalledOnce();
+  });
+  it('rejects duplicate or empty fallback model IDs', () => {
+    expect(() => new FallbackAiProvider('opencode-go', 'qwen3.8-flash', ['qwen3.8-flash'])).toThrow('must be unique');
+    expect(() => new FallbackAiProvider('opencode-go', 'qwen3.8-flash', [''])).toThrow('must not be empty');
   });
   it('calls Ollama without requiring or sending an API key', async () => {
     let requestUrl: string | undefined;

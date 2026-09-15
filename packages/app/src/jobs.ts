@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AiProviderRequestError, AiProviderTimeoutError, HackMdSource, buildFromVibelog, createAiProvider, createDevBuilder, isHackMdSourceError, renderThemeCss, validateThemeConfig } from '@vibelog/core';
+import { AiProviderRequestError, AiProviderTimeoutError, HackMdSource, buildFromVibelog, createAiProviderChain, createDevBuilder, isHackMdSourceError, renderThemeCss, validateThemeConfig } from '@vibelog/core';
 import type { AiProvider, ContentSource } from '@vibelog/core';
 import { parseSyncOperationPayload } from './blog-sync.js';
 import type { OperationRuntimeConfig } from './config.js';
@@ -101,7 +101,7 @@ export class AppOperationExecutor implements OperationExecutor {
       const prompt = operation.payload.prompt; if (typeof prompt !== 'string') throw new Error('Theme description is required');
       const current = await this.database.getActiveTheme(blog.id); if (!current) throw new Error('Active theme not found');
       const baseTheme = operation.payload.baseTheme ? validateThemeConfig(operation.payload.baseTheme) : current.config;
-      const theme = await (this.dependencies.aiProvider?.() ?? createAiProvider(this.config.aiProvider, this.config.aiModel)).generate({ blog: { title: blog.title ?? blog.username, description: blog.description ?? '', author: blog.author ?? blog.username }, currentTheme: baseTheme, prompt }, { sessionId: operation.id });
+      const theme = await (this.dependencies.aiProvider?.() ?? createAiProviderChain(this.config.aiProvider, this.config.aiModel, this.config.aiFallbackModels)).generate({ blog: { title: blog.title ?? blog.username, description: blog.description ?? '', author: blog.author ?? blog.username }, currentTheme: baseTheme, prompt }, { sessionId: operation.id });
       const revision = await this.database.completeThemeOperation(operation, theme, { message: 'New theme ready' });
       return { message: 'New theme ready', revisionId: revision.id };
     }

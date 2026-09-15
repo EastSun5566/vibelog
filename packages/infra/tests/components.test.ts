@@ -59,7 +59,7 @@ describe('Pulumi components', () => {
       project: 'vibelog-test-project', region: 'asia-east1', environment: 'prod', imageDigest: 'asia-east1-docker.pkg.dev/project/repo/app@sha256:abc',
       deployerServiceAccountEmail: 'vibelog-deployer@vibelog-test-project.iam.gserviceaccount.com',
       appOrigin: 'https://example.com', previewOrigin: 'https://preview.example.com', objectStoreEndpoint: 'https://account.r2.cloudflarestorage.com',
-      objectStoreBucket: 'artifacts', aiProvider: 'openai', aiModel: 'gpt-4o-mini',
+      objectStoreBucket: 'artifacts', aiProvider: 'openai', aiModel: 'gpt-4o-mini', aiFallbackModels: ['fallback-model'],
       aiApiKeyEnv: 'OPENAI_API_KEY', googleAnalyticsMeasurementId: 'G-TEST123', emailFrom: 'VibeLog <login@send.example.com>', emailReplyTo: 'support@example.com',
       minInstances: 0, maxInstances: 3, provider,
       secrets: { databaseUrl: pulumi.secret('database'), objectStoreAccessKeyId: pulumi.secret('key'), objectStoreSecretAccessKey: pulumi.secret('secret'), resendApiKey: pulumi.secret('resend'), betterAuthSecret: pulumi.secret('auth'), aiApiKey: pulumi.secret('ai'), edgeSharedSecret: pulumi.secret('edge') },
@@ -84,6 +84,7 @@ describe('Pulumi components', () => {
     for (const service of services) {
       const template = service.inputs.template as { scaling: { minInstanceCount: number; maxInstanceCount: number }; containers: { envs: { name: string; value?: string; valueSource?: unknown }[] }[] };
       expect(template.scaling).toMatchObject({ minInstanceCount: 0, maxInstanceCount: 3 });
+      expect(template.containers[0]?.envs).toContainEqual({ name: 'VIBELOG_AI_FALLBACK_MODELS', value: '["fallback-model"]' });
       expect(service.inputs.traffics).toEqual([
         { type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', percent: 100 },
       ]);

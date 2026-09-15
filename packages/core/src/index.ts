@@ -18,10 +18,13 @@ export type { HackMdSourceErrorCode } from './adapters/content/index.js';
 export {
   AiProviderRequestError,
   AiProviderTimeoutError,
+  FallbackAiProvider,
   PiAiProvider,
   createAiProvider,
+  createAiProviderChain,
   getAiProviderNames,
 } from './adapters/ai/index.js';
+export type { AiProviderFailureKind, AiProviderRequestErrorOptions } from './adapters/ai/index.js';
 
 export type {
   Post,
