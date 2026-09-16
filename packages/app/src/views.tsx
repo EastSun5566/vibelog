@@ -228,7 +228,7 @@ export function onboardingPage(session: AppSession, blog: BlogRecord | null, ope
       <button class="btn" type="submit" disabled={busy}>{blog ? 'Retry sync' : 'Sync and build preview'}</button>
       <OperationOutput operation={operation ?? undefined}/>
     </form>
-    <details class="editor-disclosure danger-zone" data-disclosure-key="danger-zone">
+    <details class="editor-disclosure danger-zone" data-disclosure-key="danger-zone" open={Boolean(options.deletionError)}>
       <summary><span>Danger zone</span><small>Permanent actions</small></summary>
       <div class="disclosure-body"><DeletionForms session={session} blog={blog} appHostname={appHostname} error={options.deletionError}/></div>
     </details>
@@ -563,7 +563,7 @@ export function editorPage(input: EditorPageInput) {
         </div>
       </section>
 
-      <details class="editor-disclosure danger-zone" data-disclosure-key="danger-zone">
+      <details class="editor-disclosure danger-zone" data-disclosure-key="danger-zone" open={Boolean(input.deletionError)}>
         <summary><span>Danger zone</span><small>Delete this blog or account</small></summary>
         <div class="disclosure-body"><DeletionForms session={input.session} blog={blog} appHostname={input.appHostname} error={input.deletionError}/></div>
       </details>
