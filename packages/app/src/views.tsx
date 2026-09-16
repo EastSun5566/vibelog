@@ -7,6 +7,7 @@ import { calculatePublicationDiff } from './publication-diff.js';
 import { THEME_PALETTES, themeControlValues } from './theme-studio.js';
 
 export interface AnalyticsDocumentConfig { measurementId: string; nonce: string }
+export type DeletionError = 'busy' | 'cleanup' | 'confirmation';
 
 export function document(title: string, content: unknown, session?: AppSession, editor = false, analytics?: AnalyticsDocumentConfig) {
   return <html lang="en">
@@ -79,7 +80,7 @@ export function landingPage(analytics?: AnalyticsDocumentConfig) {
   </>, undefined, false, analytics);
 }
 
-export function loginPage(input: { github: boolean; google: boolean; message?: string; sent?: boolean }, analytics?: AnalyticsDocumentConfig) {
+export function loginPage(input: { deleted?: boolean; github: boolean; google: boolean; message?: string; sent?: boolean }, analytics?: AnalyticsDocumentConfig) {
   const hasSocialLogin = input.github || input.google;
   if (input.sent) return document('Check your email', <section class="auth-shell card">
     <header><p class="auth-kicker">One more step</p><h1>Check your email</h1></header>
@@ -92,6 +93,7 @@ export function loginPage(input: { github: boolean; google: boolean; message?: s
   return document('Sign in', <section class="auth-shell card">
     <header><p class="auth-kicker">Welcome back</p><h1>Sign in to VibeLog</h1><p>{hasSocialLogin ? 'Choose an account or use a one-time email link.' : 'We’ll email you a one-time sign-in link.'}</p></header>
     <section class="stack">
+      {input.deleted ? <div class="alert" role="status"><section>Your VibeLog account was deleted.</section></div> : null}
       {input.message ? <div class="alert" data-variant="destructive" role="alert"><section>{input.message}</section></div> : null}
       {input.github ? <form method="post" action="/auth/oauth/github"><button class="btn" data-variant="outline" type="submit">Continue with GitHub</button></form> : null}
       {input.google ? <form method="post" action="/auth/oauth/google"><button class="btn" data-variant="outline" type="submit">Continue with Google</button></form> : null}
@@ -169,12 +171,44 @@ function PreviewPathInput({ value }: { value: string }) {
   return <input type="hidden" name="previewPath" value={value} data-preview-path-input/>;
 }
 
-export function onboardingPage(session: AppSession, blog: BlogRecord | null, operation: OperationRecord | null, appHostname: string) {
+function deletionErrorMessage(error?: DeletionError): string | null {
+  if (error === 'confirmation') return 'Confirmation did not match. Nothing was deleted.';
+  if (error === 'busy') return 'Wait for the current operation to finish, then try again.';
+  if (error === 'cleanup') return 'Deletion could not finish. Retry to remove the remaining data.';
+  return null;
+}
+
+function DeletionForms({ session, blog, appHostname, error }: { session: AppSession; blog?: BlogRecord | null; appHostname: string; error?: DeletionError }) {
+  const hostname = blog ? `${blog.username}.${appHostname}` : null;
+  const message = deletionErrorMessage(error);
+  return <div class="deletion-actions">
+    {message ? <div class="alert" data-variant="destructive" role="alert"><section>{message}</section></div> : null}
+    {blog ? <section class="deletion-action">
+      <div><strong>Delete blog</strong><p class="muted">Remove the public site, drafts, releases, and themes. Your account stays available.</p></div>
+      <form class="stack" method="post" action="/actions/blog/delete">
+        <input type="hidden" name="csrfToken" value={session.csrfToken}/>
+        <div class="field"><label for="deleteBlogConfirmation">Type <strong>{hostname}</strong> to confirm</label><input id="deleteBlogConfirmation" name="confirmation" required autocomplete="off" autocapitalize="none" spellcheck={false}/></div>
+        <button class="btn" data-variant="destructive" type="submit">Delete blog</button>
+      </form>
+    </section> : null}
+    <section class="deletion-action">
+      <div><strong>Delete account</strong><p class="muted">Permanently remove your account and any connected blog.</p></div>
+      <form class="stack" method="post" action="/actions/account/delete">
+        <input type="hidden" name="csrfToken" value={session.csrfToken}/>
+        <div class="field"><label for="deleteAccountConfirmation">Type <strong>{session.user.email}</strong> to confirm</label><input id="deleteAccountConfirmation" name="confirmation" type="email" required autocomplete="off" autocapitalize="none" spellcheck={false}/></div>
+        <button class="btn" data-variant="destructive" type="submit">Delete account</button>
+      </form>
+    </section>
+  </div>;
+}
+
+export function onboardingPage(session: AppSession, blog: BlogRecord | null, operation: OperationRecord | null, appHostname: string, options: { deleted?: boolean; deletionError?: DeletionError } = {}) {
   const failed = blog?.state === 'failed' ? blog.lastError : null;
   const busy = operation?.status === 'queued' || operation?.status === 'running';
   return document('Connect HackMD', <section class="auth-shell card">
     <header><p class="auth-kicker">Start publishing</p><h1>Connect your HackMD</h1><p id="hackmd-help">VibeLog imports only published articles anyone can read.</p></header>
     <section class="stack">
+    {options.deleted ? <div class="alert" role="status"><section>Your previous blog was deleted. You can start again whenever you are ready.</section></div> : null}
     {failed ? <div id="hackmd-error" class="alert" data-variant="destructive" role="alert"><section>{failed}</section></div> : null}
     <form class="stack" method="post" action="/actions/blog/connect" data-operation data-success-url="/editor" aria-busy={busy ? 'true' : undefined}>
       <input type="hidden" name="csrfToken" value={session.csrfToken}/>
@@ -194,6 +228,10 @@ export function onboardingPage(session: AppSession, blog: BlogRecord | null, ope
       <button class="btn" type="submit" disabled={busy}>{blog ? 'Retry sync' : 'Sync and build preview'}</button>
       <OperationOutput operation={operation ?? undefined}/>
     </form>
+    <details class="editor-disclosure danger-zone" data-disclosure-key="danger-zone">
+      <summary><span>Danger zone</span><small>Permanent actions</small></summary>
+      <div class="disclosure-body"><DeletionForms session={session} blog={blog} appHostname={appHostname} error={options.deletionError}/></div>
+    </details>
     </section>
   </section>, session, true);
 }
@@ -212,6 +250,7 @@ interface EditorPageInput {
   publicUrl: string;
   appHostname: string;
   operation?: OperationRecord | null;
+  deletionError?: DeletionError;
 }
 
 const CONTROL_OPTIONS = {
@@ -523,8 +562,20 @@ export function editorPage(input: EditorPageInput) {
           </details> : null}
         </div>
       </section>
+
+      <details class="editor-disclosure danger-zone" data-disclosure-key="danger-zone">
+        <summary><span>Danger zone</span><small>Delete this blog or account</small></summary>
+        <div class="disclosure-body"><DeletionForms session={input.session} blog={blog} appHostname={input.appHostname} error={input.deletionError}/></div>
+      </details>
     </section>
   </div></>, input.session, true);
+}
+
+export function deletionPage(session: AppSession, blog: BlogRecord, appHostname: string, error: DeletionError = 'cleanup') {
+  return document('Finish deletion', <section class="auth-shell card">
+    <header><p class="auth-kicker">Deletion paused</p><h1>Finish removing your data</h1><p>The public blog is already offline. Retry to remove the remaining stored files and records.</p></header>
+    <DeletionForms session={session} blog={blog} appHostname={appHostname} error={error}/>
+  </section>, session);
 }
 
 export function operationPage(session: AppSession, operation: OperationRecord, backUrl: string, successUrl = '/editor') {

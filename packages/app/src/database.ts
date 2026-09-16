@@ -9,7 +9,7 @@ import { parseSyncOperationPayload } from './blog-sync.js';
 import type { OperationMessage } from './ports/operation-queue.js';
 import * as schema from './schema.js';
 
-export type BlogState = 'syncing' | 'ready' | 'failed';
+export type BlogState = 'syncing' | 'ready' | 'failed' | 'deleting';
 export type OperationType = 'sync' | 'generate_theme' | 'publish';
 export type OperationStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type OperationProgress = { kind: 'indeterminate' } | { kind: 'determinate'; value: number; max: number };
@@ -26,6 +26,7 @@ export class OperationLeaseLostError extends Error { constructor() { super('Oper
 export interface ReleaseSnapshot { site: { title: string; description: string; author: string; language: string }; posts: SyncedPostSummary[] }
 export interface PublishedReleaseRecord { id: string; blogId: string; themeRevisionId: string; contentVersion: number; snapshot: ReleaseSnapshot | null; artifactId: string; active: boolean; createdAt: string }
 export interface PreviewSessionRecord { tokenHash: string; userId: string; blogId: string; themeConfig: ThemeConfig | null; expiresAt: string }
+export interface BlogDeletionPlan { blogId: string; artifacts: ArtifactRecord[] }
 export interface AiQuotaLimits { userDailyLimit: number; globalDailyLimit: number; at?: Date }
 export interface OutboxRecord { id: string; operationId: string; message: OperationMessage }
 export class AiQuotaExceededError extends Error { constructor(readonly retryAfter: number) { super('AI daily quota exceeded'); this.name = 'AiQuotaExceededError'; } }
@@ -314,6 +315,51 @@ export class AppDatabase {
   }
   async listCleanupArtifacts(limit = 100): Promise<ArtifactRecord[]> { return (await this.db.select().from(schema.artifacts).where(eq(schema.artifacts.state, 'cleanup_pending')).limit(limit)).map(mapArtifact); }
   async deleteArtifactRecord(id: string): Promise<void> { await this.db.delete(schema.artifacts).where(and(eq(schema.artifacts.id, id), eq(schema.artifacts.state, 'cleanup_pending'))); }
+
+  async beginBlogDeletion(userId: string): Promise<BlogDeletionPlan | null> {
+    return this.db.transaction(async (tx) => {
+      const [blog] = await tx.select().from(schema.blogs).where(eq(schema.blogs.userId, userId)).for('update');
+      if (!blog) return null;
+      const [active] = await tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blog.id), inArray(schema.operations.status, ['queued', 'running'])));
+      if (active) throw new Error('Blog already has an active operation');
+      await tx.delete(schema.publishedReleases).where(eq(schema.publishedReleases.blogId, blog.id));
+      await tx.update(schema.artifacts).set({ state: 'cleanup_pending' }).where(eq(schema.artifacts.blogId, blog.id));
+      await tx.update(schema.blogs).set({ state: 'deleting', lastError: null, updatedAt: new Date() }).where(eq(schema.blogs.id, blog.id));
+      const artifacts = await tx.select().from(schema.artifacts).where(eq(schema.artifacts.blogId, blog.id));
+      return { blogId: blog.id, artifacts: artifacts.map(mapArtifact) };
+    });
+  }
+
+  async noteBlogDeletionFailure(userId: string, blogId: string): Promise<void> {
+    await this.db.update(schema.blogs).set({ state: 'deleting', lastError: 'Deletion could not finish. Retry to remove the remaining data.', updatedAt: new Date() })
+      .where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId)));
+  }
+
+  async finishBlogDeletion(userId: string, blogId: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [blog] = await tx.select({ id: schema.blogs.id, state: schema.blogs.state }).from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId))).for('update');
+      if (!blog) return;
+      if (blog.state !== 'deleting') throw new Error('Blog deletion has not started');
+      const [artifact] = await tx.select({ id: schema.artifacts.id }).from(schema.artifacts).where(eq(schema.artifacts.blogId, blogId)).limit(1);
+      if (artifact) throw new Error('Blog artifacts remain');
+      await tx.delete(schema.blogs).where(eq(schema.blogs.id, blogId));
+    });
+  }
+
+  async finishAccountDeletion(userId: string, blogId: string | null, rateLimitKeys: string[]): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      if (blogId) {
+        const [blog] = await tx.select({ state: schema.blogs.state }).from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId))).for('update');
+        if (!blog) throw new Error('Blog not found');
+        if (blog.state !== 'deleting') throw new Error('Blog deletion has not started');
+        const [artifact] = await tx.select({ id: schema.artifacts.id }).from(schema.artifacts).where(eq(schema.artifacts.blogId, blogId)).limit(1);
+        if (artifact) throw new Error('Blog artifacts remain');
+      }
+      await tx.delete(schema.aiDailyUsage).where(and(eq(schema.aiDailyUsage.scope, 'user'), eq(schema.aiDailyUsage.subject, userId)));
+      if (rateLimitKeys.length > 0) await tx.delete(schema.rateLimit).where(inArray(schema.rateLimit.key, rateLimitKeys));
+      await tx.delete(schema.user).where(eq(schema.user.id, userId));
+    });
+  }
 
   async createPreviewSession(tokenHash: string, userId: string, blogId: string, expiresAt: string, themeConfig: ThemeConfig): Promise<void> {
     const validated = validateThemeConfig(themeConfig); await this.db.transaction(async (tx) => { await tx.delete(schema.previewSessions).where(lt(schema.previewSessions.expiresAt, new Date())); await tx.insert(schema.previewSessions).values({ tokenHash, userId, blogId, themeConfig: validated, expiresAt: new Date(expiresAt) }); });

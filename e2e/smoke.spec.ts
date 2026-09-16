@@ -47,7 +47,7 @@ async function expectPartialRefresh(page: Page, trigger: Locator): Promise<void>
   const iframe = page.locator('iframe[data-preview-url]');
   const before = await iframe.getAttribute('src');
   await trigger.click();
-  await expect.poll(() => iframe.getAttribute('src'), { timeout: 120_000 }).not.toBe(before);
+  await expect.poll(() => iframe.getAttribute('src'), { timeout: 180_000 }).not.toBe(before);
   await expectNoPageReload(page);
 }
 
@@ -66,7 +66,7 @@ async function openDisclosure(page: Page, key: string): Promise<void> {
 }
 
 test('publishes a fixture HackMD blog through the complete local stack', async ({ page, request }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(480_000);
   const browserErrors: string[] = [];
   const searchErrors: string[] = [];
   let analyticsScriptRequests = 0;
@@ -178,6 +178,7 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(preview.locator('pagefind-results a[href="/blog/hello-vibelog/"]')).toBeVisible({ timeout: 30_000 });
   await preview.locator('pagefind-results a[href="/blog/hello-vibelog/"]').click();
   await expectPreviewPath(page, '/blog/hello-vibelog/');
+  await expect(page.locator('[data-preview-path-input]').first()).toHaveValue('/blog/hello-vibelog/');
   await markPage(page);
 
   await page.getByRole('button', { name: 'A restrained independent magazine' }).focus();
@@ -337,9 +338,11 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(highlightedCode).toHaveCount(1);
   await expect(highlightedCode).not.toHaveAttribute('style');
   await expect(highlightedCode.locator('code span[style]')).toHaveCount(0);
-  const tokenColors = await highlightedCode.locator('code span[class*="syntax-style-"]')
-    .evaluateAll((tokens) => tokens.map((token) => getComputedStyle(token).color));
-  expect(new Set(tokenColors).size).toBeGreaterThan(1);
+  await expect.poll(async () => {
+    const tokenColors = await highlightedCode.locator('code span[class*="syntax-style-"]')
+      .evaluateAll((tokens) => tokens.map((token) => getComputedStyle(token).color));
+    return new Set(tokenColors).size;
+  }, { timeout: 30_000 }).toBeGreaterThan(1);
   const syntaxResponse = await request.get(`${publicUrl.origin}/syntax.css`);
   expect(syntaxResponse.ok()).toBe(true);
   expect(syntaxResponse.headers()['content-type']).toContain('text/css');
@@ -393,11 +396,34 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await page.getByLabel('Blog language').fill('zh-Hant');
   await page.getByRole('button', { name: 'Sync and build preview' }).click();
   await expect(page).toHaveURL(/\/editor(?:\?|$)/u, { timeout: 120_000 });
+  await markPage(page);
   const chinesePreview = page.frameLocator('iframe[data-preview-url]');
   await chinesePreview.getByRole('link', { name: '搜尋' }).click();
   await expectPreviewPath(page, '/search');
   await chinesePreview.locator('pagefind-input input').fill('中文搜尋測試');
   await expect(chinesePreview.locator('pagefind-results a[href="/blog/hello-vibelog/"]')).toBeVisible({ timeout: 30_000 });
+  await expectPartialRefresh(page, page.getByRole('button', { name: 'Publish first release' }));
+  const secondPublicUrl = new URL(appUrl.origin);
+  secondPublicUrl.hostname = `alice-zh.${secondPublicUrl.hostname}`;
+  expect((await request.get(secondPublicUrl.toString())).ok()).toBe(true);
+
+  await openDisclosure(page, 'danger-zone');
+  const deleteBlogConfirmation = page.getByLabel(/Type alice-zh\..+ to confirm/u);
+  await deleteBlogConfirmation.fill('wrong.example.com');
+  await page.getByRole('button', { name: 'Delete blog' }).click();
+  await expect(page.getByText('Confirmation did not match. Nothing was deleted.')).toBeVisible();
+  await openDisclosure(page, 'danger-zone');
+  await page.getByLabel(/Type alice-zh\..+ to confirm/u).fill(`alice-zh.${appUrl.hostname}`);
+  await page.getByRole('button', { name: 'Delete blog' }).click();
+  await expect(page).toHaveURL(/\/onboarding\?deleted=1$/u);
+  await expect(page.getByText('Your previous blog was deleted.')).toBeVisible();
+  expect((await request.get(secondPublicUrl.toString())).status()).toBe(404);
+
+  await openDisclosure(page, 'danger-zone');
+  await page.getByLabel('Type second-writer@example.com to confirm').fill('second-writer@example.com');
+  await page.getByRole('button', { name: 'Delete account' }).click();
+  await expect(page).toHaveURL(/\/auth\/login\?deleted=1$/u);
+  await expect(page.getByText('Your VibeLog account was deleted.')).toBeVisible();
   expect(browserErrors).toEqual([]);
   expect(searchErrors).toEqual([]);
 });

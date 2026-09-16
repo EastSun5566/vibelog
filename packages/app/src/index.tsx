@@ -18,7 +18,7 @@ import type { TransactionalEmailSender } from './ports/transactional-email.js';
 import { editorUrlWithPreviewPath, safePreviewPath } from './preview-path.js';
 import { hashToken, randomToken } from './security/crypto.js';
 import { themeFromControls } from './theme-studio.js';
-import { editorPage, guidePage, landingPage, loginPage, onboardingPage, operationPage, type AnalyticsDocumentConfig } from './views.js';
+import { deletionPage, editorPage, guidePage, landingPage, loginPage, onboardingPage, operationPage, type AnalyticsDocumentConfig, type DeletionError } from './views.js';
 
 const RESERVED = new Set(['preview', 'www', 'api', 'admin', 'assets']);
 const handleInput = z.string().trim().toLowerCase().min(3).max(32).regex(/^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/);
@@ -27,6 +27,7 @@ const hackmdInput = z.object({ hackmdUsername: z.string().trim().min(1).max(100)
 const themeInput = z.object({ prompt: z.string().trim().min(1).max(1000) });
 const previewTokenInput = z.string().min(32).max(512);
 const uuidInput = z.uuid();
+const deletionConfirmationInput = z.string().trim().min(1).max(320);
 interface AppEnv { Variables: AppVariables & { analyticsNonce?: string } }
 type AppContext = Context<AppEnv>;
 interface CreateAppOptions { config?: AppConfig; database?: AppDatabase; artifactStore: ArtifactStore; emailSender: TransactionalEmailSender; dispatcher: OperationDispatcher }
@@ -71,7 +72,7 @@ export function createApp(options: CreateAppOptions) {
       if (c.req.path.startsWith('/preview-access/')) return next();
       const token = cookieValue(c.req.header('cookie'), 'vibelog_preview'); const preview = token ? await database.getPreviewSession(hashToken(token)) : null;
       if (!preview) throw new AppError('preview_access_denied', 'Preview access expired or invalid', 403);
-      const blog = await database.getBlog(preview.blogId); if (!blog?.draftArtifactId) throw new AppError('preview_not_ready', 'Preview is not ready', 404);
+      const blog = await database.getBlog(preview.blogId); if (!blog?.draftArtifactId || blog.state === 'deleting') throw new AppError('preview_not_ready', 'Preview is not ready', 404);
       if (c.req.path === '/theme.css') {
         c.header('Content-Security-Policy', `default-src 'self'; script-src 'none'; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors ${config.appOrigin}`);
         const theme = await database.getActiveTheme(blog.id); if (!theme) throw new AppError('theme_not_found', 'Theme not found', 404);
@@ -115,7 +116,7 @@ export function createApp(options: CreateAppOptions) {
     c.set('analyticsNonce', nonce);
     return { measurementId: config.googleAnalyticsMeasurementId, nonce };
   };
-  app.get('/auth/login', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), sent: c.req.query('sent') === '1' }, analyticsDocument(c))));
+  app.get('/auth/login', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(loginPage({ deleted: c.req.query('deleted') === '1', github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), sent: c.req.query('sent') === '1' }, analyticsDocument(c))));
   app.post('/auth/magic-link', async (c) => {
     assertMutationOrigin(c, config); const body = await c.req.parseBody().catch(() => ({})); const parsed = emailInput.safeParse(formValue(body, 'email')?.trim().toLowerCase());
     if (!parsed.success) return c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Enter a valid email address.' }, analyticsDocument(c)), 400);
@@ -136,9 +137,10 @@ export function createApp(options: CreateAppOptions) {
   app.post('/auth/logout', async (c) => { const body = await c.req.parseBody(); assertMutationOrigin(c, config); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); const response = await internalAuthPost(c, '/sign-out', {}); copyCookies(c, response); return c.redirect('/auth/login', 303); });
   app.get('/', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(landingPage(analyticsDocument(c))));
   app.get('/guide', async (c) => { const session = (await readSession(c, auth, config)) ?? undefined; return c.html(guidePage(session, session ? undefined : analyticsDocument(c))); });
-  app.get('/onboarding', async (c) => { const blog = await database.getBlogForUser(c.get('session').user.id); if (blog?.draftArtifactId) return c.redirect('/editor'); const operation = blog ? await database.getActiveOperation(blog.id, blog.userId) : null; return c.html(onboardingPage(c.get('session'), blog, operation, config.appHostname)); });
+  function deletionError(value: string | undefined): DeletionError | undefined { return value === 'busy' || value === 'cleanup' || value === 'confirmation' ? value : undefined; }
+  app.get('/onboarding', async (c) => { const blog = await database.getBlogForUser(c.get('session').user.id); if (blog?.state === 'deleting' || blog?.draftArtifactId) return c.redirect('/editor'); const operation = blog ? await database.getActiveOperation(blog.id, blog.userId) : null; return c.html(onboardingPage(c.get('session'), blog, operation, config.appHostname, { deleted: c.req.query('deleted') === '1', deletionError: deletionError(c.req.query('deleteError')) })); });
 
-  async function ownedBlog(c: AppContext): Promise<BlogRecord> { const blog = await database.getBlogForUser(c.get('session').user.id); if (!blog) throw new AppError('blog_not_found', 'Connect HackMD first.', 404); return blog; }
+  async function ownedBlog(c: AppContext): Promise<BlogRecord> { const blog = await database.getBlogForUser(c.get('session').user.id); if (!blog) throw new AppError('blog_not_found', 'Connect HackMD first.', 404); if (blog.state === 'deleting') throw new AppError('deletion_in_progress', 'Finish deleting the existing blog first.', 409); return blog; }
   function redirectOrJson(c: AppContext, operationId: string, successUrl = '/editor') { const operationUrl = `/operations/${operationId}`; return c.req.header('accept')?.includes('application/json') ? c.json({ operationUrl, pollUrl: `/api/operations/${operationId}`, successUrl }, 202) : c.redirect(operationUrl, 303); }
   async function mutationBody(c: AppContext) { assertMutationOrigin(c, config); const body = await c.req.parseBody(); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); return body; }
   async function dispatchAndRedirect(c: AppContext, operation: OperationRecord, successUrl = '/editor') {
@@ -193,13 +195,55 @@ export function createApp(options: CreateAppOptions) {
   app.post('/actions/theme/:id/activate', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); const id = uuidInput.parse(c.req.param('id')); await database.activateTheme(id, blog.id); return c.redirect(editorUrlWithPreviewPath(safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin)), 303); });
   app.post('/actions/publish', async (c) => { const body = await mutationBody(c); return enqueue(c, 'publish', { previewToken: readPreviewToken(body), previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
   app.post('/actions/releases/:id/activate', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); const release = await database.getRelease(uuidInput.parse(c.req.param('id')), blog.id); if (!release || !(await database.getArtifact(release.artifactId))?.readyAt) throw new AppError('release_unavailable', 'This release artifact is unavailable.', 409); await database.activateExistingRelease(release.id, blog.id); return c.redirect(editorUrlWithPreviewPath(safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin)), 303); });
+  async function runDeletion(c: AppContext, kind: 'account' | 'blog') {
+    const body = await mutationBody(c);
+    const session = c.get('session');
+    const blog = await database.getBlogForUser(session.user.id);
+    const confirmation = deletionConfirmationInput.safeParse(formValue(body, 'confirmation'));
+    const expected = kind === 'account' ? session.user.email : blog ? `${blog.username}.${config.appHostname}` : '';
+    const recoveryPath = blog ? '/editor' : '/onboarding';
+    if (!confirmation.success || confirmation.data.toLowerCase() !== expected.toLowerCase()) return c.redirect(`${recoveryPath}?deleteError=confirmation`, 303);
+    if (kind === 'blog' && !blog) return c.redirect('/onboarding', 303);
+
+    let plan;
+    try {
+      plan = await database.beginBlogDeletion(session.user.id);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('active operation')) return c.redirect(`${recoveryPath}?deleteError=busy`, 303);
+      throw error;
+    }
+
+    try {
+      for (const artifact of plan?.artifacts ?? []) {
+        await options.artifactStore.deleteArtifact(artifact.id);
+        await database.deleteArtifactRecord(artifact.id);
+      }
+      if (kind === 'account') {
+        const key = createHmacKey(config.betterAuthSecret, session.user.email);
+        await database.finishAccountDeletion(session.user.id, plan?.blogId ?? null, [`magic:minute:${key}`, `magic:hour:${key}`]);
+        setCookie(c, 'vibelog.session_token', '', { httpOnly: true, secure: config.secureCookies, sameSite: 'Lax', path: '/', maxAge: 0 });
+        return c.redirect('/auth/login?deleted=1', 303);
+      }
+      if (!plan) return c.redirect('/onboarding', 303);
+      await database.finishBlogDeletion(session.user.id, plan.blogId);
+      return c.redirect('/onboarding?deleted=1', 303);
+    } catch {
+      if (plan) await database.noteBlogDeletionFailure(session.user.id, plan.blogId).catch(() => undefined);
+      console.error(`[deletion:${c.get('requestId')}] cleanup failed`);
+      return c.redirect(`${plan ? '/editor' : '/onboarding'}?deleteError=cleanup`, 303);
+    }
+  }
+  app.post('/actions/blog/delete', (c) => runDeletion(c, 'blog'));
+  app.post('/actions/account/delete', (c) => runDeletion(c, 'account'));
   app.get('/editor', async (c) => {
-    const blog = await database.getBlogForUser(c.get('session').user.id); if (!blog?.draftArtifactId) return c.redirect('/onboarding');
+    const blog = await database.getBlogForUser(c.get('session').user.id); if (!blog) return c.redirect('/onboarding');
+    if (blog.state === 'deleting') return c.html(deletionPage(c.get('session'), blog, config.appHostname, deletionError(c.req.query('deleteError')) ?? 'cleanup'));
+    if (!blog.draftArtifactId) return c.redirect('/onboarding');
     const themes = await database.listThemes(blog.id); const activeTheme = themes.find((theme) => theme.active); if (!activeTheme) throw new AppError('theme_not_found', 'Theme not found', 404);
     const token = randomToken(); await database.createPreviewSession(hashToken(token), blog.userId, blog.id, new Date(Date.now() + 15 * 60_000).toISOString(), activeTheme.config);
     const previewPath = safePreviewPath(c.req.query('previewPath'), config.previewOrigin); const accessUrl = new URL(`/preview-access/${encodeURIComponent(token)}`, config.previewOrigin); if (previewPath !== '/') accessUrl.searchParams.set('returnTo', previewPath);
     const [published, releases, operation] = await Promise.all([database.getActiveRelease(blog.id), database.listReleases(blog.id), database.getActiveOperation(blog.id, blog.userId)]);
-    return c.html(editorPage({ session: c.get('session'), blog, themes, activeTheme, published, releases, previewUrl: accessUrl.toString(), previewToken: token, previewOrigin: config.previewOrigin, previewPath, publicUrl: siteUrl(config, blog.username), appHostname: config.appHostname, operation }));
+    return c.html(editorPage({ session: c.get('session'), blog, themes, activeTheme, published, releases, previewUrl: accessUrl.toString(), previewToken: token, previewOrigin: config.previewOrigin, previewPath, publicUrl: siteUrl(config, blog.username), appHostname: config.appHostname, operation, deletionError: deletionError(c.req.query('deleteError')) }));
   });
   app.get('/operations/:id', async (c) => { const operation = await database.getOperation(uuidInput.parse(c.req.param('id')), c.get('session').user.id); if (!operation) throw new AppError('operation_not_found', 'Operation not found.', 404); const blog = await database.getBlog(operation.blogId); const previewPath = safePreviewPath(operation.payload.previewPath, config.previewOrigin); return c.html(operationPage(c.get('session'), operation, blog?.draftArtifactId ? '/editor' : '/onboarding', editorUrlWithPreviewPath(previewPath))); });
   app.get('/api/session', (c) => c.json({ user: c.get('session').user, csrfToken: c.get('session').csrfToken }));

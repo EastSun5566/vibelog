@@ -10,7 +10,7 @@ import { loadWorkerConfig } from '../src/config.js';
 import { smokeWorker } from '../scripts/worker-smoke.js';
 import { CloudTasksRequestVerifier } from '../src/adapters/cloud-tasks-request-verifier.js';
 import { handleOperationTask } from '../src/adapters/cloud-tasks-transport.js';
-import { operations, rateLimit, user } from '../src/schema.js';
+import { aiDailyUsage, operations, rateLimit, user } from '../src/schema.js';
 
 const url = process.env.TEST_DATABASE_URL;
 describe.skipIf(!url)('PostgreSQL operation repository', () => {
@@ -48,6 +48,50 @@ describe.skipIf(!url)('PostgreSQL operation repository', () => {
       expect(rejected?.reason).toBeInstanceOf(BlogAddressTakenError);
     } finally {
       for (const id of ids) await database.db.delete(user).where(eq(user.id, id));
+    }
+  });
+  it('removes a blog only after its artifacts are cleaned and frees the address', async () => {
+    const ownerId = randomUUID(); const nextOwnerId = randomUUID(); const username = `delete-${ownerId.slice(0, 8)}`;
+    try {
+      await database.db.insert(user).values([
+        { id: ownerId, name: 'Delete blog', email: `${ownerId}@example.com` },
+        { id: nextOwnerId, name: 'Reuse address', email: `${nextOwnerId}@example.com` },
+      ]);
+      const { blog, operation } = await database.createBlog(ownerId, username, 'writer');
+      await database.db.update(operations).set({ status: 'failed' }).where(eq(operations.id, operation.id));
+      const artifact = await database.createArtifact(blog.id, 'draft');
+      const plan = await database.beginBlogDeletion(ownerId);
+      expect(plan?.artifacts.map((item) => item.id)).toEqual([artifact.id]);
+      expect((await database.getBlog(blog.id))?.state).toBe('deleting');
+      await expect(database.finishBlogDeletion(ownerId, blog.id)).rejects.toThrow('Blog artifacts remain');
+      await database.noteBlogDeletionFailure(ownerId, blog.id);
+      expect((await database.getBlog(blog.id))?.lastError).toContain('Retry');
+      expect((await database.beginBlogDeletion(ownerId))?.artifacts.map((item) => item.id)).toEqual([artifact.id]);
+      await database.deleteArtifactRecord(artifact.id);
+      await database.finishBlogDeletion(ownerId, blog.id);
+      expect(await database.getBlog(blog.id)).toBeNull();
+      expect(await database.createBlog(nextOwnerId, username, 'writer')).toBeDefined();
+    } finally {
+      await database.db.delete(user).where(eq(user.id, ownerId));
+      await database.db.delete(user).where(eq(user.id, nextOwnerId));
+    }
+  });
+  it('deletes account-owned usage and rate-limit records with the user', async () => {
+    const id = randomUUID(); const rateKeys = [`magic:minute:${id}`, `magic:hour:${id}`];
+    await database.db.insert(user).values({ id, name: 'Delete account', email: `${id}@example.com` });
+    try {
+      const { blog, operation } = await database.createBlog(id, `account-${id.slice(0, 8)}`, 'writer');
+      await database.db.update(operations).set({ status: 'failed' }).where(eq(operations.id, operation.id));
+      await database.db.insert(aiDailyUsage).values({ usageDate: '2026-09-16', scope: 'user', subject: id, count: 1 });
+      await database.db.insert(rateLimit).values(rateKeys.map((key) => ({ id: randomUUID(), key, count: 1, lastRequest: 1 })));
+      const plan = await database.beginBlogDeletion(id);
+      await database.finishAccountDeletion(id, plan?.blogId ?? null, rateKeys);
+      expect(await database.getBlog(blog.id)).toBeNull();
+      expect(await database.db.select().from(user).where(eq(user.id, id))).toHaveLength(0);
+      expect(await database.db.select().from(aiDailyUsage).where(eq(aiDailyUsage.subject, id))).toHaveLength(0);
+      expect(await database.db.select().from(rateLimit).where(eq(rateLimit.key, rateKeys[0] ?? ''))).toHaveLength(0);
+    } finally {
+      await database.db.delete(user).where(eq(user.id, id));
     }
   });
 });

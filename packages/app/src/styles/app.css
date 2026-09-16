@@ -159,6 +159,7 @@ time { font-variant-numeric: tabular-nums; }
 .btn { min-height: 2.5rem; cursor: pointer; }
 .btn:disabled { cursor: not-allowed; opacity: 0.52; }
 .btn[data-size="compact"] { min-height: 2.15rem; padding-inline: 0.72rem; }
+.btn[data-variant="destructive"] { border-color: var(--destructive); background: var(--destructive); color: #fff; }
 
 .editor {
   display: grid;
@@ -176,6 +177,12 @@ time { font-variant-numeric: tabular-nums; }
 .workspace-links { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.75rem; font-size: 0.84rem; }
 
 .controls { grid-area: controls; display: grid; gap: 1.5rem; min-width: 0; }
+.danger-zone { border: 1px solid color-mix(in srgb, var(--destructive) 35%, var(--border)); border-radius: var(--radius); }
+.danger-zone > summary { color: var(--destructive); padding-inline: 1rem; }
+.deletion-actions { display: grid; gap: 1.5rem; }
+.deletion-action { display: grid; gap: 0.9rem; }
+.deletion-action + .deletion-action { border-block-start: 1px solid var(--border); padding-block-start: 1.5rem; }
+.deletion-action p { margin: 0.25rem 0 0; }
 .workflow-section { display: grid; gap: 0.7rem; scroll-margin-top: 1rem; }
 .workflow-heading { display: grid; grid-template-columns: 1.7rem minmax(0, 1fr); gap: 0.65rem; align-items: start; }
 .workflow-heading h2, .workflow-heading p { margin: 0; }

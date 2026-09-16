@@ -41,14 +41,14 @@ export const blogs = pgTable('blogs', {
   id: uuid('id').primaryKey(), userId: uuid('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   username: text('username').notNull(), hackmdUsername: text('hackmd_username').notNull(), title: text('title'),
   description: text('description'), author: text('author'), language: text('language').notNull().default('zh-Hant'),
-  state: text('state', { enum: ['syncing', 'ready', 'failed'] }).notNull(), lastError: text('last_error'),
+  state: text('state', { enum: ['syncing', 'ready', 'failed', 'deleting'] }).notNull(), lastError: text('last_error'),
   draftArtifactId: uuid('draft_artifact_id'), contentVersion: integer('content_version').notNull().default(0),
   contentManifest: jsonb('content_manifest').$type<unknown[] | null>(),
   lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }), ...timestamps,
 }, (table) => [
   uniqueIndex('blogs_one_per_user').on(table.userId), uniqueIndex('blogs_username_unique').on(table.username),
   check('blogs_handle_check', sql`${table.username} ~ '^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$'`),
-  check('blogs_state_check', sql`${table.state} in ('syncing','ready','failed')`),
+  check('blogs_state_check', sql`${table.state} in ('syncing','ready','failed','deleting')`),
 ]);
 export const artifacts = pgTable('artifacts', {
   id: uuid('id').primaryKey(), blogId: uuid('blog_id').notNull().references(() => blogs.id, { onDelete: 'cascade' }),

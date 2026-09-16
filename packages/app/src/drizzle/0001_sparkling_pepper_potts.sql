@@ -1,0 +1,2 @@
+ALTER TABLE "blogs" DROP CONSTRAINT "blogs_state_check";--> statement-breakpoint
+ALTER TABLE "blogs" ADD CONSTRAINT "blogs_state_check" CHECK ("blogs"."state" in ('syncing','ready','failed','deleting'));
