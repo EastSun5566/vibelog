@@ -10,11 +10,12 @@ overrides:
   "@esbuild-kit/core-utils>esbuild": 0.25.0
   fast-xml-parser: 5.10.1
   "js-yaml@<3.15.2": 3.15.2
-  "js-yaml@4.3.0": 4.3.1
+  "js-yaml@>=4.0.0 <4.3.2": 4.3.2
   "mdast-util-to-hast@<13.2.1": 13.2.1
   "picomatch@<2.3.2": 2.3.2
   "postcss@<8.5.10": 8.5.23
-  "svgo@4.0.1": 4.0.2
+  "smol-toml@<=1.7.0": 1.7.1
+  "svgo@>=4.0.0 <4.1.0": 4.1.0
 
 onlyBuiltDependencies:
   - "@pulumi/neon"

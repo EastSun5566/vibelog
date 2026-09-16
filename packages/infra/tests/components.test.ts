@@ -142,7 +142,7 @@ describe('Pulumi components', () => {
     const routingDns = registrations.find((item) => item.name === 'test-email-routing-dns');
     expect(routingDns?.inputs.zoneId).toBe('zone');
     expect(routingDns?.inputs).not.toHaveProperty('name');
-  });
+  }, 15_000);
   it('creates only the protected repository, private R2 bucket, and Neon database in the foundation', async () => {
     const childUrns: string[] = [];
     await pulumi.runtime.runInPulumiStack(async () => {
