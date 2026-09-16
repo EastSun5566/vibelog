@@ -161,7 +161,37 @@ const MARKDOWN_STYLES = `/* Extended Markdown */
   font-family: var(--theme-heading-font);
   font-weight: 700;
 }
+.prose .spoiler-title:focus-visible { outline-color: var(--theme-accent); }
 .prose .spoiler[open] .spoiler-title { margin-block-end: 0.75rem; }
+.prose mark {
+  background: var(--theme-accent);
+  border-radius: 0.15em;
+  color: var(--theme-background);
+  padding-inline: 0.12em;
+}
+.prose ins { text-decoration-thickness: 0.1em; text-underline-offset: 0.15em; }
+.prose ruby { ruby-align: center; }
+.prose rt { color: var(--theme-muted); font-size: 0.65em; }
+.prose .contains-task-list { list-style: none; padding-inline-start: 0; }
+.prose .task-list-item { align-items: baseline; display: flex; gap: 0.55em; }
+.prose .task-list-item input { accent-color: var(--theme-accent); flex: none; }
+.prose [data-footnotes] {
+  border-top: 1px solid var(--theme-border);
+  font-size: 0.9em;
+  margin-block-start: 3em;
+  padding-block-start: 1em;
+}
+.prose pre.has-line-numbers .line { display: inline-block; min-width: 100%; }
+.prose pre.has-line-numbers .line::before {
+  color: var(--theme-muted);
+  content: attr(data-line-number);
+  display: inline-block;
+  margin-inline-end: 1.25em;
+  text-align: end;
+  user-select: none;
+  width: 3ch;
+}
+.prose pre .line.highlighted { background: color-mix(in srgb, var(--theme-accent) 14%, transparent); }
 .prose dl { display: grid; gap: 0.45rem; }
 .prose dt { font-family: var(--theme-heading-font); font-weight: 750; }
 .prose dd { margin-inline-start: var(--theme-space); }

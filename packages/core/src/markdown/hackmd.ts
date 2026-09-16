@@ -1,9 +1,10 @@
-import type { Blockquote, Code, Paragraph, PhrasingContent, Root, RootContent } from 'mdast';
+import type { Blockquote, Code, Paragraph, PhrasingContent, Root, RootContent, Text } from 'mdast';
 
 type CompatibleNode = Root | RootContent | PhrasingContent;
 type CompatibleParent = CompatibleNode & { children: CompatibleNode[] };
 interface HastData {
   directiveLabel?: boolean | null;
+  hackmdTitle?: string;
   hName?: string;
   hProperties?: Record<string, unknown>;
 }
@@ -53,6 +54,8 @@ function titleParagraph(title: string, className: string, hName = 'p'): Paragrap
 }
 
 function directiveTitle(node: Extract<RootContent, { type: 'containerDirective' }>, fallback: string): string {
+  const explicitTitle = (node.data as HastData | undefined)?.hackmdTitle?.trim();
+  if (explicitTitle) return explicitTitle;
   const firstChild = node.children[0];
   if (firstChild?.type !== 'paragraph' || !(firstChild.data as HastData | undefined)?.directiveLabel) return fallback;
   node.children.shift();
@@ -108,8 +111,115 @@ function transformAlert(node: Blockquote): void {
 
 function normalizeCodeLanguage(node: Code): void {
   if (!node.lang) return;
-  const match = /^([a-z][a-z0-9+#.-]*)(?:=(?:\d+|\+)?)$/iu.exec(node.lang);
-  if (match?.[1]) node.lang = match[1];
+  const match = /^([a-z][a-z0-9+#.-]*)(?:=(\d+|\+)?)$/iu.exec(node.lang);
+  if (!match?.[1]) return;
+  node.lang = match[1];
+  if (match[2] && match[2] !== '+') node.meta = `${node.meta ?? ''} line-start=${match[2]}`.trim();
+}
+
+function textNode(value: string): Text {
+  return { type: 'text', value };
+}
+
+function inlineElement(hName: string, children: PhrasingContent[]): PhrasingContent {
+  return {
+    type: 'emphasis',
+    data: { hName } as PhrasingContent['data'],
+    children,
+  };
+}
+
+const INLINE_EXTENSION = /==([^=\n]+)==|\+\+([^+\n]+)\+\+|(?<!~)~([^~\n]+)~(?!~)|(?<!\^)\^([^^\n]+)\^(?!\^)|\{([^{}|\n]+)\|([^{}|\n]+)\}/gu;
+
+function transformInlineText(node: Text, source: string): PhrasingContent[] {
+  if (!/[=+~^{}|]/u.test(node.value)) return [node];
+  const start = node.position?.start.offset;
+  const end = node.position?.end.offset;
+  // Markdown escapes and entities change the source slice. Leaving the whole
+  // node alone preserves the author's literal input rather than guessing.
+  if (source && start !== undefined && end !== undefined && source.slice(start, end) !== node.value) return [node];
+
+  const output: PhrasingContent[] = [];
+  let cursor = 0;
+  for (const match of node.value.matchAll(INLINE_EXTENSION)) {
+    const index = match.index;
+    const full = match[0];
+    const content = match[1] ?? match[2] ?? match[3] ?? match[4] ?? match[5];
+    if (index === undefined || !content || content.trim() !== content) continue;
+    if (index > cursor) output.push(textNode(node.value.slice(cursor, index)));
+    if (match[1]) output.push(inlineElement('mark', [textNode(content)]));
+    else if (match[2]) output.push(inlineElement('ins', [textNode(content)]));
+    else if (match[3]) output.push(inlineElement('sub', [textNode(content)]));
+    else if (match[4]) output.push(inlineElement('sup', [textNode(content)]));
+    else if (match[5] && match[6]) {
+      output.push(inlineElement('ruby', [
+        textNode(match[5]),
+        inlineElement('rp', [textNode('(')]),
+        inlineElement('rt', [textNode(match[6])]),
+        inlineElement('rp', [textNode(')')]),
+      ]));
+    }
+    cursor = index + full.length;
+  }
+  if (cursor === 0) return [node];
+  if (cursor < node.value.length) output.push(textNode(node.value.slice(cursor)));
+  return output;
+}
+
+function paragraphText(node: CompatibleNode): string | undefined {
+  if (node.type !== 'paragraph' || node.children.length !== 1 || node.children[0]?.type !== 'text') return undefined;
+  return node.children[0].value;
+}
+
+function spoilerNode(title: string, children: RootContent[]): RootContent {
+  return {
+    type: 'containerDirective',
+    name: 'spoiler',
+    attributes: {},
+    data: { hackmdTitle: title },
+    children,
+  } as RootContent;
+}
+
+function normalizeSpaceSpoilers(parent: CompatibleParent): void {
+  let index = 0;
+  while (index < parent.children.length) {
+    const opening = paragraphText(parent.children[index] as CompatibleNode);
+    const openingMatch = opening ? /^:::spoiler[ \t]+([^\r\n]+)$/u.exec(opening) : null;
+    if (openingMatch?.[1]) {
+      const closingIndex = parent.children.findIndex((candidate, candidateIndex) =>
+        candidateIndex > index && paragraphText(candidate)?.trim() === ':::');
+      if (closingIndex > index) {
+        const body = parent.children.slice(index + 1, closingIndex) as RootContent[];
+        parent.children.splice(index, closingIndex - index + 1, spoilerNode(openingMatch[1].trim(), body));
+        index += 1;
+        continue;
+      }
+    }
+
+    const paragraph = parent.children[index];
+    if (paragraph?.type === 'paragraph' && paragraph.children.length > 0) {
+      const first = paragraph.children[0];
+      const last = paragraph.children.at(-1);
+      if (first?.type === 'text' && last?.type === 'text') {
+        const compactMatch = /^:::spoiler[ \t]+([^\r\n]+)\r?\n/u.exec(first.value);
+        if (compactMatch?.[1] && /\r?\n:::$/.test(last.value)) {
+          const children = [...paragraph.children];
+          const firstText = first.value.slice(compactMatch[0].length);
+          const lastText = last.value.replace(/\r?\n:::$/u, '');
+          if (first === last) {
+            children[0] = textNode(firstText.replace(/\r?\n:::$/u, ''));
+          } else {
+            children[0] = textNode(firstText);
+            children[children.length - 1] = textNode(lastText);
+          }
+          const content = children.filter((child) => child.type !== 'text' || child.value.length > 0);
+          parent.children.splice(index, 1, spoilerNode(compactMatch[1].trim(), [{ type: 'paragraph', children: content }]));
+        }
+      }
+    }
+    index += 1;
+  }
 }
 
 function isStandaloneToc(node: CompatibleNode): node is Paragraph {
@@ -119,13 +229,22 @@ function isStandaloneToc(node: CompatibleNode): node is Paragraph {
     && node.children[0].value.trim().toUpperCase() === '[TOC]';
 }
 
-function transformChildren(parent: CompatibleParent): void {
+function transformChildren(parent: CompatibleParent, source: string): void {
+  normalizeSpaceSpoilers(parent);
   let index = 0;
   while (index < parent.children.length) {
     const node = parent.children[index];
     if (!node) break;
 
-    if (hasChildren(node)) transformChildren(node);
+    if (hasChildren(node)) transformChildren(node, source);
+    if (node.type === 'text') {
+      const replacement = transformInlineText(node, source);
+      if (replacement.length !== 1 || replacement[0] !== node) {
+        parent.children.splice(index, 1, ...replacement);
+        index += replacement.length;
+        continue;
+      }
+    }
     if (node.type === 'code') normalizeCodeLanguage(node);
     if (node.type === 'blockquote') transformAlert(node);
 
@@ -155,7 +274,7 @@ function transformChildren(parent: CompatibleParent): void {
 }
 
 export function remarkHackmdCompatibility() {
-  return (tree: Root) => {
-    transformChildren(tree as CompatibleParent);
+  return (tree: Root, file?: { value?: unknown }) => {
+    transformChildren(tree as CompatibleParent, typeof file?.value === 'string' ? file.value : '');
   };
 }

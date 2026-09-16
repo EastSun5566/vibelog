@@ -12,6 +12,7 @@ import matter from 'gray-matter';
 import rehypeKatex from 'rehype-katex';
 import { defListHastHandlers, remarkDefinitionList } from 'remark-definition-list';
 import remarkDirective from 'remark-directive';
+import remarkGfm from 'remark-gfm';
 import remarkGemoji from 'remark-gemoji';
 import remarkMath from 'remark-math';
 import { z } from 'zod';
@@ -23,7 +24,50 @@ import { logger } from './logger.js';
 import type { ContentSource } from '../types.js';
 import { loadConfig } from './config.js';
 
-const TEMPLATE_VERSION = 9;
+const TEMPLATE_VERSION = 10;
+
+interface ShikiElement {
+  properties: Record<string, unknown>;
+}
+
+interface ShikiTransformerContext {
+  options: { meta?: { __raw?: string } };
+  addClassToHast(element: ShikiElement, className: string): ShikiElement;
+}
+
+function codeMetadata(raw = ''): { highlights: Set<number>; start: number | undefined } {
+  const startMatch = /(?:^|\s)line-start=(\d+)(?:\s|$)/u.exec(raw);
+  const start = startMatch?.[1] ? Number.parseInt(startMatch[1], 10) : undefined;
+  const highlights = new Set<number>();
+  const highlightMatch = /\[([\d,\s-]+)\]/u.exec(raw);
+  if (highlightMatch?.[1]) {
+    for (const range of highlightMatch[1].split(',')) {
+      const [firstRaw, lastRaw] = range.trim().split('-');
+      const first = Number.parseInt(firstRaw ?? '', 10);
+      const last = Number.parseInt(lastRaw ?? firstRaw ?? '', 10);
+      if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || first < 1 || last < first || last - first > 1_000) continue;
+      for (let line = first; line <= last; line += 1) highlights.add(line);
+    }
+  }
+  return { highlights, start: Number.isSafeInteger(start) && (start ?? 0) > 0 ? start : undefined };
+}
+
+const codeMetadataTransformer = {
+  name: 'vibelog-code-metadata',
+  pre(this: ShikiTransformerContext, element: ShikiElement) {
+    const metadata = codeMetadata(this.options.meta?.__raw);
+    if (metadata.start !== undefined) {
+      this.addClassToHast(element, 'has-line-numbers');
+      element.properties.dataLineStart = String(metadata.start);
+    }
+  },
+  line(this: ShikiTransformerContext, element: ShikiElement, line: number) {
+    const metadata = codeMetadata(this.options.meta?.__raw);
+    const displayLine = (metadata.start ?? 1) + line - 1;
+    if (metadata.start !== undefined) element.properties.dataLineNumber = String(displayLine);
+    if (metadata.highlights.has(displayLine)) this.addClassToHast(element, 'highlighted');
+  },
+};
 const postSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
@@ -433,11 +477,13 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
             dark: 'github-dark-high-contrast',
           },
           defaultColor: false,
+          transformers: [codeMetadataTransformer],
         },
         processor: unified({
           remarkPlugins: [
             remarkDirective,
             remarkHackmdCompatibility,
+            [remarkGfm, { singleTilde: false }],
             remarkMath,
             remarkGemoji,
             remarkDefinitionList,

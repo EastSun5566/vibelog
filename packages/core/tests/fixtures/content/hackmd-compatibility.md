@@ -22,6 +22,12 @@ Something can cause damage.
 The answer is 42.
 :::
 
+:::spoiler Terminal output
+
+The command returned **successfully**.
+
+:::
+
 :::custom[Custom heading]
 Unknown directives keep their content.
 :::
@@ -46,6 +52,15 @@ Term
 
 Emoji aliases become :sparkles: and inline math becomes $E = mc^2$.
 
+This is ==important==, ++new++, H~2~O, x^2^, and {漢字|かんじ}.
+
+- [x] Published
+- [ ] Shared
+
+A statement with a footnote.[^compatibility]
+
+[^compatibility]: Footnotes stay close to their source.
+
 $$
 c = \pm\sqrt{a^2 + b^2}
 $$
@@ -55,4 +70,10 @@ Malformed math stays readable: $\broken{$.
 ```javascript=101
 const answer = 42;
 :::warning
+```
+
+```typescript=10 [10,12]
+const first = 1;
+const second = 2;
+const third = 3;
 ```

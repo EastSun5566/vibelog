@@ -77,4 +77,52 @@ describe('remarkHackmdCompatibility', () => {
     });
     expect(tree.children[1]).not.toHaveProperty('data.hName');
   });
+
+  it('supports common safe inline syntax and space-titled spoilers', () => {
+    const source = ':::spoiler Terminal output\n\nSecret body.\n\n:::\n\n==mark== ++insert++ H~2~O x^2^ {漢字|かんじ}';
+    const tree = {
+      type: 'root',
+      children: [
+        { type: 'paragraph', children: [{ type: 'text', value: ':::spoiler Terminal output' }] },
+        { type: 'paragraph', children: [{ type: 'text', value: 'Secret body.' }] },
+        { type: 'paragraph', children: [{ type: 'text', value: ':::' }] },
+        { type: 'paragraph', children: [{ type: 'text', value: '==mark== ++insert++ H~2~O x^2^ {漢字|かんじ}' }] },
+      ],
+    } as Root;
+
+    remarkHackmdCompatibility()(tree, { value: source });
+
+    expect(tree.children[0]).toMatchObject({
+      type: 'containerDirective',
+      data: { hName: 'details', hProperties: { className: ['spoiler'] } },
+      children: [
+        { data: { hName: 'summary' }, children: [{ value: 'Terminal output' }] },
+        { children: [{ value: 'Secret body.' }] },
+      ],
+    });
+    expect(tree.children[1]).toMatchObject({ type: 'paragraph' });
+    const inline = JSON.stringify(tree.children[1]);
+    for (const hName of ['mark', 'ins', 'sub', 'sup', 'ruby', 'rt']) {
+      expect(inline).toContain(`"hName":"${hName}"`);
+    }
+  });
+
+  it('keeps escaped inline markers literal', () => {
+    const source = '\\==literal==';
+    const tree = {
+      type: 'root',
+      children: [{
+        type: 'paragraph',
+        children: [{
+          type: 'text',
+          value: '==literal==',
+          position: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 13, offset: 12 } },
+        }],
+      }],
+    } as Root;
+
+    remarkHackmdCompatibility()(tree, { value: source });
+
+    expect(tree.children[0]).toMatchObject({ children: [{ type: 'text', value: '==literal==' }] });
+  });
 });

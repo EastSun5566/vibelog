@@ -113,11 +113,11 @@ describe('DevBuilder content summary', () => {
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 9 });
+    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 10 });
     expect(await readFile(join(root, '.vibelog', 'src', 'styles', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
   });
 
-  it('builds the V9 reading experience with reliable descriptions, search, and machine-readable content', { timeout: 20_000 }, async () => {
+  it('builds the V10 reading experience with reliable descriptions, search, and machine-readable content', { timeout: 20_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-public-')); roots.push(root);
     const posts = Array.from({ length: 6 }, (_, index) => {
       const number = index + 1;
@@ -391,6 +391,14 @@ describe('DevBuilder content summary', () => {
     }
     expect(article).toContain('<aside aria-label="Background" class="callout callout-info">');
     expect(article).toContain('<details class="spoiler"><summary class="spoiler-title">Show the answer</summary>');
+    expect(article).toContain('<details class="spoiler"><summary class="spoiler-title">Terminal output</summary>');
+    expect(article).toContain('<mark>important</mark>');
+    expect(article).toContain('<ins>new</ins>');
+    expect(article).toContain('H<sub>2</sub>O');
+    expect(article).toContain('x<sup>2</sup>');
+    expect(article).toContain('<ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>');
+    expect(article).toContain('class="contains-task-list"');
+    expect(article).toContain('data-footnotes');
     expect(article).toContain('<dl>');
     expect(article).toContain('<dt>Term</dt>');
     expect(article).toMatch(/<dd>A concise definition\.\s*<\/dd>/u);
@@ -398,6 +406,9 @@ describe('DevBuilder content summary', () => {
     expect(article).toContain('<math xmlns="http://www.w3.org/1998/Math/MathML"');
     expect(article).toContain('class="katex-error"');
     expect(article).toContain('data-language="javascript"');
+    expect(article).toContain('data-line-start="10"');
+    expect(article).toContain('data-line-number="10"');
+    expect(article).toContain('class="line highlighted"');
     expect(article).toContain(':::warning');
     expect(article).toContain('Keep an inline [TOC] reference visible.');
     expect(article).not.toMatch(/<p>\[TOC\]<\/p>/u);
