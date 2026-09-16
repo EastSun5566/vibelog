@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.9.0](https://github.com/EastSun5566/vibelog/compare/v0.8.0...v0.9.0) (2026-09-16)
+
+### Features
+
+* **app:** add consented GA4 analytics ([12d16b0](https://github.com/EastSun5566/vibelog/commit/12d16b01512469a5a746831108c821297d5b973b))
+* **app:** add retryable data deletion ([b32cfec](https://github.com/EastSun5566/vibelog/commit/b32cfec924772ae6279c2df82d9562c8cd00ae7a))
+* **app:** apply VibeLog brand ([efb7bca](https://github.com/EastSun5566/vibelog/commit/efb7bca9e907320226b776a143a98f58df15df9c))
+* **app:** refine public guidance and AI controls ([b3af192](https://github.com/EastSun5566/vibelog/commit/b3af192358a88d57693cfc2c902ca80121746cf1))
+* **blog:** add static search and discovery features ([e7ee9f1](https://github.com/EastSun5566/vibelog/commit/e7ee9f15642d30bb22838ac24f8dbca4396b29ce))
+* **core:** expand HackMD markdown compatibility ([4fbd7c8](https://github.com/EastSun5566/vibelog/commit/4fbd7c8f44546370910fae203151faf36894fef7))
+* **core:** support common HackMD markdown ([ad6257f](https://github.com/EastSun5566/vibelog/commit/ad6257faee19ff09c0b149585dba29bec03c62a9))
+
+### Bug Fixes
+
+* **ai:** add model fallback for theme generation ([a1b0fc7](https://github.com/EastSun5566/vibelog/commit/a1b0fc7b2440df142ec304a3be10e65a9bb61915))
+* **ai:** restore OpenCode Go theme generation ([3f9577e](https://github.com/EastSun5566/vibelog/commit/3f9577e7da5c697a7ecaa3d4cb7de7dac9778b84))
+* **ai:** support terminal theme generation ([8680ef7](https://github.com/EastSun5566/vibelog/commit/8680ef754180e3066d3eff9ec653a172f18f7f44))
+* **ai:** timeout stalled theme generation ([1944610](https://github.com/EastSun5566/vibelog/commit/1944610ff3edf165b33cb769bcb50f02edc1e5d4))
+* **app:** keep editor feedback close to actions ([eb33d7f](https://github.com/EastSun5566/vibelog/commit/eb33d7f7476cba37cb99d30de2409d90f6f55253))
+* **app:** refine onboarding and editor updates ([d31c3e9](https://github.com/EastSun5566/vibelog/commit/d31c3e98596f824fc51bfe9435468d30bae763c6))
+* **app:** reveal deletion errors ([e549441](https://github.com/EastSun5566/vibelog/commit/e549441e8b4a0b096fc972d2be61c6867c1c9ca0))
+* **blog:** restore code highlighting and surface feeds ([858d80b](https://github.com/EastSun5566/vibelog/commit/858d80b06c606828cad54c3e5921120c4bccd226))
 ## [0.8.0](https://github.com/EastSun5566/vibelog/compare/v0.7.0...v0.8.0) (2026-09-06)
 
 ### ⚠ BREAKING CHANGES
