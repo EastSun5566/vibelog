@@ -182,6 +182,7 @@ const MARKDOWN_STYLES = `/* Extended Markdown */
   padding-block-start: 1em;
 }
 .prose pre.has-line-numbers .line { display: inline-block; min-width: 100%; }
+.prose pre.wrap-code code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .prose pre.has-line-numbers .line::before {
   color: var(--theme-muted);
   content: attr(data-line-number);

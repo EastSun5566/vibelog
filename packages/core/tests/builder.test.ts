@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import matter from 'gray-matter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildFromVibelog, ContentSourceName, createDevBuilder } from '../src/index.js';
+import { buildFromVibelog, ContentSourceName, createDevBuilder, HackMdSource } from '../src/index.js';
 import type { ContentSource } from '../src/index.js';
 
 const roots: string[] = [];
@@ -14,7 +14,10 @@ function jsonLd(html: string): Record<string, unknown> {
   if (!payload) throw new Error('Missing JSON-LD');
   return JSON.parse(payload) as Record<string, unknown>;
 }
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => {
+  vi.unstubAllGlobals();
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
 
 describe('DevBuilder content summary', () => {
   it('returns normalized metadata without article bodies and reads the source once', async () => {
@@ -35,12 +38,11 @@ describe('DevBuilder content summary', () => {
     expect(summary).toEqual({
       author: { name: 'Writer', bio: 'Public notes' },
       posts: [
-        { title: 'Newer', slug: 'newer-post', publishedAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-02-03T00:00:00.000Z', included: true, tags: [{ name: '閱讀 筆記', slug: '閱讀-筆記' }, { name: 'AI', slug: 'ai' }], contentHash: contentHash('private body two') },
-        { title: 'Older', slug: 'older-post', publishedAt: '2026-01-01T00:00:00.000Z', included: true, tags: [], contentHash: contentHash('private body one') },
+        { title: 'Newer', slug: 'newer-post', description: 'private body two', publishedAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-02-03T00:00:00.000Z', included: true, tags: [{ name: '閱讀 筆記', slug: '閱讀-筆記' }, { name: 'AI', slug: 'ai' }], contentHash: contentHash('private body two') },
+        { title: 'Older', slug: 'older-post', description: 'private body one', publishedAt: '2026-01-01T00:00:00.000Z', included: true, tags: [], contentHash: contentHash('private body one') },
       ],
     });
-    expect(JSON.stringify(summary)).not.toContain('private body');
-    expect(summary.posts.every((post) => !Object.hasOwn(post, 'description'))).toBe(true);
+    expect(summary.posts.every((post) => !Object.hasOwn(post, 'content'))).toBe(true);
   });
 
   it('writes only selected posts while retaining the full manifest', async () => {
@@ -59,8 +61,8 @@ describe('DevBuilder content summary', () => {
     const summary = await builder.fetchContent({ excludedSlugs: ['one'] });
 
     expect(summary.posts).toEqual([
-      { title: 'Two', slug: 'two', publishedAt: '2026-02-01T00:00:00.000Z', included: true, tags: [{ name: 'C#', slug: 'c-951a4d36' }], contentHash: contentHash('Two body') },
-      { title: 'One', slug: 'one', publishedAt: '2026-01-01T00:00:00.000Z', included: false, tags: [
+      { title: 'Two', slug: 'two', description: 'Two body', publishedAt: '2026-02-01T00:00:00.000Z', included: true, tags: [{ name: 'C#', slug: 'c-951a4d36' }], contentHash: contentHash('Two body') },
+      { title: 'One', slug: 'one', description: 'One body', publishedAt: '2026-01-01T00:00:00.000Z', included: false, tags: [
         { name: '😀', slug: 'tag-f0443a34' },
         { name: 'C++', slug: 'c-cedb1bac' },
       ], contentHash: contentHash('One body') },
@@ -113,11 +115,11 @@ describe('DevBuilder content summary', () => {
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 10 });
+    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 11 });
     expect(await readFile(join(root, '.vibelog', 'src', 'styles', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
   });
 
-  it('builds the V10 reading experience with reliable descriptions, search, and machine-readable content', { timeout: 20_000 }, async () => {
+  it('builds the V11 reading experience with reliable descriptions, search, and machine-readable content', { timeout: 30_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-public-')); roots.push(root);
     const posts = Array.from({ length: 6 }, (_, index) => {
       const number = index + 1;
@@ -134,7 +136,8 @@ describe('DevBuilder content summary', () => {
             ? `Body for article ${String(number)}.\n\n## Only section\n\nA single section does not need a table of contents.`
             : number === 4
               ? `Body for article ${String(number)}.\n\n\`\`\`ts\nconst greeting = "hello";\n\`\`\`\n\n\`\`\`bash\nnpm run build\n\`\`\``
-            : `Body for article ${String(number)}.`,
+              : `Body for article ${String(number)}.`,
+        description: number === 6 ? 'A **HackMD overview** summary with [readable text](https://example.com/private).' : undefined,
       };
     });
     const source: ContentSource = {
@@ -150,7 +153,7 @@ describe('DevBuilder content summary', () => {
     await builder.fetchContent();
 
     const generatedPost = matter(await readFile(join(root, '.vibelog', 'src', 'content', 'blog', 'article-6.md'), 'utf8'));
-    const expectedDescription = 'A reliable summary with readable text and code.';
+    const expectedDescription = 'A HackMD overview summary with readable text.';
     expect(generatedPost.data.description).toBe(expectedDescription);
     expect(generatedPost.data.description).not.toMatch(/https?:|[*`![\]]/u);
     expect(generatedPost.content).toContain('https://images.example.com/private.png');
@@ -164,7 +167,9 @@ describe('DevBuilder content summary', () => {
 
     const home = await readFile(join(output, 'index.html'), 'utf8');
     expect(home).toContain('<h1 id="site-heading">Writer Journal</h1>');
-    expect(home).toContain('A short public author bio.');
+    expect(home).toContain('<p class="site-description">Essays from Writer.</p>');
+    expect(home).not.toContain('A short public author bio.');
+    expect(home).not.toContain('class="author-bio"');
     expect(jsonLd(home)).toMatchObject({ '@type': 'Blog', name: 'Writer Journal', author: { name: 'Writer' } });
     expect(home).not.toContain('pagefind-component-ui.js');
     expect(home).toContain('href="/search"');
@@ -275,6 +280,7 @@ describe('DevBuilder content summary', () => {
     const llms = await readFile(join(output, 'llms.txt'), 'utf8');
     expect(llms).toContain('# Writer Journal\n\n> Essays from Writer.\n\n## Posts');
     expect(llms).toContain('https://writer.example.com/blog/article-4/index.md');
+    expect(llms).toContain(expectedDescription);
     expect(llms.indexOf('Article 6')).toBeLessThan(llms.indexOf('Article 1'));
     const robots = await readFile(join(output, 'robots.txt'), 'utf8');
     expect(robots).toBe('User-agent: *\nAllow: /\n\nSitemap: https://writer.example.com/sitemap-index.xml\n');
@@ -367,17 +373,23 @@ describe('DevBuilder content summary', () => {
   it('renders common HackMD Markdown without adding client scripts', { timeout: 20_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-hackmd-markdown-')); roots.push(root);
     const content = await readFile(join(import.meta.dirname, 'fixtures', 'content', 'hackmd-compatibility.md'), 'utf8');
-    const source: ContentSource = {
-      name: ContentSourceName.HACKMD,
-      getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
-      getPosts: () => Promise.resolve({ posts: [{
+    vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith('/info/@writer')) return Promise.resolve(Response.json({ user: { displayName: 'Writer', biography: '' } }));
+      if (url.endsWith('/api/@writer/overview')) return Promise.resolve(Response.json({ notes: [{
         id: 'compatibility',
         title: 'HackMD compatibility',
-        slug: 'compatibility',
-        date: '2026-01-01T00:00:00Z',
-        content,
-      }] }),
-    };
+        content: 'Overview summary from HackMD.',
+        tags: [],
+        lastchangeAt: '',
+        publishType: 'view',
+        publishedAt: '2026-01-01T00:00:00Z',
+        permalink: 'compatibility',
+      }] }));
+      if (url.endsWith('/compatibility/download')) return Promise.resolve(new Response(content));
+      return Promise.resolve(new Response(null, { status: 404 }));
+    }));
+    const source = new HackMdSource('writer', { baseUrl: 'http://fixture.test' });
     const builder = createDevBuilder({ root, contentSource: source });
     await builder.prepare({ installDependencies: false });
     await builder.fetchContent();
@@ -392,6 +404,8 @@ describe('DevBuilder content summary', () => {
     expect(article).toContain('<aside aria-label="Background" class="callout callout-info">');
     expect(article).toContain('<details class="spoiler"><summary class="spoiler-title">Show the answer</summary>');
     expect(article).toContain('<details class="spoiler"><summary class="spoiler-title">Terminal output</summary>');
+    expect(article).toMatch(/<details class="spoiler" open(?:="")?><summary class="spoiler-title">Open details<\/summary>/u);
+    expect(article).not.toContain('class="ignored"');
     expect(article).toContain('<mark>important</mark>');
     expect(article).toContain('<ins>new</ins>');
     expect(article).toContain('H<sub>2</sub>O');
@@ -406,17 +420,24 @@ describe('DevBuilder content summary', () => {
     expect(article).toContain('<math xmlns="http://www.w3.org/1998/Math/MathML"');
     expect(article).toContain('class="katex-error"');
     expect(article).toContain('data-language="javascript"');
+    expect(article).toContain('data-line-start="1"');
+    expect(article).toContain('data-line-start="3"');
     expect(article).toContain('data-line-start="10"');
     expect(article).toContain('data-line-number="10"');
     expect(article).toContain('class="line highlighted"');
+    expect(article).toContain('data-language="text"');
+    expect(article).toMatch(/<pre class="astro-code[^"<]*wrap-code/u);
     expect(article).toContain(':::warning');
+    expect(article).toContain('<blockquote>\n<p>A regular blockquote stays a blockquote.</p>');
     expect(article).toContain('Keep an inline [TOC] reference visible.');
     expect(article).not.toMatch(/<p>\[TOC\]<\/p>/u);
     expect(article).toContain('Custom heading');
     expect(article).toContain('Unknown directives keep their content.');
     expect(article).not.toContain('custom-element');
+    expect(article).not.toContain('<script>alert');
+    expect(article).toContain('about:blank#blocked-');
     expect(article).not.toContain('pagefind-component-ui.js');
     expect(jsonLd(article)).toMatchObject({ '@type': 'BlogPosting', headline: 'HackMD compatibility' });
-    expect(article).toContain('<meta name="description" content="Keep an inline [TOC] reference visible.">');
+    expect(article).toContain('<meta name="description" content="Overview summary from HackMD.">');
   });
 });

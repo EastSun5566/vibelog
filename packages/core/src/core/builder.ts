@@ -17,14 +17,14 @@ import remarkGemoji from 'remark-gemoji';
 import remarkMath from 'remark-math';
 import { z } from 'zod';
 
-import { extractPostDescription } from '../description.js';
+import { resolvePostDescription } from '../description.js';
 import { remarkHackmdCompatibility } from '../markdown/hackmd.js';
 import { generateSlug, slugify } from './utils.js';
 import { logger } from './logger.js';
 import type { ContentSource } from '../types.js';
 import { loadConfig } from './config.js';
 
-const TEMPLATE_VERSION = 10;
+const TEMPLATE_VERSION = 11;
 
 interface ShikiElement {
   properties: Record<string, unknown>;
@@ -35,7 +35,7 @@ interface ShikiTransformerContext {
   addClassToHast(element: ShikiElement, className: string): ShikiElement;
 }
 
-function codeMetadata(raw = ''): { highlights: Set<number>; start: number | undefined } {
+function codeMetadata(raw = ''): { highlights: Set<number>; start: number | undefined; wrap: boolean } {
   const startMatch = /(?:^|\s)line-start=(\d+)(?:\s|$)/u.exec(raw);
   const start = startMatch?.[1] ? Number.parseInt(startMatch[1], 10) : undefined;
   const highlights = new Set<number>();
@@ -49,7 +49,11 @@ function codeMetadata(raw = ''): { highlights: Set<number>; start: number | unde
       for (let line = first; line <= last; line += 1) highlights.add(line);
     }
   }
-  return { highlights, start: Number.isSafeInteger(start) && (start ?? 0) > 0 ? start : undefined };
+  return {
+    highlights,
+    start: Number.isSafeInteger(start) && (start ?? 0) > 0 ? start : undefined,
+    wrap: /(?:^|\s)wrap-code(?:\s|$)/u.test(raw),
+  };
 }
 
 const codeMetadataTransformer = {
@@ -60,6 +64,7 @@ const codeMetadataTransformer = {
       this.addClassToHast(element, 'has-line-numbers');
       element.properties.dataLineStart = String(metadata.start);
     }
+    if (metadata.wrap) this.addClassToHast(element, 'wrap-code');
   },
   line(this: ShikiTransformerContext, element: ShikiElement, line: number) {
     const metadata = codeMetadata(this.options.meta?.__raw);
@@ -72,6 +77,7 @@ const postSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
   content: z.string(),
+  description: z.string().optional(),
   slug: z.string(),
   date: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid post date'),
   tags: z.array(z.string()).optional().default([]),
@@ -190,6 +196,7 @@ export interface DevBuilderOptions {
 export interface BuildPostSummary {
   title: string;
   slug: string;
+  description?: string;
   publishedAt: string;
   included: boolean;
   tags: BuildPostTag[];
@@ -328,6 +335,7 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
       const slug = baseSlug;
       if (usedSlugs.has(slug)) throw new Error(`Duplicate post slug after normalization: ${slug}`);
       usedSlugs.add(slug);
+      const description = resolvePostDescription(post.description, post.content, title);
       const publishedAt = new Date(post.date).toISOString();
       let updatedAt: string | undefined;
       if (post.updatedAt) {
@@ -338,6 +346,7 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
         ...post,
         title,
         slug,
+        description,
         publishedAt,
         contentHash: createHash('sha256').update(post.content, 'utf8').digest('hex'),
         tags: tagsByPost[index] ?? [],
@@ -352,7 +361,7 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
       if (!post.included) continue;
       const fileContent = matter.stringify(post.content, {
         title: post.title,
-        description: extractPostDescription(post.content, post.title),
+        description: post.description,
         date: post.publishedAt,
         slug: post.slug,
         ...(post.updatedAt ? { updatedDate: post.updatedAt } : {}),
@@ -405,9 +414,10 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
     return {
       author,
       posts: normalizedPosts
-        .map(({ title, slug, publishedAt, included, tags, updatedAt, contentHash }) => ({
+        .map(({ title, slug, description, publishedAt, included, tags, updatedAt, contentHash }) => ({
           title,
           slug,
+          description,
           publishedAt,
           included,
           tags,

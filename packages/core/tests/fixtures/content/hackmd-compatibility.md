@@ -28,6 +28,12 @@ The command returned **successfully**.
 
 :::
 
+:::spoiler {state="open" class="ignored"} Open details
+
+This starts expanded.
+
+:::
+
 :::custom[Custom heading]
 Unknown directives keep their content.
 :::
@@ -47,6 +53,8 @@ Unknown directives keep their content.
 > [!CAUTION]
 > A risky operation.
 
+> A regular blockquote stays a blockquote.
+
 Term
 : A concise definition.
 
@@ -59,6 +67,10 @@ This is ==important==, ++new++, H~2~O, x^2^, and {漢字|かんじ}.
 
 A statement with a footnote.[^compatibility]
 
+<script>alert('unsafe')</script>
+
+[Unsafe link](javascript:alert('unsafe'))
+
 [^compatibility]: Footnotes stay close to their source.
 
 $$
@@ -70,6 +82,19 @@ Malformed math stays readable: $\broken{$.
 ```javascript=101
 const answer = 42;
 :::warning
+```
+
+```javascript=
+const first = 1;
+const second = 2;
+```
+
+```javascript=+
+const third = 3;
+```
+
+```!
+A very long plaintext line should wrap instead of forcing horizontal scrolling.
 ```
 
 ```typescript=10 [10,12]

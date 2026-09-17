@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractPostDescription } from '../src/description.js';
+import { extractPostDescription, resolvePostDescription } from '../src/description.js';
 
 describe('extractPostDescription', () => {
   it('keeps readable inline text without Markdown syntax or link destinations', () => {
@@ -60,5 +60,18 @@ describe('extractPostDescription', () => {
     const truncated = extractPostDescription(long, 'Fallback');
     expect(Array.from(truncated)).toHaveLength(160);
     expect(truncated).toBe(`${'文'.repeat(158)}😀…`);
+  });
+
+  it('prefers a cleaned HackMD overview summary and falls back safely', () => {
+    expect(resolvePostDescription(
+      'An **overview** with [readable text](https://example.com/private).',
+      'The article introduction.',
+      'Fallback',
+    )).toBe('An overview with readable text.');
+    expect(resolvePostDescription('   ', 'The article introduction.', 'Fallback')).toBe('The article introduction.');
+    expect(resolvePostDescription(undefined, '# Heading only', '  Fallback   title ')).toBe('Fallback title');
+
+    const long = `${'文'.repeat(160)}extra`;
+    expect(resolvePostDescription(long, 'Article body', 'Fallback')).toBe(`${'文'.repeat(159)}…`);
   });
 });

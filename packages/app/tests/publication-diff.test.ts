@@ -90,6 +90,15 @@ describe('publication diff', () => {
     expect(diff.rebuilt).toBe(true);
   });
 
+  it('tracks article summary changes independently of Markdown content', () => {
+    const liveBlog = blog([post('one', { description: 'Old summary' })], { contentVersion: 1 });
+    const draft = blog([post('one', { description: 'New summary' })]);
+
+    const diff = calculatePublicationDiff(draft, theme(), release(liveBlog));
+
+    expect(diff.updated.map(({ slug }) => slug)).toEqual(['one']);
+  });
+
   it('marks semantic-equivalent content-version changes as a rebuilt draft', () => {
     const liveBlog = blog([post('one')], { contentVersion: 1 });
     expect(calculatePublicationDiff(blog([post('one')]), theme(), release(liveBlog))).toMatchObject({ mode: 'tracked', rebuilt: true });

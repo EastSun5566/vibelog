@@ -61,6 +61,7 @@ exports[`theme contract > renders each repository-owned preset deterministically
   padding-block-start: 1em;
 }
 .prose pre.has-line-numbers .line { display: inline-block; min-width: 100%; }
+.prose pre.wrap-code code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .prose pre.has-line-numbers .line::before {
   color: var(--theme-muted);
   content: attr(data-line-number);
@@ -155,6 +156,7 @@ h1, h2, h3 { letter-spacing: -0.045em; }
   padding-block-start: 1em;
 }
 .prose pre.has-line-numbers .line { display: inline-block; min-width: 100%; }
+.prose pre.wrap-code code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .prose pre.has-line-numbers .line::before {
   color: var(--theme-muted);
   content: attr(data-line-number);
@@ -252,6 +254,7 @@ body {
   padding-block-start: 1em;
 }
 .prose pre.has-line-numbers .line { display: inline-block; min-width: 100%; }
+.prose pre.wrap-code code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .prose pre.has-line-numbers .line::before {
   color: var(--theme-muted);
   content: attr(data-line-number);

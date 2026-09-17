@@ -5,6 +5,6 @@ export function sanitizeMarkdown(markdown: string): string {
   return markdown.replaceAll('\0', '').split('\n').map((line) => {
     if (/^\s*```/.test(line)) { fenced = !fenced; return line; }
     if (fenced) return line;
-    return line.replaceAll('<', '&lt;').replaceAll('>', '&gt;').replace(DANGEROUS_SCHEME, '](about:blank#blocked-');
+    return line.replaceAll('<', '&lt;').replace(DANGEROUS_SCHEME, '](about:blank#blocked-');
   }).join('\n');
 }

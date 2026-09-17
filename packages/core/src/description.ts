@@ -43,7 +43,7 @@ function truncateDescription(value: string): string {
     : `${codePoints.slice(0, DESCRIPTION_LIMIT - 1).join('')}…`;
 }
 
-export function extractPostDescription(markdown: string, fallbackTitle: string): string {
+function descriptionFromMarkdown(markdown: string): string | undefined {
   try {
     const tree = fromMarkdown(markdown);
     for (const node of tree.children) {
@@ -54,5 +54,16 @@ export function extractPostDescription(markdown: string, fallbackTitle: string):
   } catch {
     // A malformed source must not prevent the remaining content from syncing.
   }
-  return truncateDescription(fallbackTitle.replace(/\s+/gu, ' ').trim());
+  return undefined;
+}
+
+export function extractPostDescription(markdown: string, fallbackTitle: string): string {
+  return descriptionFromMarkdown(markdown)
+    ?? truncateDescription(fallbackTitle.replace(/\s+/gu, ' ').trim());
+}
+
+export function resolvePostDescription(preferred: string | undefined, markdown: string, fallbackTitle: string): string {
+  return (preferred?.trim() ? descriptionFromMarkdown(preferred) : undefined)
+    ?? descriptionFromMarkdown(markdown)
+    ?? truncateDescription(fallbackTitle.replace(/\s+/gu, ' ').trim());
 }

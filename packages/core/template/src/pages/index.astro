@@ -1,5 +1,5 @@
 ---
-import { getCollection, render } from "astro:content";
+import { getCollection } from "astro:content";
 
 import PostList from "../components/PostList.astro";
 import SiteLayout from "../layouts/SiteLayout.astro";
@@ -10,7 +10,6 @@ const posts = (await getCollection("blog")).sort(
   (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
 );
 const [author] = await getCollection("author");
-const { Content: AuthorBio } = await render(author);
 ---
 
 <SiteLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
@@ -18,7 +17,6 @@ const { Content: AuthorBio } = await render(author);
     <p class="eyebrow">{author.data.name}</p>
     <h1 id="site-heading">{SITE_TITLE}</h1>
     {SITE_DESCRIPTION && <p class="site-description">{SITE_DESCRIPTION}</p>}
-    <div class="author-bio"><AuthorBio /></div>
   </section>
 
   <section class="latest-posts" aria-labelledby="latest-posts-heading">

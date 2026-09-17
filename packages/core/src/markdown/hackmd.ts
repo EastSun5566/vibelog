@@ -4,6 +4,7 @@ type CompatibleNode = Root | RootContent | PhrasingContent;
 type CompatibleParent = CompatibleNode & { children: CompatibleNode[] };
 interface HastData {
   directiveLabel?: boolean | null;
+  hackmdOpen?: boolean;
   hackmdTitle?: string;
   hName?: string;
   hProperties?: Record<string, unknown>;
@@ -67,8 +68,9 @@ function transformContainer(node: Extract<RootContent, { type: 'containerDirecti
   if (name === 'spoiler') {
     const title = directiveTitle(node, 'Details');
     const data = dataFor(node);
+    const open = data.hackmdOpen === true || node.attributes?.state === 'open';
     data.hName = 'details';
-    data.hProperties = { className: ['spoiler'] };
+    data.hProperties = { className: ['spoiler'], ...(open ? { open: true } : {}) };
     node.children.unshift(titleParagraph(title, 'spoiler-title', 'summary'));
     return true;
   }
@@ -109,12 +111,27 @@ function transformAlert(node: Blockquote): void {
   node.children.unshift(titleParagraph(title, 'callout-title'));
 }
 
-function normalizeCodeLanguage(node: Code): void {
+interface TransformState {
+  nextCodeLine?: number;
+}
+
+function addCodeMeta(node: Code, value: string): void {
+  node.meta = `${node.meta ?? ''} ${value}`.trim();
+}
+
+function normalizeCodeLanguage(node: Code, state: TransformState): void {
   if (!node.lang) return;
+  if (node.lang === '!') {
+    node.lang = 'text';
+    addCodeMeta(node, 'wrap-code');
+    return;
+  }
   const match = /^([a-z][a-z0-9+#.-]*)(?:=(\d+|\+)?)$/iu.exec(node.lang);
   if (!match?.[1]) return;
   node.lang = match[1];
-  if (match[2] && match[2] !== '+') node.meta = `${node.meta ?? ''} line-start=${match[2]}`.trim();
+  const start = match[2] === '+' ? state.nextCodeLine ?? 1 : Number.parseInt(match[2] || '1', 10);
+  addCodeMeta(node, `line-start=${String(start)}`);
+  state.nextCodeLine = start + node.value.split(/\r?\n/u).length;
 }
 
 function textNode(value: string): Text {
@@ -171,27 +188,35 @@ function paragraphText(node: CompatibleNode): string | undefined {
   return node.children[0].value;
 }
 
-function spoilerNode(title: string, children: RootContent[]): RootContent {
+function spoilerNode(title: string, children: RootContent[], open: boolean): RootContent {
   return {
     type: 'containerDirective',
     name: 'spoiler',
     attributes: {},
-    data: { hackmdTitle: title },
+    data: { hackmdOpen: open, hackmdTitle: title },
     children,
   } as RootContent;
+}
+
+function parseSpaceSpoiler(value: string): { title: string; open: boolean } | null {
+  const match = /^:::spoiler[ \t]+(?:\{([^}\r\n]*)\}[ \t]+)?([^\r\n]+)$/u.exec(value);
+  if (!match?.[2]) return null;
+  const attributes = match[1] ?? '';
+  const open = /(?:^|\s)state=(?:["“”'‘’]open["“”'‘’]|open)(?:\s|$)/u.test(attributes);
+  return { title: match[2].trim(), open };
 }
 
 function normalizeSpaceSpoilers(parent: CompatibleParent): void {
   let index = 0;
   while (index < parent.children.length) {
     const opening = paragraphText(parent.children[index] as CompatibleNode);
-    const openingMatch = opening ? /^:::spoiler[ \t]+([^\r\n]+)$/u.exec(opening) : null;
-    if (openingMatch?.[1]) {
+    const openingMatch = opening ? parseSpaceSpoiler(opening) : null;
+    if (openingMatch) {
       const closingIndex = parent.children.findIndex((candidate, candidateIndex) =>
         candidateIndex > index && paragraphText(candidate)?.trim() === ':::');
       if (closingIndex > index) {
         const body = parent.children.slice(index + 1, closingIndex) as RootContent[];
-        parent.children.splice(index, closingIndex - index + 1, spoilerNode(openingMatch[1].trim(), body));
+        parent.children.splice(index, closingIndex - index + 1, spoilerNode(openingMatch.title, body, openingMatch.open));
         index += 1;
         continue;
       }
@@ -202,10 +227,12 @@ function normalizeSpaceSpoilers(parent: CompatibleParent): void {
       const first = paragraph.children[0];
       const last = paragraph.children.at(-1);
       if (first?.type === 'text' && last?.type === 'text') {
-        const compactMatch = /^:::spoiler[ \t]+([^\r\n]+)\r?\n/u.exec(first.value);
-        if (compactMatch?.[1] && /\r?\n:::$/.test(last.value)) {
+        const compactOpeningMatch = /^([^\r\n]+)\r?\n/u.exec(first.value);
+        const compactOpening = compactOpeningMatch?.[1];
+        const compactMatch = compactOpening ? parseSpaceSpoiler(compactOpening) : null;
+        if (compactMatch && /\r?\n:::$/.test(last.value)) {
           const children = [...paragraph.children];
-          const firstText = first.value.slice(compactMatch[0].length);
+          const firstText = first.value.slice(compactOpeningMatch?.[0].length ?? 0);
           const lastText = last.value.replace(/\r?\n:::$/u, '');
           if (first === last) {
             children[0] = textNode(firstText.replace(/\r?\n:::$/u, ''));
@@ -214,7 +241,7 @@ function normalizeSpaceSpoilers(parent: CompatibleParent): void {
             children[children.length - 1] = textNode(lastText);
           }
           const content = children.filter((child) => child.type !== 'text' || child.value.length > 0);
-          parent.children.splice(index, 1, spoilerNode(compactMatch[1].trim(), [{ type: 'paragraph', children: content }]));
+          parent.children.splice(index, 1, spoilerNode(compactMatch.title, [{ type: 'paragraph', children: content }], compactMatch.open));
         }
       }
     }
@@ -229,14 +256,14 @@ function isStandaloneToc(node: CompatibleNode): node is Paragraph {
     && node.children[0].value.trim().toUpperCase() === '[TOC]';
 }
 
-function transformChildren(parent: CompatibleParent, source: string): void {
+function transformChildren(parent: CompatibleParent, source: string, state: TransformState): void {
   normalizeSpaceSpoilers(parent);
   let index = 0;
   while (index < parent.children.length) {
     const node = parent.children[index];
     if (!node) break;
 
-    if (hasChildren(node)) transformChildren(node, source);
+    if (hasChildren(node)) transformChildren(node, source, state);
     if (node.type === 'text') {
       const replacement = transformInlineText(node, source);
       if (replacement.length !== 1 || replacement[0] !== node) {
@@ -245,7 +272,7 @@ function transformChildren(parent: CompatibleParent, source: string): void {
         continue;
       }
     }
-    if (node.type === 'code') normalizeCodeLanguage(node);
+    if (node.type === 'code') normalizeCodeLanguage(node, state);
     if (node.type === 'blockquote') transformAlert(node);
 
     if (isStandaloneToc(node)) {
@@ -275,6 +302,6 @@ function transformChildren(parent: CompatibleParent, source: string): void {
 
 export function remarkHackmdCompatibility() {
   return (tree: Root, file?: { value?: unknown }) => {
-    transformChildren(tree as CompatibleParent, typeof file?.value === 'string' ? file.value : '');
+    transformChildren(tree as CompatibleParent, typeof file?.value === 'string' ? file.value : '', {});
   };
 }

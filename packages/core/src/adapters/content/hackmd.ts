@@ -56,6 +56,10 @@ export function isHackMdSourceError(error: unknown): error is HackMdSourceError 
 const noteSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
+  content: z.string().nullish().transform((value) => {
+    const trimmed = value?.trim();
+    return trimmed === '' ? undefined : trimmed;
+  }),
   tags: z.array(z.string()).nullish().transform((value) => value ?? []),
   lastchangeAt: z.string().nullish().transform((value) => value ?? ''),
   publishType: z.string(),
@@ -84,6 +88,7 @@ interface PreparedNote {
   slug: string;
   date: string;
   tags: string[];
+  description?: string;
   updatedAt?: string;
 }
 
@@ -273,7 +278,15 @@ function prepareNotes(notes: z.infer<typeof noteSchema>[]): PreparedNote[] {
     if (!slug) throw new HackMdSourceError('invalid_slug', 'A HackMD article has no usable slug');
     if (slugs.has(slug)) throw new HackMdSourceError('duplicate_slug', 'Multiple HackMD articles have the same slug');
     slugs.add(slug);
-    return { id: note.id, title: note.title, slug, date: date.toISOString(), tags: note.tags, ...(updatedAt ? { updatedAt } : {}) };
+    return {
+      id: note.id,
+      title: note.title,
+      slug,
+      date: date.toISOString(),
+      tags: note.tags,
+      ...(note.content ? { description: note.content } : {}),
+      ...(updatedAt ? { updatedAt } : {}),
+    };
   });
 }
 
@@ -299,6 +312,7 @@ export class HackMdSource implements ContentSource {
         id: note.id,
         title: note.title,
         content: sanitizeMarkdown(removeFirstH1IfMatchesTitle(result.text, note.title)),
+        ...(note.description ? { description: note.description } : {}),
         slug: note.slug,
         date: note.date,
         tags: note.tags,

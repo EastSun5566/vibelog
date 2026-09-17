@@ -4,6 +4,7 @@ import { HackMdSource, HackMdSourceError } from '../src/adapters/content/hackmd.
 interface NoteSeed {
   id: string;
   title?: string;
+  content?: string | null;
   tags?: string[];
   lastchangeAt?: string;
   publishType?: string;
@@ -55,12 +56,23 @@ describe('HackMdSource', () => {
     vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => {
       const url = fetchUrl(input);
       if (url.endsWith('/overview')) return Promise.resolve(overview([
-        note('one', { title: 'Hello', tags: ['Writing'], lastchangeAt: '2026-01-03T12:00:00Z', permalink: 'hello' }),
+        note('one', { title: 'Hello', content: 'Overview **summary**.', tags: ['Writing'], lastchangeAt: '2026-01-03T12:00:00Z', permalink: 'hello' }),
         note('draft', { title: 'Draft', publishType: 'edit', publishedAt: '' }),
       ]));
       return Promise.resolve(new Response('# Hello\n<script>x</script>'));
     }));
-    await expect(new HackMdSource('writer').getPosts()).resolves.toEqual({ posts: [{ id: 'one', title: 'Hello', slug: 'hello', date: '2026-01-02T00:00:00.000Z', updatedAt: '2026-01-03T12:00:00.000Z', tags: ['Writing'], content: '&lt;script&gt;x&lt;/script&gt;' }] });
+    await expect(new HackMdSource('writer').getPosts()).resolves.toEqual({ posts: [{ id: 'one', title: 'Hello', description: 'Overview **summary**.', slug: 'hello', date: '2026-01-02T00:00:00.000Z', updatedAt: '2026-01-03T12:00:00.000Z', tags: ['Writing'], content: '&lt;script>x&lt;/script>' }] });
+  });
+
+  it('omits blank overview summaries so the builder can use article content', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => Promise.resolve(fetchUrl(input).endsWith('/overview')
+      ? overview([note('one', { content: '   ' }), note('two', { content: null })])
+      : new Response('Article introduction.'))));
+
+    const result = await new HackMdSource('writer').getPosts();
+
+    expect(result.posts).toHaveLength(2);
+    expect(result.posts.every((post) => !Object.hasOwn(post, 'description'))).toBe(true);
   });
 
   it('keeps same-day modifications, ignores earlier ones, and defaults missing tags', async () => {

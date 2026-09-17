@@ -107,6 +107,52 @@ describe('remarkHackmdCompatibility', () => {
     }
   });
 
+  it('supports open spoilers without passing through unknown attributes', () => {
+    const source = ':::spoiler {state="open" class="untrusted"} Terminal output\n\nSecret body.\n\n:::';
+    const tree = {
+      type: 'root',
+      children: [
+        { type: 'paragraph', children: [{ type: 'text', value: ':::spoiler {state="open" class="untrusted"} Terminal output' }] },
+        { type: 'paragraph', children: [{ type: 'text', value: 'Secret body.' }] },
+        { type: 'paragraph', children: [{ type: 'text', value: ':::' }] },
+      ],
+    } as Root;
+
+    remarkHackmdCompatibility()(tree, { value: source });
+
+    expect(tree.children[0]).toMatchObject({
+      type: 'containerDirective',
+      data: { hName: 'details', hProperties: { className: ['spoiler'], open: true } },
+    });
+    expect((tree.children[0] as { children: unknown[] }).children[0]).toMatchObject({
+      data: { hName: 'summary' },
+      children: [{ value: 'Terminal output' }],
+    });
+    expect(tree.children[0]).not.toHaveProperty('data.hProperties.class');
+    expect(JSON.stringify(tree.children[0])).not.toContain('untrusted');
+  });
+
+  it('normalizes HackMD line numbers, continuation, and wrapped plaintext fences', () => {
+    const tree = {
+      type: 'root',
+      children: [
+        { type: 'code', lang: 'javascript=', value: 'one\ntwo' },
+        { type: 'code', lang: 'typescript=101', value: 'three\nfour' },
+        { type: 'code', lang: 'typescript=+', value: 'five' },
+        { type: 'code', lang: '!', value: 'A long plaintext line' },
+      ],
+    } as Root;
+
+    remarkHackmdCompatibility()(tree);
+
+    expect(tree.children).toMatchObject([
+      { type: 'code', lang: 'javascript', meta: 'line-start=1' },
+      { type: 'code', lang: 'typescript', meta: 'line-start=101' },
+      { type: 'code', lang: 'typescript', meta: 'line-start=103' },
+      { type: 'code', lang: 'text', meta: 'wrap-code' },
+    ]);
+  });
+
   it('keeps escaped inline markers literal', () => {
     const source = '\\==literal==';
     const tree = {

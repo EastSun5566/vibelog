@@ -49,6 +49,7 @@ function arraysEqual(left: string[], right: string[]): boolean {
 function postChanged(draft: SyncedPostSummary, live: SyncedPostSummary): boolean {
   const contentChanged = Boolean(draft.contentHash && live.contentHash && draft.contentHash !== live.contentHash);
   return draft.title !== live.title
+    || (draft.description ?? null) !== (live.description ?? null)
     || draft.publishedAt !== live.publishedAt
     || (draft.updatedAt ?? null) !== (live.updatedAt ?? null)
     || !arraysEqual(normalizedTags(draft), normalizedTags(live))

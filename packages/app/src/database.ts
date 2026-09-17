@@ -16,7 +16,7 @@ export type OperationProgress = { kind: 'indeterminate' } | { kind: 'determinate
 export type ThemeRevisionSource = 'system' | 'ai' | 'manual';
 export type ArtifactState = 'uploading' | 'ready' | 'cleanup_pending';
 export interface SyncedPostTag { name: string; slug: string }
-export interface SyncedPostSummary { title: string; slug: string; publishedAt: string; included: boolean; tags?: SyncedPostTag[]; updatedAt?: string; contentHash?: string }
+export interface SyncedPostSummary { title: string; slug: string; description?: string; publishedAt: string; included: boolean; tags?: SyncedPostTag[]; updatedAt?: string; contentHash?: string }
 export interface BlogRecord { id: string; userId: string; username: string; hackmdUsername: string; title: string | null; description: string | null; author: string | null; language: string; state: BlogState; lastError: string | null; draftArtifactId: string | null; contentVersion: number; contentManifest: SyncedPostSummary[] | null; lastSyncedAt: string | null; createdAt: string; updatedAt: string }
 export interface ArtifactRecord { id: string; blogId: string; kind: 'draft' | 'release'; keyPrefix: string; state: ArtifactState; createdAt: string; readyAt: string | null }
 export interface ThemeRevisionRecord { id: string; blogId: string; config: ThemeConfig; prompt: string | null; description: string; source: ThemeRevisionSource; active: boolean; createdAt: string }
@@ -40,6 +40,7 @@ function ownedLease(lease: OperationLease) {
 export const MAX_PUBLISHED_RELEASES = 20;
 const syncedPostSummarySchema = z.object({
   title: z.string().min(1), slug: z.string().min(1),
+  description: z.string().optional(),
   publishedAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid published date'),
   included: z.boolean().default(true), tags: z.array(z.object({ name: z.string().min(1), slug: z.string().min(1) })).default([]),
   updatedAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid modified date').optional(),
