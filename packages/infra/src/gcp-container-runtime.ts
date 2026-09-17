@@ -53,14 +53,14 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
     const managedSecrets = Object.fromEntries(Object.entries(secretValues).map(([envName, definition]) => {
       const id = `vibelog-${args.environment}-${envName.toLowerCase().replaceAll('_', '-')}`;
       const secret = new gcp.secretmanager.Secret(`${name}-${envName}`, { project: args.project, secretId: id, replication: { auto: {} } }, { ...resourceOptions, protect: true });
-      new gcp.secretmanager.SecretVersion(`${name}-${envName}-version`, { secret: secret.id, secretData: pulumi.secret(definition.value) }, { ...resourceOptions, parent: secret });
+      const version = new gcp.secretmanager.SecretVersion(`${name}-${envName}-version`, { secret: secret.id, secretData: pulumi.secret(definition.value) }, { ...resourceOptions, parent: secret, protect: false });
       for (const kind of definition.services) {
         const account = kind === 'web' ? webAccount : workerAccount;
         new gcp.secretmanager.SecretIamMember(`${name}-${envName}-${kind}-access`, { project: args.project, secretId: secret.secretId, role: 'roles/secretmanager.secretAccessor', member: pulumi.interpolate`serviceAccount:${account.email}` }, resourceOptions);
       }
-      return [envName, { secret, services: definition.services }] as const;
+      return [envName, { secret, version, services: definition.services }] as const;
     }));
-    const secretEnv = (kind: 'web' | 'worker') => Object.entries(managedSecrets).filter(([, definition]) => definition.services.includes(kind)).map(([envName, definition]) => ({ name: envName === 'AI_API_KEY' ? args.aiApiKeyEnv : envName, valueSource: { secretKeyRef: { secret: definition.secret.secretId, version: 'latest' } } }));
+    const secretEnv = (kind: 'web' | 'worker') => Object.entries(managedSecrets).filter(([, definition]) => definition.services.includes(kind)).map(([envName, definition]) => ({ name: envName === 'AI_API_KEY' ? args.aiApiKeyEnv : envName, valueSource: { secretKeyRef: { secret: definition.secret.secretId, version: definition.version.version } } }));
     const operationEnv = [
       { name: 'NODE_ENV', value: 'production' }, { name: 'APP_ORIGIN', value: args.appOrigin },
       { name: 'OBJECT_STORE_ENDPOINT', value: args.objectStoreEndpoint }, { name: 'OBJECT_STORE_REGION', value: 'auto' },

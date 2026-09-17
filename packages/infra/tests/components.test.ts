@@ -32,6 +32,7 @@ beforeAll(async () => {
         state.digest = 'sha256:abc';
         state.ref = 'asia-east1-docker.pkg.dev/project/repository/vibelog-app:pulumi-prod@sha256:abc';
       }
+      if (args.type === 'gcp:secretmanager/secretVersion:SecretVersion') state.version = '1';
       if (args.name.endsWith('-domain')) Object.assign(state, {
         status: 'pending', dkimName: 'resend._domainkey.send.example.com', dkimType: 'TXT', dkimValue: 'dkim-value',
         spfMxName: 'send.example.com', spfMxValue: 'feedback-smtp.ap-northeast-1.amazonses.com', spfMxPriority: 10,
@@ -90,7 +91,10 @@ describe('Pulumi components', () => {
       ]);
       const secretNames = new Set(['DATABASE_URL', 'RESEND_API_KEY', 'BETTER_AUTH_SECRET', 'OBJECT_STORE_SECRET_ACCESS_KEY']);
       const [container] = template.containers; if (!container) throw new Error('Cloud Run container missing');
-      for (const env of container.envs.filter((item) => secretNames.has(item.name))) { expect(env.value).toBeUndefined(); expect(env.valueSource).toBeDefined(); }
+      for (const env of container.envs.filter((item) => secretNames.has(item.name))) {
+        expect(env.value).toBeUndefined();
+        expect(env.valueSource).toMatchObject({ secretKeyRef: { version: '1' } });
+      }
     }
     const workerTemplate = worker.inputs.template as { containers: { envs: { name: string }[] }[] };
     const webTemplate = web.inputs.template as { containers: { envs: { name: string; value?: string }[] }[] };
@@ -116,6 +120,9 @@ describe('Pulumi components', () => {
     expect(deployerIdentityBindings.every((item) => item.inputs.member === 'serviceAccount:vibelog-deployer@vibelog-test-project.iam.gserviceaccount.com')).toBe(true);
     expect(deployerIdentityBindings.filter((item) => item.inputs.role === 'roles/iam.serviceAccountAdmin')).toHaveLength(3);
     expect(deployerIdentityBindings.filter((item) => item.inputs.role === 'roles/iam.serviceAccountUser')).toHaveLength(3);
+    const runtimeSource = readFileSync(fileURLToPath(new URL('../src/gcp-container-runtime.ts', import.meta.url)), 'utf8');
+    expect(runtimeSource).toContain('parent: secret, protect: false');
+    expect(runtimeSource).toContain('version: definition.version.version');
     expect(childUrns).toHaveLength(3);
     expect(childUrns.every((urn) => urn.includes('vibelog:infra:GcpContainerRuntime$gcp:'))).toBe(true);
   });

@@ -28,15 +28,20 @@ describe('Pulumi preview safety gate', () => {
 
   it('allows only the migration command replacement bookkeeping in application mode', () => {
     const migrationUrn = 'urn:pulumi:prod::vibelog::vibelog:infra:DatabaseMigration$command:local:Command::database-migration-run';
+    const secretVersionUrn = 'urn:pulumi:prod::vibelog::vibelog:infra:GcpContainerRuntime$gcp:secretmanager/secret:Secret$gcp:secretmanager/secretVersion:SecretVersion::runtime-AI_API_KEY-version';
     const otherCommandUrn = 'urn:pulumi:prod::vibelog::command:local:Command::other-command';
     expect(findUnsafeChanges([
       event('delete-replaced', migrationUrn),
+      event('delete-replaced', secretVersionUrn),
       event('delete-replaced', otherCommandUrn),
     ].join('\n'))).toEqual([
       `delete-replaced: ${otherCommandUrn}`,
     ]);
     expect(findUnsafeChanges(event('delete', migrationUrn))).toEqual([
       `delete: ${migrationUrn}`,
+    ]);
+    expect(findUnsafeChanges(event('delete', secretVersionUrn))).toEqual([
+      `delete: ${secretVersionUrn}`,
     ]);
   });
 

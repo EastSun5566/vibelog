@@ -46,6 +46,12 @@ function isApplicationMigrationReplacement(operation, urn) {
     && /::vibelog:infra:DatabaseMigration\$command:local:Command::database-migration-run$/.test(urn);
 }
 
+/** @param {string} operation @param {string} urn */
+function isRuntimeSecretVersionReplacement(operation, urn) {
+  return operation === 'delete-replaced'
+    && /::vibelog:infra:GcpContainerRuntime\$gcp:secretmanager\/secret:Secret\$gcp:secretmanager\/secretVersion:SecretVersion::runtime-[^:]+-version$/.test(urn);
+}
+
 /** @param {string} lines @param {'application' | 'foundation'} [profile] @returns {string[]} */
 export function findUnsafeChanges(lines, profile = 'application') {
   if (profile !== 'application' && profile !== 'foundation') throw new Error(`Unknown Pulumi preview profile: ${profile}`);
@@ -60,7 +66,9 @@ export function findUnsafeChanges(lines, profile = 'application') {
 
     const allowedMigrationReplacement = profile === 'application'
       && isApplicationMigrationReplacement(operation, urn);
-    if (operation.includes('delete') && !allowedMigrationReplacement) failures.push(`${operation}: ${urn}`);
+    const allowedSecretVersionReplacement = profile === 'application'
+      && isRuntimeSecretVersionReplacement(operation, urn);
+    if (operation.includes('delete') && !allowedMigrationReplacement && !allowedSecretVersionReplacement) failures.push(`${operation}: ${urn}`);
     if (operation.includes('replace') && statefulType.test(urn)) failures.push(`${operation} of stateful resource: ${urn}`);
     if (publicR2Type.test(urn)) failures.push(`public R2 exposure: ${urn}`);
     if (profile === 'foundation' && !isFoundationResource(urn)) failures.push(`resource outside foundation profile: ${urn}`);
