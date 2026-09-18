@@ -536,6 +536,7 @@ export function editorPage(input: EditorPageInput) {
               <p class="publish-destination">{published
                 ? <>Live at <a href={input.publicUrl} target="_blank" rel="noreferrer">{input.publicUrl}</a></>
                 : <>Will publish at {input.publicUrl}</>}</p>
+              {published ? <a class="btn export-link" data-variant="outline" data-size="compact" href="/api/export">Download site ZIP</a> : null}
               <OperationOutput operation={input.operation?.type === 'publish' ? input.operation : undefined}/>
             </form>
           </section>

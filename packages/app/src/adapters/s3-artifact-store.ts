@@ -45,6 +45,22 @@ export class S3ArtifactStore implements ArtifactStore {
       token = page.NextContinuationToken;
     } while (token);
   }
+  async listObjects(artifactId: string): Promise<string[]> {
+    const prefix = key(artifactId);
+    const paths: string[] = [];
+    let token: string | undefined;
+    do {
+      const page = await this.client.send(new ListObjectsV2Command({ Bucket: this.config.bucket, Prefix: prefix, ContinuationToken: token }));
+      for (const object of page.Contents ?? []) {
+        if (!object.Key || object.Key === prefix) continue;
+        const path = object.Key.slice(prefix.length);
+        if (cleanPath(path) !== path) throw new Error('Unsafe stored object path');
+        paths.push(path);
+      }
+      token = page.NextContinuationToken;
+    } while (token);
+    return paths.sort((left, right) => left.localeCompare(right));
+  }
   async readObject(artifactId: string, path: string): Promise<StoredObject | null> {
     try {
       const response = await this.client.send(new GetObjectCommand({ Bucket: this.config.bucket, Key: key(artifactId, path) }));

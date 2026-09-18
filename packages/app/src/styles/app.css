@@ -253,6 +253,7 @@ time { font-variant-numeric: tabular-nums; }
 .publication-change-group ul { display: grid; gap: 0.25rem; margin: 0; padding-inline-start: 1.35rem; color: var(--muted-foreground); font-size: 0.84rem; }
 .publish-destination { margin: -0.5rem 0 0; color: var(--muted-foreground); font: 600 0.75rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
 .publish-destination a { color: var(--primary); }
+.export-link { justify-self: start; }
 
 .badge[data-variant="pending"] { border: 1px solid #d7a322; background: #fff8d8; color: #684a00; }
 .badge[data-variant="live"], .badge[data-variant="added"] { border: 1px solid #79b68b; background: #e8f7ec; color: #185c2d; }

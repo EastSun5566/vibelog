@@ -38,12 +38,14 @@
     "hono": "^4.12.34",
     "pg": "8.23.0",
     "resend": "6.25.0",
+    "zip-stream": "7.0.5",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/cli": "4.3.3",
     "@types/node": "^24.0.0",
     "@types/pg": "8.15.5",
+    "@types/zip-stream": "7.0.0",
     "basecoat-css": "1.0.2",
     "drizzle-kit": "0.31.10",
     "esbuild": "0.28.1",

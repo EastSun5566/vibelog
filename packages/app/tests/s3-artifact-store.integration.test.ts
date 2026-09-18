@@ -19,7 +19,9 @@ describe.skipIf(!endpoint)('S3-compatible ArtifactStore', () => {
     const uploaded = await store.readObject(sourceId, 'index.html'); expect(uploaded).not.toBeNull();
     if (!uploaded) throw new Error('Uploaded object missing');
     expect(await new Response(uploaded.body).text()).toBe('<h1>Hello</h1>');
+    await expect(store.listObjects(sourceId)).resolves.toEqual(['index.html']);
     await store.copyArtifact(sourceId, copyId); expect(await store.readObject(copyId, 'index.html')).not.toBeNull();
+    await expect(store.listObjects(copyId)).resolves.toEqual(['index.html']);
     await store.deleteArtifact(copyId); expect(await store.readObject(copyId, 'index.html')).toBeNull();
   });
 });

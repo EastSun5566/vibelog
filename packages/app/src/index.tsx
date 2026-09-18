@@ -5,6 +5,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { renderThemeCss } from '@vibelog/core';
+import { createArtifactZip } from './artifact-export.js';
 import { findArtifactObject } from './artifact-serving.js';
 import { createAuth, readSession, type AppVariables } from './auth.js';
 import { blogIdentitySchema, blogLanguageSchema } from './blog-sync.js';
@@ -195,6 +196,21 @@ export function createApp(options: CreateAppOptions) {
   app.post('/actions/theme/:id/activate', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); const id = uuidInput.parse(c.req.param('id')); await database.activateTheme(id, blog.id); return c.redirect(editorUrlWithPreviewPath(safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin)), 303); });
   app.post('/actions/publish', async (c) => { const body = await mutationBody(c); return enqueue(c, 'publish', { previewToken: readPreviewToken(body), previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
   app.post('/actions/releases/:id/activate', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); const release = await database.getRelease(uuidInput.parse(c.req.param('id')), blog.id); if (!release || !(await database.getArtifact(release.artifactId))?.readyAt) throw new AppError('release_unavailable', 'This release artifact is unavailable.', 409); await database.activateExistingRelease(release.id, blog.id); return c.redirect(editorUrlWithPreviewPath(safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin)), 303); });
+  app.get('/api/export', async (c) => {
+    const blog = await ownedBlog(c);
+    const release = await database.getActiveRelease(blog.id);
+    if (!release) throw new AppError('export_unavailable', 'Publish a release before exporting.', 409);
+    try {
+      const body = await createArtifactZip(options.artifactStore, release.artifactId);
+      c.header('Content-Type', 'application/zip');
+      c.header('Content-Disposition', `attachment; filename="${blog.username}-vibelog.zip"`);
+      c.header('Cache-Control', 'private, no-store');
+      return c.body(body);
+    } catch (error) {
+      console.error(`[export:${c.get('requestId')}] archive setup failed`, error);
+      throw new AppError('export_failed', 'The live site could not be exported. Try again.', 502);
+    }
+  });
   async function runDeletion(c: AppContext, kind: 'account' | 'blog') {
     const body = await mutationBody(c);
     const session = c.get('session');

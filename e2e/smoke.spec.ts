@@ -165,6 +165,7 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   const publishDestination = page.locator('#publish .publish-destination');
   await expect(publishDestination).toHaveText(`Will publish at ${publicSiteUrl}`);
   await expect(publishDestination.getByRole('link')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Download site ZIP' })).toHaveCount(0);
   const iframe = page.locator('iframe[data-preview-url]');
   const previewUrl = new URL(await iframe.getAttribute('src') ?? '');
   expect(previewUrl.hostname).toBe(`preview.${appUrl.hostname}`);
@@ -304,6 +305,22 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(inlineLiveLink).toHaveAttribute('href', publicSiteUrl);
   await expect(inlineLiveLink).toHaveAttribute('target', '_blank');
   await expect(inlineLiveLink).toHaveAttribute('rel', 'noreferrer');
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('link', { name: 'Download site ZIP' }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('alice-vibelog.zip');
+  const downloadStream = await download.createReadStream();
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of downloadStream) {
+    if (!(chunk instanceof Uint8Array)) throw new Error('ZIP download returned a non-binary chunk');
+    chunks.push(chunk);
+  }
+  const exportedZip = Buffer.concat(chunks);
+  expect([...exportedZip.subarray(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04]);
+  for (const path of ['index.html', 'theme.css', 'blog/hello-vibelog/index.html', 'llms.txt', 'pagefind/pagefind-component-ui.js']) {
+    expect(exportedZip.includes(Buffer.from(path))).toBe(true);
+  }
+  await expectNoPageReload(page);
 
   await openDisclosure(page, 'fine-tune');
   await page.getByLabel('Notebook').check();

@@ -110,7 +110,7 @@ describe.skipIf(!url)('operation crash recovery', () => {
   }
   function executor() {
     const config = loadWorkerConfig({ DATABASE_URL: url, OBJECT_STORE_ENDPOINT: 'http://unused', OBJECT_STORE_BUCKET: 'unused', OBJECT_STORE_ACCESS_KEY_ID: 'unused', OBJECT_STORE_SECRET_ACCESS_KEY: 'unused' });
-    const artifacts = { uploadDirectory: () => Promise.resolve(), copyArtifact: () => Promise.resolve(), readObject: () => Promise.resolve(null), deleteArtifact: () => Promise.resolve() };
+    const artifacts = { uploadDirectory: () => Promise.resolve(), copyArtifact: () => Promise.resolve(), listObjects: () => Promise.resolve([]), readObject: () => Promise.resolve(null), deleteArtifact: () => Promise.resolve() };
     return new AppOperationExecutor(database, artifacts, config);
   }
   it('reopens one crashed delivery and fences all writes from the previous attempt', async () => {
