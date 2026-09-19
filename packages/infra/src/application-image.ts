@@ -1,13 +1,10 @@
 import { fileURLToPath } from 'node:url';
 import * as dockerBuild from '@pulumi/docker-build';
-import * as gcp from '@pulumi/gcp';
 import * as pulumi from '@pulumi/pulumi';
 
 export interface ApplicationImageArgs {
-  project: pulumi.Input<string>;
-  region: pulumi.Input<string>;
+  repository: pulumi.Input<string>;
   environment: string;
-  repository: gcp.artifactregistry.Repository;
 }
 
 /** Builds and pushes the immutable application image consumed by both Cloud Run services. */
@@ -18,7 +15,7 @@ export class ApplicationImage extends pulumi.ComponentResource {
   constructor(name: string, args: ApplicationImageArgs, opts?: pulumi.ComponentResourceOptions) {
     super('vibelog:infra:ApplicationImage', name, {}, opts);
     const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url));
-    const tag = pulumi.interpolate`${args.region}-docker.pkg.dev/${args.project}/${args.repository.repositoryId}/vibelog-app:pulumi-${args.environment}`;
+    const tag = pulumi.interpolate`${args.repository}:pulumi-${args.environment}`;
     this.image = new dockerBuild.Image(`${name}-build`, {
       context: { location: repositoryRoot },
       dockerfile: { location: fileURLToPath(new URL('../../../packages/app/Dockerfile', import.meta.url)) },
@@ -28,7 +25,6 @@ export class ApplicationImage extends pulumi.ComponentResource {
       buildOnPreview: false,
     }, {
       parent: this,
-      dependsOn: [args.repository],
       retainOnDelete: true,
     });
     this.reference = this.image.ref;

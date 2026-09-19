@@ -65,10 +65,8 @@ const directDatabaseUrl = securePostgresUrl(foundation.database.connectionUri);
 function createApplication() {
   const edgeSharedSecret = config.requireSecret('edgeSharedSecret');
   const image = new ApplicationImage('application-image', {
-    project,
-    region,
+    repository: config.require('containerImageRepository'),
     environment,
-    repository: foundation.repository,
   });
   const migration = new DatabaseMigration('database-migration', {
     databaseUrl: directDatabaseUrl,

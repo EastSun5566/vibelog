@@ -30,7 +30,7 @@ beforeAll(async () => {
       }
       if (args.type === 'docker-build:index:Image') {
         state.digest = 'sha256:abc';
-        state.ref = 'asia-east1-docker.pkg.dev/project/repository/vibelog-app:pulumi-prod@sha256:abc';
+        state.ref = 'ghcr.io/eastsun5566/vibelog-app:pulumi-prod@sha256:abc';
       }
       if (args.type === 'gcp:secretmanager/secretVersion:SecretVersion') state.version = '1';
       if (args.name.endsWith('-domain')) Object.assign(state, {
@@ -211,12 +211,8 @@ describe('Pulumi components', () => {
   });
   it('builds and pushes one linux/amd64 application image from the repository root', async () => {
     await pulumi.runtime.runInPulumiStack(async () => {
-      const provider = new gcp.Provider('image-gcp', { project: 'vibelog-test-project', region: 'asia-east1' });
-      const repository = new gcp.artifactregistry.Repository('image-repository', {
-        project: 'vibelog-test-project', location: 'asia-east1', repositoryId: 'vibelog-prod', format: 'DOCKER',
-      }, { provider });
       const image = new ApplicationImage('test-image', {
-        project: 'vibelog-test-project', region: 'asia-east1', environment: 'prod', repository,
+        repository: 'ghcr.io/eastsun5566/vibelog-app', environment: 'prod',
       });
       expect(await resolveOutput(image.reference)).toContain('@sha256:abc');
     });
@@ -228,7 +224,7 @@ describe('Pulumi components', () => {
     });
     expect(image?.inputs.context.location).toBe(fileURLToPath(new URL('../../../', import.meta.url)));
     expect(image?.inputs.dockerfile.location).toBe(fileURLToPath(new URL('../../app/Dockerfile', import.meta.url)));
-    expect(image?.inputs.tags).toEqual(['asia-east1-docker.pkg.dev/vibelog-test-project/vibelog-prod/vibelog-app:pulumi-prod']);
+    expect(image?.inputs.tags).toEqual(['ghcr.io/eastsun5566/vibelog-app:pulumi-prod']);
   });
   it('routes both the apex and first-level hosts through the edge without owning R2', async () => {
     await pulumi.runtime.runInPulumiStack(async () => {

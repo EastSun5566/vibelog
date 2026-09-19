@@ -7,13 +7,13 @@ permissions:
   contents: read
   actions: read
   id-token: write
+  packages: write
 
 concurrency:
   group: deploy-vibelog-prod
   cancel-in-progress: false
 
 env:
-  GCP_REGION: asia-east1
   PULUMI_STACK: EastSun5566/vibelog/prod
   PULUMI_ENABLE_STREAMING_JSON_PREVIEW: "true"
   DEPLOY_SHA: ${{ github.sha }}
@@ -44,6 +44,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - uses: docker/setup-buildx-action@v4.3.0
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vibelog/core build
       - run: pnpm --filter @vibelog/app build
@@ -63,8 +64,12 @@ jobs:
         run: |
           test "$(pnpm exec pulumi config get vibelog:deploymentPhase --cwd packages/infra --stack "$PULUMI_STACK")" = application
           test -n "$GOOGLE_OAUTH_ACCESS_TOKEN"
-      - name: Authenticate Docker to Artifact Registry
-        run: printf '%s' "$GOOGLE_OAUTH_ACCESS_TOKEN" | docker login --username oauth2accesstoken --password-stdin "https://${GCP_REGION}-docker.pkg.dev"
+      - name: Authenticate Docker to GHCR
+        uses: docker/login-action@v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Preview application deployment
         run: |
           if ! pnpm exec pulumi preview --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --json > "$RUNNER_TEMP/preview.json"; then
@@ -75,6 +80,15 @@ jobs:
         run: node .github/scripts/guard-pulumi-preview.mjs "$RUNNER_TEMP/preview.json"
       - name: Update production stack
         run: pnpm exec pulumi up --cwd packages/infra --stack "$PULUMI_STACK" --non-interactive --yes
+      - name: Verify anonymous GHCR image access
+        run: |
+          deployed_image="$(pnpm exec pulumi stack output deployedImage --cwd packages/infra --stack "$PULUMI_STACK")"
+          case "$deployed_image" in
+            ghcr.io/eastsun5566/vibelog-app:pulumi-prod@sha256:*) ;;
+            *) echo "::error::Unexpected deployed image: $deployed_image"; exit 1 ;;
+          esac
+          docker logout ghcr.io
+          docker buildx imagetools inspect "$deployed_image"
       - name: Smoke test Cloud Run and apex edge routing
         run: |
           web_url="$(pnpm exec pulumi stack output webUrl --cwd packages/infra --stack "$PULUMI_STACK")"

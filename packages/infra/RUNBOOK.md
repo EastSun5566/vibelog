@@ -7,7 +7,7 @@ Use this runbook only when creating or repairing the production stack. Normal re
 - A GCP project with billing and required service APIs enabled.
 - Cloudflare, Neon, Resend, and Pulumi Cloud accounts.
 - The Pulumi `prod` stack and matching ESC environment.
-- A running Docker daemon authenticated to `<region>-docker.pkg.dev`.
+- A running Docker daemon authenticated to the configured public GHCR repository with package write access.
 - The short-lived GCP deployment identity described below.
 
 The stack creates application infrastructure, but it does not create provider accounts, the GCP project, or its billing relationship.
@@ -21,6 +21,7 @@ config:
   gcp:project: <gcp-project-id>
   vibelog:deploymentPhase: foundation
   vibelog:environment: prod
+  vibelog:containerImageRepository: ghcr.io/<owner>/<image>
   vibelog:gcpRegion: <gcp-region>
   vibelog:cloudflareAccountId: <cloudflare-account-id>
   vibelog:cloudflareZoneId: <cloudflare-zone-id>
@@ -34,7 +35,7 @@ environment:
   - <esc-project>/prod
 ```
 
-Optional application settings are `aiProvider`, `aiModel`, `aiFallbackModels`, `aiApiKeyEnv`, `googleAnalyticsMeasurementId`, and `neonProjectName`. Fallback models use the same provider and API key as the primary model. The Neon project name defaults to `vibelog-<environment>`.
+`containerImageRepository` is required only in application mode and must name a public GHCR package without a tag. Optional application settings are `aiProvider`, `aiModel`, `aiFallbackModels`, `aiApiKeyEnv`, `googleAnalyticsMeasurementId`, and `neonProjectName`. Fallback models use the same provider and API key as the primary model. The Neon project name defaults to `vibelog-<environment>`.
 
 Store these secret `vibelog:` values in ESC:
 
@@ -78,7 +79,7 @@ The deployment smoke also needs permission to create and delete tasks on the ope
 7. Grant the temporary first-update IAM role, run one `pulumi up`, verify the scoped bindings, then remove the temporary role.
 8. Verify magic-link login, support forwarding, sync, preview, publish, rollback, and a wildcard author hostname over HTTPS.
 
-The image resource builds from the checked-out source after Artifact Registry exists. Cloud Run and the migration gate consume its immutable digest even though the registry upload tag is mutable.
+The image resource builds from the checked-out source and pushes to public GHCR. Cloud Run and the migration gate consume its immutable digest even though the registry upload tag is mutable.
 
 ## Failure and recovery rules
 
