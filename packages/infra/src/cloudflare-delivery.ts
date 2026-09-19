@@ -22,6 +22,7 @@ export class CloudflareDelivery extends pulumi.ComponentResource {
       accountId: args.accountId, scriptName: `vibelog-${pulumi.getStack()}-edge`, compatibilityDate: '2026-08-29',
       content, mainModule: 'index.js', bindings: [
         { name: 'ORIGIN_URL', type: 'plain_text', text: args.originUrl },
+        { name: 'ROOT_DOMAIN', type: 'plain_text', text: args.rootDomain },
         { name: 'EDGE_SHARED_SECRET', type: 'secret_text', text: pulumi.secret(args.edgeSharedSecret) },
       ],
     }, resourceOptions);

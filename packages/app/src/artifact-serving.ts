@@ -25,6 +25,11 @@ export function safeArtifactPath(requestPath: string): string {
 
 export async function findArtifactObject(store: ArtifactStore, artifactId: string, requestPath: string): Promise<ResolvedArtifactObject | null> {
   const path = safeArtifactPath(requestPath);
+  if (requestPath.endsWith('/') && path !== 'index.html') {
+    const indexPath = `${path}/index.html`;
+    const index = await store.readObject(artifactId, indexPath);
+    return index ? { path: indexPath, object: index } : null;
+  }
   const direct = await store.readObject(artifactId, path);
   if (direct) return { path, object: direct };
   const indexPath = `${path}/index.html`;

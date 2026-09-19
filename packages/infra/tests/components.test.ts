@@ -247,6 +247,8 @@ describe('Pulumi components', () => {
     if (!script) throw new Error('Cloudflare Worker missing');
     expect(registrations.some((item) => item.type.includes('r2Bucket:R2Bucket'))).toBe(false);
     expect(script.inputs.compatibilityDate).toBe('2026-08-29');
+    const bindings = (record(script.inputs.bindings).value ?? script.inputs.bindings) as unknown[];
+    expect(bindings.map(record)).toContainEqual({ name: 'ROOT_DOMAIN', type: 'plain_text', text: 'example.com' });
     const routes = registrations.filter((item) => item.type.includes('workersRoute:WorkersRoute')).map((item) => item.inputs.pattern);
     expect(routes.sort()).toEqual(['*.example.com/*', 'example.com/*']);
     const dns = registrations.filter((item) => item.type.includes('dnsRecord:DnsRecord'));

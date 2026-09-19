@@ -46,9 +46,11 @@ describe('artifact serving paths', () => {
   });
 
   it('resolves both canonical trailing-slash and slashless directory URLs to index.html', async () => {
-    const { store } = storeWith({ 'blog/web-interface-guidelines/index.html': '<h1>Post</h1>' });
+    const { store, readObject } = storeWith({ 'blog/web-interface-guidelines/index.html': '<h1>Post</h1>' });
     await expect(findArtifactObject(store, 'release', '/blog/web-interface-guidelines/')).resolves.toMatchObject({ path: 'blog/web-interface-guidelines/index.html' });
+    expect(readObject).toHaveBeenCalledTimes(1);
     await expect(findArtifactObject(store, 'release', '/blog/web-interface-guidelines')).resolves.toMatchObject({ path: 'blog/web-interface-guidelines/index.html' });
+    expect(readObject).toHaveBeenCalledTimes(3);
   });
 
   it('prefers an exact object before directory index fallback', async () => {
