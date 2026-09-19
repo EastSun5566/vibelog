@@ -115,6 +115,18 @@ describe('Pulumi components', () => {
     const queueIamMembers = registrations.filter((item) => item.type.includes('cloudtasks/queueIamMember:QueueIamMember'));
     expect(queueIamMembers).toHaveLength(2);
     expect(queueIamMembers.every((item) => item.inputs.project === 'vibelog-test-project' && item.inputs.location === 'asia-east1' && item.inputs.name === 'vibelog-operations-prod' && item.inputs.role === 'roles/cloudtasks.enqueuer')).toBe(true);
+    const schedulers = registrations.filter((item) => item.type.includes('cloudscheduler/job:Job'));
+    expect(schedulers).toHaveLength(2);
+    const outbox = schedulers.find((item) => item.name.endsWith('-outbox'));
+    const maintenance = schedulers.find((item) => item.name.endsWith('-maintenance'));
+    expect(outbox?.inputs).toMatchObject({
+      schedule: '17 * * * *', timeZone: 'Etc/UTC',
+      httpTarget: { httpMethod: 'POST', uri: 'https://test-runtime-worker.run.test/tasks/outbox', oidcToken: { audience: 'https://test-runtime-worker.run.test' } },
+    });
+    expect(maintenance?.inputs).toMatchObject({
+      schedule: '18 3 * * *', timeZone: 'Etc/UTC',
+      httpTarget: { httpMethod: 'POST', uri: 'https://test-runtime-worker.run.test/tasks/maintenance', oidcToken: { audience: 'https://test-runtime-worker.run.test' } },
+    });
     const deployerIdentityBindings = registrations.filter((item) => item.type.includes('serviceaccount/iAMMember:IAMMember') && item.name.includes('-deployer-'));
     expect(deployerIdentityBindings).toHaveLength(6);
     expect(deployerIdentityBindings.every((item) => item.inputs.member === 'serviceAccount:vibelog-deployer@vibelog-test-project.iam.gserviceaccount.com')).toBe(true);
