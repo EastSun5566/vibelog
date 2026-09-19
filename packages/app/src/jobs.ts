@@ -121,7 +121,14 @@ export class AppOperationExecutor implements OperationExecutor {
     finally { await rm(overlay, { recursive: true, force: true }); }
   }
   async cleanupArtifact(id: string): Promise<void> { await this.artifacts.deleteArtifact(id); await this.database.deleteArtifactRecord(id); }
-  async cleanupPending(): Promise<number> { await this.database.prunePublishedReleases(); const pending = await this.database.listCleanupArtifacts(); for (const item of pending) await this.cleanupArtifact(item.id); return pending.length; }
+  async cleanupPending(): Promise<number> {
+    const releases = await this.database.prunePublishedReleases();
+    const pending = await this.database.listCleanupArtifacts();
+    for (const item of pending) await this.cleanupArtifact(item.id);
+    const transient = await this.database.pruneTransientData();
+    console.info(JSON.stringify({ event: 'maintenance_cleanup', releases: releases.length, artifacts: pending.length, ...transient }));
+    return pending.length;
+  }
 }
 export class OutboxDispatcher implements OperationDispatcher {
   constructor(private readonly database: AppDatabase, private readonly queue: OperationQueue) {}

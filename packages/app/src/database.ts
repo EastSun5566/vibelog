@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import type { ThemeConfig } from '@vibelog/core';
@@ -29,6 +29,7 @@ export interface PreviewSessionRecord { tokenHash: string; userId: string; blogI
 export interface BlogDeletionPlan { blogId: string; artifacts: ArtifactRecord[] }
 export interface AiQuotaLimits { userDailyLimit: number; globalDailyLimit: number; at?: Date }
 export interface OutboxRecord { id: string; operationId: string; message: OperationMessage }
+export interface TransientCleanupResult { previewSessions: number; operations: number; aiUsage: number; rateLimits: number }
 export class AiQuotaExceededError extends Error { constructor(readonly retryAfter: number) { super('AI daily quota exceeded'); this.name = 'AiQuotaExceededError'; } }
 export class BlogAddressTakenError extends Error { constructor(readonly username: string) { super(`Blog address is already taken: ${username}`); this.name = 'BlogAddressTakenError'; } }
 
@@ -316,6 +317,19 @@ export class AppDatabase {
   }
   async listCleanupArtifacts(limit = 100): Promise<ArtifactRecord[]> { return (await this.db.select().from(schema.artifacts).where(eq(schema.artifacts.state, 'cleanup_pending')).limit(limit)).map(mapArtifact); }
   async deleteArtifactRecord(id: string): Promise<void> { await this.db.delete(schema.artifacts).where(and(eq(schema.artifacts.id, id), eq(schema.artifacts.state, 'cleanup_pending'))); }
+
+  async pruneTransientData(at = new Date()): Promise<TransientCleanupResult> {
+    const operationCutoff = new Date(at.getTime() - 30 * 24 * 60 * 60_000);
+    const usageCutoff = operationCutoff.toISOString().slice(0, 10);
+    const rateLimitCutoff = Math.floor(at.getTime() / 1000) - 24 * 60 * 60;
+    return this.db.transaction(async (tx) => {
+      const previewSessions = await tx.delete(schema.previewSessions).where(lte(schema.previewSessions.expiresAt, at)).returning({ id: schema.previewSessions.tokenHash });
+      const operations = await tx.delete(schema.operations).where(and(inArray(schema.operations.status, ['succeeded', 'failed']), lt(schema.operations.updatedAt, operationCutoff))).returning({ id: schema.operations.id });
+      const aiUsage = await tx.delete(schema.aiDailyUsage).where(lt(schema.aiDailyUsage.usageDate, usageCutoff)).returning({ date: schema.aiDailyUsage.usageDate });
+      const rateLimits = await tx.delete(schema.rateLimit).where(lt(schema.rateLimit.lastRequest, rateLimitCutoff)).returning({ id: schema.rateLimit.id });
+      return { previewSessions: previewSessions.length, operations: operations.length, aiUsage: aiUsage.length, rateLimits: rateLimits.length };
+    });
+  }
 
   async beginBlogDeletion(userId: string): Promise<BlogDeletionPlan | null> {
     return this.db.transaction(async (tx) => {

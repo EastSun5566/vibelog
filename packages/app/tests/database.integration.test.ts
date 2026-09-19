@@ -10,7 +10,7 @@ import { loadWorkerConfig } from '../src/config.js';
 import { smokeWorker } from '../scripts/worker-smoke.js';
 import { CloudTasksRequestVerifier } from '../src/adapters/cloud-tasks-request-verifier.js';
 import { handleOperationTask } from '../src/adapters/cloud-tasks-transport.js';
-import { aiDailyUsage, operations, rateLimit, user } from '../src/schema.js';
+import { aiDailyUsage, operationOutbox, operations, previewSessions, rateLimit, user } from '../src/schema.js';
 
 const url = process.env.TEST_DATABASE_URL;
 describe.skipIf(!url)('PostgreSQL operation repository', () => {
@@ -92,6 +92,49 @@ describe.skipIf(!url)('PostgreSQL operation repository', () => {
       expect(await database.db.select().from(rateLimit).where(eq(rateLimit.key, rateKeys[0] ?? ''))).toHaveLength(0);
     } finally {
       await database.db.delete(user).where(eq(user.id, id));
+    }
+  });
+  it('prunes expired transient data without touching active or recent records', async () => {
+    const id = randomUUID(); const at = new Date('2000-03-01T12:00:00.000Z');
+    await database.db.insert(user).values({ id, name: 'Maintenance', email: `${id}@example.com` });
+    try {
+      const { blog, operation } = await database.createBlog(id, `maintenance-${id.slice(0, 8)}`, 'writer');
+      const recentOperationId = randomUUID(); const activeOperationId = randomUUID();
+      await database.db.update(operations).set({ status: 'failed', updatedAt: new Date('2000-01-01T00:00:00.000Z') }).where(eq(operations.id, operation.id));
+      await database.db.insert(operations).values([
+        { id: recentOperationId, userId: id, blogId: blog.id, type: 'sync', status: 'succeeded', payload: {}, updatedAt: new Date('2000-02-29T00:00:00.000Z') },
+        { id: activeOperationId, userId: id, blogId: blog.id, type: 'sync', status: 'queued', payload: {}, updatedAt: new Date('2000-01-01T00:00:00.000Z') },
+      ]);
+      await database.db.insert(operationOutbox).values([
+        { id: randomUUID(), operationId: recentOperationId, payload: {}, dispatchedAt: at },
+        { id: randomUUID(), operationId: activeOperationId, payload: {} },
+      ]);
+      await database.db.insert(previewSessions).values([
+        { tokenHash: `expired-${id}`, userId: id, blogId: blog.id, expiresAt: new Date('2000-03-01T11:59:59.000Z') },
+        { tokenHash: `current-${id}`, userId: id, blogId: blog.id, expiresAt: at },
+        { tokenHash: `future-${id}`, userId: id, blogId: blog.id, expiresAt: new Date('2000-03-01T12:00:01.000Z') },
+      ]);
+      await database.db.insert(aiDailyUsage).values([
+        { usageDate: '2000-01-30', scope: 'user', subject: id, count: 1 },
+        { usageDate: '2000-01-31', scope: 'global', subject: id, count: 1 },
+      ]);
+      await database.db.insert(rateLimit).values([
+        { id: randomUUID(), key: `old-${id}`, count: 1, lastRequest: Math.floor(at.getTime() / 1000) - 86_401 },
+        { id: randomUUID(), key: `current-${id}`, count: 1, lastRequest: Math.floor(at.getTime() / 1000) - 86_400 },
+      ]);
+
+      expect(await database.pruneTransientData(at)).toEqual({ previewSessions: 2, operations: 1, aiUsage: 1, rateLimits: 1 });
+      expect(await database.getOperation(operation.id)).toBeNull();
+      expect(await database.getOperation(recentOperationId)).not.toBeNull();
+      expect(await database.getOperation(activeOperationId)).not.toBeNull();
+      expect(await database.db.select().from(operationOutbox).where(eq(operationOutbox.operationId, operation.id))).toHaveLength(0);
+      expect(await database.db.select().from(previewSessions).where(eq(previewSessions.blogId, blog.id))).toHaveLength(1);
+      expect(await database.db.select().from(aiDailyUsage).where(eq(aiDailyUsage.subject, id))).toHaveLength(1);
+      expect(await database.db.select().from(rateLimit).where(eq(rateLimit.key, `current-${id}`))).toHaveLength(1);
+    } finally {
+      await database.db.delete(user).where(eq(user.id, id));
+      await database.db.delete(rateLimit).where(eq(rateLimit.key, `old-${id}`));
+      await database.db.delete(rateLimit).where(eq(rateLimit.key, `current-${id}`));
     }
   });
 });
