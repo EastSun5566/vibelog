@@ -7,8 +7,6 @@ function event(op, urn, inputs = {}) {
 }
 
 describe('Pulumi preview safety gate', () => {
-  const artifactRegistryUrn = 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$gcp:artifactregistry/repository:Repository::foundation-images';
-
   it('allows the public web service and private worker', () => {
     const preview = [
       event('update', 'urn::gcp:cloudrunv2/service:Service::web', { name: 'vibelog-web-dev', ingress: 'INGRESS_TRAFFIC_ALL' }),
@@ -44,20 +42,6 @@ describe('Pulumi preview safety gate', () => {
     ]);
     expect(findUnsafeChanges(event('delete', secretVersionUrn))).toEqual([
       `delete: ${secretVersionUrn}`,
-    ]);
-  });
-
-  it('allows only the exact one-time Artifact Registry deletion when explicitly enabled', () => {
-    const otherRepositoryUrn = 'urn:pulumi:prod::vibelog::gcp:artifactregistry/repository:Repository::other-images';
-    expect(findUnsafeChanges(event('delete', artifactRegistryUrn))).toEqual([
-      `delete: ${artifactRegistryUrn}`,
-    ]);
-    expect(findUnsafeChanges(event('delete', artifactRegistryUrn), 'application', true)).toEqual([]);
-    expect(findUnsafeChanges(event('replace', artifactRegistryUrn), 'application', true)).toEqual([
-      `replace of stateful resource: ${artifactRegistryUrn}`,
-    ]);
-    expect(findUnsafeChanges(event('delete', otherRepositoryUrn), 'application', true)).toEqual([
-      `delete: ${otherRepositoryUrn}`,
     ]);
   });
 
