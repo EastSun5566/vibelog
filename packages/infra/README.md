@@ -4,7 +4,7 @@ This Pulumi TypeScript package owns the production stack. Local development uses
 
 ## What the stack owns
 
-- One immutable application image published to a configured container registry.
+- One immutable application image published to a configured public GHCR repository.
 - Public web and private worker Cloud Run services.
 - Cloud Tasks, Cloud Scheduler, service accounts, IAM, and Secret Manager.
 - A private Cloudflare R2 bucket, edge Worker, DNS, and hostname routes.
@@ -15,7 +15,7 @@ The stateful foundation resources use Pulumi protection. The stack does not crea
 
 ## Deployment phases
 
-- `foundation` creates storage, database, image registry, and email foundations without reading application secrets.
+- `foundation` creates storage, database, and email foundations without reading application secrets or GCP runtime configuration.
 - `application` retains the foundation, builds and pushes the image to public GHCR, runs migrations, and creates the runtime and edge delivery.
 
 A new production environment can be created with one application-phase `pulumi up` after the provider accounts, APIs, credentials, and Docker authentication are ready. See [RUNBOOK.md](RUNBOOK.md) for that one-time setup.

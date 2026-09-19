@@ -10,36 +10,27 @@ import { GcpContainerRuntime } from './gcp-container-runtime.js';
 import { ProductionFoundation } from './production-foundation.js';
 
 const config = new pulumi.Config('vibelog');
-const gcpConfig = new pulumi.Config('gcp');
 const phase = config.require('deploymentPhase');
 if (phase !== 'foundation' && phase !== 'application') throw new Error('vibelog:deploymentPhase must be foundation or application');
 
 const environment = config.require('environment');
-const project = gcpConfig.require('project');
-const region = config.require('gcpRegion');
 const accountId = config.require('cloudflareAccountId');
 const zoneId = config.require('cloudflareZoneId');
 const rootDomain = config.require('rootDomain');
 const bucketName = config.get('r2BucketName') ?? `vibelog-${environment}-artifacts`;
-const deployerServiceAccountEmail = `vibelog-deployer@${project}.iam.gserviceaccount.com`;
-const gcpProvider = new gcp.Provider('gcp', { project });
 const cloudflareR2Provider = new cloudflare.Provider('cloudflare-r2', { apiToken: config.requireSecret('cloudflareR2ApiToken') });
 const cloudflareDeliveryProvider = new cloudflare.Provider('cloudflare-delivery', { apiToken: config.requireSecret('cloudflareDeliveryApiToken') });
 const neonProvider = new neon.Provider('neon', { apiKey: config.requireSecret('neonApiKey') });
 const foundation = new ProductionFoundation('foundation', {
-  project,
-  region,
-  environment,
   cloudflareAccountId: accountId,
   r2BucketName: bucketName,
   r2Location: config.get('r2Location') ?? 'apac',
   neonOrgId: config.require('neonOrgId'),
   neonRegionId: config.require('neonRegionId'),
   neonProjectName: config.get('neonProjectName') ?? `vibelog-${environment}`,
-  gcpProvider,
   cloudflareProvider: cloudflareR2Provider,
   neonProvider,
-}, { providers: [gcpProvider, cloudflareR2Provider, neonProvider] });
+}, { providers: [cloudflareR2Provider, neonProvider] });
 const forwardingDestination = config.requireSecret('supportForwardingDestination');
 const email = new EmailFoundation('email', {
   accountId,
@@ -63,6 +54,11 @@ const databaseUrl = securePostgresUrl(foundation.database.connectionUriPooler);
 const directDatabaseUrl = securePostgresUrl(foundation.database.connectionUri);
 
 function createApplication() {
+  const gcpConfig = new pulumi.Config('gcp');
+  const project = gcpConfig.require('project');
+  const region = config.require('gcpRegion');
+  const deployerServiceAccountEmail = `vibelog-deployer@${project}.iam.gserviceaccount.com`;
+  const gcpProvider = new gcp.Provider('gcp', { project });
   const edgeSharedSecret = config.requireSecret('edgeSharedSecret');
   const image = new ApplicationImage('application-image', {
     repository: config.require('containerImageRepository'),
@@ -119,7 +115,6 @@ function createApplication() {
 const application = phase === 'application' ? createApplication() : undefined;
 
 export const deploymentPhase = phase;
-export const artifactRepository = foundation.repository.repositoryId;
 export const r2Bucket = foundation.bucket.name;
 export const databaseProjectId = foundation.database.id;
 export const databaseMigrationUrl = directDatabaseUrl;

@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs';
 const statefulType = /(r2Bucket:R2Bucket|artifactregistry\/repository:Repository|secretmanager\/secret:Secret|neon:index\/project:Project|dynamic\/resend:Domain)(?:::|$)/i;
 const publicR2Type = /r2(Custom|Managed)Domain/i;
 const foundationRootType = /::(?:pulumi:pulumi:Stack|pulumi:providers:(?:gcp|cloudflare|neon))::/i;
-const productionFoundationType = /::vibelog:infra:ProductionFoundation(?:\$(?:gcp:artifactregistry\/repository:Repository|cloudflare:index\/r2Bucket:R2Bucket|neon:index\/project:Project))?::/i;
+const productionFoundationType = /::vibelog:infra:ProductionFoundation(?:\$(?:cloudflare:index\/r2Bucket:R2Bucket|neon:index\/project:Project))?::/i;
 const emailFoundationType = /::vibelog:infra:EmailFoundation(?:\$(?:cloudflare:index\/(?:dnsRecord:DnsRecord|emailRoutingAddress:EmailRoutingAddress|emailRoutingDns:EmailRoutingDns)|pulumi-nodejs:dynamic\/resend:(?:Domain|DomainVerification|ApiKey)))?::/i;
+const artifactRegistryRepositoryUrn = 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$gcp:artifactregistry/repository:Repository::foundation-images';
 
 /** @param {unknown} value @returns {Record<string, unknown>} */
 function record(value) { return typeof value === 'object' && value !== null ? value : {}; }
@@ -52,8 +53,8 @@ function isRuntimeSecretVersionReplacement(operation, urn) {
     && /::vibelog:infra:GcpContainerRuntime\$gcp:secretmanager\/secret:Secret\$gcp:secretmanager\/secretVersion:SecretVersion::runtime-[^:]+-version$/.test(urn);
 }
 
-/** @param {string} lines @param {'application' | 'foundation'} [profile] @returns {string[]} */
-export function findUnsafeChanges(lines, profile = 'application') {
+/** @param {string} lines @param {'application' | 'foundation'} [profile] @param {boolean} [allowArtifactRegistryRemoval] @returns {string[]} */
+export function findUnsafeChanges(lines, profile = 'application', allowArtifactRegistryRemoval = false) {
   if (profile !== 'application' && profile !== 'foundation') throw new Error(`Unknown Pulumi preview profile: ${profile}`);
   /** @type {string[]} */
   const failures = [];
@@ -68,7 +69,11 @@ export function findUnsafeChanges(lines, profile = 'application') {
       && isApplicationMigrationReplacement(operation, urn);
     const allowedSecretVersionReplacement = profile === 'application'
       && isRuntimeSecretVersionReplacement(operation, urn);
-    if (operation.includes('delete') && !allowedMigrationReplacement && !allowedSecretVersionReplacement) failures.push(`${operation}: ${urn}`);
+    const allowedArtifactRegistryRemoval = profile === 'application'
+      && allowArtifactRegistryRemoval
+      && operation === 'delete'
+      && urn === artifactRegistryRepositoryUrn;
+    if (operation.includes('delete') && !allowedMigrationReplacement && !allowedSecretVersionReplacement && !allowedArtifactRegistryRemoval) failures.push(`${operation}: ${urn}`);
     if (operation.includes('replace') && statefulType.test(urn)) failures.push(`${operation} of stateful resource: ${urn}`);
     if (publicR2Type.test(urn)) failures.push(`public R2 exposure: ${urn}`);
     if (profile === 'foundation' && !isFoundationResource(urn)) failures.push(`resource outside foundation profile: ${urn}`);
@@ -87,7 +92,8 @@ export function findUnsafeChanges(lines, profile = 'application') {
 const previewPath = process.argv[2];
 if (previewPath) {
   const profile = process.argv[3] ?? 'application';
-  const failures = findUnsafeChanges(readFileSync(previewPath, 'utf8'), profile);
+  const allowArtifactRegistryRemoval = process.argv[4] === 'true';
+  const failures = findUnsafeChanges(readFileSync(previewPath, 'utf8'), profile, allowArtifactRegistryRemoval);
   if (failures.length) {
     console.error(`Unsafe Pulumi preview:\n${failures.map((failure) => `- ${failure}`).join('\n')}`);
     process.exitCode = 1;

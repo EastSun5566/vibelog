@@ -162,32 +162,30 @@ describe('Pulumi components', () => {
     expect(routingDns?.inputs.zoneId).toBe('zone');
     expect(routingDns?.inputs).not.toHaveProperty('name');
   }, 15_000);
-  it('creates only the protected repository, private R2 bucket, and Neon database in the foundation', async () => {
+  it('creates only the protected private R2 bucket and Neon database in the foundation', async () => {
     const childUrns: string[] = [];
     await pulumi.runtime.runInPulumiStack(async () => {
-      const gcpProvider = new gcp.Provider('foundation-gcp', { project: 'vibelog-test-project', region: 'asia-east1' });
       const cloudflareProvider = new cloudflare.Provider('foundation-cloudflare', { apiToken: pulumi.secret('token') });
       const neonProvider = new neon.Provider('foundation-neon', { apiKey: pulumi.secret('token') });
       const foundation = new ProductionFoundation('test-foundation', {
-        project: 'vibelog-test-project', region: 'asia-east1', environment: 'prod', cloudflareAccountId: 'account',
+        cloudflareAccountId: 'account',
         r2BucketName: 'vibelog-prod-artifacts', r2Location: 'apac', neonOrgId: 'org-test', neonRegionId: 'aws-ap-southeast-1',
-        neonProjectName: 'vibelog-prod', gcpProvider, cloudflareProvider, neonProvider,
-      }, { providers: [gcpProvider, cloudflareProvider, neonProvider] });
-      childUrns.push(await resolveOutput(foundation.repository.urn), await resolveOutput(foundation.bucket.urn), await resolveOutput(foundation.database.urn));
+        neonProjectName: 'vibelog-prod', cloudflareProvider, neonProvider,
+      }, { providers: [cloudflareProvider, neonProvider] });
+      childUrns.push(await resolveOutput(foundation.bucket.urn), await resolveOutput(foundation.database.urn));
     });
-    const repository = registrations.find((item) => item.type.includes('artifactregistry/repository:Repository'));
     const bucket = registrations.find((item) => item.type.includes('r2Bucket:R2Bucket'));
     const database = registrations.find((item) => item.type === 'neon:index/project:Project');
-    expect(repository?.inputs).toMatchObject({ project: 'vibelog-test-project', location: 'asia-east1', repositoryId: 'vibelog-prod', format: 'DOCKER' });
+    expect(registrations.some((item) => item.type.includes('artifactregistry/repository:Repository'))).toBe(false);
     expect(bucket?.inputs).toMatchObject({ accountId: 'account', name: 'vibelog-prod-artifacts', location: 'apac', storageClass: 'Standard' });
     expect(database?.inputs).toMatchObject({
       name: 'vibelog-prod', orgId: 'org-test', regionId: 'aws-ap-southeast-1', pgVersion: 17,
       branch: { name: 'main', databaseName: 'vibelog', roleName: 'vibelog_owner' },
       defaultEndpointSettings: { autoscalingLimitMinCu: 0.25, autoscalingLimitMaxCu: 0.25, suspendTimeoutSeconds: 0 },
     });
-    expect(childUrns).toHaveLength(3);
+    expect(childUrns).toHaveLength(2);
     expect(childUrns.every((urn) => urn.includes('vibelog:infra:ProductionFoundation$'))).toBe(true);
-    expect(readFileSync(fileURLToPath(new URL('../src/production-foundation.ts', import.meta.url)), 'utf8').match(/protect: true/g)).toHaveLength(3);
+    expect(readFileSync(fileURLToPath(new URL('../src/production-foundation.ts', import.meta.url)), 'utf8').match(/protect: true/g)).toHaveLength(2);
     expect(registrations.some((item) => /r2(Custom|Managed)Domain/.test(item.type))).toBe(false);
   });
   it('tracks the database migration as a secret local command keyed by image digest', async () => {

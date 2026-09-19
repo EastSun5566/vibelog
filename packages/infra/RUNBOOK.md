@@ -72,7 +72,7 @@ The deployment smoke also needs permission to create and delete tasks on the ope
 
 1. Enable the required GCP service APIs with a project owner. Do not grant Service Usage Admin to the deployer.
 2. Configure ESC workload identity and the provider credentials above.
-3. Set `deploymentPhase: foundation`, run preview, and apply the protected Artifact Registry, R2, Neon, Resend, and email-routing resources. The program can create everything from `application`, but this gate makes first-time credential and DNS failures easier to isolate.
+3. Set `deploymentPhase: foundation`, run preview, and apply the protected R2, Neon, Resend, and email-routing resources. The program can create everything from `application`, but this gate makes first-time credential and DNS failures easier to isolate.
 4. Create Object Read & Write credentials scoped to the production R2 bucket, save them in ESC, and run the S3 integration test.
 5. Approve Cloudflare's forwarding-destination email. Confirm Resend domain verification and Email Routing readiness.
 6. Add the application secrets, set `deploymentPhase: application`, and review the complete preview.

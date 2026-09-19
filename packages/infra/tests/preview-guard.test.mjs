@@ -7,6 +7,8 @@ function event(op, urn, inputs = {}) {
 }
 
 describe('Pulumi preview safety gate', () => {
+  const artifactRegistryUrn = 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$gcp:artifactregistry/repository:Repository::foundation-images';
+
   it('allows the public web service and private worker', () => {
     const preview = [
       event('update', 'urn::gcp:cloudrunv2/service:Service::web', { name: 'vibelog-web-dev', ingress: 'INGRESS_TRAFFIC_ALL' }),
@@ -45,6 +47,20 @@ describe('Pulumi preview safety gate', () => {
     ]);
   });
 
+  it('allows only the exact one-time Artifact Registry deletion when explicitly enabled', () => {
+    const otherRepositoryUrn = 'urn:pulumi:prod::vibelog::gcp:artifactregistry/repository:Repository::other-images';
+    expect(findUnsafeChanges(event('delete', artifactRegistryUrn))).toEqual([
+      `delete: ${artifactRegistryUrn}`,
+    ]);
+    expect(findUnsafeChanges(event('delete', artifactRegistryUrn), 'application', true)).toEqual([]);
+    expect(findUnsafeChanges(event('replace', artifactRegistryUrn), 'application', true)).toEqual([
+      `replace of stateful resource: ${artifactRegistryUrn}`,
+    ]);
+    expect(findUnsafeChanges(event('delete', otherRepositoryUrn), 'application', true)).toEqual([
+      `delete: ${otherRepositoryUrn}`,
+    ]);
+  });
+
   it('allows only the protected foundation graph in foundation mode', () => {
     const preview = [
       event('create', 'urn:pulumi:prod::vibelog::pulumi:providers:gcp::gcp'),
@@ -52,7 +68,6 @@ describe('Pulumi preview safety gate', () => {
       event('create', 'urn:pulumi:prod::vibelog::pulumi:providers:cloudflare::cloudflare-delivery'),
       event('create', 'urn:pulumi:prod::vibelog::pulumi:providers:neon::neon'),
       event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation::foundation'),
-      event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$gcp:artifactregistry/repository:Repository::foundation-images'),
       event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$cloudflare:index/r2Bucket:R2Bucket::foundation-artifacts'),
       event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$neon:index/project:Project::foundation-database'),
       event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:EmailFoundation::email'),
