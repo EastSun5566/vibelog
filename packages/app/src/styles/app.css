@@ -40,7 +40,7 @@ p, li { text-wrap: pretty; }
 a { color: var(--primary); text-underline-offset: 0.18em; }
 a.btn:any-link { color: var(--primary-foreground); text-decoration: none; }
 a.btn:is([data-variant="outline"], [data-variant="ghost"]):any-link { color: var(--primary); }
-button, input, textarea { font: inherit; }
+button, input, textarea, select { font: inherit; }
 textarea { resize: vertical; }
 time { font-variant-numeric: tabular-nums; }
 :focus-visible { outline: 0.18rem solid var(--ring); outline-offset: 0.18rem; }
@@ -148,9 +148,9 @@ time { font-variant-numeric: tabular-nums; }
 .stack { display: grid; gap: 1rem; }
 .compact-stack { display: grid; gap: 0.6rem; }
 .field { display: grid; gap: 0.38rem; }
-.field > label, .fieldset > legend { color: var(--foreground); font-size: 0.88rem; font-weight: 680; }
+.field > label, .field > span:first-child, .fieldset > legend { color: var(--foreground); font-size: 0.88rem; font-weight: 680; }
 .field > p, .field-hint { margin: 0; color: var(--muted-foreground); font-size: 0.82rem; }
-.field > input, .field > textarea { width: 100%; min-height: 2.75rem; font-size: 1rem; }
+.field > input, .field > textarea, .field > select { width: 100%; min-height: 2.75rem; font-size: 1rem; }
 .field > textarea { min-height: 6.5rem; }
 .field > input:user-invalid, .field > textarea:user-invalid { border-color: var(--destructive); box-shadow: 0 0 0 0.18rem rgb(180 35 24 / 0.13); }
 .validation-error { display: none; color: var(--destructive); font-size: 0.82rem; }
@@ -241,6 +241,14 @@ time { font-variant-numeric: tabular-nums; }
 .revision { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding-block: 0.75rem; border-bottom: 1px solid var(--border); }
 .revision:last-child { border-bottom: 0; }
 .revision > div:first-child { min-width: 0; }
+.composition-fields { display: grid; grid-template-columns: repeat(3, minmax(6rem, 1fr)); gap: 0.55rem; margin-block-start: 0.65rem; }
+.composition-fields .field { font-size: 0.78rem; }
+.composition-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.35rem; }
+.advanced-styles { border: 1px solid var(--border); border-radius: var(--radius); }
+.style-rule-list { gap: 0; }
+.style-rule-controls { min-width: 0; margin: 0; padding: 0.85rem 0; border: 0; border-bottom: 1px solid var(--border); }
+.style-rule-controls:last-child { border-bottom: 0; }
+.style-rule-controls .composition-fields { margin-block-start: 0.45rem; }
 
 .publication-summary { display: grid; gap: 0.75rem; margin-block-end: 1rem; padding-block-end: 1rem; border-bottom: 1px solid var(--border); }
 .publication-summary :is(h3, h4, p) { margin: 0; }
@@ -310,6 +318,8 @@ time { font-variant-numeric: tabular-nums; }
   .choice-grid { grid-template-columns: 1fr; }
   .action-row, .theme-summary, .revision { align-items: flex-start; flex-direction: column; }
   .action-form, .action-form .btn, .revision form, .revision .btn { width: 100%; }
+  .composition-fields { grid-template-columns: 1fr; width: 100%; }
+  .composition-actions { display: grid; grid-template-columns: 1fr; width: 100%; }
   .editor-disclosure > summary small { display: block; float: none; margin: 0.2rem 0 0 1rem; }
   .analytics-consent { align-items: stretch; flex-direction: column; }
   .analytics-consent > footer { justify-content: flex-end; }

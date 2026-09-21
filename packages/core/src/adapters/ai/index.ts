@@ -2,11 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { Type, createModels, createProvider, validateToolCall, type Api, type Context, type Model, type Models, type MutableModels, type ProviderEnv, type ProviderStreams, type SimpleStreamOptions, type Tool } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { builtinModels, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all';
-import type { AiGenerationContext, AiProvider, ThemeConfig, ThemeProposalInput } from '../../types.js';
-import { validateThemeConfig } from '../../theme.js';
+import type { AiGenerationContext, AiProvider } from '../../types.js';
+import type { BlogDesignSpec, DesignProposalInput } from '../../design/types.js';
+import { DESIGN_CATALOG_INSTRUCTIONS } from '../../design/catalog.js';
+import { validateBlogDesignSpec } from '../../design/validate.js';
 import { logger } from '../../core/index.js';
 
-const THEME_TOOL_NAME = 'propose_theme';
+const DESIGN_TOOL_NAME = 'propose_design';
 const OLLAMA_PROVIDER = 'ollama';
 const OLLAMA_BASE_URL = 'http://localhost:11434/v1';
 const KEYLESS_OLLAMA_TRANSPORT_KEY = 'ollama-local';
@@ -15,15 +17,34 @@ const VIBELOG_USER_AGENT = 'VibeLog';
 const AI_GENERATION_TIMEOUT_MS = 120_000;
 const AI_FALLBACK_CANDIDATE_TIMEOUT_MS = 45_000;
 const enumType = <T extends string>(values: readonly T[]) => Type.Union(values.map((value) => Type.Literal(value)));
-const themeTool: Tool = {
-  name: THEME_TOOL_NAME,
-  description: 'Propose one complete VibeLog theme using only supported design tokens.',
+const homeSection = Type.Union([
+  Type.Object({ type: Type.Literal('intro'), variant: enumType(['minimal', 'centered', 'split']), showAuthor: Type.Boolean() }, { additionalProperties: false }),
+  Type.Object({ type: Type.Literal('featured-posts'), variant: enumType(['hero', 'split']), count: Type.Union([Type.Literal(1), Type.Literal(2)]) }, { additionalProperties: false }),
+  Type.Object({ type: Type.Literal('recent-posts'), variant: enumType(['list', 'cards', 'grid']), limit: Type.Union([Type.Literal(3), Type.Literal(5), Type.Literal(6), Type.Literal(9)]), columns: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3)])) }, { additionalProperties: false }),
+  Type.Object({ type: Type.Literal('topics'), variant: enumType(['list', 'cloud']), limit: Type.Union([Type.Literal(6), Type.Literal(12), Type.Literal(24)]) }, { additionalProperties: false }),
+  Type.Object({ type: Type.Literal('author'), variant: enumType(['compact', 'profile']) }, { additionalProperties: false }),
+]);
+const designTool: Tool = {
+  name: DESIGN_TOOL_NAME,
+  description: 'Propose one complete VibeLog presentation using only the supported blog design catalog.',
   parameters: Type.Object({
-    preset: enumType(['minimal', 'editorial', 'notebook']), appearance: enumType(['light', 'dark']),
-    colors: Type.Object({ background: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), surface: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), text: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), muted: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), accent: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), border: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }) }, { additionalProperties: false }),
-    bodyFont: enumType(['system-sans', 'system-serif', 'system-mono']), headingFont: enumType(['system-sans', 'system-serif', 'system-mono']),
-    scale: enumType(['compact', 'comfortable', 'large']), contentWidth: enumType(['narrow', 'medium', 'wide']), density: enumType(['compact', 'comfortable']), radius: enumType(['none', 'soft', 'round']),
-    headerStyle: enumType(['compact', 'centered']), postListStyle: enumType(['divided', 'cards', 'numbered']), codeBlockStyle: enumType(['plain', 'panel']),
+    version: Type.Literal(1),
+    theme: Type.Object({
+      motif: enumType(['minimal', 'editorial', 'notebook']), appearance: enumType(['light', 'dark']),
+      colors: Type.Object({ background: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), surface: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), text: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), muted: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), accent: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), border: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }) }, { additionalProperties: false }),
+      typography: Type.Object({ bodyFont: enumType(['system-sans', 'system-serif', 'system-mono']), headingFont: enumType(['system-sans', 'system-serif', 'system-mono']), scale: enumType(['compact', 'comfortable', 'large']) }, { additionalProperties: false }),
+      layout: Type.Object({ contentWidth: enumType(['narrow', 'medium', 'wide']), density: enumType(['compact', 'comfortable']), radius: enumType(['none', 'soft', 'round']) }, { additionalProperties: false }),
+    }, { additionalProperties: false }),
+    chrome: Type.Object({ header: Type.Object({ variant: enumType(['compact', 'centered', 'masthead']) }, { additionalProperties: false }), footer: Type.Object({ variant: enumType(['minimal', 'profile']) }, { additionalProperties: false }) }, { additionalProperties: false }),
+    pages: Type.Object({
+      home: Type.Object({ sections: Type.Array(homeSection, { minItems: 1, maxItems: 5 }) }, { additionalProperties: false }),
+      index: Type.Object({ layout: enumType(['list', 'grid', 'magazine']), itemVariant: enumType(['divided', 'cards', 'numbered']), columns: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3)])), showDescription: Type.Boolean(), showTags: Type.Boolean() }, { additionalProperties: false }),
+      article: Type.Object({ layout: enumType(['reading', 'wide', 'with-aside']), header: enumType(['simple', 'editorial']), toc: enumType(['auto-inline', 'auto-aside', 'hidden']), metadata: enumType(['compact', 'detailed']), navigation: enumType(['links', 'cards']), codeBlock: enumType(['plain', 'panel']) }, { additionalProperties: false }),
+    }, { additionalProperties: false }),
+    styles: Type.Object({ rules: Type.Array(Type.Object({
+      target: enumType(['site.header', 'home.intro', 'home.sections', 'posts.items', 'article.header', 'article.prose', 'article.toc', 'site.footer']),
+      declarations: Type.Object({ textAlign: Type.Optional(enumType(['start', 'center'])), paddingBlock: Type.Optional(enumType(['none', 'sm', 'md', 'lg', 'xl'])), gap: Type.Optional(enumType(['sm', 'md', 'lg', 'xl'])), surface: Type.Optional(enumType(['transparent', 'background', 'surface'])), border: Type.Optional(enumType(['none', 'hairline', 'strong'])), width: Type.Optional(enumType(['reading', 'content', 'full'])) }, { additionalProperties: false }),
+    }, { additionalProperties: false }), { maxItems: 8 }) }, { additionalProperties: false }),
     description: Type.String({ minLength: 1, maxLength: 240 }),
   }, { additionalProperties: false }),
 };
@@ -142,10 +163,10 @@ export class PiAiProvider implements AiProvider {
     this.model = model;
     logger.info(`AI provider: ${name} (${modelId})`);
   }
-  private async generateOnce(input: ThemeProposalInput, sessionId: string, signal: AbortSignal, previousError?: string): Promise<ThemeConfig> {
+  private async generateOnce(input: DesignProposalInput, sessionId: string, signal: AbortSignal, previousError?: string): Promise<BlogDesignSpec> {
     const context: Context = {
-      systemPrompt: `You are VibeLog's theme designer. Call ${THEME_TOOL_NAME} exactly once with a complete theme, including headerStyle, postListStyle, and codeBlockStyle. Never return CSS, HTML, fonts, URLs, or plain text. Ensure text and accent colors each have WCAG AA contrast against the background.${previousError ? ` Previous proposal error: ${previousError}. Correct it.` : ''}`,
-      messages: [{ role: 'user', content: JSON.stringify(input), timestamp: Date.now() }], tools: [themeTool],
+      systemPrompt: `You are VibeLog's blog presentation designer. Call ${DESIGN_TOOL_NAME} exactly once with a complete version 1 design. ${DESIGN_CATALOG_INSTRUCTIONS} Ensure text and accent colors each have WCAG AA contrast against the background.${previousError ? ` Previous proposal error: ${previousError}. Correct it.` : ''}`,
+      messages: [{ role: 'user', content: JSON.stringify(input), timestamp: Date.now() }], tools: [designTool],
     };
     let response;
     const openCode = OPENCODE_PROVIDERS.has(this.name);
@@ -169,15 +190,15 @@ export class PiAiProvider implements AiProvider {
     }
     if (response.stopReason === 'length') throw new Error('AI response exceeded the model output limit.');
     const toolCalls = response.content.filter((block) => block.type === 'toolCall');
-    if (response.stopReason !== 'toolUse' || toolCalls.length !== 1) throw new Error(`AI must call ${THEME_TOOL_NAME} exactly once.`);
+    if (response.stopReason !== 'toolUse' || toolCalls.length !== 1) throw new Error(`AI must call ${DESIGN_TOOL_NAME} exactly once.`);
     const [toolCall] = toolCalls;
-    if (toolCall.name !== THEME_TOOL_NAME) throw new Error(`AI called an unexpected tool: ${toolCall.name}`);
+    if (toolCall.name !== DESIGN_TOOL_NAME) throw new Error(`AI called an unexpected tool: ${toolCall.name}`);
     let candidate: unknown;
-    try { candidate = validateToolCall([themeTool], toolCall); }
-    catch (error) { throw new Error(`AI returned invalid arguments for ${THEME_TOOL_NAME}: ${safeToolValidationError(error)}`); }
-    return validateThemeConfig(candidate);
+    try { candidate = validateToolCall([designTool], toolCall); }
+    catch (error) { throw new Error(`AI returned invalid arguments for ${DESIGN_TOOL_NAME}: ${safeToolValidationError(error)}`); }
+    return validateBlogDesignSpec(candidate);
   }
-  async generate(input: ThemeProposalInput, context?: AiGenerationContext): Promise<ThemeConfig> {
+  async generate(input: DesignProposalInput, context?: AiGenerationContext): Promise<BlogDesignSpec> {
     const sessionId = context?.sessionId ?? randomUUID();
     const signal = context?.signal ?? AbortSignal.timeout(AI_GENERATION_TIMEOUT_MS);
     try { return await this.generateOnce(input, sessionId, signal); }
@@ -186,7 +207,7 @@ export class PiAiProvider implements AiProvider {
       try { return await this.generateOnce(input, sessionId, signal, safeProviderError(firstError)); }
       catch (secondError) {
         if (secondError instanceof AiProviderRequestError) throw secondError;
-        throw new Error(`AI could not create a safe theme after one correction: ${safeProviderError(secondError)}. Your current design was not changed.`, { cause: secondError });
+        throw new Error(`AI could not create a safe design after one correction: ${safeProviderError(secondError)}. Your current design was not changed.`, { cause: secondError });
       }
     }
   }
@@ -203,7 +224,7 @@ export class FallbackAiProvider implements AiProvider {
     this.modelId = primaryModelId;
     this.candidates = modelIds.map((modelId) => factory(name, modelId));
   }
-  async generate(input: ThemeProposalInput, context?: AiGenerationContext): Promise<ThemeConfig> {
+  async generate(input: DesignProposalInput, context?: AiGenerationContext): Promise<BlogDesignSpec> {
     const operationId = context?.sessionId ?? randomUUID();
     const startedAt = Date.now();
     for (const [index, candidate] of this.candidates.entries()) {

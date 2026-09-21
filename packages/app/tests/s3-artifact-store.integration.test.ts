@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -12,16 +12,27 @@ describe.skipIf(!endpoint)('S3-compatible ArtifactStore', () => {
   const sourceId = `${prefix}/source`;
   const copyId = `${prefix}/copy`;
   let directory = '';
-  beforeAll(async () => { directory = await mkdtemp(join(tmpdir(), 'vibelog-artifact-test-')); await writeFile(join(directory, 'index.html'), '<h1>Hello</h1>'); });
+  let materialized = '';
+  beforeAll(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'vibelog-artifact-test-'));
+    materialized = await mkdtemp(join(tmpdir(), 'vibelog-artifact-materialized-'));
+    await mkdir(join(directory, 'content', 'blog'), { recursive: true });
+    await writeFile(join(directory, 'index.html'), '<h1>Hello</h1>');
+    await writeFile(join(directory, 'content', 'blog', 'hello.md'), '# Hello');
+  });
   afterAll(async () => { await Promise.all([store.deleteArtifact(sourceId), store.deleteArtifact(copyId)]); await rm(directory, { recursive: true, force: true }); });
-  it('uploads, streams, copies and deletes an immutable artifact prefix', async () => {
+  afterAll(async () => { await rm(materialized, { recursive: true, force: true }); });
+  it('uploads, materializes, streams, copies and deletes an immutable artifact prefix', async () => {
     await store.uploadDirectory(sourceId, directory);
     const uploaded = await store.readObject(sourceId, 'index.html'); expect(uploaded).not.toBeNull();
     if (!uploaded) throw new Error('Uploaded object missing');
     expect(await new Response(uploaded.body).text()).toBe('<h1>Hello</h1>');
-    await expect(store.listObjects(sourceId)).resolves.toEqual(['index.html']);
+    await expect(store.listObjects(sourceId)).resolves.toEqual(['content/blog/hello.md', 'index.html']);
+    await store.materializeArtifact(sourceId, materialized);
+    await expect(readFile(join(materialized, 'index.html'), 'utf8')).resolves.toBe('<h1>Hello</h1>');
+    await expect(readFile(join(materialized, 'content', 'blog', 'hello.md'), 'utf8')).resolves.toBe('# Hello');
     await store.copyArtifact(sourceId, copyId); expect(await store.readObject(copyId, 'index.html')).not.toBeNull();
-    await expect(store.listObjects(copyId)).resolves.toEqual(['index.html']);
+    await expect(store.listObjects(copyId)).resolves.toEqual(['content/blog/hello.md', 'index.html']);
     await store.deleteArtifact(copyId); expect(await store.readObject(copyId, 'index.html')).toBeNull();
   });
 });

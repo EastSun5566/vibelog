@@ -7,25 +7,29 @@ import TagList from "./TagList.astro";
 interface Props {
   posts: CollectionEntry<"blog">[];
   headingLevel?: "h2" | "h3";
+  variant?: "divided" | "cards" | "numbered";
+  columns?: 1 | 2 | 3;
+  showDescription?: boolean;
+  showTags?: boolean;
 }
 
-const { posts, headingLevel = "h2" } = Astro.props;
+const { posts, headingLevel = "h2", variant = "divided", columns, showDescription = true, showTags = true } = Astro.props;
 const Heading = headingLevel;
 ---
 
-<ol class="blog-list" role="list">
+<ol class={`blog-list variant-${variant} columns-${columns ?? 1}`} role="list" data-design-target="posts.items">
   {
     posts.map((post) => (
       <li class="blog-list-item">
         <article>
           <a href={`/blog/${post.id}/`} class="blog-item-link">
             <Heading class="blog-item-title">{post.data.title}</Heading>
-            <p class="blog-item-description">{post.data.description}</p>
+            {showDescription && <p class="blog-item-description">{post.data.description}</p>}
             <p class="blog-item-date">
               <FormattedDate date={post.data.date} />
             </p>
           </a>
-          <TagList tags={post.data.tags} />
+          {showTags && <TagList tags={post.data.tags} />}
         </article>
       </li>
     ))

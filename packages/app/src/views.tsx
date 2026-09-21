@@ -1,5 +1,6 @@
 import type { AppSession } from './auth.js';
-import type { BlogRecord, OperationRecord, PublishedReleaseRecord, SyncedPostSummary, ThemeRevisionRecord } from './database.js';
+import type { HomeSection, StyleRule, StyleTarget } from '@vibelog/core';
+import type { BlogRecord, DesignRevisionRecord, OperationRecord, PublishedReleaseRecord, SyncedPostSummary } from './database.js';
 import { syncOperationIntent } from './blog-sync.js';
 import { operationLabel, operationMessage, operationProgress } from './operation-status.js';
 import { editorUrlWithPreviewPath } from './preview-path.js';
@@ -69,7 +70,7 @@ export function landingPage(analytics?: AnalyticsDocumentConfig) {
       <ul class="landing-points">
         <li><strong>Keep your workflow</strong><span>Write and publish in HackMD as usual.</span></li>
         <li><strong>Review before publishing</strong><span>Content changes stay in a private preview until you approve them.</span></li>
-        <li><strong>Make it yours</strong><span>Choose a theme, publish to your subdomain, and restore earlier releases.</span></li>
+        <li><strong>Make it yours</strong><span>Choose a design, publish to your subdomain, and restore earlier releases.</span></li>
       </ul>
     </section>
     <footer class="landing-footer">
@@ -118,7 +119,7 @@ export function guidePage(session?: AppSession, analytics?: AnalyticsDocumentCon
       <ol>
         <li>Connect a public HackMD profile and choose a blog address.</li>
         <li>Choose articles, set the blog details, and review the private preview.</li>
-        <li>Generate a theme with AI or fine-tune it, then publish when the draft is ready.</li>
+        <li>Generate a design with AI or fine-tune it, then publish when the draft is ready.</li>
       </ol>
       <p>Only public, published HackMD notes are imported. A failed sync never replaces the last working draft or live release.</p>
     </section>
@@ -127,8 +128,8 @@ export function guidePage(session?: AppSession, analytics?: AnalyticsDocumentCon
       <p>Syncing rebuilds only the draft. Publishing is always explicit, and release history lets you restore an earlier live version without changing your draft.</p>
     </section>
     <section aria-labelledby="ai-privacy">
-      <h2 id="ai-privacy">AI themes and privacy</h2>
-      <p>AI receives only your blog identity, current theme, and design prompt. Article bodies are never sent to the AI provider.</p>
+      <h2 id="ai-privacy">AI design and privacy</h2>
+      <p>AI receives only your blog identity, content profile, current design, and prompt. Article bodies are never sent to the AI provider.</p>
     </section>
   </article>, session, false, analytics);
 }
@@ -184,7 +185,7 @@ function DeletionForms({ session, blog, appHostname, error }: { session: AppSess
   return <div class="deletion-actions">
     {message ? <div class="alert" data-variant="destructive" role="alert"><section>{message}</section></div> : null}
     {blog ? <section class="deletion-action">
-      <div><strong>Delete blog</strong><p class="muted">Remove the public site, drafts, releases, and themes. Your account stays available.</p></div>
+      <div><strong>Delete blog</strong><p class="muted">Remove the public site, drafts, releases, and designs. Your account stays available.</p></div>
       <form class="stack" method="post" action="/actions/blog/delete">
         <input type="hidden" name="csrfToken" value={session.csrfToken}/>
         <div class="field"><label for="deleteBlogConfirmation">Type <strong>{hostname}</strong> to confirm</label><input id="deleteBlogConfirmation" name="confirmation" required autocomplete="off" autocapitalize="none" spellcheck={false}/></div>
@@ -239,8 +240,8 @@ export function onboardingPage(session: AppSession, blog: BlogRecord | null, ope
 interface EditorPageInput {
   session: AppSession;
   blog: BlogRecord;
-  themes: ThemeRevisionRecord[];
-  activeTheme: ThemeRevisionRecord;
+  designs: DesignRevisionRecord[];
+  activeDesign: DesignRevisionRecord;
   published: PublishedReleaseRecord | null;
   releases: PublishedReleaseRecord[];
   previewUrl: string | null;
@@ -261,8 +262,15 @@ const CONTROL_OPTIONS = {
   contentWidth: [['narrow', 'Narrow'], ['medium', 'Medium'], ['wide', 'Wide']],
   density: [['compact', 'Compact'], ['comfortable', 'Comfortable']],
   radius: [['none', 'Square'], ['soft', 'Soft'], ['round', 'Round']],
-  headerStyle: [['compact', 'Compact'], ['centered', 'Centered']],
+  headerStyle: [['compact', 'Compact'], ['centered', 'Centered'], ['masthead', 'Masthead']],
+  footerStyle: [['minimal', 'Minimal'], ['profile', 'Profile']],
   postListStyle: [['divided', 'Divided'], ['cards', 'Cards'], ['numbered', 'Numbered']],
+  indexLayout: [['list', 'List'], ['grid', 'Grid'], ['magazine', 'Magazine']],
+  articleLayout: [['reading', 'Reading'], ['wide', 'Wide'], ['with-aside', 'With aside']],
+  articleToc: [['auto-inline', 'Inline'], ['auto-aside', 'Aside'], ['hidden', 'Hidden']],
+  articleHeader: [['simple', 'Simple'], ['editorial', 'Editorial']],
+  articleMetadata: [['compact', 'Compact'], ['detailed', 'Detailed']],
+  articleNavigation: [['links', 'Links'], ['cards', 'Cards']],
   codeBlockStyle: [['plain', 'Plain'], ['panel', 'Panel']],
 } as const;
 
@@ -273,6 +281,66 @@ function ChoiceGroup({ legend, name, options, value }: { legend: string; name: s
       <input type="radio" name={name} value={option} checked={value === option} data-theme-control/>
       <span>{label}</span>
     </label>)}</div>
+  </fieldset>;
+}
+
+function SelectField({ label, name, value, options }: { label: string; name: string; value: string | number; options: readonly (readonly [string | number, string])[] }) {
+  return <label class="field"><span>{label}</span><select name={name} data-theme-control>{options.map(([option, text]) => <option value={String(option)} selected={String(value) === String(option)}>{text}</option>)}</select></label>;
+}
+
+function HomeSectionControls({ section, index }: { section: HomeSection; index: number }) {
+  const prefix = `homeSection:${String(index)}:`;
+  if (section.type === 'intro') return <div class="composition-fields">
+    <SelectField label="Variant" name={`${prefix}variant`} value={section.variant} options={[["minimal", "Minimal"], ["centered", "Centered"], ["split", "Split"]]}/>
+    <SelectField label="Show author" name={`${prefix}showAuthor`} value={String(section.showAuthor)} options={[["true", "Yes"], ["false", "No"]]}/>
+  </div>;
+  if (section.type === 'featured-posts') return <div class="composition-fields">
+    <SelectField label="Variant" name={`${prefix}variant`} value={section.variant} options={[["hero", "Hero"], ["split", "Split"]]}/>
+    <SelectField label="Posts" name={`${prefix}count`} value={section.count} options={[[1, "1"], [2, "2"]]}/>
+  </div>;
+  if (section.type === 'recent-posts') return <div class="composition-fields">
+    <SelectField label="Variant" name={`${prefix}variant`} value={section.variant} options={[["list", "List"], ["cards", "Cards"], ["grid", "Grid"]]}/>
+    <SelectField label="Posts" name={`${prefix}limit`} value={section.limit} options={[[3, "3"], [5, "5"], [6, "6"], [9, "9"]]}/>
+    <SelectField label="Columns" name={`${prefix}columns`} value={section.columns ?? 1} options={[[1, "1"], [2, "2"], [3, "3"]]}/>
+  </div>;
+  if (section.type === 'topics') return <div class="composition-fields">
+    <SelectField label="Variant" name={`${prefix}variant`} value={section.variant} options={[["list", "List"], ["cloud", "Cloud"]]}/>
+    <SelectField label="Topics" name={`${prefix}limit`} value={section.limit} options={[[6, "6"], [12, "12"], [24, "24"]]}/>
+  </div>;
+  return <div class="composition-fields"><SelectField label="Variant" name={`${prefix}variant`} value={section.variant} options={[["compact", "Compact"], ["profile", "Profile"]]}/></div>;
+}
+
+const STYLE_TARGET_LABELS: Record<StyleTarget, string> = {
+  'site.header': 'Site header',
+  'home.intro': 'Homepage intro',
+  'home.sections': 'Homepage sections',
+  'posts.items': 'Post items',
+  'article.header': 'Article header',
+  'article.prose': 'Article body',
+  'article.toc': 'Table of contents',
+  'site.footer': 'Site footer',
+};
+const STYLE_OPTIONS = {
+  textAlign: [['', 'Default'], ['start', 'Start'], ['center', 'Center']],
+  paddingBlock: [['', 'Default'], ['none', 'None'], ['sm', 'Small'], ['md', 'Medium'], ['lg', 'Large'], ['xl', 'Extra large']],
+  gap: [['', 'Default'], ['sm', 'Small'], ['md', 'Medium'], ['lg', 'Large'], ['xl', 'Extra large']],
+  surface: [['', 'Default'], ['transparent', 'Transparent'], ['background', 'Background'], ['surface', 'Surface']],
+  border: [['', 'Default'], ['none', 'None'], ['hairline', 'Hairline'], ['strong', 'Strong']],
+  width: [['', 'Default'], ['reading', 'Reading'], ['content', 'Content'], ['full', 'Full']],
+} as const;
+
+function StyleRuleControls({ target, rule }: { target: StyleTarget; rule?: StyleRule }) {
+  const prefix = `style:${target}:`;
+  return <fieldset class="style-rule-controls">
+    <legend>{STYLE_TARGET_LABELS[target]}</legend>
+    <div class="composition-fields">
+      <SelectField label="Align" name={`${prefix}textAlign`} value={rule?.declarations.textAlign ?? ''} options={STYLE_OPTIONS.textAlign}/>
+      <SelectField label="Padding" name={`${prefix}paddingBlock`} value={rule?.declarations.paddingBlock ?? ''} options={STYLE_OPTIONS.paddingBlock}/>
+      <SelectField label="Gap" name={`${prefix}gap`} value={rule?.declarations.gap ?? ''} options={STYLE_OPTIONS.gap}/>
+      <SelectField label="Surface" name={`${prefix}surface`} value={rule?.declarations.surface ?? ''} options={STYLE_OPTIONS.surface}/>
+      <SelectField label="Border" name={`${prefix}border`} value={rule?.declarations.border ?? ''} options={STYLE_OPTIONS.border}/>
+      <SelectField label="Width" name={`${prefix}width`} value={rule?.declarations.width ?? ''} options={STYLE_OPTIONS.width}/>
+    </div>
   </fieldset>;
 }
 
@@ -292,14 +360,14 @@ function PublicationArticles({ label, posts, variant }: { label: string; posts: 
   </section>;
 }
 
-function PublicationSummary({ blog, activeTheme, published, liveTheme, hasChanges }: {
+function PublicationSummary({ blog, activeDesign, published, liveDesign, hasChanges }: {
   blog: BlogRecord;
-  activeTheme: ThemeRevisionRecord;
+  activeDesign: DesignRevisionRecord;
   published: PublishedReleaseRecord | null;
-  liveTheme?: ThemeRevisionRecord;
+  liveDesign?: DesignRevisionRecord;
   hasChanges: boolean;
 }) {
-  const diff = calculatePublicationDiff(blog, activeTheme, published);
+  const diff = calculatePublicationDiff(blog, activeDesign, published);
   const articleChangeCount = diff.added.length + diff.updated.length + diff.removed.length;
   const identityLabels = { title: 'title', description: 'description', author: 'author', language: 'language' } as const;
 
@@ -307,11 +375,11 @@ function PublicationSummary({ blog, activeTheme, published, liveTheme, hasChange
     <h3 id="publication-summary-title">This release includes</h3>
     {diff.mode === 'first' ? <div class="publication-copy">
       <p><strong>Your first release</strong> includes {diff.includedCount} articles.</p>
-      <p>Theme: {activeTheme.description}</p>
+      <p>Design: {activeDesign.description}</p>
     </div> : null}
     {diff.mode === 'legacy' ? <div class="alert"><section>
       <p>This live release predates change tracking. Publish again to enable itemized diffs.</p>
-      {diff.themeChanged ? <p>Theme: {liveTheme?.description ?? 'Previous theme'} → {activeTheme.description}</p> : null}
+      {diff.themeChanged ? <p>Design: {liveDesign?.description ?? 'Previous design'} → {activeDesign.description}</p> : null}
       {diff.rebuilt ? <p>The draft was rebuilt after the last release.</p> : null}
     </section></div> : null}
     {diff.mode === 'tracked' ? <>
@@ -321,11 +389,11 @@ function PublicationSummary({ blog, activeTheme, published, liveTheme, hasChange
           {diff.updated.length ? <span class="badge" data-variant="updated">Updated {diff.updated.length}</span> : null}
           {diff.removed.length ? <span class="badge" data-variant="removed">Removed {diff.removed.length}</span> : null}
           {diff.identityChanges.length ? <span class="badge" data-variant="neutral">Blog details</span> : null}
-          {diff.themeChanged ? <span class="badge" data-variant="neutral">Theme</span> : null}
+          {diff.themeChanged ? <span class="badge" data-variant="neutral">Design</span> : null}
           {diff.rebuilt ? <span class="badge" data-variant="neutral">Draft rebuilt</span> : null}
         </div>
         {diff.identityChanges.length ? <p>Blog {diff.identityChanges.map((field) => identityLabels[field]).join(', ')} changed.</p> : null}
-        {diff.themeChanged ? <p>Theme: {liveTheme?.description ?? 'Published theme'} → {activeTheme.description}</p> : null}
+        {diff.themeChanged ? <p>Design: {liveDesign?.description ?? 'Published design'} → {activeDesign.description}</p> : null}
         {diff.rebuilt ? <p>The draft was rebuilt, including template upgrades.</p> : null}
         {articleChangeCount ? <details class="publication-details">
           <summary>Article changes ({articleChangeCount})</summary>
@@ -341,12 +409,12 @@ function PublicationSummary({ blog, activeTheme, published, liveTheme, hasChange
 }
 
 export function editorPage(input: EditorPageInput) {
-  const { blog, themes, activeTheme, published, releases } = input;
-  const controls = themeControlValues(activeTheme.config);
-  const themesById = new Map(themes.map((theme) => [theme.id, theme]));
-  const liveTheme = published ? themesById.get(published.themeRevisionId) : undefined;
+  const { blog, designs, activeDesign, published, releases } = input;
+  const controls = themeControlValues(activeDesign.config);
+  const designsById = new Map(designs.map((design) => [design.id, design]));
+  const liveDesign = published ? designsById.get(published.themeRevisionId) : undefined;
   const busy = Boolean(input.operation && (input.operation.status === 'queued' || input.operation.status === 'running'));
-  const hasChanges = !published || published.contentVersion !== blog.contentVersion || published.themeRevisionId !== activeTheme.id;
+  const hasChanges = !published || published.contentVersion !== blog.contentVersion || published.themeRevisionId !== activeDesign.id;
   const publication = !published
     ? { label: 'Not published', variant: 'pending' }
     : hasChanges ? { label: 'Unpublished changes', variant: 'pending' } : { label: 'Live version is current', variant: 'live' };
@@ -355,7 +423,7 @@ export function editorPage(input: EditorPageInput) {
   const contentOperation = input.operation?.type === 'sync' && syncOperationIntent(input.operation.payload) === 'content' ? input.operation : undefined;
   const selectionOperation = input.operation?.type === 'sync' && syncOperationIntent(input.operation.payload) === 'selection' ? input.operation : undefined;
   const includedPosts = blog.contentManifest?.filter((post) => post.included).length ?? 0;
-  const themeSuccessUrl = editorUrlWithPreviewPath(input.previewPath);
+  const designSuccessUrl = editorUrlWithPreviewPath(input.previewPath);
 
   return document('Edit blog', <><p class="visually-hidden" aria-live="polite" data-page-status></p><div class="editor" data-editor-root>
     <header class="workspace-summary">
@@ -375,7 +443,7 @@ export function editorPage(input: EditorPageInput) {
 
     <section class="preview-panel" aria-label="Blog preview">
       <div class="preview-heading">
-        <div><p class="preview-label">Draft preview</p><small class="muted">Theme controls update here. Content changes require a sync.</small></div>
+        <div><p class="preview-label">Draft preview</p><small class="muted">Design controls rebuild this preview. Content changes require a sync.</small></div>
         <span class="preview-address">{blog.username}.{input.appHostname}</span>
       </div>
       <div class="preview-frame">
@@ -453,10 +521,10 @@ export function editorPage(input: EditorPageInput) {
       </section>
 
       <section class="workflow-section" id="appearance" aria-labelledby="appearance-title">
-        <header class="workflow-heading"><span class="step-number" aria-hidden="true">2</span><div><h2 id="appearance-title">Appearance</h2><p>Keep the current theme or shape a new version.</p></div></header>
+        <header class="workflow-heading"><span class="step-number" aria-hidden="true">2</span><div><h2 id="appearance-title">Design</h2><p>Shape the pages while VibeLog keeps every blog feature working.</p></div></header>
         <div class="card workflow-card">
-          <section class="theme-summary"><div><strong>{activeTheme.description}</strong><p class="muted">Current draft theme</p></div><span class="badge" data-variant="neutral">{SOURCE_LABEL[activeTheme.source]}</span></section>
-          <form method="post" action="/actions/theme/apply" data-operation data-editor-submit data-mixed-actions data-theme-studio>
+          <section class="theme-summary"><div><strong>{activeDesign.description}</strong><p class="muted">Current draft design</p></div><span class="badge" data-variant="neutral">{SOURCE_LABEL[activeDesign.source]}</span></section>
+          <form method="post" action="/actions/design/apply" data-operation data-editor-submit data-mixed-actions data-theme-studio>
             <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
             <input type="hidden" name="previewToken" value={input.previewToken}/>
             <PreviewPathInput value={input.previewPath}/>
@@ -464,22 +532,44 @@ export function editorPage(input: EditorPageInput) {
             <section class="studio-primary">
               <header><strong>Generate with AI</strong><p>Start with a direction or write your own.</p></header>
               <div class="studio-primary-body">
-                <div class="field"><label for="prompt">Describe the reading experience</label><textarea id="prompt" name="prompt" required minlength={1} maxlength={1000} placeholder="A restrained independent magazine for long articles" aria-describedby="prompt-help"></textarea><p id="prompt-help">AI sees your blog details, theme, and this prompt. It never receives article bodies.</p></div>
+                <div class="field"><label for="prompt">Describe the reading experience</label><textarea id="prompt" name="prompt" required minlength={1} maxlength={1000} placeholder="A restrained independent magazine for long articles" aria-describedby="prompt-help"></textarea><p id="prompt-help">AI sees blog details, a content profile, the current design, and this prompt. It never receives article bodies.</p></div>
                 <div class="prompt-starters" aria-label="Prompt starters">
-                  {['A restrained independent magazine', 'Make long articles easier to read', 'Keep it minimal but add personality', 'A dark theme for night reading'].map((prompt) => <button class="btn prompt-chip" data-variant="outline" data-size="compact" type="button" data-prompt-starter={prompt}>{prompt}</button>)}
+                  {['A restrained independent magazine', 'Make long articles easier to read', 'Keep it minimal but add personality', 'A dark design for night reading'].map((prompt) => <button class="btn prompt-chip" data-variant="outline" data-size="compact" type="button" data-prompt-starter={prompt}>{prompt}</button>)}
                 </div>
-                <button class="btn studio-primary-action" type="submit" formaction="/actions/theme/generate" data-operation-submit data-feedback-target="ai" data-focus-key="generate" aria-keyshortcuts="Meta+Enter Control+Enter" disabled={busy}>Generate with AI</button>
+                <button class="btn studio-primary-action" type="submit" formaction="/actions/design/generate" data-operation-submit data-feedback-target="ai" data-focus-key="generate" aria-keyshortcuts="Meta+Enter Control+Enter" disabled={busy}>Generate with AI</button>
                 <p class="shortcut-hint">⌘/Ctrl + Enter</p>
-                <OperationOutput operation={input.operation?.type === 'generate_theme' ? input.operation : undefined} successUrl={themeSuccessUrl} feedbackKey="ai"/>
+                <OperationOutput operation={input.operation?.type === 'generate_design' ? input.operation : undefined} successUrl={designSuccessUrl} feedbackKey="ai"/>
               </div>
             </section>
 
             <details class="editor-disclosure" data-disclosure-key="fine-tune">
-              <summary><span>Fine-tune theme</span><small>Layout, type, color, and spacing</small></summary>
+              <summary><span>Fine-tune design</span><small>Pages, type, color, and spacing</small></summary>
               <div class="disclosure-body theme-control-stack">
+                <fieldset class="fieldset"><legend>Homepage sections</legend>
+                  <input type="hidden" name="homeSections" value={JSON.stringify(activeDesign.config.pages.home.sections)}/>
+                  <ol class="revision-list">{activeDesign.config.pages.home.sections.map((section, index) => <li class="revision"><div><strong>{section.type}</strong><HomeSectionControls section={section} index={index}/></div><span class="composition-actions">
+                    <button class="btn" data-variant="outline" data-size="compact" type="submit" formnovalidate name="compositionAction" value={`up:${String(index)}`} data-operation-submit data-feedback-target="fine-tune" disabled={busy || index === 0}>Move up</button>
+                    <button class="btn" data-variant="outline" data-size="compact" type="submit" formnovalidate name="compositionAction" value={`down:${String(index)}`} data-operation-submit data-feedback-target="fine-tune" disabled={busy || index === activeDesign.config.pages.home.sections.length - 1}>Move down</button>
+                    <button class="btn" data-variant="ghost" data-size="compact" type="submit" formnovalidate name="compositionAction" value={`remove:${String(index)}`} data-operation-submit data-feedback-target="fine-tune" disabled={busy}>Remove</button>
+                  </span></li>)}</ol>
+                  <div class="field"><label for="addSectionType">Add section</label><select id="addSectionType" name="addSectionType"><option value="intro">Intro</option><option value="featured-posts">Featured posts</option><option value="recent-posts">Recent posts</option><option value="topics">Topics</option><option value="author">Author</option></select></div>
+                  <button class="btn" data-variant="outline" type="submit" formnovalidate name="compositionAction" value="add" data-operation-submit data-feedback-target="fine-tune" disabled={busy || activeDesign.config.pages.home.sections.length >= 5}>Add section</button>
+                </fieldset>
                 <ChoiceGroup legend="Layout preset" name="preset" options={CONTROL_OPTIONS.preset} value={controls.preset}/>
                 <ChoiceGroup legend="Header" name="headerStyle" options={CONTROL_OPTIONS.headerStyle} value={controls.headerStyle}/>
+                <ChoiceGroup legend="Footer" name="footerStyle" options={CONTROL_OPTIONS.footerStyle} value={controls.footerStyle}/>
+                <ChoiceGroup legend="Posts page" name="indexLayout" options={CONTROL_OPTIONS.indexLayout} value={controls.indexLayout}/>
                 <ChoiceGroup legend="Article list" name="postListStyle" options={CONTROL_OPTIONS.postListStyle} value={controls.postListStyle}/>
+                <fieldset class="fieldset"><legend>Posts page metadata</legend><div class="composition-fields">
+                  <SelectField label="Columns" name="indexColumns" value={activeDesign.config.pages.index.columns ?? 1} options={[[1, '1'], [2, '2'], [3, '3']]}/>
+                  <SelectField label="Descriptions" name="indexShowDescription" value={String(activeDesign.config.pages.index.showDescription)} options={[["true", "Show"], ["false", "Hide"]]}/>
+                  <SelectField label="Topics" name="indexShowTags" value={String(activeDesign.config.pages.index.showTags)} options={[["true", "Show"], ["false", "Hide"]]}/>
+                </div></fieldset>
+                <ChoiceGroup legend="Article layout" name="articleLayout" options={CONTROL_OPTIONS.articleLayout} value={controls.articleLayout}/>
+                <ChoiceGroup legend="Article header" name="articleHeader" options={CONTROL_OPTIONS.articleHeader} value={controls.articleHeader}/>
+                <ChoiceGroup legend="Table of contents" name="articleToc" options={CONTROL_OPTIONS.articleToc} value={controls.articleToc}/>
+                <ChoiceGroup legend="Article metadata" name="articleMetadata" options={CONTROL_OPTIONS.articleMetadata} value={controls.articleMetadata}/>
+                <ChoiceGroup legend="Article navigation" name="articleNavigation" options={CONTROL_OPTIONS.articleNavigation} value={controls.articleNavigation}/>
                 <ChoiceGroup legend="Code blocks" name="codeBlockStyle" options={CONTROL_OPTIONS.codeBlockStyle} value={controls.codeBlockStyle}/>
                 <fieldset class="fieldset">
                   <legend>Color palette</legend>
@@ -495,16 +585,22 @@ export function editorPage(input: EditorPageInput) {
                 <ChoiceGroup legend="Content width" name="contentWidth" options={CONTROL_OPTIONS.contentWidth} value={controls.contentWidth}/>
                 <ChoiceGroup legend="Spacing" name="density" options={CONTROL_OPTIONS.density} value={controls.density}/>
                 <ChoiceGroup legend="Corners" name="radius" options={CONTROL_OPTIONS.radius} value={controls.radius}/>
-                <button class="btn" type="submit" formnovalidate disabled={busy} data-editor-submit data-feedback-target="fine-tune" data-focus-key="save-theme">Save theme version</button>
-                <OperationOutput feedbackKey="fine-tune"/>
+                <details class="editor-disclosure advanced-styles" data-disclosure-key="advanced-styles">
+                  <summary><span>Advanced styling</span><small>Semantic rules only</small></summary>
+                  <div class="disclosure-body style-rule-list">
+                    {(Object.keys(STYLE_TARGET_LABELS) as StyleTarget[]).map((target) => <StyleRuleControls target={target} rule={activeDesign.config.styles.rules.find((rule) => rule.target === target)}/>)}
+                  </div>
+                </details>
+                <button class="btn" type="submit" formnovalidate disabled={busy} data-operation-submit data-feedback-target="fine-tune" data-focus-key="save-theme">Build design version</button>
+                <OperationOutput operation={input.operation?.type === 'apply_design' || input.operation?.type === 'activate_design' ? input.operation : undefined} feedbackKey="fine-tune"/>
               </div>
             </details>
-            <p class="unsaved-note" data-unsaved-note hidden>Save these theme changes before publishing.</p>
+            <p class="unsaved-note" data-unsaved-note hidden>Build these design changes before publishing.</p>
           </form>
 
-          <details class="editor-disclosure history" data-disclosure-key="theme-history">
-            <summary><span>Theme history</span><small>{themes.length} versions</small></summary>
-            <div class="disclosure-body revision-list">{themes.map((theme) => <div class="revision">
+          <details class="editor-disclosure history" data-disclosure-key="design-history">
+            <summary><span>Design history</span><small>{designs.length} versions</small></summary>
+            <div class="disclosure-body revision-list">{designs.map((theme) => <div class="revision">
               <div>
                 <strong>{theme.description}</strong>
                 <div class="markers">
@@ -514,7 +610,7 @@ export function editorPage(input: EditorPageInput) {
                 </div>
                 <small class="muted">{new Date(theme.createdAt).toLocaleString('en')}</small>
               </div>
-              {theme.active ? null : <form method="post" action={`/actions/theme/${theme.id}/activate`} data-editor-submit>
+              {theme.active ? null : <form method="post" action={`/actions/design/${theme.id}/activate`} data-operation>
                 <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
                 <PreviewPathInput value={input.previewPath}/>
                 <button class="btn" data-variant="outline" data-size="compact" type="submit" disabled={busy} data-focus-key="activate-theme">Preview version</button>
@@ -527,12 +623,12 @@ export function editorPage(input: EditorPageInput) {
       <section class="workflow-section" id="publish" aria-labelledby="publish-title">
         <header class="workflow-heading"><span class="step-number" aria-hidden="true">3</span><div><h2 id="publish-title">Publish</h2><p>Review the draft changes, then decide when they go live.</p></div></header>
         <div class="card workflow-card publish-card">
-          <section><PublicationSummary blog={blog} activeTheme={activeTheme} published={published} liveTheme={liveTheme} hasChanges={hasChanges}/>
+          <section><PublicationSummary blog={blog} activeDesign={activeDesign} published={published} liveDesign={liveDesign} hasChanges={hasChanges}/>
             <form class="stack" method="post" action="/actions/publish" data-operation>
               <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
               <input type="hidden" name="previewToken" value={input.previewToken}/>
               <PreviewPathInput value={input.previewPath}/>
-              <button class="btn" type="submit" data-publish-button data-focus-key="publish" disabled={!blog.draftArtifactId || !hasChanges || busy}>{publishLabel}</button>
+              <button class="btn" type="submit" data-publish-button data-focus-key="publish" disabled={!blog.sourceArtifactId || !blog.draftArtifactId || !hasChanges || busy}>{publishLabel}</button>
               <p class="publish-destination">{published
                 ? <>Live at <a href={input.publicUrl} target="_blank" rel="noreferrer">{input.publicUrl}</a></>
                 : <>Will publish at {input.publicUrl}</>}</p>
@@ -543,10 +639,10 @@ export function editorPage(input: EditorPageInput) {
           {releases.length > 0 ? <details class="editor-disclosure history" data-disclosure-key="release-history">
             <summary><span>Release history</span><small>{releases.length} saved</small></summary>
             <div class="disclosure-body revision-list">{releases.map((release) => {
-              const theme = themesById.get(release.themeRevisionId);
+              const theme = designsById.get(release.themeRevisionId);
               return <div class="revision">
                 <div>
-                  <strong>{theme?.description ?? 'Published theme'}</strong>
+                  <strong>{theme?.description ?? 'Published design'}</strong>
                   <div class="markers">
                     {theme ? <span class="badge" data-variant="neutral">{SOURCE_LABEL[theme.source]}</span> : null}
                     {release.active ? <span class="badge" data-variant="live">Live now</span> : null}

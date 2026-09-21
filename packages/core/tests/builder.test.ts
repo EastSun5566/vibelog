@@ -1,11 +1,11 @@
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import matter from 'gray-matter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildFromVibelog, ContentSourceName, createDevBuilder, HackMdSource } from '../src/index.js';
-import type { ContentSource } from '../src/index.js';
+import { buildBlog, buildFromVibelog, ContentSourceName, createDevBuilder, DEFAULT_DESIGN, HackMdSource, writeSourceSnapshot } from '../src/index.js';
+import type { BlogDesignSpecV1, ContentSource } from '../src/index.js';
 
 const roots: string[] = [];
 const contentHash = (content: string) => createHash('sha256').update(content, 'utf8').digest('hex');
@@ -36,11 +36,13 @@ describe('DevBuilder content summary', () => {
     expect(getAuthor).toHaveBeenCalledOnce();
     expect(getPosts).toHaveBeenCalledOnce();
     expect(summary).toEqual({
+      site: { title: basename(root), description: 'Public notes', language: 'zh-Hant' },
       author: { name: 'Writer', bio: 'Public notes' },
       posts: [
         { title: 'Newer', slug: 'newer-post', description: 'private body two', publishedAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-02-03T00:00:00.000Z', included: true, tags: [{ name: '閱讀 筆記', slug: '閱讀-筆記' }, { name: 'AI', slug: 'ai' }], contentHash: contentHash('private body two') },
         { title: 'Older', slug: 'older-post', description: 'private body one', publishedAt: '2026-01-01T00:00:00.000Z', included: true, tags: [], contentHash: contentHash('private body one') },
       ],
+      contentProfile: { postCount: 2, tagCount: 2, averageLength: 'short', codeUsage: 'none', imageUsage: 'none', mathUsage: 'none' },
     });
     expect(summary.posts.every((post) => !Object.hasOwn(post, 'content'))).toBe(true);
   });
@@ -99,6 +101,68 @@ describe('DevBuilder content summary', () => {
     expect(hashes[2]).not.toBe(hashes[0]);
   });
 
+  it('compiles one frozen source snapshot into three structurally different complete blogs', { timeout: 45_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-presentation-ir-')); roots.push(root);
+    const builder = createDevBuilder({ root, contentSource: {
+      name: ContentSourceName.HACKMD,
+      getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Build once, present many ways.' }),
+      getPosts: () => Promise.resolve({ posts: [
+        { id: 'one', title: 'First', slug: 'first', date: '2026-01-03T00:00:00Z', tags: ['Design'], content: '## First section\n\nBody.\n\n## Second section\n\nMore.' },
+        { id: 'two', title: 'Second', slug: 'second', date: '2026-01-02T00:00:00Z', tags: ['Design', 'Notes'], content: 'Second body.' },
+        { id: 'three', title: 'Third', slug: 'third', date: '2026-01-01T00:00:00Z', tags: ['Notes'], content: 'Third body.' },
+      ] }),
+    } });
+    await builder.prepare({ installDependencies: false });
+    const summary = await builder.fetchContent();
+    const sourceDir = join(root, 'source-snapshot');
+    await writeSourceSnapshot(builder.vibelogDir, sourceDir, summary);
+
+    const editorial = structuredClone(DEFAULT_DESIGN);
+    editorial.theme.motif = 'editorial';
+    editorial.chrome.header.variant = 'masthead';
+    editorial.chrome.footer.variant = 'profile';
+    editorial.pages.home.sections = [
+      { type: 'intro', variant: 'centered', showAuthor: true },
+      { type: 'featured-posts', variant: 'hero', count: 1 },
+      { type: 'recent-posts', variant: 'grid', limit: 6, columns: 2 },
+      { type: 'topics', variant: 'list', limit: 12 },
+    ];
+    editorial.pages.index = { layout: 'magazine', itemVariant: 'numbered', columns: 2, showDescription: true, showTags: true };
+    editorial.pages.article = { layout: 'with-aside', header: 'editorial', toc: 'auto-aside', metadata: 'detailed', navigation: 'links', codeBlock: 'panel' };
+    editorial.description = 'An editorial magazine layout.';
+
+    const notebook = structuredClone(DEFAULT_DESIGN);
+    notebook.theme.motif = 'notebook';
+    notebook.pages.home.sections = [
+      { type: 'author', variant: 'profile' },
+      { type: 'recent-posts', variant: 'cards', limit: 5, columns: 2 },
+      { type: 'topics', variant: 'cloud', limit: 12 },
+    ];
+    notebook.pages.index = { layout: 'grid', itemVariant: 'cards', columns: 2, showDescription: true, showTags: true };
+    notebook.pages.article = { layout: 'wide', header: 'simple', toc: 'auto-inline', metadata: 'compact', navigation: 'cards', codeBlock: 'panel' };
+    notebook.description = 'A personal notebook layout.';
+
+    const fixtures: [string, BlogDesignSpecV1, string[]][] = [
+      ['minimal', structuredClone(DEFAULT_DESIGN), ['home-hero variant-minimal', 'recent-posts variant-list']],
+      ['editorial', editorial, ['site-header variant-masthead', 'featured-posts variant-hero', 'recent-posts variant-grid', 'home-topics variant-list']],
+      ['notebook', notebook, ['home-author variant-profile', 'recent-posts variant-cards', 'home-topics variant-cloud']],
+    ];
+    const homes: string[] = [];
+    for (const [name, design, signatures] of fixtures) {
+      const workDir = join(root, `compile-${name}`);
+      const outDir = join(workDir, 'dist');
+      await buildBlog({ sourceDir, design, workDir, outDir, site: 'https://writer.example.com' });
+      const home = await readFile(join(outDir, 'index.html'), 'utf8');
+      homes.push(home);
+      for (const signature of signatures) expect(home).toContain(signature);
+      for (const path of ['blog/index.html', 'blog/first/index.html', 'tags/index.html', 'tags/design/index.html', 'search/index.html', 'rss.xml', 'sitemap-index.xml', 'robots.txt', 'llms.txt']) {
+        await expect(stat(join(outDir, path))).resolves.toBeTruthy();
+      }
+      await expect(stat(join(outDir, 'pagefind', 'pagefind.js'))).resolves.toBeTruthy();
+    }
+    expect(new Set(homes).size).toBe(3);
+  });
+
   it('replaces repository-owned CSS when upgrading an older draft', async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-upgrade-')); roots.push(root);
     const source: ContentSource = {
@@ -115,11 +179,11 @@ describe('DevBuilder content summary', () => {
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 11 });
+    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 12 });
     expect(await readFile(join(root, '.vibelog', 'src', 'styles', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
   });
 
-  it('builds the V11 reading experience with reliable descriptions, search, and machine-readable content', { timeout: 30_000 }, async () => {
+  it('builds the V12 reading experience with reliable descriptions, search, and machine-readable content', { timeout: 30_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-public-')); roots.push(root);
     const posts = Array.from({ length: 6 }, (_, index) => {
       const number = index + 1;

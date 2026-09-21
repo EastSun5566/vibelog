@@ -7,6 +7,7 @@ import TableOfContents from "../components/TableOfContents.astro";
 import SiteLayout from "./SiteLayout.astro";
 import { SITE_TITLE } from "../consts";
 import { text } from "../localization";
+import { design } from "../design";
 
 interface TocHeading {
   depth: number;
@@ -25,6 +26,7 @@ const showUpdatedDate = updatedDate
   && updatedDate > date
   && updatedDate.toISOString().slice(0, 10) !== date.toISOString().slice(0, 10);
 const showTableOfContents = headings.length >= 2;
+const article = design.pages.article;
 ---
 
 <SiteLayout
@@ -36,12 +38,13 @@ const showTableOfContents = headings.length >= 2;
   modifiedAt={updatedDate}
   tags={tags.map((tag) => tag.name)}
 >
-  <article class="blog-post">
+  <article class={`blog-post layout-${article.layout}`}>
     <div class="blog-post-content" data-pagefind-body>
-      <header class="blog-post-header" id="article-start">
+      <header class={`blog-post-header variant-${article.header} metadata-${article.metadata}`} id="article-start" data-design-target="article.header">
         <p class="blog-post-date"><FormattedDate date={date} /></p>
         <h1 class="blog-post-title" data-pagefind-meta="title">{title}</h1>
         <TagList {tags} />
+        {article.metadata === 'detailed' && description && <p class="blog-post-description">{description}</p>}
         {
           showUpdatedDate && (
             <p class="blog-post-update">
@@ -50,12 +53,12 @@ const showTableOfContents = headings.length >= 2;
           )
         }
       </header>
-      {showTableOfContents && <TableOfContents {headings} />}
-      <div class="prose">
+      {showTableOfContents && article.toc !== 'hidden' && <div class={`table-of-contents-placement toc-${article.toc}`} data-design-target="article.toc"><TableOfContents {headings} /></div>}
+      <div class="prose" data-design-target="article.prose">
         <slot />
       </div>
       {
-        showTableOfContents && (
+        showTableOfContents && article.toc !== 'hidden' && (
           <a class="article-back-to-start" href="#article-start">{text.backToStart}</a>
         )
       }
@@ -64,7 +67,7 @@ const showTableOfContents = headings.length >= 2;
 
   {
     (newerPost || olderPost) && (
-      <nav class="article-navigation" aria-label={text.postNavigation}>
+      <nav class={`article-navigation variant-${article.navigation}`} aria-label={text.postNavigation}>
         {newerPost ? (
           <a class="article-navigation-link newer" href={`/blog/${newerPost.id}/`}>
             <span>{text.newerPost}</span>

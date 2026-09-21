@@ -46,7 +46,7 @@ export function initializeOperations(root: ClientRoot, dom: EditorDom): void {
       dom.updateProgress(statusNode);
       dom.showStatus(statusNode, 'Submitted and waiting…', 'queued');
       const action = button?.hasAttribute('formaction') ? button.formAction : form.action;
-      void fetch(action, { method: 'POST', body: new FormData(form), headers: { accept: 'application/json' }, credentials: 'same-origin' })
+      void fetch(action, { method: 'POST', body: new FormData(form, button), headers: { accept: 'application/json' }, credentials: 'same-origin' })
         .then(async (response) => {
           const payload = await readPayload(response);
           if (!response.ok || !payload.pollUrl) {
@@ -91,7 +91,7 @@ export function initializeEditorSubmits(root: ClientRoot, dom: EditorDom): void 
         button.textContent = 'Saving…';
       }
       dom.rememberPreviewPath(dom.getPreviewPath());
-      void fetch(form.action, { method: 'POST', body: new FormData(form), headers: { accept: 'text/html' }, credentials: 'same-origin' })
+      void fetch(form.action, { method: 'POST', body: new FormData(form, button), headers: { accept: 'text/html' }, credentials: 'same-origin' })
         .then(async (response) => {
           if (!response.ok) {
             const payload = await readPayload(response);

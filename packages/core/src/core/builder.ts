@@ -18,13 +18,18 @@ import remarkMath from 'remark-math';
 import { z } from 'zod';
 
 import { resolvePostDescription } from '../description.js';
+import { ContentSourceName } from '../consts.js';
+import { createContentProfile } from '../design/profile.js';
+import { renderDesignCss } from '../design/styles.js';
+import type { BlogDesignSpecV1, ContentProfile, SourceSnapshotV1 } from '../design/types.js';
+import { validateBlogDesignSpec, validateSourceSnapshot } from '../design/validate.js';
 import { remarkHackmdCompatibility } from '../markdown/hackmd.js';
 import { generateSlug, slugify } from './utils.js';
 import { logger } from './logger.js';
-import type { ContentSource } from '../types.js';
+import type { ContentSource, Post } from '../types.js';
 import { loadConfig } from './config.js';
 
-const TEMPLATE_VERSION = 11;
+const TEMPLATE_VERSION = 12;
 
 interface ShikiElement {
   properties: Record<string, unknown>;
@@ -205,8 +210,10 @@ export interface BuildPostSummary {
 }
 export interface BuildPostTag { name: string; slug: string }
 export interface BuildContentSummary {
+  site: { title: string; description: string; language: string };
   author: { name: string; bio: string };
   posts: BuildPostSummary[];
+  contentProfile: ContentProfile;
 }
 export class DevBuilder {
   readonly root: string;
@@ -411,7 +418,9 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
     if (configBackedUp) await fs.remove(configBackupPath);
 
     logger.info('Content updated successfully');
+    const includedPosts = normalizedPosts.filter((post) => post.included);
     return {
+      site: { title: siteTitle, description: siteDescription, language: siteLanguage },
       author,
       posts: normalizedPosts
         .map(({ title, slug, description, publishedAt, included, tags, updatedAt, contentHash }) => ({
@@ -425,6 +434,7 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
           ...(updatedAt ? { updatedAt } : {}),
         }))
         .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt) || left.slug.localeCompare(right.slug)),
+      contentProfile: createContentProfile(includedPosts.map((post) => ({ ...post, tags: post.tags.map((tag) => tag.name) })) as Post[]),
     };
   }
 }
@@ -554,4 +564,44 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
   }
 
   logger.info(`Production build completed in ${outDir}`);
+}
+
+export async function writeSourceSnapshot(vibelogDir: string, outDir: string, summary: BuildContentSummary): Promise<SourceSnapshotV1> {
+  const root = resolve(vibelogDir);
+  const destination = resolve(outDir);
+  if (destination === parsePath(destination).root || destination === root || isPathInside(root, destination)) throw new Error('Source snapshot output must be outside the generated project');
+  const snapshot = validateSourceSnapshot({ version: 1, site: summary.site, author: summary.author, contentProfile: summary.contentProfile });
+  await fs.emptyDir(destination);
+  await fs.copy(join(root, 'src', 'content'), join(destination, 'content'));
+  await fs.writeJson(join(destination, 'source.json'), snapshot, { spaces: 2 });
+  return snapshot;
+}
+
+export interface CompileBlogOptions {
+  sourceDir: string;
+  design: BlogDesignSpecV1;
+  workDir: string;
+  outDir: string;
+  site: string;
+}
+
+export async function buildBlog({ sourceDir, design: inputDesign, workDir, outDir, site }: CompileBlogOptions): Promise<void> {
+  const sourceRoot = resolve(sourceDir);
+  const root = resolve(workDir);
+  const finalOutDir = resolve(outDir);
+  if (!isPathInside(root, finalOutDir)) throw new Error('Compiled output must be inside the build work directory');
+  const source = validateSourceSnapshot(await fs.readJson(join(sourceRoot, 'source.json')));
+  const design = validateBlogDesignSpec(inputDesign);
+  const builder = new DevBuilder({ root, contentSource: {
+    name: ContentSourceName.HACKMD,
+    getPosts: () => Promise.reject(new Error('Frozen source build cannot fetch posts')),
+    getAuthor: () => Promise.reject(new Error('Frozen source build cannot fetch author')),
+  } });
+  await builder.prepare({ installDependencies: false });
+  await fs.copy(join(sourceRoot, 'content'), join(builder.vibelogDir, 'src', 'content'), { overwrite: true });
+  await fs.ensureDir(join(builder.vibelogDir, 'src', 'generated'));
+  await fs.writeJson(join(builder.vibelogDir, 'src', 'generated', 'design.json'), design, { spaces: 2 });
+  await fs.writeFile(join(builder.vibelogDir, 'src', 'consts.ts'), `// Auto-generated site configuration\nexport const SITE_TITLE = ${JSON.stringify(source.site.title)};\nexport const SITE_DESCRIPTION = ${JSON.stringify(source.site.description)};\nexport const SITE_LANGUAGE = ${JSON.stringify(source.site.language)};\n`);
+  await fs.writeFile(join(builder.vibelogDir, 'public', 'theme.css'), renderDesignCss(design));
+  await buildFromVibelog({ vibelogDir: builder.vibelogDir, outDir: finalOutDir, site });
 }

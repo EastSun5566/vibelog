@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { readdir } from 'node:fs/promises';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { relative, resolve, sep } from 'node:path';
 import {
   CopyObjectCommand, DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client,
@@ -30,6 +30,20 @@ export class S3ArtifactStore implements ArtifactStore {
       const fromRoot = relative(root, absolute);
       if (fromRoot.startsWith(`..${sep}`)) throw new Error('Artifact file escaped upload root');
       await this.client.send(new PutObjectCommand({ Bucket: this.config.bucket, Key: key(artifactId, fromRoot.split(sep).join('/')), Body: createReadStream(absolute), ContentType: contentType(fromRoot) }));
+    }
+  }
+  async materializeArtifact(artifactId: string, localDirectory: string): Promise<void> {
+    const root = resolve(localDirectory);
+    await mkdir(root, { recursive: true });
+    for (const path of await this.listObjects(artifactId)) {
+      const safePath = cleanPath(path);
+      const absolute = resolve(root, ...safePath.split('/'));
+      const fromRoot = relative(root, absolute);
+      if (!fromRoot || fromRoot.startsWith(`..${sep}`) || fromRoot === '..') throw new Error('Artifact object escaped materialization root');
+      const object = await this.readObject(artifactId, safePath);
+      if (!object) throw new Error(`Artifact object disappeared during materialization: ${safePath}`);
+      await mkdir(resolve(absolute, '..'), { recursive: true });
+      await writeFile(absolute, Buffer.from(await new Response(object.body).arrayBuffer()));
     }
   }
   async copyArtifact(sourceId: string, destinationId: string): Promise<void> {

@@ -28,7 +28,7 @@ export function initializeStudio(root: ClientRoot, dom: EditorDom): void {
     previewRequest = new AbortController();
     dom.showStatus(statusNode, 'Updating preview…', 'running');
     try {
-      const response = await fetch('/api/theme/preview', { method: 'POST', body: new FormData(studio), headers: { accept: 'application/json' }, credentials: 'same-origin', signal: previewRequest.signal });
+      const response = await fetch('/api/design/preview', { method: 'POST', body: new FormData(studio), headers: { accept: 'application/json' }, credentials: 'same-origin', signal: previewRequest.signal });
       const payload = await readPayload(response);
       if (!response.ok) throw new Error(payload.error?.message ?? 'Could not update the preview');
       dom.showStatus(statusNode, payload.message ?? 'Preview updated; changes are not saved', 'succeeded');

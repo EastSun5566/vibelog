@@ -6,6 +6,7 @@ import PostList from "../../components/PostList.astro";
 import SiteLayout from "../../layouts/SiteLayout.astro";
 import { SITE_DESCRIPTION, SITE_TITLE } from "../../consts";
 import { text } from "../../localization";
+import { design } from "../../design";
 
 export async function getStaticPaths({ paginate }) {
   const posts = (await getCollection("blog")).sort(
@@ -31,7 +32,9 @@ const canonicalArchivePath = (path: string) => path.endsWith("/") ? path : `${pa
     <h1>{text.allPosts}</h1>
     <p>{text.postsByDate(page.total)}</p>
   </header>
-  <PostList posts={page.data} />
+  <section class={`blog-index layout-${design.pages.index.layout} columns-${design.pages.index.columns}`}>
+    <PostList posts={page.data} variant={design.pages.index.itemVariant} columns={design.pages.index.columns} showDescription={design.pages.index.showDescription} showTags={design.pages.index.showTags} />
+  </section>
   {
     page.lastPage > 1 && (
       <nav class="archive-pagination" aria-label={text.pagination}>

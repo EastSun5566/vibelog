@@ -6,6 +6,7 @@ import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
 import { SITE_LANGUAGE } from "../consts";
 import { text } from "../localization";
+import { design } from "../design";
 
 interface Props {
   title: string;
@@ -35,10 +36,10 @@ const hasTags = posts.some((post) => post.data.tags.length > 0);
   </head>
   <body>
     <a class="skip-link" href="#main-content">{text.skipToContent}</a>
-    <Header {hasTags} />
+    <Header {hasTags} variant={design.chrome.header.variant} />
     <main id="main-content" tabindex="-1">
       <slot />
     </main>
-    <Footer name={author.data.name} />
+    <Footer name={author.data.name} bio={author.body} variant={design.chrome.footer.variant} />
   </body>
 </html>

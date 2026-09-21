@@ -1,4 +1,5 @@
 import { ContentSourceName } from './consts.js';
+import type { BlogDesignSpec, DesignProposalInput } from './design/types.js';
 
 export interface VibelogConfig {
   site: {
@@ -72,12 +73,6 @@ export interface ThemeConfig {
   description: string;
 }
 
-export interface ThemeProposalInput {
-  blog: { title: string; description: string; author: string };
-  currentTheme: ThemeConfig;
-  prompt: string;
-}
-
 export interface AiGenerationContext {
   sessionId: string;
   signal?: AbortSignal;
@@ -86,5 +81,5 @@ export interface AiGenerationContext {
 export interface AiProvider {
   readonly name: string;
   readonly modelId: string;
-  generate(input: ThemeProposalInput, context?: AiGenerationContext): Promise<ThemeConfig>
+  generate(input: DesignProposalInput, context?: AiGenerationContext): Promise<BlogDesignSpec>
 }

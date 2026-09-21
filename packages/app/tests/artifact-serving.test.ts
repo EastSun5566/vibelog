@@ -16,6 +16,7 @@ function storeWith(objects: Record<string, string>): { store: ArtifactStore; rea
   const readObject = vi.fn((_artifactId: string, path: string) => Promise.resolve(objects[path] ? { body: body(objects[path]) } : null));
   return { store: {
     uploadDirectory: vi.fn(),
+    materializeArtifact: vi.fn(),
     copyArtifact: vi.fn(),
     listObjects: vi.fn(() => Promise.resolve(Object.keys(objects))),
     readObject,

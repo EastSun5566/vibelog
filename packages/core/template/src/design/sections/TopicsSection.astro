@@ -1,0 +1,15 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import type { HomeSection } from '../../design';
+import { text } from '../../localization';
+type Section = Extract<HomeSection, { type: 'topics' }>;
+interface Props { section: Section; posts: CollectionEntry<'blog'>[] }
+const { section, posts } = Astro.props;
+const counts = new Map<string, { name: string; count: number }>();
+for (const post of posts) for (const tag of post.data.tags) counts.set(tag.slug, { name: tag.name, count: (counts.get(tag.slug)?.count ?? 0) + 1 });
+const topics = [...counts].sort(([, left], [, right]) => right.count - left.count || left.name.localeCompare(right.name)).slice(0, section.limit);
+---
+{topics.length > 0 && <section class={`home-section home-topics variant-${section.variant}`} aria-labelledby="topics-heading">
+  <h2 id="topics-heading">{text.tags}</h2>
+  <ul class="home-topic-list" role="list">{topics.map(([slug, topic]) => <li><a class="tag-link" href={`/tags/${slug}/`}>{topic.name} <span class="tag-count">{topic.count}</span></a></li>)}</ul>
+</section>}

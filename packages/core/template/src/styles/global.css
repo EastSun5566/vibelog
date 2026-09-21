@@ -240,6 +240,18 @@ h3 {
   padding: 0;
 }
 
+.columns-1 {
+  --design-columns: 1;
+}
+
+.columns-2 {
+  --design-columns: 2;
+}
+
+.columns-3 {
+  --design-columns: 3;
+}
+
 .blog-list-item {
   min-width: 0;
 }

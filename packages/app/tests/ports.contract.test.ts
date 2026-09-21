@@ -8,6 +8,7 @@ describe('provider-neutral I/O contracts', () => {
     const objects = new Map<string, Uint8Array>();
     const store: ArtifactStore = {
       uploadDirectory: vi.fn((id: string) => { objects.set(`${id}/index.html`, new TextEncoder().encode('hello')); return Promise.resolve(); }),
+      materializeArtifact: vi.fn(() => Promise.resolve()),
       copyArtifact: vi.fn((source: string, destination: string) => { const body = objects.get(`${source}/index.html`); if (!body) return Promise.reject(new Error('Source missing')); objects.set(`${destination}/index.html`, body); return Promise.resolve(); }),
       listObjects: vi.fn((id: string) => Promise.resolve([...objects.keys()].filter((key) => key.startsWith(`${id}/`)).map((key) => key.slice(id.length + 1)))),
       readObject: vi.fn((id: string, path: string) => { const body = objects.get(`${id}/${path}`); return Promise.resolve(body ? { body: new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(body); controller.close(); } }) } : null); }),
