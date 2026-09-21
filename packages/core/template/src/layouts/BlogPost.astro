@@ -38,7 +38,7 @@ const article = design.pages.article;
   modifiedAt={updatedDate}
   tags={tags.map((tag) => tag.name)}
 >
-  <article class={`blog-post layout-${article.layout}`}>
+  <article class={`blog-post layout-${article.layout} code-${article.codeBlock}`}>
     <div class="blog-post-content" data-pagefind-body>
       <header class={`blog-post-header variant-${article.header} metadata-${article.metadata}`} id="article-start" data-design-target="article.header">
         <p class="blog-post-date"><FormattedDate date={date} /></p>

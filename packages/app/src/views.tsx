@@ -274,18 +274,20 @@ const CONTROL_OPTIONS = {
   codeBlockStyle: [['plain', 'Plain'], ['panel', 'Panel']],
 } as const;
 
-function ChoiceGroup({ legend, name, options, value }: { legend: string; name: string; options: readonly (readonly [string, string])[]; value: string }) {
+type PreviewKind = 'visual' | 'structural';
+
+function ChoiceGroup({ legend, name, options, value, previewKind = 'structural' }: { legend: string; name: string; options: readonly (readonly [string, string])[]; value: string; previewKind?: PreviewKind }) {
   return <fieldset class="fieldset">
     <legend>{legend}</legend>
     <div class="choice-grid">{options.map(([option, label]) => <label class="choice">
-      <input type="radio" name={name} value={option} checked={value === option} data-theme-control/>
+      <input type="radio" name={name} value={option} checked={value === option} data-theme-control data-preview-kind={previewKind}/>
       <span>{label}</span>
     </label>)}</div>
   </fieldset>;
 }
 
-function SelectField({ label, name, value, options }: { label: string; name: string; value: string | number; options: readonly (readonly [string | number, string])[] }) {
-  return <label class="field"><span>{label}</span><select name={name} data-theme-control>{options.map(([option, text]) => <option value={String(option)} selected={String(value) === String(option)}>{text}</option>)}</select></label>;
+function SelectField({ label, name, value, options, previewKind = 'structural' }: { label: string; name: string; value: string | number; options: readonly (readonly [string | number, string])[]; previewKind?: PreviewKind }) {
+  return <label class="field"><span>{label}</span><select name={name} data-theme-control data-preview-kind={previewKind}>{options.map(([option, text]) => <option value={String(option)} selected={String(value) === String(option)}>{text}</option>)}</select></label>;
 }
 
 function HomeSectionControls({ section, index }: { section: HomeSection; index: number }) {
@@ -334,12 +336,12 @@ function StyleRuleControls({ target, rule }: { target: StyleTarget; rule?: Style
   return <fieldset class="style-rule-controls">
     <legend>{STYLE_TARGET_LABELS[target]}</legend>
     <div class="composition-fields">
-      <SelectField label="Align" name={`${prefix}textAlign`} value={rule?.declarations.textAlign ?? ''} options={STYLE_OPTIONS.textAlign}/>
-      <SelectField label="Padding" name={`${prefix}paddingBlock`} value={rule?.declarations.paddingBlock ?? ''} options={STYLE_OPTIONS.paddingBlock}/>
-      <SelectField label="Gap" name={`${prefix}gap`} value={rule?.declarations.gap ?? ''} options={STYLE_OPTIONS.gap}/>
-      <SelectField label="Surface" name={`${prefix}surface`} value={rule?.declarations.surface ?? ''} options={STYLE_OPTIONS.surface}/>
-      <SelectField label="Border" name={`${prefix}border`} value={rule?.declarations.border ?? ''} options={STYLE_OPTIONS.border}/>
-      <SelectField label="Width" name={`${prefix}width`} value={rule?.declarations.width ?? ''} options={STYLE_OPTIONS.width}/>
+      <SelectField label="Align" name={`${prefix}textAlign`} value={rule?.declarations.textAlign ?? ''} options={STYLE_OPTIONS.textAlign} previewKind="visual"/>
+      <SelectField label="Padding" name={`${prefix}paddingBlock`} value={rule?.declarations.paddingBlock ?? ''} options={STYLE_OPTIONS.paddingBlock} previewKind="visual"/>
+      <SelectField label="Gap" name={`${prefix}gap`} value={rule?.declarations.gap ?? ''} options={STYLE_OPTIONS.gap} previewKind="visual"/>
+      <SelectField label="Surface" name={`${prefix}surface`} value={rule?.declarations.surface ?? ''} options={STYLE_OPTIONS.surface} previewKind="visual"/>
+      <SelectField label="Border" name={`${prefix}border`} value={rule?.declarations.border ?? ''} options={STYLE_OPTIONS.border} previewKind="visual"/>
+      <SelectField label="Width" name={`${prefix}width`} value={rule?.declarations.width ?? ''} options={STYLE_OPTIONS.width} previewKind="visual"/>
     </div>
   </fieldset>;
 }
@@ -555,7 +557,7 @@ export function editorPage(input: EditorPageInput) {
                   <div class="field"><label for="addSectionType">Add section</label><select id="addSectionType" name="addSectionType"><option value="intro">Intro</option><option value="featured-posts">Featured posts</option><option value="recent-posts">Recent posts</option><option value="topics">Topics</option><option value="author">Author</option></select></div>
                   <button class="btn" data-variant="outline" type="submit" formnovalidate name="compositionAction" value="add" data-operation-submit data-feedback-target="fine-tune" disabled={busy || activeDesign.config.pages.home.sections.length >= 5}>Add section</button>
                 </fieldset>
-                <ChoiceGroup legend="Layout preset" name="preset" options={CONTROL_OPTIONS.preset} value={controls.preset}/>
+                <ChoiceGroup legend="Layout preset" name="preset" options={CONTROL_OPTIONS.preset} value={controls.preset} previewKind="visual"/>
                 <ChoiceGroup legend="Header" name="headerStyle" options={CONTROL_OPTIONS.headerStyle} value={controls.headerStyle}/>
                 <ChoiceGroup legend="Footer" name="footerStyle" options={CONTROL_OPTIONS.footerStyle} value={controls.footerStyle}/>
                 <ChoiceGroup legend="Posts page" name="indexLayout" options={CONTROL_OPTIONS.indexLayout} value={controls.indexLayout}/>
@@ -575,16 +577,16 @@ export function editorPage(input: EditorPageInput) {
                   <legend>Color palette</legend>
                   {!controls.palette ? <p class="muted">Choose a palette to replace the current AI colors.</p> : null}
                   <div class="choice-grid">{Object.entries(THEME_PALETTES).map(([name, palette]) => <label class={`choice palette-choice palette-${name}`}>
-                    <span class="palette-label"><input type="radio" name="palette" value={name} checked={controls.palette === name} data-theme-control/> {palette.label}</span>
+                    <span class="palette-label"><input type="radio" name="palette" value={name} checked={controls.palette === name} data-theme-control data-preview-kind="visual"/> {palette.label}</span>
                     <span class="swatches" aria-hidden="true"><span class="swatch"></span><span class="swatch"></span><span class="swatch"></span></span>
                   </label>)}</div>
                 </fieldset>
-                <ChoiceGroup legend="Body font" name="bodyFont" options={CONTROL_OPTIONS.bodyFont} value={controls.bodyFont}/>
-                <ChoiceGroup legend="Heading font" name="headingFont" options={CONTROL_OPTIONS.headingFont} value={controls.headingFont}/>
-                <ChoiceGroup legend="Type scale" name="scale" options={CONTROL_OPTIONS.scale} value={controls.scale}/>
-                <ChoiceGroup legend="Content width" name="contentWidth" options={CONTROL_OPTIONS.contentWidth} value={controls.contentWidth}/>
-                <ChoiceGroup legend="Spacing" name="density" options={CONTROL_OPTIONS.density} value={controls.density}/>
-                <ChoiceGroup legend="Corners" name="radius" options={CONTROL_OPTIONS.radius} value={controls.radius}/>
+                <ChoiceGroup legend="Body font" name="bodyFont" options={CONTROL_OPTIONS.bodyFont} value={controls.bodyFont} previewKind="visual"/>
+                <ChoiceGroup legend="Heading font" name="headingFont" options={CONTROL_OPTIONS.headingFont} value={controls.headingFont} previewKind="visual"/>
+                <ChoiceGroup legend="Type scale" name="scale" options={CONTROL_OPTIONS.scale} value={controls.scale} previewKind="visual"/>
+                <ChoiceGroup legend="Content width" name="contentWidth" options={CONTROL_OPTIONS.contentWidth} value={controls.contentWidth} previewKind="visual"/>
+                <ChoiceGroup legend="Spacing" name="density" options={CONTROL_OPTIONS.density} value={controls.density} previewKind="visual"/>
+                <ChoiceGroup legend="Corners" name="radius" options={CONTROL_OPTIONS.radius} value={controls.radius} previewKind="visual"/>
                 <details class="editor-disclosure advanced-styles" data-disclosure-key="advanced-styles">
                   <summary><span>Advanced styling</span><small>Semantic rules only</small></summary>
                   <div class="disclosure-body style-rule-list">

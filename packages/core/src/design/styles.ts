@@ -15,6 +15,19 @@ const TARGETS: Record<StyleRule['target'], string> = {
 };
 const SPACE = { none: '0', sm: '0.5rem', md: '1rem', lg: '1.5rem', xl: '2.5rem' };
 const WIDTH = { reading: '42rem', content: 'var(--theme-content-width)', full: '100%' };
+const MOTIF_STYLES = {
+  minimal: `.article-navigation-link{border-top:1px solid var(--theme-border)}`,
+  editorial: `h1,h2,h3{letter-spacing:-.045em}.site-header{border-bottom:3px double var(--theme-border)}.article-navigation-link{border-top:3px double var(--theme-border)}`,
+  notebook: `body{background-image:linear-gradient(var(--theme-border) 1px,transparent 1px);background-size:100% 1.75rem}.site-header nav,main,.site-footer,footer{background:var(--theme-background)}.article-navigation-link{background:var(--theme-surface);border:1px solid var(--theme-border);border-radius:var(--theme-radius);padding:var(--theme-space)}`,
+} as const;
+const HEADER_VARIANTS = `.site-header.variant-compact nav{min-height:4rem}
+.site-header.variant-centered nav{flex-direction:column;justify-content:center;padding-block:calc(var(--theme-space)*1.15);text-align:center}.site-header.variant-centered .site-title{font-size:clamp(1.2rem,3vw,1.65rem)}.site-header.variant-centered .site-nav-links{justify-content:center}
+.site-header.variant-masthead nav{border-block:3px double var(--theme-border);padding-block:calc(var(--theme-space)*1.5)}`;
+const POST_LIST_VARIANTS = `.blog-list.variant-divided{gap:0}.blog-list.variant-divided .blog-list-item{background:transparent;border:0;border-bottom:1px solid var(--theme-border);border-radius:0;padding:var(--theme-space) 0}.blog-list.variant-divided .blog-list-item:first-child{border-top:1px solid var(--theme-border)}
+.blog-list.variant-cards{gap:var(--theme-space)}.blog-list.variant-cards .blog-list-item{background:var(--theme-surface);border:1px solid var(--theme-border);border-radius:var(--theme-radius);padding:var(--theme-space)}
+.blog-list.variant-numbered{counter-reset:vibelog-posts}.blog-list.variant-numbered .blog-list-item{align-items:start;background:transparent;border:0;border-bottom:1px solid var(--theme-border);border-radius:0;counter-increment:vibelog-posts;display:grid;gap:var(--theme-space);grid-template-columns:2.5rem minmax(0,1fr);padding:var(--theme-space) 0}.blog-list.variant-numbered .blog-list-item::before{color:var(--theme-muted);content:counter(vibelog-posts,decimal-leading-zero);font-family:var(--theme-heading-font);font-size:.8rem;padding-block-start:.2rem}`;
+const CODE_BLOCK_VARIANTS = `.blog-post.code-plain .prose pre{border-color:transparent;border-inline-start:.2rem solid var(--theme-border);border-radius:0}
+.blog-post.code-panel .prose pre{border:1px solid var(--theme-border);border-radius:var(--theme-radius);box-shadow:0 .4rem 1.2rem rgb(0 0 0/.06)}`;
 
 function ruleCss(rule: StyleRule): string {
   const declarations = rule.declarations;
@@ -49,9 +62,12 @@ export function designToLegacyTheme(design: BlogDesignSpecV1): ThemeConfig {
 
 export function renderDesignCss(input: BlogDesignSpecV1): string {
   const design = validateBlogDesignSpec(input);
-  return `${renderThemeCss(designToLegacyTheme(design))}
+  return `${renderThemeCss(designToLegacyTheme(design), { includeLegacyVariants: false })}
 /* Presentation IR v1 */
-.site-header.variant-masthead nav{border-block:3px double var(--theme-border);padding-block:calc(var(--theme-space)*1.5)}
+${MOTIF_STYLES[design.theme.motif]}
+${HEADER_VARIANTS}
+${POST_LIST_VARIANTS}
+${CODE_BLOCK_VARIANTS}
 .site-footer.variant-profile{display:grid;gap:.35rem}
 .home-sections{display:grid;gap:clamp(2.5rem,7vw,6rem)}
 .home-section.variant-centered{text-align:center}.home-section.variant-split{display:grid;gap:var(--theme-space)}

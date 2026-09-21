@@ -15,6 +15,11 @@ export function initializeStudio(root: ClientRoot, dom: EditorDom): void {
     .filter((control) => !(control instanceof HTMLInputElement) || control.type !== 'radio' || control.checked)
     .map((control) => [control.name, control.value]));
   const initialControlState = controlState();
+  const structuralControlState = () => JSON.stringify([...studio.querySelectorAll<ThemeControl>('[data-theme-control][data-preview-kind="structural"]')]
+    .filter((control) => !(control instanceof HTMLInputElement) || control.type !== 'radio' || control.checked)
+    .map((control) => [control.name, control.value]));
+  const initialStructuralControlState = structuralControlState();
+  const hasStructuralChanges = () => structuralControlState() !== initialStructuralControlState;
   let previewTimer: number | undefined;
   let previewRequest: AbortController | undefined;
 
@@ -31,7 +36,9 @@ export function initializeStudio(root: ClientRoot, dom: EditorDom): void {
       const response = await fetch('/api/design/preview', { method: 'POST', body: new FormData(studio), headers: { accept: 'application/json' }, credentials: 'same-origin', signal: previewRequest.signal });
       const payload = await readPayload(response);
       if (!response.ok) throw new Error(payload.error?.message ?? 'Could not update the preview');
-      dom.showStatus(statusNode, payload.message ?? 'Preview updated; changes are not saved', 'succeeded');
+      dom.showStatus(statusNode, hasStructuralChanges()
+        ? 'Visual preview updated. Build this design version to apply layout changes.'
+        : payload.message ?? 'Visual preview updated; changes are not saved', 'succeeded');
       const preview = dom.currentPreview();
       const origin = dom.currentPreviewOrigin();
       if (preview && origin) preview.contentWindow?.postMessage({ type: 'vibelog-preview-refresh' }, new URL(origin).origin);
@@ -45,6 +52,11 @@ export function initializeStudio(root: ClientRoot, dom: EditorDom): void {
     control.addEventListener('change', () => {
       updateDirtyState();
       window.clearTimeout(previewTimer);
+      if (control.dataset.previewKind === 'structural') {
+        previewRequest?.abort();
+        dom.showStatus(statusNode, 'Layout changes will appear after you build this design version.', 'succeeded');
+        return;
+      }
       previewTimer = window.setTimeout(() => void updatePreview(), 250);
     });
   }

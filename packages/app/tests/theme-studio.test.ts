@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_DESIGN, contrastRatio } from '@vibelog/core';
-import { describeTheme, paletteForTheme, THEME_PALETTES, themeFromControls, themesEqual } from '../src/theme-studio.js';
+import { describeTheme, paletteForTheme, THEME_PALETTES, themeFromControls, themesEqual, visualThemeFromControls } from '../src/theme-studio.js';
 
 const controls = {
   preset: 'editorial', palette: 'newsprint', bodyFont: 'system-serif', headingFont: 'system-sans',
@@ -84,6 +84,26 @@ describe('Theme Studio controls', () => {
       declarations: { textAlign: 'center', paddingBlock: 'xl', surface: 'surface', border: 'hairline', width: 'reading' },
     }]);
     expect(() => themeFromControls(DEFAULT_DESIGN, { ...controls, indexColumns: '2' })).toThrow('List columns');
+  });
+
+  it('keeps structural controls out of the live visual preview', () => {
+    const preview = visualThemeFromControls(DEFAULT_DESIGN, {
+      ...controls,
+      headerStyle: 'masthead',
+      postListStyle: 'numbered',
+      indexLayout: 'magazine',
+      articleLayout: 'wide',
+      codeBlockStyle: 'panel',
+      'style:home.intro:textAlign': 'center',
+    });
+    expect(preview.theme).toMatchObject({
+      motif: 'editorial',
+      colors: THEME_PALETTES.newsprint.colors,
+      typography: { bodyFont: 'system-serif', headingFont: 'system-sans', scale: 'large' },
+    });
+    expect(preview.chrome).toEqual(DEFAULT_DESIGN.chrome);
+    expect(preview.pages).toEqual(DEFAULT_DESIGN.pages);
+    expect(preview.styles.rules).toEqual([{ target: 'home.intro', declarations: { textAlign: 'center' } }]);
   });
 
   it('ships six palettes with readable text and links', () => {

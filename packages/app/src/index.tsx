@@ -18,7 +18,7 @@ import type { ArtifactStore } from './ports/artifact-store.js';
 import type { TransactionalEmailSender } from './ports/transactional-email.js';
 import { editorUrlWithPreviewPath, safePreviewPath } from './preview-path.js';
 import { hashToken, randomToken } from './security/crypto.js';
-import { themeFromControls } from './theme-studio.js';
+import { themeFromControls, visualThemeFromControls } from './theme-studio.js';
 import { deletionPage, editorPage, guidePage, landingPage, loginPage, onboardingPage, operationPage, type AnalyticsDocumentConfig, type DeletionError } from './views.js';
 
 const RESERVED = new Set(['preview', 'www', 'api', 'admin', 'assets']);
@@ -196,7 +196,15 @@ export function createApp(options: CreateAppOptions) {
   }
   function readPreviewToken(body: Record<string, string | File>): string { const token = previewTokenInput.safeParse(formValue(body, 'previewToken')); if (!token.success) throw new AppError('preview_session_expired', 'The preview expired. Refresh the editor.', 409); return token.data; }
   async function assertOwnedPreview(blog: BlogRecord, token: string): Promise<void> { const preview = await database.getPreviewSession(hashToken(token)); if (!preview || preview.userId !== blog.userId || preview.blogId !== blog.id) throw new AppError('preview_session_expired', 'The preview expired. Refresh the editor.', 409); }
-  app.post('/api/design/preview', async (c) => { const body = await mutationBody(c); const token = readPreviewToken(body); const { blog, design } = await designFromBody(c, body); await database.updatePreviewDesign(hashToken(token), blog.userId, blog.id, design); return c.json({ status: 'succeeded', message: 'Preview updated; changes are not saved' }); });
+  app.post('/api/design/preview', async (c) => {
+    const body = await mutationBody(c); const token = readPreviewToken(body); const blog = await ownedBlog(c); const activeDesign = await database.getActiveDesign(blog.id);
+    if (!activeDesign) throw new AppError('design_not_found', 'Design not found', 404);
+    let design;
+    try { design = visualThemeFromControls(activeDesign.config, body); }
+    catch { throw new AppError('invalid_design', 'Check the design controls and try again.', 400); }
+    await database.updatePreviewDesign(hashToken(token), blog.userId, blog.id, design);
+    return c.json({ status: 'succeeded', message: 'Visual preview updated; changes are not saved' });
+  });
   app.post('/actions/design/apply', async (c) => { const body = await mutationBody(c); const { blog, design } = await designFromBody(c, body); await assertOwnedPreview(blog, readPreviewToken(body)); return enqueue(c, 'apply_design', { design, previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
   app.post('/actions/design/generate', async (c) => { const body = await mutationBody(c); const input = designInput.safeParse({ prompt: formValue(body, 'prompt') }); if (!input.success) throw new AppError('invalid_design_prompt', 'Describe the design in 1–1000 characters.', 400); const { blog, design } = await designFromBody(c, body); await assertOwnedPreview(blog, readPreviewToken(body)); const previewPath = safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin); return enqueue(c, 'generate_design', { ...input.data, baseDesign: design, previewPath }); });
   app.post('/actions/design/:id/activate', async (c) => { const body = await mutationBody(c); return enqueue(c, 'activate_design', { designRevisionId: uuidInput.parse(c.req.param('id')), previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });

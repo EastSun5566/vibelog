@@ -115,4 +115,14 @@ export function themeFromControls(base: BlogDesignSpecV1, input: Record<string, 
   };
   next.description = describeTheme(next); return validateBlogDesignSpec(next);
 }
+export function visualThemeFromControls(base: BlogDesignSpecV1, input: Record<string, unknown>): BlogDesignSpecV1 {
+  const candidate = themeFromControls(base, input);
+  const visual: BlogDesignSpecV1 = {
+    ...candidate,
+    chrome: structuredClone(base.chrome),
+    pages: structuredClone(base.pages),
+  };
+  visual.description = describeTheme(visual);
+  return validateBlogDesignSpec(visual);
+}
 export function themesEqual(first: BlogDesignSpecV1, second: BlogDesignSpecV1): boolean { return JSON.stringify(validateBlogDesignSpec(first)) === JSON.stringify(validateBlogDesignSpec(second)); }

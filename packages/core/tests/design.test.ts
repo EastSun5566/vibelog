@@ -27,6 +27,20 @@ describe('Presentation IR v1', () => {
     expect(css).not.toContain('javascript:');
   });
 
+  it('scopes list and code styles to the variants rendered by each component', () => {
+    const value = design((candidate) => {
+      candidate.theme.motif = 'editorial';
+      candidate.pages.index.itemVariant = 'numbered';
+      candidate.pages.article.codeBlock = 'panel';
+    });
+    const css = renderDesignCss(value);
+    expect(css).toContain('.blog-list.variant-numbered .blog-list-item');
+    expect(css).toContain('.blog-list.variant-cards .blog-list-item');
+    expect(css).toContain('.blog-post.code-panel .prose pre');
+    expect(css).not.toMatch(/(?:^|\n)\.blog-list-item\s*\{/u);
+    expect(css).not.toMatch(/(?:^|\n)\.prose pre\s*\{/u);
+  });
+
   it.each([
     ['missing version', (() => { const { version: _version, ...value } = DEFAULT_DESIGN; return value; })()],
     ['unknown field', { ...DEFAULT_DESIGN, html: '<script>bad</script>' }],

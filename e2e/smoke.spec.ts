@@ -263,10 +263,20 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await page.getByRole('group', { name: 'Layout preset' }).getByLabel('Editorial').check();
   await page.getByRole('group', { name: 'Body font' }).getByLabel('Mono').check();
   const fineTuneFeedback = page.locator('details[data-disclosure-key="fine-tune"] [data-feedback-slot="fine-tune"]');
-  await expect(fineTuneFeedback).toContainText('Preview updated; changes are not saved');
+  await expect(fineTuneFeedback).toContainText('Visual preview updated; changes are not saved');
   const fineTuneFeedbackBox = await fineTuneFeedback.boundingBox();
   const saveThemeButtonBox = await page.getByRole('button', { name: 'Build design version' }).boundingBox();
   expect(Math.abs((fineTuneFeedbackBox?.x ?? 0) - (saveThemeButtonBox?.x ?? 0))).toBeLessThanOrEqual(1);
+  let structuralPreviewRequests = 0;
+  await page.route('**/api/design/preview', (route) => {
+    structuralPreviewRequests += 1;
+    return route.continue();
+  });
+  await page.getByRole('group', { name: 'Header' }).getByLabel('Masthead').check();
+  await expect(fineTuneFeedback).toContainText('Layout changes will appear after you build this design version.');
+  await page.waitForTimeout(400);
+  expect(structuralPreviewRequests).toBe(0);
+  await page.unroute('**/api/design/preview');
   await page.route('**/actions/design/apply', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Could not save the design' } }) }));
   await page.getByRole('button', { name: 'Build design version' }).click();
   await expect(fineTuneFeedback).toContainText('Could not save the design');
@@ -324,7 +334,7 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
 
   await openDisclosure(page, 'fine-tune');
   await page.getByLabel('Notebook').check();
-  await expect(page.getByText('Preview updated; changes are not saved')).toBeVisible();
+  await expect(page.getByText('Visual preview updated; changes are not saved')).toBeVisible();
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Build design version' }));
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Publish changes' }));
   await openDisclosure(page, 'release-history');
