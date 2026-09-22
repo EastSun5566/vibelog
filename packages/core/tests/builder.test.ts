@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -177,6 +177,7 @@ describe('DevBuilder content summary', () => {
     const builder = createDevBuilder({ root, contentSource: source });
     await builder.prepare({ installDependencies: false });
     await writeFile(join(root, '.vibelog', '.vibelog-state.json'), JSON.stringify({ templateVersion: 2 }));
+    await mkdir(join(root, '.vibelog', 'src', 'styles'), { recursive: true });
     await writeFile(join(root, '.vibelog', 'src', 'styles', 'global.css'), '/* legacy custom copy */');
 
     await builder.prepare({ installDependencies: false });
