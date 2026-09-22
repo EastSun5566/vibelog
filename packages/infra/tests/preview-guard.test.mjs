@@ -11,6 +11,7 @@ describe('Pulumi preview safety gate', () => {
     const preview = [
       event('update', 'urn::gcp:cloudrunv2/service:Service::web', { name: 'vibelog-web-dev', ingress: 'INGRESS_TRAFFIC_ALL' }),
       event('update', 'urn::gcp:cloudrunv2/service:Service::worker', { name: 'vibelog-worker-dev', ingress: 'INGRESS_TRAFFIC_INTERNAL_ONLY' }),
+      event('create', 'urn::cloudflare:index/zoneSetting:ZoneSetting::delivery-browser-cache-ttl', { settingId: 'browser_cache_ttl', value: 0 }),
     ].join('\n');
     expect(findUnsafeChanges(preview)).toEqual([]);
   });

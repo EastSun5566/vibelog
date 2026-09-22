@@ -13,11 +13,15 @@ export interface CloudflareDeliveryArgs {
 export class CloudflareDelivery extends pulumi.ComponentResource {
   readonly script: cloudflare.WorkersScript;
   readonly routes: cloudflare.WorkersRoute[];
+  readonly browserCacheTtl: cloudflare.ZoneSetting;
   constructor(name: string, args: CloudflareDeliveryArgs, opts?: pulumi.ComponentResourceOptions) {
     super('vibelog:infra:CloudflareDelivery', name, {}, opts);
     const resourceOptions = { parent: this, provider: args.provider };
     const defaultBundlePath = fileURLToPath(new URL('../../../packages/edge/dist/index.js', import.meta.url));
     const content = readFileSync(resolve(args.bundlePath ?? defaultBundlePath), 'utf8');
+    this.browserCacheTtl = new cloudflare.ZoneSetting(`${name}-browser-cache-ttl`, {
+      zoneId: args.zoneId, settingId: 'browser_cache_ttl', value: 0,
+    }, { ...resourceOptions, protect: true });
     this.script = new cloudflare.WorkersScript(`${name}-edge`, {
       accountId: args.accountId, scriptName: `vibelog-${pulumi.getStack()}-edge`, compatibilityDate: '2026-08-29',
       content, mainModule: 'index.js', bindings: [
@@ -40,6 +44,6 @@ export class CloudflareDelivery extends pulumi.ComponentResource {
       source: 'api',
     }, { ...resourceOptions, dependsOn: args.forwardingAddress });
     this.routes = [apexRoute, wildcardRoute];
-    this.registerOutputs({ scriptName: this.script.scriptName, routePatterns: this.routes.map((route) => route.pattern) });
+    this.registerOutputs({ scriptName: this.script.scriptName, routePatterns: this.routes.map((route) => route.pattern), browserCacheTtl: this.browserCacheTtl.value });
   }
 }

@@ -251,5 +251,9 @@ describe('Pulumi components', () => {
     const forwardingRule = registrations.find((item) => item.name === 'test-delivery-support-forwarding');
     expect(forwardingRule?.inputs).toMatchObject({ zoneId: 'zone', enabled: true, matchers: [{ type: 'literal', field: 'to', value: 'support@example.com' }] });
     expect(record(forwardingRule?.inputs.actions).value).toEqual([{ type: 'forward', values: ['owner@example.net'] }]);
+    const browserCacheTtl = registrations.find((item) => item.name === 'test-delivery-browser-cache-ttl');
+    expect(browserCacheTtl?.type).toBe('cloudflare:index/zoneSetting:ZoneSetting');
+    expect(browserCacheTtl?.inputs).toMatchObject({ zoneId: 'zone', settingId: 'browser_cache_ttl', value: 0 });
+    expect(browserCacheTtl?.provider).toBeTruthy();
   });
 });
