@@ -29,7 +29,7 @@ RUN pnpm --filter @vibelog/core build \
 FROM node:24-slim AS runtime
 
 LABEL org.opencontainers.image.title="VibeLog App"
-LABEL org.opencontainers.image.description="Hosted HackMD-to-Astro AI theme editor"
+LABEL org.opencontainers.image.description="Hosted HackMD-to-Astro AI design editor"
 LABEL org.opencontainers.image.source="https://github.com/EastSun5566/vibelog"
 LABEL org.opencontainers.image.licenses="MIT"
 

@@ -4,7 +4,7 @@ import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
-import { renderThemeCss } from '@vibelog/core';
+import { renderDesignCss } from '@vibelog/core';
 import { createArtifactZip } from './artifact-export.js';
 import { findArtifactObject } from './artifact-serving.js';
 import { createAuth, readSession, type AppVariables } from './auth.js';
@@ -18,14 +18,14 @@ import type { ArtifactStore } from './ports/artifact-store.js';
 import type { TransactionalEmailSender } from './ports/transactional-email.js';
 import { editorUrlWithPreviewPath, safePreviewPath } from './preview-path.js';
 import { hashToken, randomToken } from './security/crypto.js';
-import { themeFromControls } from './theme-studio.js';
+import { themeFromControls, visualThemeFromControls } from './theme-studio.js';
 import { deletionPage, editorPage, guidePage, landingPage, loginPage, onboardingPage, operationPage, type AnalyticsDocumentConfig, type DeletionError } from './views.js';
 
 const RESERVED = new Set(['preview', 'www', 'api', 'admin', 'assets']);
 const handleInput = z.string().trim().toLowerCase().min(3).max(32).regex(/^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/);
 const emailInput = z.email().max(320);
 const hackmdInput = z.object({ hackmdUsername: z.string().trim().min(1).max(100).regex(/^[\p{L}\p{N}_.-]+$/u) });
-const themeInput = z.object({ prompt: z.string().trim().min(1).max(1000) });
+const designInput = z.object({ prompt: z.string().trim().min(1).max(1000) });
 const previewTokenInput = z.string().min(32).max(512);
 const uuidInput = z.uuid();
 const deletionConfirmationInput = z.string().trim().min(1).max(320);
@@ -76,8 +76,8 @@ export function createApp(options: CreateAppOptions) {
       const blog = await database.getBlog(preview.blogId); if (!blog?.draftArtifactId || blog.state === 'deleting') throw new AppError('preview_not_ready', 'Preview is not ready', 404);
       if (c.req.path === '/theme.css') {
         c.header('Content-Security-Policy', `default-src 'self'; script-src 'none'; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors ${config.appOrigin}`);
-        const theme = await database.getActiveTheme(blog.id); if (!theme) throw new AppError('theme_not_found', 'Theme not found', 404);
-        c.header('Content-Type', 'text/css; charset=utf-8'); c.header('Cache-Control', 'private, no-store'); return c.body(renderThemeCss(preview.themeConfig ?? theme.config));
+        const design = await database.getActiveDesign(blog.id); if (!design) throw new AppError('design_not_found', 'Design not found', 404);
+        c.header('Content-Type', 'text/css; charset=utf-8'); c.header('Cache-Control', 'private, no-store'); return c.body(renderDesignCss(preview.designConfig ?? design.config));
       }
       const nonce = randomBytes(18).toString('base64');
       const previewScripts = usesSearchScripts(c.req.path) ? `'nonce-${nonce}' 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:` : `'nonce-${nonce}'`;
@@ -151,16 +151,18 @@ export function createApp(options: CreateAppOptions) {
   async function enqueue(c: AppContext, type: OperationType, payload: Record<string, unknown> = {}) {
     const blog = await ownedBlog(c); const previewPath = typeof payload.previewPath === 'string' ? payload.previewPath : '/';
     try {
-      const operation = type === 'generate_theme' ? await database.createThemeOperation(blog.userId, blog.id, String(payload.prompt), payload.baseTheme, { userDailyLimit: config.aiUserDailyLimit, globalDailyLimit: config.aiGlobalDailyLimit }, previewPath)
-        : type === 'publish' ? await database.createPublishOperation(blog.userId, blog.id, hashToken(String(payload.previewToken)), previewPath) : await database.createSyncOperation(blog.userId, blog.id, payload);
+      const operation = type === 'generate_design' ? await database.createDesignOperation(blog.userId, blog.id, String(payload.prompt), payload.baseDesign, { userDailyLimit: config.aiUserDailyLimit, globalDailyLimit: config.aiGlobalDailyLimit }, previewPath)
+        : type === 'apply_design' ? await database.createApplyDesignOperation(blog.userId, blog.id, payload.design, previewPath)
+          : type === 'activate_design' ? await database.createActivateDesignOperation(blog.userId, blog.id, String(payload.designRevisionId), previewPath)
+            : type === 'publish' ? await database.createPublishOperation(blog.userId, blog.id, hashToken(String(payload.previewToken)), previewPath) : await database.createSyncOperation(blog.userId, blog.id, payload);
       return await dispatchAndRedirect(c, operation, editorUrlWithPreviewPath(previewPath));
     } catch (error) {
-      if (error instanceof AiQuotaExceededError) throw new AppError('ai_quota_exceeded', 'Today’s AI theme quota is exhausted.', 429, { 'Retry-After': String(error.retryAfter) });
+      if (error instanceof AiQuotaExceededError) throw new AppError('ai_quota_exceeded', 'Today’s AI design quota is exhausted.', 429, { 'Retry-After': String(error.retryAfter) });
       const known: Record<string, [string, string, number]> = {
         'Nothing to publish': ['nothing_to_publish', 'There are no unpublished changes.', 409], 'Nothing to update': ['nothing_to_update', 'The blog details are unchanged.', 409],
         'Nothing to update article selection': ['nothing_to_update', 'The article selection is unchanged.', 409], 'No articles selected': ['no_articles_selected', 'Select at least one article.', 400],
         'Unknown article selection': ['invalid_article_selection', 'The article selection is stale. Refresh and try again.', 409], 'Article selection unavailable': ['article_selection_unavailable', 'Finish the first content sync.', 409],
-        'Blog has no synced content': ['preview_not_ready', 'Finish the first content sync.', 409], 'Preview has unsaved theme changes': ['unsaved_theme', 'Save the theme before publishing.', 409],
+        'Blog has no compiled draft. Sync the content first.': ['preview_not_ready', 'Finish the first content sync.', 409], 'Preview has unsaved design changes': ['unsaved_design', 'Save the design before publishing.', 409],
         'Preview session expired or invalid': ['preview_session_expired', 'The preview expired. Refresh the editor.', 409],
       };
       if (error instanceof Error) {
@@ -187,13 +189,25 @@ export function createApp(options: CreateAppOptions) {
   app.post('/actions/blog/sync', async (c) => { const body = await mutationBody(c); return enqueue(c, 'sync', { intent: 'content', previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
   app.post('/actions/blog/identity', async (c) => { const body = await mutationBody(c); const input = blogIdentitySchema.safeParse({ title: formValue(body, 'title'), description: formValue(body, 'description') ?? '', language: formValue(body, 'language') }); if (!input.success) throw new AppError('invalid_blog_identity', 'Check the blog details.', 400); return enqueue(c, 'sync', { intent: 'identity', site: input.data, previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
   app.post('/actions/blog/selection', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); if (!blog.contentManifest?.length) throw new AppError('article_selection_unavailable', 'Finish the first content sync.', 409); const included = new Set(Object.entries(body).filter(([name, value]) => name.startsWith('article:') && value === 'included').map(([name]) => name.slice(8))); const excludedSlugs = blog.contentManifest.filter((post) => !included.has(post.slug)).map((post) => post.slug); return enqueue(c, 'sync', { intent: 'selection', excludedSlugs, previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
-  async function themeFromBody(c: AppContext, body: Record<string, string | File>) { const blog = await ownedBlog(c); const activeTheme = await database.getActiveTheme(blog.id); if (!activeTheme) throw new AppError('theme_not_found', 'Theme not found', 404); return { blog, theme: themeFromControls(activeTheme.config, body) }; }
+  async function designFromBody(c: AppContext, body: Record<string, string | File>) {
+    const blog = await ownedBlog(c); const activeDesign = await database.getActiveDesign(blog.id); if (!activeDesign) throw new AppError('design_not_found', 'Design not found', 404);
+    try { return { blog, design: themeFromControls(activeDesign.config, body) }; }
+    catch { throw new AppError('invalid_design', 'Check the design controls and try again.', 400); }
+  }
   function readPreviewToken(body: Record<string, string | File>): string { const token = previewTokenInput.safeParse(formValue(body, 'previewToken')); if (!token.success) throw new AppError('preview_session_expired', 'The preview expired. Refresh the editor.', 409); return token.data; }
   async function assertOwnedPreview(blog: BlogRecord, token: string): Promise<void> { const preview = await database.getPreviewSession(hashToken(token)); if (!preview || preview.userId !== blog.userId || preview.blogId !== blog.id) throw new AppError('preview_session_expired', 'The preview expired. Refresh the editor.', 409); }
-  app.post('/api/theme/preview', async (c) => { const body = await mutationBody(c); const token = readPreviewToken(body); const { blog, theme } = await themeFromBody(c, body); await database.updatePreviewTheme(hashToken(token), blog.userId, blog.id, theme); return c.json({ status: 'succeeded', message: 'Preview updated; changes are not saved' }); });
-  app.post('/actions/theme/apply', async (c) => { const body = await mutationBody(c); const { blog, theme } = await themeFromBody(c, body); await assertOwnedPreview(blog, readPreviewToken(body)); await database.createManualTheme(blog.userId, blog.id, theme); return c.redirect(editorUrlWithPreviewPath(safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin)), 303); });
-  app.post('/actions/theme/generate', async (c) => { const body = await mutationBody(c); const input = themeInput.safeParse({ prompt: formValue(body, 'prompt') }); if (!input.success) throw new AppError('invalid_theme_prompt', 'Describe the theme in 1–1000 characters.', 400); const { blog, theme } = await themeFromBody(c, body); await assertOwnedPreview(blog, readPreviewToken(body)); const previewPath = safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin); return enqueue(c, 'generate_theme', { ...input.data, baseTheme: theme, previewPath }); });
-  app.post('/actions/theme/:id/activate', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); const id = uuidInput.parse(c.req.param('id')); await database.activateTheme(id, blog.id); return c.redirect(editorUrlWithPreviewPath(safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin)), 303); });
+  app.post('/api/design/preview', async (c) => {
+    const body = await mutationBody(c); const token = readPreviewToken(body); const blog = await ownedBlog(c); const activeDesign = await database.getActiveDesign(blog.id);
+    if (!activeDesign) throw new AppError('design_not_found', 'Design not found', 404);
+    let design;
+    try { design = visualThemeFromControls(activeDesign.config, body); }
+    catch { throw new AppError('invalid_design', 'Check the design controls and try again.', 400); }
+    await database.updatePreviewDesign(hashToken(token), blog.userId, blog.id, design);
+    return c.json({ status: 'succeeded', message: 'Visual preview updated; changes are not saved' });
+  });
+  app.post('/actions/design/apply', async (c) => { const body = await mutationBody(c); const { blog, design } = await designFromBody(c, body); await assertOwnedPreview(blog, readPreviewToken(body)); return enqueue(c, 'apply_design', { design, previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
+  app.post('/actions/design/generate', async (c) => { const body = await mutationBody(c); const input = designInput.safeParse({ prompt: formValue(body, 'prompt') }); if (!input.success) throw new AppError('invalid_design_prompt', 'Describe the design in 1–1000 characters.', 400); const { blog, design } = await designFromBody(c, body); await assertOwnedPreview(blog, readPreviewToken(body)); const previewPath = safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin); return enqueue(c, 'generate_design', { ...input.data, baseDesign: design, previewPath }); });
+  app.post('/actions/design/:id/activate', async (c) => { const body = await mutationBody(c); return enqueue(c, 'activate_design', { designRevisionId: uuidInput.parse(c.req.param('id')), previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
   app.post('/actions/publish', async (c) => { const body = await mutationBody(c); return enqueue(c, 'publish', { previewToken: readPreviewToken(body), previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
   app.post('/actions/releases/:id/activate', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); const release = await database.getRelease(uuidInput.parse(c.req.param('id')), blog.id); if (!release || !(await database.getArtifact(release.artifactId))?.readyAt) throw new AppError('release_unavailable', 'This release artifact is unavailable.', 409); await database.activateExistingRelease(release.id, blog.id); return c.redirect(editorUrlWithPreviewPath(safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin)), 303); });
   app.get('/api/export', async (c) => {
@@ -255,11 +269,11 @@ export function createApp(options: CreateAppOptions) {
     const blog = await database.getBlogForUser(c.get('session').user.id); if (!blog) return c.redirect('/onboarding');
     if (blog.state === 'deleting') return c.html(deletionPage(c.get('session'), blog, config.appHostname, deletionError(c.req.query('deleteError')) ?? 'cleanup'));
     if (!blog.draftArtifactId) return c.redirect('/onboarding');
-    const themes = await database.listThemes(blog.id); const activeTheme = themes.find((theme) => theme.active); if (!activeTheme) throw new AppError('theme_not_found', 'Theme not found', 404);
-    const token = randomToken(); await database.createPreviewSession(hashToken(token), blog.userId, blog.id, new Date(Date.now() + 15 * 60_000).toISOString(), activeTheme.config);
+    const designs = await database.listDesignRevisions(blog.id); const activeDesign = designs.find((design) => design.active); if (!activeDesign) throw new AppError('design_not_found', 'Design not found', 404);
+    const token = randomToken(); await database.createPreviewSession(hashToken(token), blog.userId, blog.id, new Date(Date.now() + 15 * 60_000).toISOString(), activeDesign.config);
     const previewPath = safePreviewPath(c.req.query('previewPath'), config.previewOrigin); const accessUrl = new URL(`/preview-access/${encodeURIComponent(token)}`, config.previewOrigin); if (previewPath !== '/') accessUrl.searchParams.set('returnTo', previewPath);
     const [published, releases, operation] = await Promise.all([database.getActiveRelease(blog.id), database.listReleases(blog.id), database.getActiveOperation(blog.id, blog.userId)]);
-    return c.html(editorPage({ session: c.get('session'), blog, themes, activeTheme, published, releases, previewUrl: accessUrl.toString(), previewToken: token, previewOrigin: config.previewOrigin, previewPath, publicUrl: siteUrl(config, blog.username), appHostname: config.appHostname, operation, deletionError: deletionError(c.req.query('deleteError')) }));
+    return c.html(editorPage({ session: c.get('session'), blog, designs, activeDesign, published, releases, previewUrl: accessUrl.toString(), previewToken: token, previewOrigin: config.previewOrigin, previewPath, publicUrl: siteUrl(config, blog.username), appHostname: config.appHostname, operation, deletionError: deletionError(c.req.query('deleteError')) }));
   });
   app.get('/operations/:id', async (c) => { const operation = await database.getOperation(uuidInput.parse(c.req.param('id')), c.get('session').user.id); if (!operation) throw new AppError('operation_not_found', 'Operation not found.', 404); const blog = await database.getBlog(operation.blogId); const previewPath = safePreviewPath(operation.payload.previewPath, config.previewOrigin); return c.html(operationPage(c.get('session'), operation, blog?.draftArtifactId ? '/editor' : '/onboarding', editorUrlWithPreviewPath(previewPath))); });
   app.get('/api/session', (c) => c.json({ user: c.get('session').user, csrfToken: c.get('session').csrfToken }));

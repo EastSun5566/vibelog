@@ -1,0 +1,12 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import type { HomeSection } from '../../design';
+import { text } from '../../localization';
+type Section = Extract<HomeSection, { type: 'author' }>;
+interface Props { section: Section; author: CollectionEntry<'author'> }
+const { section, author } = Astro.props;
+---
+<section class={`home-section home-author variant-${section.variant}`} aria-labelledby="author-heading">
+  <p class="eyebrow">{text.aboutAuthor}</p><h2 id="author-heading">{author.data.name}</h2>
+  {section.variant === 'profile' && author.body && <p>{author.body}</p>}
+</section>

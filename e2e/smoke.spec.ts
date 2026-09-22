@@ -62,7 +62,7 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
 
 async function openDisclosure(page: Page, key: string): Promise<void> {
   const details = page.locator(`details[data-disclosure-key="${key}"]`);
-  if (!await details.evaluate((node) => (node as HTMLDetailsElement).open)) await details.locator('summary').click();
+  if (!await details.evaluate((node) => (node as HTMLDetailsElement).open)) await details.locator(':scope > summary').click();
 }
 
 test('publishes a fixture HackMD blog through the complete local stack', async ({ page, request }) => {
@@ -124,7 +124,7 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect.poll(() => analyticsScriptRequests).toBe(2);
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
-  await expect(page.getByText('Generate a theme with AI or fine-tune it, then publish when the draft is ready.')).toBeVisible();
+  await expect(page.getByText('Generate a design with AI or fine-tune it, then publish when the draft is ready.')).toBeVisible();
   await expect(page.getByText('AI cannot write arbitrary CSS or HTML')).toHaveCount(0);
   await expect(page.getByText('VibeLog stores no passwords')).toHaveCount(0);
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -153,7 +153,7 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(page).toHaveURL(/\/editor(?:\?|$)/u, { timeout: 120_000 });
   await expect(page.getByRole('heading', { name: "Alice Writer's blog" })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Content', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Appearance', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Design', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Publish', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: '@alice-hackmd on HackMD' })).toHaveAttribute('href', 'https://hackmd.io/@alice-hackmd');
   await page.setViewportSize({ width: 390, height: 844 });
@@ -192,12 +192,12 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(page.getByText('⌘/Ctrl + Enter')).toBeVisible();
 
   let aiPolls = 0;
-  await page.route('**/actions/theme/generate', (route) => route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ pollUrl: '/api/operations/mock-ai', successUrl: '/editor' }) }));
+  await page.route('**/actions/design/generate', (route) => route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ pollUrl: '/api/operations/mock-ai', successUrl: '/editor' }) }));
   await page.route('**/api/operations/mock-ai', (route) => {
     aiPolls += 1;
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(aiPolls === 1
-      ? { status: 'running', message: 'AI is designing a new theme…', progress: { kind: 'indeterminate' } }
-      : { status: 'succeeded', message: 'Theme ready', progress: { kind: 'indeterminate' } }) });
+      ? { status: 'running', message: 'AI is designing a new presentation…', progress: { kind: 'indeterminate' } }
+      : { status: 'succeeded', message: 'New design ready', progress: { kind: 'indeterminate' } }) });
   });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const aiBefore = await iframe.getAttribute('src');
@@ -205,12 +205,12 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
     const status = document.querySelector('.studio-primary [data-feedback-slot="ai"] [data-operation-status]');
     if (!status) throw new Error('AI feedback status is missing');
     new MutationObserver(() => {
-      if (status.textContent === 'Theme ready') document.documentElement.dataset.aiSuccessFeedback = 'ai';
+      if (status.textContent === 'New design ready') document.documentElement.dataset.aiSuccessFeedback = 'ai';
     }).observe(status, { childList: true, characterData: true, subtree: true });
   });
   await page.getByLabel('Describe the reading experience').press('Control+Enter');
   const aiFeedback = page.locator('.studio-primary [data-feedback-slot="ai"]');
-  await expect(aiFeedback.getByText('AI is designing a new theme…')).toBeVisible();
+  await expect(aiFeedback.getByText('AI is designing a new presentation…')).toBeVisible();
   await expect(aiFeedback.locator('[data-operation-progress]')).toBeHidden();
   await expect(aiFeedback.locator('.operation-indicator')).toHaveCSS('animation-name', 'none');
   await expect(page.locator('details[data-disclosure-key="fine-tune"] [data-feedback-slot="ai"]')).toHaveCount(0);
@@ -218,18 +218,18 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect.poll(() => iframe.getAttribute('src'), { timeout: 30_000 }).not.toBe(aiBefore);
   await expectNoPageReload(page);
   await expectPreviewPath(page, '/blog/hello-vibelog/');
-  await page.unroute('**/actions/theme/generate');
+  await page.unroute('**/actions/design/generate');
   await page.unroute('**/api/operations/mock-ai');
   await page.emulateMedia({ reducedMotion: 'no-preference' });
 
-  await page.route('**/actions/theme/generate', (route) => route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ pollUrl: '/api/operations/mock-ai-failed', successUrl: '/editor' }) }));
+  await page.route('**/actions/design/generate', (route) => route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ pollUrl: '/api/operations/mock-ai-failed', successUrl: '/editor' }) }));
   await page.route('**/api/operations/mock-ai-failed', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'failed', message: 'AI service is temporarily unavailable', progress: { kind: 'indeterminate' } }) }));
   await page.getByLabel('Describe the reading experience').fill('A quiet reading room');
   await page.getByRole('button', { name: 'Generate with AI' }).click();
   await expect(page.locator('.studio-primary [data-feedback-slot="ai"]')).toContainText('AI service is temporarily unavailable');
   await expect(page.locator('[data-feedback-slot="fine-tune"]')).not.toContainText('AI service is temporarily unavailable');
   await expectNoPageReload(page);
-  await page.unroute('**/actions/theme/generate');
+  await page.unroute('**/actions/design/generate');
   await page.unroute('**/api/operations/mock-ai-failed');
 
   let syncPolls = 0;
@@ -260,22 +260,32 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await page.unroute('**/api/operations/mock-failed');
 
   await openDisclosure(page, 'fine-tune');
-  await page.getByLabel('Editorial').check();
+  await page.getByRole('group', { name: 'Layout preset' }).getByLabel('Editorial').check();
   await page.getByRole('group', { name: 'Body font' }).getByLabel('Mono').check();
   const fineTuneFeedback = page.locator('details[data-disclosure-key="fine-tune"] [data-feedback-slot="fine-tune"]');
-  await expect(fineTuneFeedback).toContainText('Preview updated; changes are not saved');
+  await expect(fineTuneFeedback).toContainText('Visual preview updated; changes are not saved');
   const fineTuneFeedbackBox = await fineTuneFeedback.boundingBox();
-  const saveThemeButtonBox = await page.getByRole('button', { name: 'Save theme version' }).boundingBox();
+  const saveThemeButtonBox = await page.getByRole('button', { name: 'Build design version' }).boundingBox();
   expect(Math.abs((fineTuneFeedbackBox?.x ?? 0) - (saveThemeButtonBox?.x ?? 0))).toBeLessThanOrEqual(1);
-  await page.route('**/actions/theme/apply', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Could not save the theme' } }) }));
-  await page.getByRole('button', { name: 'Save theme version' }).click();
-  await expect(fineTuneFeedback).toContainText('Could not save the theme');
-  await expect(page.locator('.studio-primary [data-feedback-slot="ai"]')).not.toContainText('Could not save the theme');
-  await page.unroute('**/actions/theme/apply');
-  await expectPartialRefresh(page, page.getByRole('button', { name: 'Save theme version' }));
+  let structuralPreviewRequests = 0;
+  await page.route('**/api/design/preview', (route) => {
+    structuralPreviewRequests += 1;
+    return route.continue();
+  });
+  await page.getByRole('group', { name: 'Header' }).getByLabel('Masthead').check();
+  await expect(fineTuneFeedback).toContainText('Layout changes will appear after you build this design version.');
+  await page.waitForTimeout(400);
+  expect(structuralPreviewRequests).toBe(0);
+  await page.unroute('**/api/design/preview');
+  await page.route('**/actions/design/apply', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Could not save the design' } }) }));
+  await page.getByRole('button', { name: 'Build design version' }).click();
+  await expect(fineTuneFeedback).toContainText('Could not save the design');
+  await expect(page.locator('.studio-primary [data-feedback-slot="ai"]')).not.toContainText('Could not save the design');
+  await page.unroute('**/actions/design/apply');
+  await expectPartialRefresh(page, page.getByRole('button', { name: 'Build design version' }));
   await expectPreviewPath(page, '/blog/hello-vibelog/');
 
-  await openDisclosure(page, 'theme-history');
+  await openDisclosure(page, 'design-history');
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Preview version' }).first());
   await expectPreviewPath(page, '/blog/hello-vibelog/');
 
@@ -324,8 +334,8 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
 
   await openDisclosure(page, 'fine-tune');
   await page.getByLabel('Notebook').check();
-  await expect(page.getByText('Preview updated; changes are not saved')).toBeVisible();
-  await expectPartialRefresh(page, page.getByRole('button', { name: 'Save theme version' }));
+  await expect(page.getByText('Visual preview updated; changes are not saved')).toBeVisible();
+  await expectPartialRefresh(page, page.getByRole('button', { name: 'Build design version' }));
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Publish changes' }));
   await openDisclosure(page, 'release-history');
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Restore live' }).first());

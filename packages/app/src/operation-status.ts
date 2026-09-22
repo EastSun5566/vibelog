@@ -3,17 +3,21 @@ import { syncOperationIntent } from './blog-sync.js';
 
 const OPERATION_LABELS: Record<OperationRecord['type'], string> = {
   sync: 'Sync content',
-  generate_theme: 'Design theme',
+  generate_design: 'Generate design',
+  apply_design: 'Apply design',
+  activate_design: 'Restore design',
   publish: 'Publish site',
 };
 
 const PENDING_MESSAGES: Record<OperationRecord['type'], Record<'queued' | 'running', string>> = {
   sync: { queued: 'Waiting to sync…', running: 'Reading HackMD and building the preview…' },
-  generate_theme: { queued: 'Waiting for AI theme generation…', running: 'AI is designing a new theme…' },
+  generate_design: { queued: 'Waiting for AI design generation…', running: 'AI is designing a new presentation…' },
+  apply_design: { queued: 'Waiting to build the design…', running: 'Building the design preview…' },
+  activate_design: { queued: 'Waiting to restore the design…', running: 'Rebuilding the selected design…' },
   publish: { queued: 'Waiting to publish…', running: 'Building a new live release…' },
 };
 
-const OPERATION_MAX: Partial<Record<OperationType, number>> = { sync: 4, publish: 3 };
+const OPERATION_MAX: Partial<Record<OperationType, number>> = { sync: 4, apply_design: 3, activate_design: 3, publish: 3 };
 
 function storedProgress(operation: OperationRecord): OperationProgress | null {
   const progress = operation.result?.progress;
@@ -26,7 +30,7 @@ function storedProgress(operation: OperationRecord): OperationProgress | null {
 }
 
 export function operationProgress(operation: OperationRecord): OperationProgress {
-  if (operation.status === 'queued' || operation.type === 'generate_theme') return { kind: 'indeterminate' };
+  if (operation.status === 'queued' || operation.type === 'generate_design') return { kind: 'indeterminate' };
   const saved = storedProgress(operation);
   if (saved) return saved;
   const max = OPERATION_MAX[operation.type];

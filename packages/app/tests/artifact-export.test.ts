@@ -15,6 +15,7 @@ function artifactStore(objects: Record<string, string>): { store: ArtifactStore;
   const readObject = vi.fn((_id: string, path: string) => Promise.resolve(path in objects ? { body: stream(objects[path] ?? '') } : null));
   return { store: {
     uploadDirectory: vi.fn(),
+    materializeArtifact: vi.fn(),
     copyArtifact: vi.fn(),
     listObjects: vi.fn(() => Promise.resolve(Object.keys(objects))),
     readObject,

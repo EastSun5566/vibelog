@@ -1,8 +1,8 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AiProviderRequestError, AiProviderTimeoutError, HackMdSource, buildFromVibelog, createAiProviderChain, createDevBuilder, isHackMdSourceError, renderThemeCss, validateThemeConfig } from '@vibelog/core';
-import type { AiProvider, ContentSource } from '@vibelog/core';
+import { AiProviderRequestError, AiProviderTimeoutError, HackMdSource, buildBlog, createAiProviderChain, createDevBuilder, isHackMdSourceError, validateBlogDesignSpec, writeSourceSnapshot } from '@vibelog/core';
+import type { AiProvider, BlogDesignSpecV1, ContentSource } from '@vibelog/core';
 import { parseSyncOperationPayload } from './blog-sync.js';
 import type { OperationRuntimeConfig } from './config.js';
 import type { AppDatabase, OperationRecord } from './database.js';
@@ -34,11 +34,12 @@ export function operationPublicError(type: OperationRecord['type'], error: unkno
     if (message.includes('No articles selected')) return 'Select at least one article before building the blog draft.';
     return 'Sync failed. Confirm that your HackMD content is publicly readable and try again.';
   }
-  if (type === 'generate_theme') return error instanceof AiProviderTimeoutError
+  if (type === 'generate_design') return error instanceof AiProviderTimeoutError
     ? 'AI took too long to respond. Your previous design is unchanged; please try again.'
     : error instanceof AiProviderRequestError
       ? 'AI service is temporarily unavailable. Your previous design is unchanged; try again shortly.'
-      : 'AI could not produce a valid theme. Your previous design is unchanged; adjust the prompt and try again.';
+      : 'AI could not produce a valid design. Your previous design is unchanged; adjust the prompt and try again.';
+  if (type === 'apply_design' || type === 'activate_design') return 'The design could not be built. Your previous draft is unchanged; try again.';
   return 'Publishing failed. Your draft and current live site are unchanged; please try again.';
 }
 export class TerminalOperationError extends Error {
@@ -75,7 +76,9 @@ export class AppOperationExecutor implements OperationExecutor {
     const blog = await this.database.getBlog(operation.blogId);
     if (!blog || blog.userId !== operation.userId) throw new Error('Blog not found');
     if (operation.type === 'sync') {
-      const work = await mkdtemp(join(tmpdir(), 'vibelog-sync-')); const artifact = await this.database.createArtifact(blog.id, 'draft');
+      const work = await mkdtemp(join(tmpdir(), 'vibelog-sync-'));
+      const sourceArtifact = await this.database.createArtifact(blog.id, 'source');
+      const draftArtifact = await this.database.createArtifact(blog.id, 'draft');
       try {
         await this.database.updateOperationProgress(operation, { kind: 'determinate', value: 0, max: 4 }, 'Reading HackMD');
         const source = this.dependencies.contentSource?.(blog.hackmdUsername) ?? new HackMdSource(blog.hackmdUsername, { baseUrl: this.config.hackmdBaseUrl });
@@ -87,38 +90,61 @@ export class AppOperationExecutor implements OperationExecutor {
         const builder = createDevBuilder({ root: work, contentSource: snapshotSource }); await builder.prepare({ installDependencies: false });
         const excludedSlugs = payload.excludedSlugs ?? blog.contentManifest?.filter((post) => !post.included).map((post) => post.slug) ?? [];
         const summary = await builder.fetchContent({ excludedSlugs });
+        const activeDesign = await this.database.getActiveDesign(blog.id); if (!activeDesign) throw new Error('Active design not found');
         await this.database.updateOperationProgress(operation, { kind: 'determinate', value: 2, max: 4 }, 'Building static preview');
-        const output = join(work, 'dist'); await buildFromVibelog({ vibelogDir: join(work, '.vibelog'), outDir: output, site: publicOrigin(this.config, blog.username) });
-        await this.artifacts.uploadDirectory(artifact.id, output);
+        const sourceDirectory = join(work, 'source');
+        await writeSourceSnapshot(builder.vibelogDir, sourceDirectory, summary);
+        await this.artifacts.uploadDirectory(sourceArtifact.id, sourceDirectory);
+        const compileRoot = join(work, 'compile'); const output = join(compileRoot, 'dist');
+        await buildBlog({ sourceDir: sourceDirectory, design: activeDesign.config, workDir: compileRoot, outDir: output, site: publicOrigin(this.config, blog.username) });
+        await this.artifacts.uploadDirectory(draftArtifact.id, output);
         const message = payload.intent === 'identity' ? 'Blog details and content updated' : payload.intent === 'selection' ? 'Article selection and draft updated' : 'Content synced';
-        await this.database.completeSyncOperation(operation, { ...site, author: summary.author.name, artifactId: artifact.id, contentManifest: summary.posts }, { message });
+        await this.database.completeSyncOperation(operation, { ...site, author: summary.author.name, sourceArtifactId: sourceArtifact.id, draftArtifactId: draftArtifact.id, designRevisionId: activeDesign.id, contentProfile: summary.contentProfile, contentManifest: summary.posts }, { message });
         return { message };
+      } catch (error) { await Promise.all([this.database.markArtifactCleanup(sourceArtifact.id), this.database.markArtifactCleanup(draftArtifact.id)]); throw error; }
+      finally { await rm(work, { recursive: true, force: true }); }
+    }
+    if (operation.type === 'generate_design' || operation.type === 'apply_design' || operation.type === 'activate_design') {
+      if (!blog.sourceArtifactId || !blog.contentProfile) throw new Error('Sync the content before changing the design');
+      const sourceArtifactId = operation.payload.sourceArtifactId;
+      if (sourceArtifactId !== blog.sourceArtifactId) throw new Error('Source changed before design build');
+      let design: BlogDesignSpecV1;
+      if (operation.type === 'generate_design') {
+        await this.database.updateOperationProgress(operation, { kind: 'indeterminate' }, 'AI is designing a new presentation…');
+        const prompt = operation.payload.prompt; if (typeof prompt !== 'string') throw new Error('Design description is required');
+        const current = await this.database.getActiveDesign(blog.id); if (!current) throw new Error('Active design not found');
+        const baseDesign = operation.payload.baseDesign ? validateBlogDesignSpec(operation.payload.baseDesign) : current.config;
+        design = await (this.dependencies.aiProvider?.() ?? createAiProviderChain(this.config.aiProvider, this.config.aiModel, this.config.aiFallbackModels)).generate({ blog: { title: blog.title ?? blog.username, description: blog.description ?? '', author: blog.author ?? blog.username }, contentProfile: blog.contentProfile, currentDesign: baseDesign, prompt }, { sessionId: operation.id });
+      } else if (operation.type === 'apply_design') {
+        design = validateBlogDesignSpec(operation.payload.design);
+      } else {
+        const revisionId = operation.payload.designRevisionId; if (typeof revisionId !== 'string') throw new Error('Design revision is required');
+        const revision = await this.database.getDesignRevision(revisionId, blog.id); if (!revision) throw new Error('Design revision not found');
+        design = revision.config;
+      }
+      const work = await mkdtemp(join(tmpdir(), 'vibelog-design-')); const artifact = await this.database.createArtifact(blog.id, 'draft');
+      try {
+        await this.database.updateOperationProgress(operation, { kind: 'determinate', value: 1, max: 3 }, 'Building design preview');
+        const sourceDirectory = join(work, 'source'); await this.artifacts.materializeArtifact(blog.sourceArtifactId, sourceDirectory);
+        const compileRoot = join(work, 'compile'); const output = join(compileRoot, 'dist');
+        await buildBlog({ sourceDir: sourceDirectory, design, workDir: compileRoot, outDir: output, site: publicOrigin(this.config, blog.username) });
+        await this.artifacts.uploadDirectory(artifact.id, output);
+        const revision = await this.database.completeDesignOperation(operation, design, artifact.id, { message: 'New design ready' });
+        return { message: 'New design ready', revisionId: revision.id };
       } catch (error) { await this.database.markArtifactCleanup(artifact.id); throw error; }
       finally { await rm(work, { recursive: true, force: true }); }
     }
-    if (operation.type === 'generate_theme') {
-      await this.database.updateOperationProgress(operation, { kind: 'indeterminate' }, 'AI is designing a new theme…');
-      const prompt = operation.payload.prompt; if (typeof prompt !== 'string') throw new Error('Theme description is required');
-      const current = await this.database.getActiveTheme(blog.id); if (!current) throw new Error('Active theme not found');
-      const baseTheme = operation.payload.baseTheme ? validateThemeConfig(operation.payload.baseTheme) : current.config;
-      const theme = await (this.dependencies.aiProvider?.() ?? createAiProviderChain(this.config.aiProvider, this.config.aiModel, this.config.aiFallbackModels)).generate({ blog: { title: blog.title ?? blog.username, description: blog.description ?? '', author: blog.author ?? blog.username }, currentTheme: baseTheme, prompt }, { sessionId: operation.id });
-      const revision = await this.database.completeThemeOperation(operation, theme, { message: 'New theme ready' });
-      return { message: 'New theme ready', revisionId: revision.id };
-    }
     if (!blog.draftArtifactId) throw new Error('Sync content before publishing');
-    const contentVersion = operation.payload.contentVersion; const themeRevisionId = operation.payload.themeRevisionId;
-    if (!Number.isInteger(contentVersion) || typeof themeRevisionId !== 'string' || blog.contentVersion !== contentVersion) throw new Error('Publish snapshot is invalid');
-    const theme = await this.database.getTheme(themeRevisionId, blog.id); if (!theme) throw new Error('Active theme not found');
-    const artifact = await this.database.createArtifact(blog.id, 'release'); const overlay = await mkdtemp(join(tmpdir(), 'vibelog-publish-'));
+    const contentVersion = operation.payload.contentVersion; const designRevisionId = operation.payload.designRevisionId; const draftArtifactId = operation.payload.draftArtifactId;
+    if (!Number.isInteger(contentVersion) || typeof designRevisionId !== 'string' || typeof draftArtifactId !== 'string' || blog.contentVersion !== contentVersion || blog.draftArtifactId !== draftArtifactId || blog.draftDesignRevisionId !== designRevisionId) throw new Error('Publish snapshot is invalid');
+    const artifact = await this.database.createArtifact(blog.id, 'release');
     try {
       await this.database.updateOperationProgress(operation, { kind: 'determinate', value: 0, max: 3 }, 'Copying draft');
-      await this.artifacts.copyArtifact(blog.draftArtifactId, artifact.id);
-      await mkdir(overlay, { recursive: true }); await writeFile(join(overlay, 'theme.css'), renderThemeCss(theme.config)); await this.artifacts.uploadDirectory(artifact.id, overlay);
+      await this.artifacts.copyArtifact(draftArtifactId, artifact.id);
       const result = { message: 'Site published', url: publicOrigin(this.config, blog.username) };
       await this.database.completePublishOperation(operation, artifact.id, createReleaseSnapshot(blog), result);
       return result;
     } catch (error) { await this.database.markArtifactCleanup(artifact.id); throw error; }
-    finally { await rm(overlay, { recursive: true, force: true }); }
   }
   async cleanupArtifact(id: string): Promise<void> { await this.artifacts.deleteArtifact(id); await this.database.deleteArtifactRecord(id); }
   async cleanupPending(): Promise<number> {

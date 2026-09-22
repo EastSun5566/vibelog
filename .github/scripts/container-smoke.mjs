@@ -40,7 +40,7 @@ docker([
   '-v', 'ON_ERROR_STOP=1', '-c',
   `INSERT INTO "user" (id, name, email) VALUES ('${workerUserId}', 'Worker Smoke', 'worker-smoke@example.com');
    INSERT INTO blogs (id, user_id, username, hackmd_username, state) VALUES ('${workerBlogId}', '${workerUserId}', 'worker-smoke', 'worker-smoke', 'ready');
-   INSERT INTO operations (id, user_id, blog_id, type, status, payload) VALUES ('${workerOperationId}', '${workerUserId}', '${workerBlogId}', 'generate_theme', 'queued', '{}');
+   INSERT INTO operations (id, user_id, blog_id, type, status, payload) VALUES ('${workerOperationId}', '${workerUserId}', '${workerBlogId}', 'generate_design', 'queued', '{}');
    INSERT INTO operation_outbox (id, operation_id, payload) VALUES ('${workerOutboxId}', '${workerOperationId}', jsonb_build_object('version', 1, 'operationId', '${workerOperationId}', 'traceId', 'container-smoke', 'createdAt', now()::text));`,
 ]);
 await eventually(() => docker([

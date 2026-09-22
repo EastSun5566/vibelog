@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean, check, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid,
 } from 'drizzle-orm/pg-core';
-import type { ThemeConfig } from '@vibelog/core';
+import type { BlogDesignSpecV1, ContentProfile } from '@vibelog/core';
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -42,7 +42,8 @@ export const blogs = pgTable('blogs', {
   username: text('username').notNull(), hackmdUsername: text('hackmd_username').notNull(), title: text('title'),
   description: text('description'), author: text('author'), language: text('language').notNull().default('zh-Hant'),
   state: text('state', { enum: ['syncing', 'ready', 'failed', 'deleting'] }).notNull(), lastError: text('last_error'),
-  draftArtifactId: uuid('draft_artifact_id'), contentVersion: integer('content_version').notNull().default(0),
+  sourceArtifactId: uuid('source_artifact_id'), draftArtifactId: uuid('draft_artifact_id'), draftDesignRevisionId: uuid('draft_design_revision_id'), contentVersion: integer('content_version').notNull().default(0),
+  contentProfile: jsonb('content_profile').$type<ContentProfile | null>(),
   contentManifest: jsonb('content_manifest').$type<unknown[] | null>(),
   lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }), ...timestamps,
 }, (table) => [
@@ -52,17 +53,17 @@ export const blogs = pgTable('blogs', {
 ]);
 export const artifacts = pgTable('artifacts', {
   id: uuid('id').primaryKey(), blogId: uuid('blog_id').notNull().references(() => blogs.id, { onDelete: 'cascade' }),
-  kind: text('kind', { enum: ['draft', 'release'] }).notNull(), keyPrefix: text('key_prefix').notNull().unique(),
+  kind: text('kind', { enum: ['source', 'draft', 'release'] }).notNull(), keyPrefix: text('key_prefix').notNull().unique(),
   state: text('state', { enum: ['uploading', 'ready', 'cleanup_pending'] }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   readyAt: timestamp('ready_at', { withTimezone: true }),
 }, (table) => [
-  index('artifacts_blog_idx').on(table.blogId), check('artifacts_kind_check', sql`${table.kind} in ('draft','release')`),
+  index('artifacts_blog_idx').on(table.blogId), check('artifacts_kind_check', sql`${table.kind} in ('source','draft','release')`),
   check('artifacts_state_check', sql`${table.state} in ('uploading','ready','cleanup_pending')`),
 ]);
 export const themeRevisions = pgTable('theme_revisions', {
   id: uuid('id').primaryKey(), blogId: uuid('blog_id').notNull().references(() => blogs.id, { onDelete: 'cascade' }),
-  config: jsonb('config').$type<ThemeConfig>().notNull(), prompt: text('prompt'), description: text('description').notNull(),
+  config: jsonb('config').$type<BlogDesignSpecV1>().notNull(), prompt: text('prompt'), description: text('description').notNull(),
   source: text('source', { enum: ['system', 'ai', 'manual'] }).notNull().default('system'),
   active: boolean('active').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -73,7 +74,7 @@ export const themeRevisions = pgTable('theme_revisions', {
 export const operations = pgTable('operations', {
   id: uuid('id').primaryKey(), userId: uuid('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   blogId: uuid('blog_id').notNull().references(() => blogs.id, { onDelete: 'cascade' }),
-  type: text('type', { enum: ['sync', 'generate_theme', 'publish'] }).notNull(),
+  type: text('type', { enum: ['sync', 'generate_design', 'apply_design', 'activate_design', 'publish'] }).notNull(),
   status: text('status', { enum: ['queued', 'running', 'succeeded', 'failed'] }).notNull(),
   payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
   result: jsonb('result').$type<Record<string, unknown> | null>(), errorMessage: text('error_message'),
@@ -82,7 +83,7 @@ export const operations = pgTable('operations', {
 }, (table) => [
   uniqueIndex('operations_one_active_per_blog').on(table.blogId).where(sql`${table.status} in ('queued','running')`),
   index('operations_claim_idx').on(table.status, table.leaseExpiresAt),
-  check('operations_type_check', sql`${table.type} in ('sync','generate_theme','publish')`),
+  check('operations_type_check', sql`${table.type} in ('sync','generate_design','apply_design','activate_design','publish')`),
   check('operations_status_check', sql`${table.status} in ('queued','running','succeeded','failed')`),
 ]);
 export const operationOutbox = pgTable('operation_outbox', {
@@ -109,7 +110,7 @@ export const previewSessions = pgTable('preview_sessions', {
   tokenHash: text('token_hash').primaryKey(),
   userId: uuid('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   blogId: uuid('blog_id').notNull().references(() => blogs.id, { onDelete: 'cascade' }),
-  themeConfig: jsonb('theme_config').$type<ThemeConfig | null>(),
+  themeConfig: jsonb('theme_config').$type<BlogDesignSpecV1 | null>(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

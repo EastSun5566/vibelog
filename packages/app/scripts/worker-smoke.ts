@@ -30,7 +30,7 @@ export async function smokeWorker(config: SmokeConfig, database: SmokeDatabase, 
       insert into blogs (id, user_id, username, hackmd_username, state)
       select $2, id, $5, 'deployment-smoke', 'ready' from smoke_user returning id, user_id
     ) insert into operations (id, user_id, blog_id, type, status, payload)
-      select $3, user_id, id, 'generate_theme', 'queued', '{}'::jsonb from smoke_blog`,
+      select $3, user_id, id, 'generate_design', 'queued', '{}'::jsonb from smoke_blog`,
     [userId, blogId, operationId, `smoke-${userId}@example.invalid`, `smoke-${blogId.slice(0, 20)}`]);
     taskAttempted = true;
     const response = await request(`${api}${config.queuePath}/tasks`, {

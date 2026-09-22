@@ -1,10 +1,10 @@
 ---
 import { getCollection } from "astro:content";
 
-import PostList from "../components/PostList.astro";
+import HomeSections from "../design/HomeSections.astro";
 import SiteLayout from "../layouts/SiteLayout.astro";
 import { SITE_DESCRIPTION, SITE_TITLE } from "../consts";
-import { text } from "../localization";
+import { design } from "../design";
 
 const posts = (await getCollection("blog")).sort(
   (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
@@ -13,17 +13,5 @@ const [author] = await getCollection("author");
 ---
 
 <SiteLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
-  <section class="home-hero" aria-labelledby="site-heading">
-    <p class="eyebrow">{author.data.name}</p>
-    <h1 id="site-heading">{SITE_TITLE}</h1>
-    {SITE_DESCRIPTION && <p class="site-description">{SITE_DESCRIPTION}</p>}
-  </section>
-
-  <section class="latest-posts" aria-labelledby="latest-posts-heading">
-    <div class="section-heading">
-      <h2 id="latest-posts-heading">{text.latestPosts}</h2>
-      <a class="all-posts-link" href="/blog">{text.viewAllPosts}</a>
-    </div>
-    <PostList posts={posts.slice(0, 5)} headingLevel="h3" />
-  </section>
+  <HomeSections sections={design.pages.home.sections} {posts} {author} />
 </SiteLayout>

@@ -5,13 +5,16 @@ const today = new Date();
 
 interface Props {
   name: string;
+  bio?: string;
+  variant?: "minimal" | "profile";
 }
 
-const { name } = Astro.props;
+const { name, bio = "", variant = "minimal" } = Astro.props;
 ---
 
-<footer class="site-footer">
+<footer class={`site-footer variant-${variant}`} data-design-target="site.footer">
   <small>&copy; {today.getFullYear()} {name}</small>
+  {variant === "profile" && bio && <p>{bio}</p>}
   <nav aria-label={text.footerNavigation}>
     <ul class="footer-links" role="list">
       <li><a href="/rss.xml">RSS</a></li>

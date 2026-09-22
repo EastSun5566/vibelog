@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
-import { DEFAULT_THEME } from '@vibelog/core';
+import { DEFAULT_DESIGN } from '@vibelog/core';
 import { AppDatabase, BlogAddressTakenError, MAX_OPERATION_ATTEMPTS, OperationLeaseLostError } from '../src/database.js';
 import { AppOperationExecutor, OutboxDispatcher, RetryableOperationError } from '../src/jobs.js';
 import { loadWorkerConfig } from '../src/config.js';
@@ -153,7 +153,7 @@ describe.skipIf(!url)('operation crash recovery', () => {
   }
   function executor() {
     const config = loadWorkerConfig({ DATABASE_URL: url, OBJECT_STORE_ENDPOINT: 'http://unused', OBJECT_STORE_BUCKET: 'unused', OBJECT_STORE_ACCESS_KEY_ID: 'unused', OBJECT_STORE_SECRET_ACCESS_KEY: 'unused' });
-    const artifacts = { uploadDirectory: () => Promise.resolve(), copyArtifact: () => Promise.resolve(), listObjects: () => Promise.resolve([]), readObject: () => Promise.resolve(null), deleteArtifact: () => Promise.resolve() };
+    const artifacts = { uploadDirectory: () => Promise.resolve(), materializeArtifact: () => Promise.resolve(), copyArtifact: () => Promise.resolve(), listObjects: () => Promise.resolve([]), readObject: () => Promise.resolve(null), deleteArtifact: () => Promise.resolve() };
     return new AppOperationExecutor(database, artifacts, config);
   }
   it('reopens one crashed delivery and fences all writes from the previous attempt', async () => {
@@ -173,16 +173,22 @@ describe.skipIf(!url)('operation crash recovery', () => {
     expect(current.attempts).toBe(2);
     await expect(database.failOperation(first, 'stale failure')).rejects.toBeInstanceOf(OperationLeaseLostError);
     await expect(database.updateOperationProgress(first, { kind: 'indeterminate' }, 'stale progress')).rejects.toBeInstanceOf(OperationLeaseLostError);
-    const artifact = await database.createArtifact(blog.id, 'draft');
-    const metadata = { title: 'Recovered draft', description: '', author: 'Writer', artifactId: artifact.id };
+    const sourceArtifact = await database.createArtifact(blog.id, 'source');
+    const draftArtifact = await database.createArtifact(blog.id, 'draft');
+    const design = await database.getActiveDesign(blog.id); if (!design) throw new Error('Missing initial design');
+    const metadata = {
+      title: 'Recovered draft', description: '', author: 'Writer',
+      sourceArtifactId: sourceArtifact.id, draftArtifactId: draftArtifact.id, designRevisionId: design.id,
+      contentProfile: { postCount: 0, tagCount: 0, averageLength: 'short' as const, codeUsage: 'none' as const, imageUsage: 'none' as const, mathUsage: 'none' as const },
+    };
     await expect(database.completeSyncOperation(first, metadata, {})).rejects.toBeInstanceOf(OperationLeaseLostError);
     expect((await database.getBlog(blog.id))?.contentVersion).toBe(0);
     await database.completeSyncOperation(current, metadata, { message: 'done' });
     expect((await database.getBlog(blog.id))?.contentVersion).toBe(1);
     expect(await executor().execute(operation.id)).toEqual({ duplicate: true });
     // An ambiguous post-commit error cannot schedule the now-live artifact for deletion.
-    await database.markArtifactCleanup(artifact.id);
-    expect((await database.getArtifact(artifact.id))?.state).toBe('ready');
+    await database.markArtifactCleanup(draftArtifact.id);
+    expect((await database.getArtifact(draftArtifact.id))?.state).toBe('ready');
   });
   it('recovers stranded queued tasks and terminates after the execution retry budget', async () => {
     const { operation, blog } = await fixture();
@@ -199,23 +205,37 @@ describe.skipIf(!url)('operation crash recovery', () => {
     expect(await database.listPendingOutbox()).toHaveLength(0);
     expect(await database.claimOperation(operation.id)).toBeNull();
   });
-  it.each(['generate_theme', 'publish'] as const)('fences %s completion before changing the active revision', async (type) => {
-    const { operation, blog } = await fixture();
-    const theme = await database.getActiveTheme(blog.id); if (!theme) throw new Error('Missing initial theme');
-    await database.db.update(operations).set({ type, payload: { prompt: 'Test theme', contentVersion: 0, themeRevisionId: theme.id } }).where(eq(operations.id, operation.id));
+  it.each(['apply_design', 'publish'] as const)('fences %s completion before changing the active draft', async (type) => {
+    const { operation: syncOperation, blog } = await fixture();
+    const syncLease = await database.claimOperation(syncOperation.id); if (!syncLease) throw new Error('Missing sync claim');
+    const initialDesign = await database.getActiveDesign(blog.id); if (!initialDesign) throw new Error('Missing initial design');
+    const source = await database.createArtifact(blog.id, 'source');
+    const initialDraft = await database.createArtifact(blog.id, 'draft');
+    await database.completeSyncOperation(syncLease, {
+      title: 'Writer', description: '', author: 'Writer', sourceArtifactId: source.id, draftArtifactId: initialDraft.id,
+      designRevisionId: initialDesign.id,
+      contentProfile: { postCount: 0, tagCount: 0, averageLength: 'short', codeUsage: 'none', imageUsage: 'none', mathUsage: 'none' },
+    }, {});
+    let operation;
+    if (type === 'apply_design') operation = await database.createApplyDesignOperation(blog.userId, blog.id, DEFAULT_DESIGN);
+    else {
+      const tokenHash = randomUUID();
+      await database.createPreviewSession(tokenHash, blog.userId, blog.id, '2099-01-01T00:00:00.000Z', DEFAULT_DESIGN);
+      operation = await database.createPublishOperation(blog.userId, blog.id, tokenHash);
+    }
     const first = await database.claimOperation(operation.id); if (!first) throw new Error('Missing first claim');
     await database.db.update(operations).set({ leaseExpiresAt: expired }).where(eq(operations.id, operation.id));
     const current = await database.claimOperation(operation.id); if (!current) throw new Error('Missing recovered claim');
-    const artifact = await database.createArtifact(blog.id, 'release');
-    const complete = (lease: typeof first) => type === 'generate_theme'
-      ? database.completeThemeOperation(lease, DEFAULT_THEME, {})
+    const artifact = await database.createArtifact(blog.id, type === 'apply_design' ? 'draft' : 'release');
+    const complete = (lease: typeof first) => type === 'apply_design'
+      ? database.completeDesignOperation(lease, DEFAULT_DESIGN, artifact.id, {})
       : database.completePublishOperation(lease, artifact.id, { site: { title: 'Test', description: '', author: 'Writer', language: 'en' }, posts: [] }, {});
     await expect(complete(first)).rejects.toBeInstanceOf(OperationLeaseLostError);
-    expect((await database.getActiveTheme(blog.id))?.id).toBe(theme.id);
+    expect((await database.getActiveDesign(blog.id))?.id).toBe(initialDesign.id);
     expect(await database.getActiveRelease(blog.id)).toBeNull();
     await complete(current);
     await expect(complete(first)).rejects.toBeInstanceOf(OperationLeaseLostError);
-    expect(type === 'generate_theme' ? (await database.listThemes(blog.id)).length : (await database.listReleases(blog.id)).length).toBe(type === 'generate_theme' ? 2 : 1);
+    expect(type === 'apply_design' ? (await database.listDesignRevisions(blog.id)).length : (await database.listReleases(blog.id)).length).toBe(type === 'apply_design' ? 2 : 1);
   });
   it('runs the deployment smoke fixture through real DB execution and removes it afterwards', async () => {
     let operationId = '';

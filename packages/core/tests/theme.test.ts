@@ -26,7 +26,7 @@ describe('theme contract', () => {
     ].map((path) => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n');
     for (const selector of ['.site-header', '.site-footer', '.blog-list-item', '.blog-post', '.prose', '.tag-link', '.table-of-contents', '.article-back-to-start']) {
       expect(css).toContain(selector);
-      expect(template).toContain(`class="${selector.slice(1)}`);
+      expect(template).toContain(selector.slice(1));
     }
     expect(css).toContain('.tag-index-link');
     expect(css).toContain('footer');

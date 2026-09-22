@@ -2,7 +2,7 @@
   "name": "@vibelog/app",
   "version": "0.9.0",
   "private": true,
-  "description": "Hosted HackMD-to-Astro theme editor",
+  "description": "Hosted HackMD-to-Astro design editor",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/EastSun5566/vibelog.git",
