@@ -99,8 +99,8 @@ export const DESIGN_CATALOG = {
       width: ['reading', 'content', 'full'],
     },
     constraints:
-      'Each target may appear at most once. Never emit selectors, CSS, numeric values, URLs, animation, positioning, or fonts.',
+      'Each target may appear at most once. Use only the few adjustments that serve a clear hierarchy, usually 0-3 rules. Post item variants already own their borders and surfaces. Masthead and editorial headers already own their borders. Never emit selectors, CSS, numeric values, URLs, animation, positioning, or fonts.',
   },
 } as const;
 
-export const DESIGN_CATALOG_INSTRUCTIONS = `Use only the BlogDesignSpec vocabulary in this catalog. Choose blog presentation, not capabilities. Do not emit HTML, CSS, JavaScript, URLs, file paths, routes, content, imports, or component names outside the catalog.\n${JSON.stringify(DESIGN_CATALOG)}`;
+export const DESIGN_CATALOG_INSTRUCTIONS = `Use only the BlogDesignSpec vocabulary in this catalog. Choose blog presentation, not capabilities. Give the site one memorable visual idea; use balanced whitespace and a clear title-to-body hierarchy. Keep secondary decoration quiet and never repeat a border or surface already supplied by a variant. Do not emit HTML, CSS, JavaScript, URLs, file paths, routes, content, imports, or component names outside the catalog.\n${JSON.stringify(DESIGN_CATALOG)}`;

@@ -1,5 +1,5 @@
 import type { AppSession } from './auth.js';
-import type { HomeSection, StyleRule, StyleTarget } from '@vibelog/core';
+import type { BlogDesignSpecV1, HomeSection, StyleRule, StyleTarget } from '@vibelog/core';
 import type { BlogRecord, DesignRevisionRecord, OperationRecord, PublishedReleaseRecord, SyncedPostSummary } from './database.js';
 import { syncOperationIntent } from './blog-sync.js';
 import { operationLabel, operationMessage, operationProgress } from './operation-status.js';
@@ -331,16 +331,19 @@ const STYLE_OPTIONS = {
   width: [['', 'Default'], ['reading', 'Reading'], ['content', 'Content'], ['full', 'Full']],
 } as const;
 
-function StyleRuleControls({ target, rule }: { target: StyleTarget; rule?: StyleRule }) {
+function StyleRuleControls({ target, rule, design }: { target: StyleTarget; rule?: StyleRule; design: BlogDesignSpecV1 }) {
   const prefix = `style:${target}:`;
+  const borderOwned = target === 'posts.items'
+    || (target === 'site.header' && (design.theme.motif === 'editorial' || design.chrome.header.variant === 'masthead'))
+    || (target === 'article.header' && design.pages.article.header === 'editorial');
   return <fieldset class="style-rule-controls">
     <legend>{STYLE_TARGET_LABELS[target]}</legend>
     <div class="composition-fields">
       <SelectField label="Align" name={`${prefix}textAlign`} value={rule?.declarations.textAlign ?? ''} options={STYLE_OPTIONS.textAlign} previewKind="visual"/>
       <SelectField label="Padding" name={`${prefix}paddingBlock`} value={rule?.declarations.paddingBlock ?? ''} options={STYLE_OPTIONS.paddingBlock} previewKind="visual"/>
       <SelectField label="Gap" name={`${prefix}gap`} value={rule?.declarations.gap ?? ''} options={STYLE_OPTIONS.gap} previewKind="visual"/>
-      <SelectField label="Surface" name={`${prefix}surface`} value={rule?.declarations.surface ?? ''} options={STYLE_OPTIONS.surface} previewKind="visual"/>
-      <SelectField label="Border" name={`${prefix}border`} value={rule?.declarations.border ?? ''} options={STYLE_OPTIONS.border} previewKind="visual"/>
+      {target !== 'posts.items' && <SelectField label="Surface" name={`${prefix}surface`} value={rule?.declarations.surface ?? ''} options={STYLE_OPTIONS.surface} previewKind="visual"/>}
+      {!borderOwned && <SelectField label="Border" name={`${prefix}border`} value={rule?.declarations.border ?? ''} options={STYLE_OPTIONS.border} previewKind="visual"/>}
       <SelectField label="Width" name={`${prefix}width`} value={rule?.declarations.width ?? ''} options={STYLE_OPTIONS.width} previewKind="visual"/>
     </div>
   </fieldset>;
@@ -590,7 +593,7 @@ export function editorPage(input: EditorPageInput) {
                 <details class="editor-disclosure advanced-styles" data-disclosure-key="advanced-styles">
                   <summary><span>Advanced styling</span><small>Semantic rules only</small></summary>
                   <div class="disclosure-body style-rule-list">
-                    {(Object.keys(STYLE_TARGET_LABELS) as StyleTarget[]).map((target) => <StyleRuleControls target={target} rule={activeDesign.config.styles.rules.find((rule) => rule.target === target)}/>)}
+                    {(Object.keys(STYLE_TARGET_LABELS) as StyleTarget[]).map((target) => <StyleRuleControls target={target} rule={activeDesign.config.styles.rules.find((rule) => rule.target === target)} design={activeDesign.config}/>)}
                   </div>
                 </details>
                 <button class="btn" type="submit" formnovalidate disabled={busy} data-operation-submit data-feedback-target="fine-tune" data-focus-key="save-theme">Build design version</button>

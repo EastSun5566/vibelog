@@ -345,6 +345,7 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   publicUrl.pathname = '/';
   const publicBlogResponse = await page.goto(publicUrl.toString());
   expect(publicBlogResponse?.headers()['content-security-policy']).toContain("script-src 'none'");
+  await expect(page.locator('.site-header nav')).toHaveCSS('display', 'flex');
   await expect(page.locator('[data-analytics-loader]')).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);

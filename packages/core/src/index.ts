@@ -46,6 +46,7 @@ export { DESIGN_CATALOG, DESIGN_CATALOG_INSTRUCTIONS } from './design/catalog.js
 export { DEFAULT_DESIGN } from './design/defaults.js';
 export { migrateThemeConfigToDesign, parsePersistedDesign } from './design/migrate.js';
 export { createContentProfile } from './design/profile.js';
+export { normalizeDesignDecoration } from './design/normalize.js';
 export { renderDesignCss, designToLegacyTheme } from './design/styles.js';
 export { blogDesignSpecV1Schema, contentProfileSchema, parseBlogDesignSpec, sourceSnapshotV1Schema, validateBlogDesignSpec, validateSourceSnapshot } from './design/validate.js';
 export type { BlogDesignSpec, BlogDesignSpecV1, ContentProfile, DesignProposalInput, HomeSection, SourceSnapshotV1, StyleRule, StyleTarget } from './design/types.js';

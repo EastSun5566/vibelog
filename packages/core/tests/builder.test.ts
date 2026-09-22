@@ -155,9 +155,11 @@ describe('DevBuilder content summary', () => {
       const home = await readFile(join(outDir, 'index.html'), 'utf8');
       homes.push(home);
       for (const signature of signatures) expect(home).toContain(signature);
-      for (const path of ['blog/index.html', 'blog/first/index.html', 'tags/index.html', 'tags/design/index.html', 'search/index.html', 'rss.xml', 'sitemap-index.xml', 'robots.txt', 'llms.txt']) {
+      for (const path of ['global.css', 'blog/index.html', 'blog/first/index.html', 'tags/index.html', 'tags/design/index.html', 'search/index.html', 'rss.xml', 'sitemap-index.xml', 'robots.txt', 'llms.txt']) {
         await expect(stat(join(outDir, path))).resolves.toBeTruthy();
       }
+      expect(home).toContain('<link rel="stylesheet" href="/global.css">');
+      expect(await readFile(join(outDir, 'global.css'), 'utf8')).toContain('.site-header nav');
       await expect(stat(join(outDir, 'pagefind', 'pagefind.js'))).resolves.toBeTruthy();
     }
     expect(new Set(homes).size).toBe(3);
@@ -179,8 +181,9 @@ describe('DevBuilder content summary', () => {
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 13 });
-    expect(await readFile(join(root, '.vibelog', 'src', 'styles', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
+    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 14 });
+    await expect(stat(join(root, '.vibelog', 'src', 'styles', 'global.css'))).rejects.toThrow();
+    expect(await readFile(join(root, '.vibelog', 'public', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
   });
 
   it('builds the V12 reading experience with reliable descriptions, search, and machine-readable content', { timeout: 30_000 }, async () => {

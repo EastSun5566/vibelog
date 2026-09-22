@@ -1,4 +1,4 @@
-import { DEFAULT_DESIGN, validateBlogDesignSpec } from '@vibelog/core';
+import { DEFAULT_DESIGN, normalizeDesignDecoration, validateBlogDesignSpec } from '@vibelog/core';
 import type { BlogDesignSpecV1, HomeSection, StyleRule, StyleTarget, ThemeColors } from '@vibelog/core';
 
 export const THEME_PALETTES = {
@@ -113,7 +113,7 @@ export function themeFromControls(base: BlogDesignSpecV1, input: Record<string, 
     pages: { home: { sections: homeSections(base.pages.home.sections, input) }, index: { ...base.pages.index, layout: indexLayout, itemVariant: enumValue(input, 'postListStyle', OPTIONS.postListStyle), columns: indexColumns as 1 | 2 | 3, showDescription: enumValue(input, 'indexShowDescription', OPTIONS.boolean) === 'true', showTags: enumValue(input, 'indexShowTags', OPTIONS.boolean) === 'true' }, article: { ...base.pages.article, layout: articleLayout, toc: articleToc, header: enumValue(input, 'articleHeader', OPTIONS.articleHeader), metadata: enumValue(input, 'articleMetadata', OPTIONS.articleMetadata), navigation: enumValue(input, 'articleNavigation', OPTIONS.articleNavigation), codeBlock: enumValue(input, 'codeBlockStyle', OPTIONS.codeBlockStyle) } },
     styles: { rules: styleRules(base.styles.rules, input) }, description: '',
   };
-  next.description = describeTheme(next); return validateBlogDesignSpec(next);
+  next.description = describeTheme(next); return normalizeDesignDecoration(validateBlogDesignSpec(next));
 }
 export function visualThemeFromControls(base: BlogDesignSpecV1, input: Record<string, unknown>): BlogDesignSpecV1 {
   const candidate = themeFromControls(base, input);
@@ -123,6 +123,6 @@ export function visualThemeFromControls(base: BlogDesignSpecV1, input: Record<st
     pages: structuredClone(base.pages),
   };
   visual.description = describeTheme(visual);
-  return validateBlogDesignSpec(visual);
+  return normalizeDesignDecoration(validateBlogDesignSpec(visual));
 }
 export function themesEqual(first: BlogDesignSpecV1, second: BlogDesignSpecV1): boolean { return JSON.stringify(validateBlogDesignSpec(first)) === JSON.stringify(validateBlogDesignSpec(second)); }

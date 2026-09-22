@@ -30,6 +30,13 @@ describe('PiAiProvider design proposal', () => {
     const response = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN), { stopReason: 'toolUse' });
     await expect(subject([response]).generate(input)).resolves.toEqual(DEFAULT_DESIGN);
   });
+  it('cleans up redundant decoration in an otherwise valid AI proposal', async () => {
+    const proposal = structuredClone(DEFAULT_DESIGN);
+    proposal.styles.rules = [{ target: 'posts.items', declarations: { border: 'strong', surface: 'surface', gap: 'lg' } }];
+    const response = fauxAssistantMessage(fauxToolCall('propose_design', proposal), { stopReason: 'toolUse' });
+    const result = await subject([response]).generate(input);
+    expect(result.styles.rules).toEqual([{ target: 'posts.items', declarations: { gap: 'lg' } }]);
+  });
   it('accepts a monospaced body for a terminal theme', async () => {
     const terminalTheme = { ...DEFAULT_DESIGN, theme: { ...DEFAULT_DESIGN.theme, appearance: 'dark' as const, typography: { ...DEFAULT_DESIGN.theme.typography, bodyFont: 'system-mono' as const, headingFont: 'system-mono' as const } } };
     const response = fauxAssistantMessage(fauxToolCall('propose_design', terminalTheme), { stopReason: 'toolUse' });

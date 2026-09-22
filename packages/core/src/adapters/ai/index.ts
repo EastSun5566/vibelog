@@ -5,6 +5,7 @@ import { builtinModels, getBuiltinProviders } from '@earendil-works/pi-ai/provid
 import type { AiGenerationContext, AiProvider } from '../../types.js';
 import type { BlogDesignSpec, DesignProposalInput } from '../../design/types.js';
 import { DESIGN_CATALOG_INSTRUCTIONS } from '../../design/catalog.js';
+import { normalizeDesignDecoration } from '../../design/normalize.js';
 import { validateBlogDesignSpec } from '../../design/validate.js';
 import { logger } from '../../core/index.js';
 
@@ -196,7 +197,7 @@ export class PiAiProvider implements AiProvider {
     let candidate: unknown;
     try { candidate = validateToolCall([designTool], toolCall); }
     catch (error) { throw new Error(`AI returned invalid arguments for ${DESIGN_TOOL_NAME}: ${safeToolValidationError(error)}`); }
-    return validateBlogDesignSpec(candidate);
+    return normalizeDesignDecoration(validateBlogDesignSpec(candidate));
   }
   async generate(input: DesignProposalInput, context?: AiGenerationContext): Promise<BlogDesignSpec> {
     const sessionId = context?.sessionId ?? randomUUID();

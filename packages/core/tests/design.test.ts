@@ -4,6 +4,7 @@ import {
   DEFAULT_THEME,
   createContentProfile,
   migrateThemeConfigToDesign,
+  normalizeDesignDecoration,
   parsePersistedDesign,
   renderDesignCss,
   validateBlogDesignSpec,
@@ -41,13 +42,31 @@ describe('Presentation IR v1', () => {
     expect(css).not.toMatch(/(?:^|\n)\.prose pre\s*\{/u);
   });
 
-  it('adds breathing room when a semantic rule frames the post collection', () => {
+  it('keeps one boundary treatment per region in new and saved designs', () => {
     const value = design((candidate) => {
-      candidate.styles.rules = [{ target: 'posts.items', declarations: { border: 'hairline', gap: 'md' } }];
+      candidate.theme.motif = 'notebook';
+      candidate.chrome.header.variant = 'masthead';
+      candidate.pages.article.header = 'editorial';
+      candidate.styles.rules = [
+        { target: 'posts.items', declarations: { border: 'hairline', surface: 'surface', gap: 'md' } },
+        { target: 'site.header', declarations: { border: 'strong', gap: 'sm' } },
+        { target: 'article.header', declarations: { border: 'hairline' } },
+      ];
     });
-    expect(renderDesignCss(value)).toContain(
-      '[data-design-target="posts.items"]{padding:var(--theme-space);gap:1rem;border:1px solid var(--theme-border)}',
-    );
+    expect(validateBlogDesignSpec(value)).toEqual(value);
+    const normalized = normalizeDesignDecoration(value);
+    expect(normalizeDesignDecoration(normalized)).toEqual(normalized);
+    expect(normalized.styles.rules).toEqual([
+      { target: 'posts.items', declarations: { gap: 'md' } },
+      { target: 'site.header', declarations: { gap: 'sm' } },
+    ]);
+    const css = renderDesignCss(value);
+    expect(css).toContain('[data-design-target="posts.items"]{gap:1rem}');
+    expect(css).not.toContain('[data-design-target="posts.items"]{border:');
+    expect(css).toContain('.blog-list.variant-divided .blog-list-item+.blog-list-item{border-top:1px solid color-mix(');
+    expect(css).not.toContain('.blog-list.variant-divided .blog-list-item:first-child{border-top:');
+    expect(css).toContain('.blog-list.variant-cards .blog-list-item{background:var(--theme-surface);border:1px solid color-mix(');
+    expect(css).toContain('color-mix(in srgb,var(--theme-border) 30%,transparent)');
   });
 
   it.each([

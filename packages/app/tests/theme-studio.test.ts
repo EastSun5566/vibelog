@@ -86,6 +86,13 @@ describe('Theme Studio controls', () => {
     expect(() => themeFromControls(DEFAULT_DESIGN, { ...controls, indexColumns: '2' })).toThrow('List columns');
   });
 
+  it('drops redundant collection decoration when editing an older design', () => {
+    const base = structuredClone(DEFAULT_DESIGN);
+    base.styles.rules = [{ target: 'posts.items', declarations: { border: 'strong', surface: 'surface', gap: 'lg' } }];
+    const updated = themeFromControls(base, controls);
+    expect(updated.styles.rules).toEqual([{ target: 'posts.items', declarations: { gap: 'lg' } }]);
+  });
+
   it('keeps structural controls out of the live visual preview', () => {
     const preview = visualThemeFromControls(DEFAULT_DESIGN, {
       ...controls,
