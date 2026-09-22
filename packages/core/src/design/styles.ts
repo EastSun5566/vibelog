@@ -31,7 +31,9 @@ const CODE_BLOCK_VARIANTS = `.blog-post.code-plain .prose pre{border-color:trans
 
 function ruleCss(rule: StyleRule): string {
   const declarations = rule.declarations;
+  const framesPostCollection = rule.target === 'posts.items' && declarations.border && declarations.border !== 'none';
   const css = [
+    framesPostCollection && 'padding:var(--theme-space)',
     declarations.textAlign && `text-align:${declarations.textAlign}`,
     declarations.paddingBlock && `padding-block:${SPACE[declarations.paddingBlock]}`,
     declarations.gap && `gap:${SPACE[declarations.gap]}`,

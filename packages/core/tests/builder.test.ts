@@ -179,7 +179,7 @@ describe('DevBuilder content summary', () => {
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 12 });
+    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 13 });
     expect(await readFile(join(root, '.vibelog', 'src', 'styles', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
   });
 

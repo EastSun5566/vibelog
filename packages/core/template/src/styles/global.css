@@ -282,10 +282,14 @@ h3 {
 }
 
 .blog-item-description {
+  display: -webkit-box;
   font-size: clamp(0.95rem, 0.9rem + 0.25vw, 1.05rem);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   line-height: 1.6;
   margin-block-end: 1rem;
   max-width: 65ch;
+  overflow: hidden;
   text-wrap: pretty;
 }
 

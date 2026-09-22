@@ -41,6 +41,15 @@ describe('Presentation IR v1', () => {
     expect(css).not.toMatch(/(?:^|\n)\.prose pre\s*\{/u);
   });
 
+  it('adds breathing room when a semantic rule frames the post collection', () => {
+    const value = design((candidate) => {
+      candidate.styles.rules = [{ target: 'posts.items', declarations: { border: 'hairline', gap: 'md' } }];
+    });
+    expect(renderDesignCss(value)).toContain(
+      '[data-design-target="posts.items"]{padding:var(--theme-space);gap:1rem;border:1px solid var(--theme-border)}',
+    );
+  });
+
   it.each([
     ['missing version', (() => { const { version: _version, ...value } = DEFAULT_DESIGN; return value; })()],
     ['unknown field', { ...DEFAULT_DESIGN, html: '<script>bad</script>' }],
