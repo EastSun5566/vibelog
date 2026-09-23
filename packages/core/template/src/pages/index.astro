@@ -12,6 +12,6 @@ const posts = (await getCollection("blog")).sort(
 const [author] = await getCollection("author");
 ---
 
-<SiteLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
+<SiteLayout title={SITE_TITLE} description={SITE_DESCRIPTION} homePage>
   <HomeSections sections={design.pages.home.sections} {posts} {author} />
 </SiteLayout>

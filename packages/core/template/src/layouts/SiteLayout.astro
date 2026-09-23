@@ -18,9 +18,10 @@ interface Props {
   articleTitle?: string;
   robots?: string;
   searchAssets?: boolean;
+  homePage?: boolean;
 }
 
-const { title, description, kind = "website", publishedAt, modifiedAt, tags, articleTitle, robots, searchAssets } = Astro.props;
+const { title, description, kind = "website", publishedAt, modifiedAt, tags, articleTitle, robots, searchAssets, homePage = false } = Astro.props;
 const [authors, posts] = await Promise.all([
   getCollection("author"),
   getCollection("blog"),
@@ -34,7 +35,7 @@ const hasTags = posts.some((post) => post.data.tags.length > 0);
   <head>
     <BaseHead {title} {description} {kind} {publishedAt} {modifiedAt} {tags} {articleTitle} {robots} {searchAssets} authorName={author.data.name} />
   </head>
-  <body>
+  <body class:list={{ "page-home": homePage }}>
     <a class="skip-link" href="#main-content">{text.skipToContent}</a>
     <Header {hasTags} variant={design.chrome.header.variant} />
     <main id="main-content" tabindex="-1">

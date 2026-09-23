@@ -51,14 +51,20 @@ describe('Presentation IR v1', () => {
         { target: 'posts.items', declarations: { border: 'hairline', surface: 'surface', gap: 'md' } },
         { target: 'site.header', declarations: { border: 'strong', gap: 'sm' } },
         { target: 'article.header', declarations: { border: 'hairline' } },
+        { target: 'article.toc', declarations: { border: 'strong', surface: 'surface', paddingBlock: 'md' } },
+        { target: 'site.footer', declarations: { border: 'hairline', gap: 'sm' } },
       ];
     });
     expect(validateBlogDesignSpec(value)).toEqual(value);
+    const original = structuredClone(value);
     const normalized = normalizeDesignDecoration(value);
     expect(normalizeDesignDecoration(normalized)).toEqual(normalized);
+    expect(value).toEqual(original);
     expect(normalized.styles.rules).toEqual([
       { target: 'posts.items', declarations: { gap: 'md' } },
       { target: 'site.header', declarations: { gap: 'sm' } },
+      { target: 'article.toc', declarations: { paddingBlock: 'md' } },
+      { target: 'site.footer', declarations: { gap: 'sm' } },
     ]);
     const css = renderDesignCss(value);
     expect(css).toContain('[data-design-target="posts.items"]{gap:1rem}');
@@ -66,7 +72,13 @@ describe('Presentation IR v1', () => {
     expect(css).toContain('.blog-list.variant-divided .blog-list-item+.blog-list-item{border-top:1px solid color-mix(');
     expect(css).not.toContain('.blog-list.variant-divided .blog-list-item:first-child{border-top:');
     expect(css).toContain('.blog-list.variant-cards .blog-list-item{background:var(--theme-surface);border:1px solid color-mix(');
-    expect(css).toContain('color-mix(in srgb,var(--theme-border) 30%,transparent)');
+    expect(css).toContain('[data-design-target="article.toc"]{padding-block:1rem}');
+    expect(css).toContain('[data-design-target="site.footer"]{gap:0.5rem}');
+    expect(css).not.toContain('[data-design-target="article.toc"]{border:');
+    expect(css).not.toContain('[data-design-target="site.footer"]{border:');
+    expect(css).toContain('body.page-home{background-image:linear-gradient(to bottom,transparent 18rem,var(--theme-background) 36rem)');
+    expect(css).toContain('color-mix(in srgb,var(--theme-border) 15%,transparent)');
+    expect(css).not.toContain('body{background-image:');
   });
 
   it.each([

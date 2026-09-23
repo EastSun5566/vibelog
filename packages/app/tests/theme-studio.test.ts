@@ -86,11 +86,20 @@ describe('Theme Studio controls', () => {
     expect(() => themeFromControls(DEFAULT_DESIGN, { ...controls, indexColumns: '2' })).toThrow('List columns');
   });
 
-  it('drops redundant collection decoration when editing an older design', () => {
+  it('drops redundant decoration when editing an older design', () => {
     const base = structuredClone(DEFAULT_DESIGN);
-    base.styles.rules = [{ target: 'posts.items', declarations: { border: 'strong', surface: 'surface', gap: 'lg' } }];
+    base.styles.rules = [
+      { target: 'posts.items', declarations: { border: 'strong', surface: 'surface', gap: 'lg' } },
+      { target: 'article.toc', declarations: { border: 'strong', surface: 'surface', paddingBlock: 'sm' } },
+      { target: 'site.footer', declarations: { border: 'hairline', textAlign: 'center' } },
+    ];
     const updated = themeFromControls(base, controls);
-    expect(updated.styles.rules).toEqual([{ target: 'posts.items', declarations: { gap: 'lg' } }]);
+    expect(updated.styles.rules).toEqual([
+      { target: 'posts.items', declarations: { gap: 'lg' } },
+      { target: 'article.toc', declarations: { paddingBlock: 'sm' } },
+      { target: 'site.footer', declarations: { textAlign: 'center' } },
+    ]);
+    expect(base.styles.rules[1]?.declarations).toMatchObject({ border: 'strong', surface: 'surface' });
   });
 
   it('keeps structural controls out of the live visual preview', () => {

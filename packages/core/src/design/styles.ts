@@ -19,7 +19,7 @@ const WIDTH = { reading: '42rem', content: 'var(--theme-content-width)', full: '
 const MOTIF_STYLES = {
   minimal: `.article-navigation-link{border-top:1px solid var(--theme-border)}`,
   editorial: `h1,h2,h3{letter-spacing:-.045em}.site-header{border-bottom:3px double var(--theme-border)}.article-navigation-link{border-top:3px double var(--theme-border)}`,
-  notebook: `body{background-image:linear-gradient(color-mix(in srgb,var(--theme-border) 30%,transparent) 1px,transparent 1px);background-size:100% 1.75rem}.site-header nav,main,.site-footer,footer{background:var(--theme-background)}.article-navigation-link{background:var(--theme-surface);border:1px solid var(--theme-border);border-radius:var(--theme-radius);padding:var(--theme-space)}`,
+  notebook: `body.page-home{background-image:linear-gradient(to bottom,transparent 18rem,var(--theme-background) 36rem),linear-gradient(color-mix(in srgb,var(--theme-border) 15%,transparent) 1px,transparent 1px);background-repeat:no-repeat,repeat;background-size:100% 100%,100% 1.75rem}.site-header nav,main,.site-footer,footer{background:var(--theme-background)}.article-navigation-link{background:var(--theme-surface);border:1px solid var(--theme-border);border-radius:var(--theme-radius);padding:var(--theme-space)}`,
 } as const;
 const HEADER_VARIANTS = `.site-header.variant-compact nav{min-height:4rem}
 .site-header.variant-centered nav{flex-direction:column;justify-content:center;padding-block:calc(var(--theme-space)*1.15);text-align:center}.site-header.variant-centered .site-title{font-size:clamp(1.2rem,3vw,1.65rem)}.site-header.variant-centered .site-nav-links{justify-content:center}
@@ -70,7 +70,7 @@ ${HEADER_VARIANTS}
 ${POST_LIST_VARIANTS}
 ${CODE_BLOCK_VARIANTS}
 .site-footer.variant-profile{display:grid;gap:.35rem}
-.home-sections{display:grid;gap:clamp(2.5rem,7vw,6rem)}
+.home-sections{display:grid;gap:clamp(2rem,5vw,4rem)}
 .home-section.variant-centered{text-align:center}.home-section.variant-split{display:grid;gap:var(--theme-space)}
 .featured-posts.variant-hero .blog-item-title{font-size:clamp(1.8rem,5vw,3.4rem)}
 .home-hero h1,.page-heading h1,.blog-post-header h1{text-wrap:balance}

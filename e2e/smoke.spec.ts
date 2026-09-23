@@ -260,6 +260,13 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await page.unroute('**/api/operations/mock-failed');
 
   await openDisclosure(page, 'fine-tune');
+  const tocStyle = page.locator('fieldset.style-rule-controls').filter({ hasText: 'Table of contents' });
+  await expect(tocStyle.getByLabel('Border')).toHaveCount(0);
+  await expect(tocStyle.getByLabel('Surface')).toHaveCount(0);
+  await expect(tocStyle.getByLabel('Gap')).toHaveCount(1);
+  const footerStyle = page.locator('fieldset.style-rule-controls').filter({ hasText: 'Site footer' });
+  await expect(footerStyle.getByLabel('Border')).toHaveCount(0);
+  await expect(footerStyle.getByLabel('Surface')).toHaveCount(1);
   await page.getByRole('group', { name: 'Layout preset' }).getByLabel('Editorial').check();
   await page.getByRole('group', { name: 'Body font' }).getByLabel('Mono').check();
   const fineTuneFeedback = page.locator('details[data-disclosure-key="fine-tune"] [data-feedback-slot="fine-tune"]');

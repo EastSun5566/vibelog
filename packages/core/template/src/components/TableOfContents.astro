@@ -30,10 +30,11 @@ for (const heading of headings) {
     items.push({ heading, children: [] });
   }
 }
+const headingCount = items.reduce((count, item) => count + 1 + item.children.length, 0);
 ---
 
 <nav class="table-of-contents" aria-label={text.tableOfContents}>
-  <details open>
+  <details open={headingCount <= 8}>
     <summary>{text.tableOfContents}</summary>
     <ol class="table-of-contents-list">
       {

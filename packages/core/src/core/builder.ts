@@ -29,7 +29,7 @@ import { logger } from './logger.js';
 import type { ContentSource, Post } from '../types.js';
 import { loadConfig } from './config.js';
 
-const TEMPLATE_VERSION = 14;
+const TEMPLATE_VERSION = 15;
 
 interface ShikiElement {
   properties: Record<string, unknown>;

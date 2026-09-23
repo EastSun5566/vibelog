@@ -4,7 +4,7 @@ import { basename, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import matter from 'gray-matter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildBlog, buildFromVibelog, ContentSourceName, createDevBuilder, DEFAULT_DESIGN, HackMdSource, writeSourceSnapshot } from '../src/index.js';
+import { buildBlog, buildFromVibelog, ContentSourceName, createDevBuilder, DEFAULT_DESIGN, HackMdSource, renderDesignCss, writeSourceSnapshot } from '../src/index.js';
 import type { BlogDesignSpecV1, ContentSource } from '../src/index.js';
 
 const roots: string[] = [];
@@ -154,15 +154,58 @@ describe('DevBuilder content summary', () => {
       await buildBlog({ sourceDir, design, workDir, outDir, site: 'https://writer.example.com' });
       const home = await readFile(join(outDir, 'index.html'), 'utf8');
       homes.push(home);
+      expect(home).toContain('<body class="page-home">');
       for (const signature of signatures) expect(home).toContain(signature);
       for (const path of ['global.css', 'blog/index.html', 'blog/first/index.html', 'tags/index.html', 'tags/design/index.html', 'search/index.html', 'rss.xml', 'sitemap-index.xml', 'robots.txt', 'llms.txt']) {
         await expect(stat(join(outDir, path))).resolves.toBeTruthy();
       }
       expect(home).toContain('<link rel="stylesheet" href="/global.css">');
-      expect(await readFile(join(outDir, 'global.css'), 'utf8')).toContain('.site-header nav');
+      const css = await readFile(join(outDir, 'global.css'), 'utf8');
+      expect(css).toContain('.site-header nav');
+      expect(css).not.toMatch(/\.home-hero\s*\{\s*padding-block-end/u);
+      const article = await readFile(join(outDir, 'blog', 'first', 'index.html'), 'utf8');
+      expect(article).not.toContain('<body class="page-home">');
+      if (name === 'notebook') {
+        const themeCss = await readFile(join(outDir, 'theme.css'), 'utf8');
+        expect(themeCss).toBe(renderDesignCss(design));
+        expect(themeCss).toContain('body.page-home{background-image:');
+        expect(themeCss).not.toContain('body{background-image:');
+      }
       await expect(stat(join(outDir, 'pagefind', 'pagefind.js'))).resolves.toBeTruthy();
     }
     expect(new Set(homes).size).toBe(3);
+  });
+
+  it('keeps short article outlines open and folds long ones', { timeout: 45_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-toc-length-')); roots.push(root);
+    const counts = [2, 8, 9, 26];
+    const builder = createDevBuilder({ root, contentSource: {
+      name: ContentSourceName.HACKMD,
+      getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Notes' }),
+      getPosts: () => Promise.resolve({ posts: counts.map((count) => ({
+        id: `outline-${String(count)}`,
+        title: count === 26 ? 'A very long article title that needs room to wrap naturally across several lines' : `Outline ${String(count)}`,
+        slug: `outline-${String(count)}`,
+        date: '2026-01-01T00:00:00Z',
+        content: Array.from({ length: count }, (_, index) => `## Section ${String(index + 1)}\n\nBody ${String(index + 1)}.`).join('\n\n'),
+      })) }),
+    } });
+    await builder.prepare({ installDependencies: false });
+    const summary = await builder.fetchContent();
+    const sourceDir = join(root, 'source-snapshot');
+    await writeSourceSnapshot(builder.vibelogDir, sourceDir, summary);
+    const workDir = join(root, 'compile');
+    const outDir = join(workDir, 'dist');
+    await buildBlog({ sourceDir, design: DEFAULT_DESIGN, workDir, outDir, site: 'https://writer.example.com' });
+
+    for (const count of counts) {
+      const article = await readFile(join(outDir, 'blog', `outline-${String(count)}`, 'index.html'), 'utf8');
+      const toc = /<nav class="table-of-contents"[^]*?<\/nav>/u.exec(article)?.[0];
+      expect(toc).toBeDefined();
+      expect(toc).toContain(count <= 8 ? '<details open>' : '<details>');
+      expect(toc).not.toContain(count <= 8 ? '<details>' : '<details open>');
+      expect(toc?.match(/class="table-of-contents-link"/gu)).toHaveLength(count);
+    }
   });
 
   it('replaces repository-owned CSS when upgrading an older draft', async () => {
@@ -182,7 +225,7 @@ describe('DevBuilder content summary', () => {
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 14 });
+    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 15 });
     await expect(stat(join(root, '.vibelog', 'src', 'styles', 'global.css'))).rejects.toThrow();
     expect(await readFile(join(root, '.vibelog', 'public', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
   });

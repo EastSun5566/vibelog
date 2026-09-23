@@ -8,6 +8,13 @@ export function normalizeDesignDecoration(design: BlogDesignSpecV1): BlogDesignS
       delete declarations.border;
       delete declarations.surface;
     }
+    if (rule.target === 'article.toc') {
+      delete declarations.border;
+      delete declarations.surface;
+    }
+    if (rule.target === 'site.footer') {
+      delete declarations.border;
+    }
     if (rule.target === 'site.header' && (design.theme.motif === 'editorial' || design.chrome.header.variant === 'masthead')) {
       delete declarations.border;
     }

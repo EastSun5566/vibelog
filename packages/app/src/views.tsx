@@ -333,16 +333,17 @@ const STYLE_OPTIONS = {
 
 function StyleRuleControls({ target, rule, design }: { target: StyleTarget; rule?: StyleRule; design: BlogDesignSpecV1 }) {
   const prefix = `style:${target}:`;
-  const borderOwned = target === 'posts.items'
+  const borderOwned = target === 'posts.items' || target === 'article.toc' || target === 'site.footer'
     || (target === 'site.header' && (design.theme.motif === 'editorial' || design.chrome.header.variant === 'masthead'))
     || (target === 'article.header' && design.pages.article.header === 'editorial');
+  const surfaceOwned = target === 'posts.items' || target === 'article.toc';
   return <fieldset class="style-rule-controls">
     <legend>{STYLE_TARGET_LABELS[target]}</legend>
     <div class="composition-fields">
       <SelectField label="Align" name={`${prefix}textAlign`} value={rule?.declarations.textAlign ?? ''} options={STYLE_OPTIONS.textAlign} previewKind="visual"/>
       <SelectField label="Padding" name={`${prefix}paddingBlock`} value={rule?.declarations.paddingBlock ?? ''} options={STYLE_OPTIONS.paddingBlock} previewKind="visual"/>
       <SelectField label="Gap" name={`${prefix}gap`} value={rule?.declarations.gap ?? ''} options={STYLE_OPTIONS.gap} previewKind="visual"/>
-      {target !== 'posts.items' && <SelectField label="Surface" name={`${prefix}surface`} value={rule?.declarations.surface ?? ''} options={STYLE_OPTIONS.surface} previewKind="visual"/>}
+      {!surfaceOwned && <SelectField label="Surface" name={`${prefix}surface`} value={rule?.declarations.surface ?? ''} options={STYLE_OPTIONS.surface} previewKind="visual"/>}
       {!borderOwned && <SelectField label="Border" name={`${prefix}border`} value={rule?.declarations.border ?? ''} options={STYLE_OPTIONS.border} previewKind="visual"/>}
       <SelectField label="Width" name={`${prefix}width`} value={rule?.declarations.width ?? ''} options={STYLE_OPTIONS.width} previewKind="visual"/>
     </div>

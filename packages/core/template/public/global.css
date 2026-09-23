@@ -105,10 +105,6 @@ main:focus {
   max-width: 46rem;
 }
 
-.home-hero {
-  padding-block-end: clamp(3rem, 8vw, 6rem);
-}
-
 .eyebrow {
   font-size: 0.8rem;
   font-weight: 750;
