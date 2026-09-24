@@ -4,13 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { DEFAULT_DESIGN } from '@vibelog/core/migration-v1';
 
-interface BlogRow { id: string; user_id: string; draft_artifact_id: string | null }
+interface BlogRow { id: string; user_id: string; draft_artifact_id: string | null; source_artifact_id: string | null; draft_design_revision_id: string | null }
 interface RevisionRow { id: string; config: { version: number; theme: { motif: string } } }
 interface ReleaseRow { id: string; artifact_id: string }
 interface PreviewRow { theme_config: { version: number } | null }
 interface DraftRow { draft_artifact_id: string | null }
 interface ArtifactRow { id: string; state: string }
-interface MigrationEvent { mode: string; v1Revisions?: number; v1PreviewSessions?: number; convertedRevisions?: number }
+interface MigrationEvent { mode: string; v1Revisions?: number; v1PreviewSessions?: number; convertedRevisions?: number; draftsToRebuild?: number; legacyDraftsRetained?: number }
 
 const project = process.env.COMPOSE_PROJECT_NAME;
 const port = Number(process.env.POSTGRES_PORT);
@@ -36,8 +36,8 @@ function assert(value: unknown, message: string): asserts value { if (!value) th
 
 await client.connect();
 try {
-  const blog = (await client.query<BlogRow>("SELECT id, user_id, draft_artifact_id FROM blogs WHERE username = 'alice'")).rows[0];
-  assert(blog?.draft_artifact_id, 'The E2E fixture must leave Alice with a draft');
+  const blog = (await client.query<BlogRow>("SELECT id, user_id, draft_artifact_id, source_artifact_id, draft_design_revision_id FROM blogs WHERE username = 'alice'")).rows[0];
+  assert(blog?.draft_artifact_id && blog.source_artifact_id && blog.draft_design_revision_id, 'The E2E fixture must leave Alice with a complete draft');
   const beforeRevisions = (await client.query<RevisionRow>('SELECT id, config FROM theme_revisions WHERE blog_id = $1 ORDER BY created_at, id', [blog.id])).rows;
   assert(beforeRevisions.length >= 2, 'The E2E fixture must create design history');
   const beforeReleases = (await client.query<ReleaseRow>('SELECT id, artifact_id FROM published_releases WHERE blog_id = $1 ORDER BY id', [blog.id])).rows;
@@ -95,6 +95,24 @@ try {
   assert(JSON.stringify(releases) === JSON.stringify(beforeReleases), 'Published history changed');
   assert(event(container()).v1Revisions === 0, 'V1 revisions remain after conversion');
   assert(event(container('--apply', '--maintenance-mode', '--expected-v1=0')).mode === 'already_applied', 'Conversion is not idempotent');
+
+  // Early drafts could predate frozen sources. Keep their static preview until the next Sync.
+  await client.query('UPDATE blogs SET draft_design_revision_id = NULL WHERE id = $1', [blog.id]);
+  try {
+    container();
+    throw new Error('The incomplete draft metadata guard did not stop the migration');
+  } catch (error) {
+    if (!(error instanceof Error) || error.message === 'The incomplete draft metadata guard did not stop the migration') throw error;
+    assert(String((error as Error & { stderr?: string }).stderr).includes('incomplete frozen source'), 'Incomplete draft metadata failed for an unrelated reason');
+  }
+  await client.query('UPDATE blogs SET source_artifact_id = NULL WHERE id = $1', [blog.id]);
+  await client.query('UPDATE theme_revisions SET config = $2::jsonb WHERE id = $1', [beforeRevisions[0]?.id, JSON.stringify(DEFAULT_DESIGN)]);
+  const legacyAudit = event(container());
+  assert(legacyAudit.v1Revisions === 1 && legacyAudit.draftsToRebuild === 0 && legacyAudit.legacyDraftsRetained === 1, 'Audit missed a legacy draft without frozen source');
+  const legacyApplied = event(container('--apply', '--maintenance-mode', '--expected-v1=1'));
+  assert(legacyApplied.convertedRevisions === 1 && legacyApplied.legacyDraftsRetained === 1, 'Legacy draft conversion did not complete');
+  assert((await client.query<DraftRow>('SELECT draft_artifact_id FROM blogs WHERE id = $1', [blog.id])).rows[0]?.draft_artifact_id === draft.draft_artifact_id, 'Legacy static preview was replaced');
+  assert(event(container()).v1Revisions === 0, 'Legacy draft conversion left V1 revisions');
   console.info('Design V2 migration preserved revisions, drafts, previews, and published releases');
 } finally {
   await client.end();

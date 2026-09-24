@@ -17,6 +17,13 @@ interface BlogRow {
 }
 interface Candidate { blog: BlogRow; artifactId: string }
 
+function draftDisposition(blog: BlogRow): 'none' | 'rebuild' | 'retain' {
+  if (!blog.draft_artifact_id) return 'none';
+  if (blog.source_artifact_id && blog.draft_design_revision_id) return 'rebuild';
+  if (!blog.source_artifact_id && !blog.draft_design_revision_id) return 'retain';
+  throw new Error('A draft has incomplete frozen source or design revision metadata');
+}
+
 function siteOrigin(appOrigin: string, username: string): string {
   const app = new URL(appOrigin);
   return `${app.protocol}//${username}.${app.hostname}${app.port ? `:${app.port}` : ''}`;
@@ -46,11 +53,14 @@ async function main(): Promise<void> {
     const revisions = await client.query<DesignRow>('SELECT id, config FROM theme_revisions ORDER BY id');
     const previews = await client.query<PreviewRow>('SELECT token_hash, theme_config FROM preview_sessions WHERE theme_config IS NOT NULL ORDER BY token_hash');
     const blogs = await client.query<BlogRow>('SELECT id, username, source_artifact_id, draft_artifact_id, draft_design_revision_id, content_version FROM blogs ORDER BY id');
+    const draftDispositions = blogs.rows.map(draftDisposition);
+    const draftsToRebuild = draftDispositions.filter((disposition) => disposition === 'rebuild').length;
+    const legacyDraftsRetained = draftDispositions.filter((disposition) => disposition === 'retain').length;
     const converted = revisions.rows.map((row) => ({ id: row.id, old: row.config, version: (row.config as { version?: unknown } | null)?.version, config: migratePersistedDesignToV2(row.config) }));
     const convertedPreviews = previews.rows.map((row) => ({ tokenHash: row.token_hash, old: row.theme_config, version: (row.theme_config as { version?: unknown } | null)?.version, config: migratePersistedDesignToV2(row.theme_config) }));
     const v1 = converted.filter((row) => row.version !== 2).length;
     if (!apply) {
-      console.info(JSON.stringify({ event: 'design_v2_migration', mode: 'audit', revisions: revisions.rowCount, v1Revisions: v1, previewSessions: previews.rowCount, v1PreviewSessions: convertedPreviews.filter((row) => row.version !== 2).length, draftsToRebuild: blogs.rows.filter((row) => row.draft_artifact_id).length }));
+      console.info(JSON.stringify({ event: 'design_v2_migration', mode: 'audit', revisions: revisions.rowCount, v1Revisions: v1, previewSessions: previews.rowCount, v1PreviewSessions: convertedPreviews.filter((row) => row.version !== 2).length, draftsToRebuild, legacyDraftsRetained }));
       return;
     }
     if (expected !== v1) throw new Error(`Expected ${String(expected)} v1 revisions, found ${String(v1)}; no data changed`);
@@ -61,9 +71,9 @@ async function main(): Promise<void> {
     const config = loadWorkerConfig();
     store = new S3ArtifactStore(config.objectStore);
     // Candidate artifacts are not referenced by a blog until every build succeeds.
-    for (const blog of blogs.rows) {
-      if (!blog.draft_artifact_id) continue;
-      if (!blog.source_artifact_id || !blog.draft_design_revision_id) throw new Error('A draft has no frozen source or design revision');
+    for (const [index, blog] of blogs.rows.entries()) {
+      if (draftDispositions[index] !== 'rebuild') continue;
+      if (!blog.source_artifact_id || !blog.draft_design_revision_id) throw new Error('A draft has incomplete frozen source or design revision metadata');
       const design = converted.find((row) => row.id === blog.draft_design_revision_id)?.config;
       if (!design) throw new Error('Draft design revision disappeared');
       const artifactId = randomUUID();
@@ -114,7 +124,7 @@ async function main(): Promise<void> {
     if (Number(remaining.rows[0]?.count ?? -1) !== 0) throw new Error('Some design revisions were not converted');
     await client.query('COMMIT');
     committed = true;
-    console.info(JSON.stringify({ event: 'design_v2_migration', mode: 'applied', revisions: revisions.rowCount, convertedRevisions: v1, convertedPreviewSessions: convertedPreviews.filter((row) => row.version !== 2).length, rebuiltDrafts: candidates.length }));
+    console.info(JSON.stringify({ event: 'design_v2_migration', mode: 'applied', revisions: revisions.rowCount, convertedRevisions: v1, convertedPreviewSessions: convertedPreviews.filter((row) => row.version !== 2).length, rebuiltDrafts: candidates.length, legacyDraftsRetained }));
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);
     throw error;
