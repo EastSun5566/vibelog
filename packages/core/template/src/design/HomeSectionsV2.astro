@@ -1,0 +1,27 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import type { GeneratedDesignV2 } from '../design-v2';
+import resolvedValue from '../generated/resolved-home.json';
+import HomeNodeV2 from './HomeNodeV2.astro';
+
+interface Props {
+  home: GeneratedDesignV2['pages']['home'];
+  posts: CollectionEntry<'blog'>[];
+  author: CollectionEntry<'author'>;
+}
+const { home, posts, author } = Astro.props;
+const resolved = resolvedValue as Record<string, string[]>;
+const postsById = new Map(posts.map((post) => [post.id, post]));
+const regionEntries = Object.entries(home.regions);
+---
+
+<div class={`home-sections home-layout-${home.layout}`} data-design-role="home-root">
+  {regionEntries.map(([region, ids]) => <div class={`home-region home-region-${region}`} data-design-region={region}>
+    {ids.map((id) => {
+      const section = home.sections[id];
+      if (!section) throw new Error(`Resolved homepage section is missing: ${id}`);
+      const selected = (resolved[id] ?? []).map((slug) => postsById.get(slug)).filter((post): post is CollectionEntry<'blog'> => Boolean(post));
+      return <HomeNodeV2 {id} {section} {posts} {selected} {author} />;
+    })}
+  </div>)}
+</div>

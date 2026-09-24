@@ -50,6 +50,8 @@ try {
   run('docker', ['compose', '--profile', 'e2e', 'up', '--detach']);
   await waitForWeb();
   run('pnpm', ['exec', 'playwright', 'test']);
+  run('docker', ['compose', 'stop', 'web', 'worker']);
+  run('pnpm', ['--filter', '@vibelog/app', 'exec', 'tsx', 'scripts/test-design-v2-migration.ts']);
 } catch (error) {
   failed = true;
   try { run('docker', ['compose', '--profile', 'e2e', 'logs', '--no-color']); }

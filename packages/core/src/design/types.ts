@@ -1,4 +1,5 @@
 import type { ThemeConfig } from '../types.js';
+import type { BlogDesignSpecV2 } from './schema-v2.js';
 
 export type DesignFont = ThemeConfig['bodyFont'];
 export type DesignScale = ThemeConfig['scale'];
@@ -91,7 +92,7 @@ export type BlogDesignSpec = BlogDesignSpecV1;
 export interface DesignProposalInput {
   blog: { title: string; description: string; author: string };
   contentProfile: ContentProfile;
-  currentDesign: BlogDesignSpec;
+  currentDesign: BlogDesignSpecV2;
   prompt: string;
 }
 

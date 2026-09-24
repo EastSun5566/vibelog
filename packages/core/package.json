@@ -15,6 +15,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./migration-v1": {
+      "types": "./dist/migration-v1.d.ts",
+      "import": "./dist/migration-v1.js"
     }
   },
   "files": [
@@ -27,7 +31,8 @@
   "scripts": {
     "dev": "tsc -p tsconfig.build.json --watch",
     "typecheck": "tsc -p tsconfig.json",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json"
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "benchmark:design-build": "pnpm build && node scripts/benchmark-design-build.mjs"
   },
   "keywords": [
     "blog-builder",

@@ -120,6 +120,7 @@ const application = phase === 'application' ? createApplication() : undefined;
 
 export const deploymentPhase = phase;
 export const maintenanceStage = application?.maintenanceStage ?? 'normal';
+export const presentationVersion = 2;
 export const r2Bucket = foundation.bucket.name;
 export const databaseProjectId = foundation.database.id;
 export const databaseMigrationUrl = directDatabaseUrl;

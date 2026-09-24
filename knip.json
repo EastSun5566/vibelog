@@ -15,6 +15,8 @@
         ".github/scripts/guard-pulumi-preview.mjs",
         ".github/scripts/guard-maintenance-stage.mjs",
         ".github/scripts/guard-maintenance-stage.test.mjs",
+        ".github/scripts/check-design-v2-audit.mjs",
+        ".github/scripts/check-design-v2-audit.test.mjs",
         "e2e/run-local.mjs",
         "e2e/**/*.spec.ts"
       ],
@@ -25,6 +27,8 @@
         ".github/scripts/guard-pulumi-preview.mjs",
         ".github/scripts/guard-maintenance-stage.mjs",
         ".github/scripts/guard-maintenance-stage.test.mjs",
+        ".github/scripts/check-design-v2-audit.mjs",
+        ".github/scripts/check-design-v2-audit.test.mjs",
         "e2e/run-local.mjs",
         "e2e/tsconfig.json",
         "e2e/**/*.ts"
@@ -37,7 +41,7 @@
       "ignoreDependencies": ["@astrojs/rss"]
     },
     "packages/app": {
-      "entry": ["src/main.ts", "src/web-main.ts", "src/worker-main.ts", "src/migrate.ts", "src/browser/main.ts", "src/browser/analytics.ts", "src/styles/app.css", "scripts/*.ts", "tests/**/*.test.ts", "drizzle.config.ts"],
+      "entry": ["src/main.ts", "src/web-main.ts", "src/worker-main.ts", "src/migrate.ts", "src/migrate-design-v2.ts", "src/browser/main.ts", "src/browser/analytics.ts", "src/styles/app.css", "scripts/*.ts", "tests/**/*.test.ts", "drizzle.config.ts"],
       "project": ["src/**/*.{ts,tsx,css}", "scripts/*.ts", "tests/**/*.ts", "drizzle.config.ts"]
     },
     "packages/edge": {

@@ -2,9 +2,9 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from '
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AiProviderRequestError, AiProviderTimeoutError, FallbackAiProvider, PiAiProvider, createAiProvider } from '../src/adapters/ai/index.js';
 import type { AiProvider } from '../src/types.js';
-import { DEFAULT_DESIGN } from '../src/design/defaults.js';
+import { DEFAULT_DESIGN_V2 } from '../src/design/defaults-v2.js';
 
-const input = { blog: { title: 'Blog', description: 'Writing', author: 'Writer' }, contentProfile: { postCount: 5, tagCount: 3, averageLength: 'medium' as const, codeUsage: 'some' as const, imageUsage: 'none' as const, mathUsage: 'none' as const }, currentDesign: DEFAULT_DESIGN, prompt: 'Editorial' };
+const input = { blog: { title: 'Blog', description: 'Writing', author: 'Writer' }, contentProfile: { postCount: 5, tagCount: 3, averageLength: 'medium' as const, codeUsage: 'some' as const, imageUsage: 'none' as const, mathUsage: 'none' as const }, currentDesign: DEFAULT_DESIGN_V2, prompt: 'Editorial' };
 function subject(responses: Parameters<ReturnType<typeof fauxProvider>['setResponses']>[0]) {
   const faux = fauxProvider({ provider: 'test', models: [{ id: 'model' }] });
   const models = createModels(); models.setProvider(faux.provider); faux.setResponses(responses);
@@ -27,36 +27,28 @@ describe('PiAiProvider design proposal', () => {
     expect(provider.model.api).toBe(api);
   });
   it('returns a valid single tool proposal', async () => {
-    const response = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN), { stopReason: 'toolUse' });
-    await expect(subject([response]).generate(input)).resolves.toEqual(DEFAULT_DESIGN);
+    const response = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN_V2), { stopReason: 'toolUse' });
+    await expect(subject([response]).generate(input)).resolves.toEqual(DEFAULT_DESIGN_V2);
   });
-  it('cleans up redundant decoration in an otherwise valid AI proposal', async () => {
-    const proposal = structuredClone(DEFAULT_DESIGN);
-    proposal.styles.rules = [
-      { target: 'posts.items', declarations: { border: 'strong', surface: 'surface', gap: 'lg' } },
-      { target: 'article.toc', declarations: { border: 'hairline', surface: 'surface', width: 'reading' } },
-      { target: 'site.footer', declarations: { border: 'strong', gap: 'sm' } },
-    ];
+  it('normalizes an otherwise valid V2 proposal', async () => {
+    const proposal = structuredClone(DEFAULT_DESIGN_V2);
+    proposal.theme.colors.background = '#FFFFFF';
+    proposal.pages.home.presentation = {};
     const response = fauxAssistantMessage(fauxToolCall('propose_design', proposal), { stopReason: 'toolUse' });
-    const result = await subject([response]).generate(input);
-    expect(result.styles.rules).toEqual([
-      { target: 'posts.items', declarations: { gap: 'lg' } },
-      { target: 'article.toc', declarations: { width: 'reading' } },
-      { target: 'site.footer', declarations: { gap: 'sm' } },
-    ]);
+    await expect(subject([response]).generate(input)).resolves.toEqual(DEFAULT_DESIGN_V2);
   });
   it('accepts a monospaced body for a terminal theme', async () => {
-    const terminalTheme = { ...DEFAULT_DESIGN, theme: { ...DEFAULT_DESIGN.theme, appearance: 'dark' as const, typography: { ...DEFAULT_DESIGN.theme.typography, bodyFont: 'system-mono' as const, headingFont: 'system-mono' as const } } };
+    const terminalTheme = { ...DEFAULT_DESIGN_V2, theme: { ...DEFAULT_DESIGN_V2.theme, appearance: 'dark' as const, typography: { ...DEFAULT_DESIGN_V2.theme.typography, bodyFont: 'system-mono' as const, headingFont: 'system-mono' as const } } };
     const response = fauxAssistantMessage(fauxToolCall('propose_design', terminalTheme), { stopReason: 'toolUse' });
     await expect(subject([response]).generate({ ...input, prompt: 'dark blue that feel like terminal' })).resolves.toEqual(terminalTheme);
   });
   it('passes a concise validation path to the corrective request and final internal error', async () => {
-    const invalid = { ...DEFAULT_DESIGN, theme: { ...DEFAULT_DESIGN.theme, typography: { ...DEFAULT_DESIGN.theme.typography, bodyFont: 'display' } } };
+    const invalid = { ...DEFAULT_DESIGN_V2, theme: { ...DEFAULT_DESIGN_V2.theme, typography: { ...DEFAULT_DESIGN_V2.theme.typography, bodyFont: 'display' } } };
     const bad = fauxAssistantMessage(fauxToolCall('propose_design', invalid), { stopReason: 'toolUse' });
-    const good = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN), { stopReason: 'toolUse' });
+    const good = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN_V2), { stopReason: 'toolUse' });
     const { provider, complete } = instrumentedSubject('opencode-go', [bad, good]);
 
-    await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toEqual(DEFAULT_DESIGN);
+    await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toEqual(DEFAULT_DESIGN_V2);
     const correctionPrompt = complete.mock.calls[1]?.[1].systemPrompt;
     expect(correctionPrompt).toContain('bodyFont');
     expect(correctionPrompt).not.toContain('Received arguments');
@@ -66,16 +58,16 @@ describe('PiAiProvider design proposal', () => {
       .rejects.toThrow(/bodyFont.*current design was not changed/su);
   });
   it('retries one invalid contrast proposal and preserves a stable final error', async () => {
-    const invalid = { ...DEFAULT_DESIGN, theme: { ...DEFAULT_DESIGN.theme, colors: { ...DEFAULT_DESIGN.theme.colors, text: '#eeeeee' } } };
+    const invalid = { ...DEFAULT_DESIGN_V2, theme: { ...DEFAULT_DESIGN_V2.theme, colors: { ...DEFAULT_DESIGN_V2.theme.colors, text: '#eeeeee' } } };
     const bad = fauxAssistantMessage(fauxToolCall('propose_design', invalid), { stopReason: 'toolUse' });
-    const good = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN), { stopReason: 'toolUse' });
-    await expect(subject([bad, good]).generate(input)).resolves.toEqual(DEFAULT_DESIGN);
+    const good = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN_V2), { stopReason: 'toolUse' });
+    await expect(subject([bad, good]).generate(input)).resolves.toEqual(DEFAULT_DESIGN_V2);
     await expect(subject([bad, bad]).generate(input)).rejects.toThrow('current design was not changed');
   });
   it('sends stable OpenCode session metadata without adding it to the model prompt', async () => {
-    const invalid = { ...DEFAULT_DESIGN, theme: { ...DEFAULT_DESIGN.theme, colors: { ...DEFAULT_DESIGN.theme.colors, text: '#eeeeee' } } };
+    const invalid = { ...DEFAULT_DESIGN_V2, theme: { ...DEFAULT_DESIGN_V2.theme, colors: { ...DEFAULT_DESIGN_V2.theme.colors, text: '#eeeeee' } } };
     const bad = fauxAssistantMessage(fauxToolCall('propose_design', invalid), { stopReason: 'toolUse' });
-    const good = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN), { stopReason: 'toolUse' });
+    const good = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN_V2), { stopReason: 'toolUse' });
     const { provider, complete } = instrumentedSubject('opencode-go', [bad, good, good]);
 
     await provider.generate(input, { sessionId: 'operation-1' });
@@ -89,7 +81,7 @@ describe('PiAiProvider design proposal', () => {
     expect(complete.mock.calls.map((call) => JSON.stringify(call[1]))).not.toContainEqual(expect.stringContaining('operation-'));
   });
   it('does not send OpenCode session metadata to other providers', async () => {
-    const response = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN), { stopReason: 'toolUse' });
+    const response = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN_V2), { stopReason: 'toolUse' });
     const { provider, complete } = instrumentedSubject('test', [response]);
     await provider.generate(input, { sessionId: 'operation-1' });
     expect(complete.mock.calls[0]?.[2]).not.toHaveProperty('sessionId');
@@ -183,14 +175,14 @@ describe('PiAiProvider design proposal', () => {
     await expect(pending).rejects.toBeInstanceOf(AiProviderTimeoutError);
   });
   it('preserves provider failures from the corrective request', async () => {
-    const invalid = { ...DEFAULT_DESIGN, theme: { ...DEFAULT_DESIGN.theme, colors: { ...DEFAULT_DESIGN.theme.colors, text: '#eeeeee' } } };
+    const invalid = { ...DEFAULT_DESIGN_V2, theme: { ...DEFAULT_DESIGN_V2.theme, colors: { ...DEFAULT_DESIGN_V2.theme.colors, text: '#eeeeee' } } };
     const bad = fauxAssistantMessage(fauxToolCall('propose_design', invalid), { stopReason: 'toolUse' });
     const unavailable = fauxAssistantMessage([], { stopReason: 'error', errorMessage: 'upstream unavailable' });
     await expect(subject([bad, unavailable]).generate(input)).rejects.toBeInstanceOf(AiProviderRequestError);
   });
   it('falls back sequentially for retryable provider failures with the same session ID', async () => {
     const primaryGenerate = vi.fn<AiProvider['generate']>(() => Promise.reject(new AiProviderRequestError('rate limited', { kind: 'http', retryable: true, status: 429 })));
-    const fallbackGenerate = vi.fn<AiProvider['generate']>(() => Promise.resolve(DEFAULT_DESIGN));
+    const fallbackGenerate = vi.fn<AiProvider['generate']>(() => Promise.resolve(DEFAULT_DESIGN_V2));
     const providers = new Map<string, AiProvider>([
       ['qwen3.8-flash', { name: 'opencode-go', modelId: 'qwen3.8-flash', generate: primaryGenerate }],
       ['glm-5.3-flash', { name: 'opencode-go', modelId: 'glm-5.3-flash', generate: fallbackGenerate }],
@@ -201,7 +193,7 @@ describe('PiAiProvider design proposal', () => {
       return candidate;
     });
 
-    await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toEqual(DEFAULT_DESIGN);
+    await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toEqual(DEFAULT_DESIGN_V2);
     expect(primaryGenerate).toHaveBeenCalledOnce();
     expect(fallbackGenerate).toHaveBeenCalledOnce();
     expect(primaryGenerate.mock.calls[0]?.[1]?.sessionId).toBe('operation-1');
@@ -215,7 +207,7 @@ describe('PiAiProvider design proposal', () => {
     new Error('invalid theme'),
   ])('does not fall back for permanent or validation failures: %s', async (failure) => {
     const primaryGenerate = vi.fn<AiProvider['generate']>(() => Promise.reject(failure));
-    const fallbackGenerate = vi.fn<AiProvider['generate']>(() => Promise.resolve(DEFAULT_DESIGN));
+    const fallbackGenerate = vi.fn<AiProvider['generate']>(() => Promise.resolve(DEFAULT_DESIGN_V2));
     const provider = new FallbackAiProvider('opencode-go', 'qwen3.8-flash', ['glm-5.3-flash'], (_name, modelId) => ({
       name: 'opencode-go', modelId, generate: modelId === 'qwen3.8-flash' ? primaryGenerate : fallbackGenerate,
     }));
@@ -224,25 +216,25 @@ describe('PiAiProvider design proposal', () => {
     expect(fallbackGenerate).not.toHaveBeenCalled();
   });
   it('falls back when the corrective request encounters an upstream failure', async () => {
-    const invalid = { ...DEFAULT_DESIGN, theme: { ...DEFAULT_DESIGN.theme, colors: { ...DEFAULT_DESIGN.theme.colors, text: '#eeeeee' } } };
+    const invalid = { ...DEFAULT_DESIGN_V2, theme: { ...DEFAULT_DESIGN_V2.theme, colors: { ...DEFAULT_DESIGN_V2.theme.colors, text: '#eeeeee' } } };
     const bad = fauxAssistantMessage(fauxToolCall('propose_design', invalid), { stopReason: 'toolUse' });
     const unavailable = fauxAssistantMessage([], { stopReason: 'error', errorMessage: 'upstream unavailable' });
-    const good = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN), { stopReason: 'toolUse' });
+    const good = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN_V2), { stopReason: 'toolUse' });
     const primary = subject([bad, unavailable]);
     const fallback = subject([good]);
     const provider = new FallbackAiProvider('test', 'primary', ['fallback'], (_name, modelId) => modelId === 'primary' ? primary : fallback);
 
-    await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toEqual(DEFAULT_DESIGN);
+    await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toEqual(DEFAULT_DESIGN_V2);
   });
   it('uses a 45-second deadline for each model candidate', async () => {
     const stalled: AiProvider = {
       name: 'opencode-go', modelId: 'qwen3.8-flash',
       generate: (_input, context) => new Promise((_resolve, reject) => context?.signal?.addEventListener('abort', () => { reject(new AiProviderTimeoutError()); }, { once: true })),
     };
-    const fallbackGenerate = vi.fn<AiProvider['generate']>(() => Promise.resolve(DEFAULT_DESIGN));
+    const fallbackGenerate = vi.fn<AiProvider['generate']>(() => Promise.resolve(DEFAULT_DESIGN_V2));
     const fallback: AiProvider = { name: 'opencode-go', modelId: 'glm-5.3-flash', generate: fallbackGenerate };
     const provider = new FallbackAiProvider('opencode-go', stalled.modelId, [fallback.modelId], (_name, modelId) => modelId === stalled.modelId ? stalled : fallback, 5);
-    await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toEqual(DEFAULT_DESIGN);
+    await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toEqual(DEFAULT_DESIGN_V2);
     expect(fallbackGenerate).toHaveBeenCalledOnce();
   });
   it('rejects duplicate or empty fallback model IDs', () => {

@@ -25,6 +25,7 @@
     "start": "node dist/web-main.js",
     "start:worker": "node dist/worker-main.js",
     "db:migrate": "node dist/migrate.js",
+    "db:migrate-design-v2": "node dist/migrate-design-v2.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.client.json"
   },

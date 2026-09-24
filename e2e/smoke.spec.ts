@@ -260,19 +260,19 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await page.unroute('**/api/operations/mock-failed');
 
   await openDisclosure(page, 'fine-tune');
-  const tocStyle = page.locator('fieldset.style-rule-controls').filter({ hasText: 'Table of contents' });
-  await expect(tocStyle.getByLabel('Border')).toHaveCount(0);
-  await expect(tocStyle.getByLabel('Surface')).toHaveCount(0);
-  await expect(tocStyle.getByLabel('Gap')).toHaveCount(1);
+  await openDisclosure(page, 'advanced-styles');
+  const articleStyle = page.locator('fieldset.style-rule-controls').filter({ hasText: 'Article body' });
+  await expect(articleStyle.getByLabel('Spacing')).toHaveCount(1);
+  await expect(articleStyle.getByLabel('Frame')).toHaveCount(1);
   const footerStyle = page.locator('fieldset.style-rule-controls').filter({ hasText: 'Site footer' });
-  await expect(footerStyle.getByLabel('Border')).toHaveCount(0);
+  await expect(footerStyle.getByLabel('Frame')).toHaveCount(1);
   await expect(footerStyle.getByLabel('Surface')).toHaveCount(1);
   await page.getByRole('group', { name: 'Layout preset' }).getByLabel('Editorial').check();
   await page.getByRole('group', { name: 'Body font' }).getByLabel('Mono').check();
   const fineTuneFeedback = page.locator('details[data-disclosure-key="fine-tune"] [data-feedback-slot="fine-tune"]');
   await expect(fineTuneFeedback).toContainText('Visual preview updated; changes are not saved');
   const fineTuneFeedbackBox = await fineTuneFeedback.boundingBox();
-  const saveThemeButtonBox = await page.getByRole('button', { name: 'Build design version' }).boundingBox();
+  const saveThemeButtonBox = await page.getByRole('button', { name: 'Save design version' }).boundingBox();
   expect(Math.abs((fineTuneFeedbackBox?.x ?? 0) - (saveThemeButtonBox?.x ?? 0))).toBeLessThanOrEqual(1);
   let structuralPreviewRequests = 0;
   await page.route('**/api/design/preview', (route) => {
@@ -285,11 +285,11 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   expect(structuralPreviewRequests).toBe(0);
   await page.unroute('**/api/design/preview');
   await page.route('**/actions/design/apply', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Could not save the design' } }) }));
-  await page.getByRole('button', { name: 'Build design version' }).click();
+  await page.getByRole('button', { name: 'Save design version' }).click();
   await expect(fineTuneFeedback).toContainText('Could not save the design');
   await expect(page.locator('.studio-primary [data-feedback-slot="ai"]')).not.toContainText('Could not save the design');
   await page.unroute('**/actions/design/apply');
-  await expectPartialRefresh(page, page.getByRole('button', { name: 'Build design version' }));
+  await expectPartialRefresh(page, page.getByRole('button', { name: 'Save design version' }));
   await expectPreviewPath(page, '/blog/hello-vibelog/');
 
   await openDisclosure(page, 'design-history');
@@ -334,7 +334,7 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   }
   const exportedZip = Buffer.concat(chunks);
   expect([...exportedZip.subarray(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04]);
-  for (const path of ['index.html', 'theme.css', 'blog/hello-vibelog/index.html', 'llms.txt', 'pagefind/pagefind-component-ui.js']) {
+  for (const path of ['index.html', 'design.css', 'blog/hello-vibelog/index.html', 'llms.txt', 'pagefind/pagefind-component-ui.js']) {
     expect(exportedZip.includes(Buffer.from(path))).toBe(true);
   }
   await expectNoPageReload(page);
@@ -342,7 +342,7 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await openDisclosure(page, 'fine-tune');
   await page.getByLabel('Notebook').check();
   await expect(page.getByText('Visual preview updated; changes are not saved')).toBeVisible();
-  await expectPartialRefresh(page, page.getByRole('button', { name: 'Build design version' }));
+  await expectPartialRefresh(page, page.getByRole('button', { name: 'Save design version' }));
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Publish changes' }));
   await openDisclosure(page, 'release-history');
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Restore live' }).first());

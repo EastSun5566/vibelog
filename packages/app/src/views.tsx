@@ -1,11 +1,11 @@
 import type { AppSession } from './auth.js';
-import type { BlogDesignSpecV1, HomeSection, StyleRule, StyleTarget } from '@vibelog/core';
+import type { BlogDesignSpecV2, PresentationSpec } from '@vibelog/core';
 import type { BlogRecord, DesignRevisionRecord, OperationRecord, PublishedReleaseRecord, SyncedPostSummary } from './database.js';
 import { syncOperationIntent } from './blog-sync.js';
 import { operationLabel, operationMessage, operationProgress } from './operation-status.js';
 import { editorUrlWithPreviewPath } from './preview-path.js';
 import { calculatePublicationDiff } from './publication-diff.js';
-import { THEME_PALETTES, themeControlValues } from './theme-studio.js';
+import { PRESENTATION_OPTIONS, THEME_PALETTES, themeControlValues } from './theme-studio.js';
 
 export interface AnalyticsDocumentConfig { measurementId: string; nonce: string }
 export type DeletionError = 'busy' | 'cleanup' | 'confirmation';
@@ -290,64 +290,34 @@ function SelectField({ label, name, value, options, previewKind = 'structural' }
   return <label class="field"><span>{label}</span><select name={name} data-theme-control data-preview-kind={previewKind}>{options.map(([option, text]) => <option value={String(option)} selected={String(value) === String(option)}>{text}</option>)}</select></label>;
 }
 
-function HomeSectionControls({ section, index }: { section: HomeSection; index: number }) {
-  const prefix = `homeSection:${String(index)}:`;
-  if (section.type === 'intro') return <div class="composition-fields">
-    <SelectField label="Variant" name={`${prefix}variant`} value={section.variant} options={[["minimal", "Minimal"], ["centered", "Centered"], ["split", "Split"]]}/>
-    <SelectField label="Show author" name={`${prefix}showAuthor`} value={String(section.showAuthor)} options={[["true", "Yes"], ["false", "No"]]}/>
+function HomeSectionControls({ id, section, region, regions }: { id: string; section: BlogDesignSpecV2['pages']['home']['sections'][string]; region: string; regions: string[] }) {
+  const prefix = `home:${id}:`;
+  return <div class="composition-fields">
+    <SelectField label="Region" name={`${prefix}region`} value={region} options={regions.map((name) => [name, name])}/>
+    {section.type === 'intro' ? <>
+      <SelectField label="Variant" name={`${prefix}variant`} value={section.variant} options={[["minimal", "Minimal"], ["centered", "Centered"], ["split", "Split"]]}/>
+      <SelectField label="Show author" name={`${prefix}showAuthor`} value={String(section.showAuthor)} options={[["true", "Yes"], ["false", "No"]]}/>
+    </> : null}
+    {section.type === 'posts' ? <>
+      <SelectField label="Variant" name={`${prefix}variant`} value={section.variant} options={[["hero", "Hero"], ["split", "Split"], ["list", "List"], ["cards", "Cards"], ["grid", "Grid"]]}/>
+      <SelectField label="Source" name={`${prefix}source`} value={section.source.strategy} options={[["latest", "Latest"], ["recently-updated", "Recently updated"]]}/>
+      <SelectField label="Posts" name={`${prefix}limit`} value={section.limit} options={[[1, "1"], [2, "2"], [3, "3"], [5, "5"], [6, "6"], [9, "9"]]}/>
+      <SelectField label="Columns" name={`${prefix}columns`} value={section.columns ?? 1} options={[[1, "1"], [2, "2"], [3, "3"]]}/>
+    </> : null}
+    {section.type === 'topics' ? <>
+      <SelectField label="Variant" name={`${prefix}variant`} value={section.variant} options={[["list", "List"], ["cloud", "Cloud"]]}/>
+      <SelectField label="Topics" name={`${prefix}limit`} value={section.limit} options={[[6, "6"], [12, "12"], [24, "24"]]}/>
+    </> : null}
+    {section.type === 'author' && <SelectField label="Variant" name={`${prefix}variant`} value={section.variant} options={[["compact", "Compact"], ["profile", "Profile"]]}/>}
   </div>;
-  if (section.type === 'featured-posts') return <div class="composition-fields">
-    <SelectField label="Variant" name={`${prefix}variant`} value={section.variant} options={[["hero", "Hero"], ["split", "Split"]]}/>
-    <SelectField label="Posts" name={`${prefix}count`} value={section.count} options={[[1, "1"], [2, "2"]]}/>
-  </div>;
-  if (section.type === 'recent-posts') return <div class="composition-fields">
-    <SelectField label="Variant" name={`${prefix}variant`} value={section.variant} options={[["list", "List"], ["cards", "Cards"], ["grid", "Grid"]]}/>
-    <SelectField label="Posts" name={`${prefix}limit`} value={section.limit} options={[[3, "3"], [5, "5"], [6, "6"], [9, "9"]]}/>
-    <SelectField label="Columns" name={`${prefix}columns`} value={section.columns ?? 1} options={[[1, "1"], [2, "2"], [3, "3"]]}/>
-  </div>;
-  if (section.type === 'topics') return <div class="composition-fields">
-    <SelectField label="Variant" name={`${prefix}variant`} value={section.variant} options={[["list", "List"], ["cloud", "Cloud"]]}/>
-    <SelectField label="Topics" name={`${prefix}limit`} value={section.limit} options={[[6, "6"], [12, "12"], [24, "24"]]}/>
-  </div>;
-  return <div class="composition-fields"><SelectField label="Variant" name={`${prefix}variant`} value={section.variant} options={[["compact", "Compact"], ["profile", "Profile"]]}/></div>;
 }
 
-const STYLE_TARGET_LABELS: Record<StyleTarget, string> = {
-  'site.header': 'Site header',
-  'home.intro': 'Homepage intro',
-  'home.sections': 'Homepage sections',
-  'posts.items': 'Post items',
-  'article.header': 'Article header',
-  'article.prose': 'Article body',
-  'article.toc': 'Table of contents',
-  'site.footer': 'Site footer',
-};
-const STYLE_OPTIONS = {
-  textAlign: [['', 'Default'], ['start', 'Start'], ['center', 'Center']],
-  paddingBlock: [['', 'Default'], ['none', 'None'], ['sm', 'Small'], ['md', 'Medium'], ['lg', 'Large'], ['xl', 'Extra large']],
-  gap: [['', 'Default'], ['sm', 'Small'], ['md', 'Medium'], ['lg', 'Large'], ['xl', 'Extra large']],
-  surface: [['', 'Default'], ['transparent', 'Transparent'], ['background', 'Background'], ['surface', 'Surface']],
-  border: [['', 'Default'], ['none', 'None'], ['hairline', 'Hairline'], ['strong', 'Strong']],
-  width: [['', 'Default'], ['reading', 'Reading'], ['content', 'Content'], ['full', 'Full']],
-} as const;
-
-function StyleRuleControls({ target, rule, design }: { target: StyleTarget; rule?: StyleRule; design: BlogDesignSpecV1 }) {
-  const prefix = `style:${target}:`;
-  const borderOwned = target === 'posts.items' || target === 'article.toc' || target === 'site.footer'
-    || (target === 'site.header' && (design.theme.motif === 'editorial' || design.chrome.header.variant === 'masthead'))
-    || (target === 'article.header' && design.pages.article.header === 'editorial');
-  const surfaceOwned = target === 'posts.items' || target === 'article.toc';
-  return <fieldset class="style-rule-controls">
-    <legend>{STYLE_TARGET_LABELS[target]}</legend>
-    <div class="composition-fields">
-      <SelectField label="Align" name={`${prefix}textAlign`} value={rule?.declarations.textAlign ?? ''} options={STYLE_OPTIONS.textAlign} previewKind="visual"/>
-      <SelectField label="Padding" name={`${prefix}paddingBlock`} value={rule?.declarations.paddingBlock ?? ''} options={STYLE_OPTIONS.paddingBlock} previewKind="visual"/>
-      <SelectField label="Gap" name={`${prefix}gap`} value={rule?.declarations.gap ?? ''} options={STYLE_OPTIONS.gap} previewKind="visual"/>
-      {!surfaceOwned && <SelectField label="Surface" name={`${prefix}surface`} value={rule?.declarations.surface ?? ''} options={STYLE_OPTIONS.surface} previewKind="visual"/>}
-      {!borderOwned && <SelectField label="Border" name={`${prefix}border`} value={rule?.declarations.border ?? ''} options={STYLE_OPTIONS.border} previewKind="visual"/>}
-      <SelectField label="Width" name={`${prefix}width`} value={rule?.declarations.width ?? ''} options={STYLE_OPTIONS.width} previewKind="visual"/>
-    </div>
-  </fieldset>;
+function PresentationControls({ label, path, presentation }: { label: string; path: string; presentation?: PresentationSpec }) {
+  const labels: Record<keyof PresentationSpec, string> = { emphasis: 'Emphasis', width: 'Width', align: 'Align', surface: 'Surface', density: 'Density', spacing: 'Spacing', frame: 'Frame' };
+  return <fieldset class="style-rule-controls"><legend>{label}</legend><div class="composition-fields">
+    {(Object.entries(PRESENTATION_OPTIONS) as [keyof PresentationSpec, readonly string[]][]).map(([field, values]) =>
+      <SelectField label={labels[field]} name={`presentation:${path}:${field}`} value={presentation?.[field] ?? ''} options={values.map((value) => [value, value || 'Default'])} previewKind="visual"/>)}
+  </div></fieldset>;
 }
 
 const SOURCE_LABEL = { system: 'Initial', ai: 'AI', manual: 'Manual' } as const;
@@ -417,6 +387,8 @@ function PublicationSummary({ blog, activeDesign, published, liveDesign, hasChan
 export function editorPage(input: EditorPageInput) {
   const { blog, designs, activeDesign, published, releases } = input;
   const controls = themeControlValues(activeDesign.config);
+  const home = activeDesign.config.pages.home;
+  const homeEntries = Object.entries(home.regions).flatMap(([region, ids]) => ids.map((id, index) => ({ id, index, region, count: ids.length, section: home.sections[id] })));
   const designsById = new Map(designs.map((design) => [design.id, design]));
   const liveDesign = published ? designsById.get(published.themeRevisionId) : undefined;
   const busy = Boolean(input.operation && (input.operation.status === 'queued' || input.operation.status === 'running'));
@@ -449,7 +421,7 @@ export function editorPage(input: EditorPageInput) {
 
     <section class="preview-panel" aria-label="Blog preview">
       <div class="preview-heading">
-        <div><p class="preview-label">Draft preview</p><small class="muted">Design controls rebuild this preview. Content changes require a sync.</small></div>
+        <div><p class="preview-label">Draft preview</p><small class="muted">Design controls update this preview. Content changes require a sync.</small></div>
         <span class="preview-address">{blog.username}.{input.appHostname}</span>
       </div>
       <div class="preview-frame">
@@ -552,14 +524,14 @@ export function editorPage(input: EditorPageInput) {
               <summary><span>Fine-tune design</span><small>Pages, type, color, and spacing</small></summary>
               <div class="disclosure-body theme-control-stack">
                 <fieldset class="fieldset"><legend>Homepage sections</legend>
-                  <input type="hidden" name="homeSections" value={JSON.stringify(activeDesign.config.pages.home.sections)}/>
-                  <ol class="revision-list">{activeDesign.config.pages.home.sections.map((section, index) => <li class="revision"><div><strong>{section.type}</strong><HomeSectionControls section={section} index={index}/></div><span class="composition-actions">
-                    <button class="btn" data-variant="outline" data-size="compact" type="submit" formnovalidate name="compositionAction" value={`up:${String(index)}`} data-operation-submit data-feedback-target="fine-tune" disabled={busy || index === 0}>Move up</button>
-                    <button class="btn" data-variant="outline" data-size="compact" type="submit" formnovalidate name="compositionAction" value={`down:${String(index)}`} data-operation-submit data-feedback-target="fine-tune" disabled={busy || index === activeDesign.config.pages.home.sections.length - 1}>Move down</button>
-                    <button class="btn" data-variant="ghost" data-size="compact" type="submit" formnovalidate name="compositionAction" value={`remove:${String(index)}`} data-operation-submit data-feedback-target="fine-tune" disabled={busy}>Remove</button>
+                  <SelectField label="Page layout" name="homeLayout" value={home.layout} options={[["stack", "Stack"], ["sidebar", "Sidebar"], ["magazine", "Magazine"]]}/>
+                  <ol class="revision-list">{homeEntries.map(({ id, index, region, count, section }) => section && <li class="revision"><div><strong>{section.type} · {id}</strong><HomeSectionControls id={id} section={section} region={region} regions={Object.keys(home.regions)}/></div><span class="composition-actions">
+                    <button class="btn" data-variant="outline" data-size="compact" type="submit" formnovalidate name="compositionAction" value={`up:${id}`} data-operation-submit data-feedback-target="fine-tune" disabled={busy || index === 0}>Move up</button>
+                    <button class="btn" data-variant="outline" data-size="compact" type="submit" formnovalidate name="compositionAction" value={`down:${id}`} data-operation-submit data-feedback-target="fine-tune" disabled={busy || index === count - 1}>Move down</button>
+                    <button class="btn" data-variant="ghost" data-size="compact" type="submit" formnovalidate name="compositionAction" value={`remove:${id}`} data-operation-submit data-feedback-target="fine-tune" disabled={busy}>Remove</button>
                   </span></li>)}</ol>
-                  <div class="field"><label for="addSectionType">Add section</label><select id="addSectionType" name="addSectionType"><option value="intro">Intro</option><option value="featured-posts">Featured posts</option><option value="recent-posts">Recent posts</option><option value="topics">Topics</option><option value="author">Author</option></select></div>
-                  <button class="btn" data-variant="outline" type="submit" formnovalidate name="compositionAction" value="add" data-operation-submit data-feedback-target="fine-tune" disabled={busy || activeDesign.config.pages.home.sections.length >= 5}>Add section</button>
+                  <div class="field"><label for="addSectionType">Add section</label><select id="addSectionType" name="addSectionType"><option value="intro">Intro</option><option value="posts">Posts</option><option value="topics">Topics</option><option value="author">Author</option></select></div>
+                  <button class="btn" data-variant="outline" type="submit" formnovalidate name="compositionAction" value="add" data-operation-submit data-feedback-target="fine-tune" disabled={busy || homeEntries.length >= 8}>Add section</button>
                 </fieldset>
                 <ChoiceGroup legend="Layout preset" name="preset" options={CONTROL_OPTIONS.preset} value={controls.preset} previewKind="visual"/>
                 <ChoiceGroup legend="Header" name="headerStyle" options={CONTROL_OPTIONS.headerStyle} value={controls.headerStyle}/>
@@ -568,8 +540,8 @@ export function editorPage(input: EditorPageInput) {
                 <ChoiceGroup legend="Article list" name="postListStyle" options={CONTROL_OPTIONS.postListStyle} value={controls.postListStyle}/>
                 <fieldset class="fieldset"><legend>Posts page metadata</legend><div class="composition-fields">
                   <SelectField label="Columns" name="indexColumns" value={activeDesign.config.pages.index.columns ?? 1} options={[[1, '1'], [2, '2'], [3, '3']]}/>
-                  <SelectField label="Descriptions" name="indexShowDescription" value={String(activeDesign.config.pages.index.showDescription)} options={[["true", "Show"], ["false", "Hide"]]}/>
-                  <SelectField label="Topics" name="indexShowTags" value={String(activeDesign.config.pages.index.showTags)} options={[["true", "Show"], ["false", "Hide"]]}/>
+                  <SelectField label="Descriptions" name="indexShowDescription" value={String(activeDesign.config.pages.index.item.showDescription)} options={[["true", "Show"], ["false", "Hide"]]}/>
+                  <SelectField label="Topics" name="indexShowTags" value={String(activeDesign.config.pages.index.item.showTags)} options={[["true", "Show"], ["false", "Hide"]]}/>
                 </div></fieldset>
                 <ChoiceGroup legend="Article layout" name="articleLayout" options={CONTROL_OPTIONS.articleLayout} value={controls.articleLayout}/>
                 <ChoiceGroup legend="Article header" name="articleHeader" options={CONTROL_OPTIONS.articleHeader} value={controls.articleHeader}/>
@@ -592,12 +564,21 @@ export function editorPage(input: EditorPageInput) {
                 <ChoiceGroup legend="Spacing" name="density" options={CONTROL_OPTIONS.density} value={controls.density} previewKind="visual"/>
                 <ChoiceGroup legend="Corners" name="radius" options={CONTROL_OPTIONS.radius} value={controls.radius} previewKind="visual"/>
                 <details class="editor-disclosure advanced-styles" data-disclosure-key="advanced-styles">
-                  <summary><span>Advanced styling</span><small>Semantic rules only</small></summary>
+                  <summary><span>Presentation details</span><small>Per-section styling</small></summary>
                   <div class="disclosure-body style-rule-list">
-                    {(Object.keys(STYLE_TARGET_LABELS) as StyleTarget[]).map((target) => <StyleRuleControls target={target} rule={activeDesign.config.styles.rules.find((rule) => rule.target === target)} design={activeDesign.config}/>)}
+                    <PresentationControls label="Site header" path="chrome.header" presentation={activeDesign.config.chrome.header.presentation}/>
+                    <PresentationControls label="Site footer" path="chrome.footer" presentation={activeDesign.config.chrome.footer.presentation}/>
+                    <PresentationControls label="Homepage" path="home" presentation={home.presentation}/>
+                    {homeEntries.map(({ id, section }) => section && <PresentationControls label={`Homepage: ${id}`} path={`home.${id}`} presentation={section.presentation}/>)}
+                    <PresentationControls label="Posts page" path="index" presentation={activeDesign.config.pages.index.presentation}/>
+                    <PresentationControls label="Post items" path="index.item" presentation={activeDesign.config.pages.index.item.presentation}/>
+                    <PresentationControls label="Article page" path="article" presentation={activeDesign.config.pages.article.presentation}/>
+                    <PresentationControls label="Article header" path="article.header" presentation={activeDesign.config.pages.article.header.presentation}/>
+                    <PresentationControls label="Article body" path="article.prose" presentation={activeDesign.config.pages.article.prose.presentation}/>
+                    {Object.entries(activeDesign.config.pages.article.modules).map(([id, module]) => <PresentationControls label={`Article: ${id}`} path={`article.${id}`} presentation={module.presentation}/>)}
                   </div>
                 </details>
-                <button class="btn" type="submit" formnovalidate disabled={busy} data-operation-submit data-feedback-target="fine-tune" data-focus-key="save-theme">Build design version</button>
+                <button class="btn" type="submit" formnovalidate disabled={busy} data-operation-submit data-feedback-target="fine-tune" data-focus-key="save-theme">Save design version</button>
                 <OperationOutput operation={input.operation?.type === 'apply_design' || input.operation?.type === 'activate_design' ? input.operation : undefined} feedbackKey="fine-tune"/>
               </div>
             </details>

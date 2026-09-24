@@ -1,5 +1,6 @@
 import { ContentSourceName } from './consts.js';
-import type { BlogDesignSpec, DesignProposalInput } from './design/types.js';
+import type { DesignProposalInput } from './design/types.js';
+import type { BlogDesignSpecV2 } from './design/schema-v2.js';
 
 export interface VibelogConfig {
   site: {
@@ -81,5 +82,5 @@ export interface AiGenerationContext {
 export interface AiProvider {
   readonly name: string;
   readonly modelId: string;
-  generate(input: DesignProposalInput, context?: AiGenerationContext): Promise<BlogDesignSpec>
+  generate(input: DesignProposalInput, context?: AiGenerationContext): Promise<BlogDesignSpecV2>
 }

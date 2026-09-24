@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { Type, createModels, createProvider, validateToolCall, type Api, type Context, type Model, type Models, type MutableModels, type ProviderEnv, type ProviderStreams, type SimpleStreamOptions, type Tool } from '@earendil-works/pi-ai';
+import { createModels, createProvider, validateToolCall, type Api, type Context, type Model, type Models, type MutableModels, type ProviderEnv, type ProviderStreams, type SimpleStreamOptions } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { builtinModels, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all';
 import type { AiGenerationContext, AiProvider } from '../../types.js';
-import type { BlogDesignSpec, DesignProposalInput } from '../../design/types.js';
-import { DESIGN_CATALOG_INSTRUCTIONS } from '../../design/catalog.js';
-import { normalizeDesignDecoration } from '../../design/normalize.js';
-import { validateBlogDesignSpec } from '../../design/validate.js';
+import type { DesignProposalInput } from '../../design/types.js';
+import type { BlogDesignSpecV2 } from '../../design/schema-v2.js';
+import { DESIGN_CATALOG_V2_INSTRUCTIONS } from '../../design/catalog-v2.js';
+import { normalizeDesignV2 } from '../../design/normalize-v2.js';
+import { validateBlogDesignSpecV2 } from '../../design/schema-v2.js';
+import { designToolV2 } from './tool-v2.js';
 import { logger } from '../../core/index.js';
 
 const DESIGN_TOOL_NAME = 'propose_design';
@@ -17,39 +19,6 @@ const OPENCODE_PROVIDERS = new Set(['opencode', 'opencode-go']);
 const VIBELOG_USER_AGENT = 'VibeLog';
 const AI_GENERATION_TIMEOUT_MS = 120_000;
 const AI_FALLBACK_CANDIDATE_TIMEOUT_MS = 45_000;
-const enumType = <T extends string>(values: readonly T[]) => Type.Union(values.map((value) => Type.Literal(value)));
-const homeSection = Type.Union([
-  Type.Object({ type: Type.Literal('intro'), variant: enumType(['minimal', 'centered', 'split']), showAuthor: Type.Boolean() }, { additionalProperties: false }),
-  Type.Object({ type: Type.Literal('featured-posts'), variant: enumType(['hero', 'split']), count: Type.Union([Type.Literal(1), Type.Literal(2)]) }, { additionalProperties: false }),
-  Type.Object({ type: Type.Literal('recent-posts'), variant: enumType(['list', 'cards', 'grid']), limit: Type.Union([Type.Literal(3), Type.Literal(5), Type.Literal(6), Type.Literal(9)]), columns: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3)])) }, { additionalProperties: false }),
-  Type.Object({ type: Type.Literal('topics'), variant: enumType(['list', 'cloud']), limit: Type.Union([Type.Literal(6), Type.Literal(12), Type.Literal(24)]) }, { additionalProperties: false }),
-  Type.Object({ type: Type.Literal('author'), variant: enumType(['compact', 'profile']) }, { additionalProperties: false }),
-]);
-const designTool: Tool = {
-  name: DESIGN_TOOL_NAME,
-  description: 'Propose one complete VibeLog presentation using only the supported blog design catalog.',
-  parameters: Type.Object({
-    version: Type.Literal(1),
-    theme: Type.Object({
-      motif: enumType(['minimal', 'editorial', 'notebook']), appearance: enumType(['light', 'dark']),
-      colors: Type.Object({ background: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), surface: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), text: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), muted: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), accent: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }), border: Type.String({ pattern: '^#[0-9a-fA-F]{6}$' }) }, { additionalProperties: false }),
-      typography: Type.Object({ bodyFont: enumType(['system-sans', 'system-serif', 'system-mono']), headingFont: enumType(['system-sans', 'system-serif', 'system-mono']), scale: enumType(['compact', 'comfortable', 'large']) }, { additionalProperties: false }),
-      layout: Type.Object({ contentWidth: enumType(['narrow', 'medium', 'wide']), density: enumType(['compact', 'comfortable']), radius: enumType(['none', 'soft', 'round']) }, { additionalProperties: false }),
-    }, { additionalProperties: false }),
-    chrome: Type.Object({ header: Type.Object({ variant: enumType(['compact', 'centered', 'masthead']) }, { additionalProperties: false }), footer: Type.Object({ variant: enumType(['minimal', 'profile']) }, { additionalProperties: false }) }, { additionalProperties: false }),
-    pages: Type.Object({
-      home: Type.Object({ sections: Type.Array(homeSection, { minItems: 1, maxItems: 5 }) }, { additionalProperties: false }),
-      index: Type.Object({ layout: enumType(['list', 'grid', 'magazine']), itemVariant: enumType(['divided', 'cards', 'numbered']), columns: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3)])), showDescription: Type.Boolean(), showTags: Type.Boolean() }, { additionalProperties: false }),
-      article: Type.Object({ layout: enumType(['reading', 'wide', 'with-aside']), header: enumType(['simple', 'editorial']), toc: enumType(['auto-inline', 'auto-aside', 'hidden']), metadata: enumType(['compact', 'detailed']), navigation: enumType(['links', 'cards']), codeBlock: enumType(['plain', 'panel']) }, { additionalProperties: false }),
-    }, { additionalProperties: false }),
-    styles: Type.Object({ rules: Type.Array(Type.Object({
-      target: enumType(['site.header', 'home.intro', 'home.sections', 'posts.items', 'article.header', 'article.prose', 'article.toc', 'site.footer']),
-      declarations: Type.Object({ textAlign: Type.Optional(enumType(['start', 'center'])), paddingBlock: Type.Optional(enumType(['none', 'sm', 'md', 'lg', 'xl'])), gap: Type.Optional(enumType(['sm', 'md', 'lg', 'xl'])), surface: Type.Optional(enumType(['transparent', 'background', 'surface'])), border: Type.Optional(enumType(['none', 'hairline', 'strong'])), width: Type.Optional(enumType(['reading', 'content', 'full'])) }, { additionalProperties: false }),
-    }, { additionalProperties: false }), { maxItems: 8 }) }, { additionalProperties: false }),
-    description: Type.String({ minLength: 1, maxLength: 240 }),
-  }, { additionalProperties: false }),
-};
-
 function keylessOpenAICompletionsApi(): ProviderStreams {
   const api = openAICompletionsApi();
   const options = (input?: SimpleStreamOptions): SimpleStreamOptions => ({
@@ -164,10 +133,10 @@ export class PiAiProvider implements AiProvider {
     this.model = model;
     logger.info(`AI provider: ${name} (${modelId})`);
   }
-  private async generateOnce(input: DesignProposalInput, sessionId: string, signal: AbortSignal, previousError?: string): Promise<BlogDesignSpec> {
+  private async generateOnce(input: DesignProposalInput, sessionId: string, signal: AbortSignal, previousError?: string): Promise<BlogDesignSpecV2> {
     const context: Context = {
-      systemPrompt: `You are VibeLog's blog presentation designer. Call ${DESIGN_TOOL_NAME} exactly once with a complete version 1 design. ${DESIGN_CATALOG_INSTRUCTIONS} Ensure text and accent colors each have WCAG AA contrast against the background.${previousError ? ` Previous proposal error: ${previousError}. Correct it.` : ''}`,
-      messages: [{ role: 'user', content: JSON.stringify(input), timestamp: Date.now() }], tools: [designTool],
+      systemPrompt: `You are VibeLog's blog presentation designer. Call ${DESIGN_TOOL_NAME} exactly once with a complete version 2 design. ${DESIGN_CATALOG_V2_INSTRUCTIONS} Ensure text and accent colors each have WCAG AA contrast against the background.${previousError ? ` Previous proposal error: ${previousError}. Correct it.` : ''}`,
+      messages: [{ role: 'user', content: JSON.stringify(input), timestamp: Date.now() }], tools: [designToolV2],
     };
     let response;
     const openCode = OPENCODE_PROVIDERS.has(this.name);
@@ -195,11 +164,11 @@ export class PiAiProvider implements AiProvider {
     const [toolCall] = toolCalls;
     if (toolCall.name !== DESIGN_TOOL_NAME) throw new Error(`AI called an unexpected tool: ${toolCall.name}`);
     let candidate: unknown;
-    try { candidate = validateToolCall([designTool], toolCall); }
+    try { candidate = validateToolCall([designToolV2], toolCall); }
     catch (error) { throw new Error(`AI returned invalid arguments for ${DESIGN_TOOL_NAME}: ${safeToolValidationError(error)}`); }
-    return normalizeDesignDecoration(validateBlogDesignSpec(candidate));
+    return normalizeDesignV2(validateBlogDesignSpecV2(candidate));
   }
-  async generate(input: DesignProposalInput, context?: AiGenerationContext): Promise<BlogDesignSpec> {
+  async generate(input: DesignProposalInput, context?: AiGenerationContext): Promise<BlogDesignSpecV2> {
     const sessionId = context?.sessionId ?? randomUUID();
     const signal = context?.signal ?? AbortSignal.timeout(AI_GENERATION_TIMEOUT_MS);
     try { return await this.generateOnce(input, sessionId, signal); }
@@ -225,7 +194,7 @@ export class FallbackAiProvider implements AiProvider {
     this.modelId = primaryModelId;
     this.candidates = modelIds.map((modelId) => factory(name, modelId));
   }
-  async generate(input: DesignProposalInput, context?: AiGenerationContext): Promise<BlogDesignSpec> {
+  async generate(input: DesignProposalInput, context?: AiGenerationContext): Promise<BlogDesignSpecV2> {
     const operationId = context?.sessionId ?? randomUUID();
     const startedAt = Date.now();
     for (const [index, candidate] of this.candidates.entries()) {

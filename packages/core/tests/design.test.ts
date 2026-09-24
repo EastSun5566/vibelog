@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { createContentProfile } from '../src/index.js';
 import {
   DEFAULT_DESIGN,
   DEFAULT_THEME,
-  createContentProfile,
   migrateThemeConfigToDesign,
   normalizeDesignDecoration,
   parsePersistedDesign,
   renderDesignCss,
   validateBlogDesignSpec,
-} from '../src/index.js';
-import type { BlogDesignSpecV1, Post } from '../src/index.js';
+} from '../src/migration-v1.js';
+import type { BlogDesignSpecV1 } from '../src/migration-v1.js';
+import type { Post } from '../src/index.js';
 
 function design(update: (value: BlogDesignSpecV1) => void): BlogDesignSpecV1 {
   const value = structuredClone(DEFAULT_DESIGN);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_DESIGN } from '@vibelog/core';
+import { DEFAULT_DESIGN_V2 } from '@vibelog/core';
 import type { BlogRecord, PublishedReleaseRecord, SyncedPostSummary, ThemeRevisionRecord } from '../src/database.js';
 import { calculatePublicationDiff, createReleaseSnapshot } from '../src/publication-diff.js';
 
@@ -37,7 +37,7 @@ const blog = (posts: SyncedPostSummary[], overrides: Partial<BlogRecord> = {}): 
 const theme = (overrides: Partial<ThemeRevisionRecord> = {}): ThemeRevisionRecord => ({
   id: '33333333-3333-4333-8333-333333333333',
   blogId: '11111111-1111-4111-8111-111111111111',
-  config: DEFAULT_DESIGN,
+  config: DEFAULT_DESIGN_V2,
   prompt: null,
   description: 'Current theme',
   source: 'system',

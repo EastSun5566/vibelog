@@ -12,7 +12,7 @@ interface Props {
 const { hasTags = false, variant = "compact" } = Astro.props;
 ---
 
-<header class={`site-header variant-${variant}`} data-design-target="site.header">
+<header class={`site-header variant-${variant}`} data-design-target="site.header" data-design-role="site-header">
   <nav aria-label={text.primaryNavigation}>
     <a class="site-title" href="/">{SITE_TITLE}</a>
     <ul class="site-nav-links" role="list">

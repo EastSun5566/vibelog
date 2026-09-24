@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "theme": {
     "motif": "minimal",
     "appearance": "light",
@@ -9,10 +9,9 @@
   },
   "chrome": { "header": { "variant": "compact" }, "footer": { "variant": "minimal" } },
   "pages": {
-    "home": { "sections": [{ "type": "intro", "variant": "minimal", "showAuthor": true }, { "type": "recent-posts", "variant": "list", "limit": 5, "columns": 1 }] },
-    "index": { "layout": "list", "itemVariant": "divided", "columns": 1, "showDescription": true, "showTags": true },
-    "article": { "layout": "reading", "header": "simple", "toc": "auto-inline", "metadata": "compact", "navigation": "links", "codeBlock": "plain" }
+    "home": { "layout": "stack", "sections": { "intro": { "type": "intro", "variant": "minimal", "showAuthor": true }, "recent": { "type": "posts", "source": { "strategy": "latest" }, "variant": "list", "limit": 5, "columns": 1 } }, "regions": { "main": ["intro", "recent"] } },
+    "index": { "layout": "list", "item": { "variant": "divided", "showDescription": true, "showTags": true }, "columns": 1 },
+    "article": { "layout": "reading", "header": { "variant": "simple" }, "modules": { "metadata": { "type": "metadata", "variant": "compact" }, "tags": { "type": "tags", "variant": "list" }, "toc": { "type": "toc", "variant": "inline" }, "navigation": { "type": "navigation", "variant": "links" } }, "regions": { "beforeBody": ["metadata", "tags", "toc"], "aside": [], "afterBody": ["navigation"] }, "prose": { "codeBlock": "plain" } }
   },
-  "styles": { "rules": [] },
   "description": "A clear, quiet design that keeps the writing first."
 }

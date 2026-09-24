@@ -101,3 +101,11 @@ Use the same **Deploy production** workflow and exact main commit for each stage
 4. After the migration and new application revision are verified, set the stage to `normal`, select `confirmResume`, and deploy. Confirm web, edge, private worker smoke, and both Scheduler jobs. A locked deployment intentionally skips worker smoke until this step.
 
 Do not unlock simply because the deployment succeeded. Before an irreversible data conversion, test a database backup restore on an isolated copy and record its recovery point. After conversion commits, do not roll back only the runtime image to a version that cannot read the new data.
+
+### Presentation IR v2 cutover
+
+Deploy the V1-compatible maintenance guardrails to `main` while the stage is `normal`. Update and verify the V2 PR on that base. Then enter `draining` and `locked` using the V1 commit as described above. Take a restorable database backup, rehearse the conversion against an isolated copy of production data, and record the read-only V1 revision count. Leave existing R2 drafts in place.
+
+Only after the site is locked, merge the V2 PR and wait for CI on its exact main SHA. Run **Run production data migration** with `design-v2`, the recorded revision count, and `backupConfirmed`. That workflow audits before conversion and requires zero V1 revisions and preview sessions afterward. If it fails, remain locked, audit again, and investigate before retrying. The V2 deployment workflow rejects unconverted V1 data before Pulumi preview. Its first V2 deployment also requires the existing stack stage and target stage to be `locked`.
+
+Deploy the V2 SHA while locked, verify ready web and worker revisions and health, then return to `normal` using `confirmResume`. Verify login, editor history, private previews, a public article, worker smoke, and resumed Scheduler jobs before ending the window. Once conversion commits, never roll back only to a V1 image; restore the tested DB backup and V1 runtime together only while writes are still closed. After reopening, repair V2 forward so new writes are not lost.

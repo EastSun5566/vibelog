@@ -6,7 +6,7 @@ import PostList from "../../components/PostList.astro";
 import SiteLayout from "../../layouts/SiteLayout.astro";
 import { SITE_DESCRIPTION, SITE_TITLE } from "../../consts";
 import { text } from "../../localization";
-import { design } from "../../design";
+import { design } from "../../design-v2";
 
 export async function getStaticPaths({ paginate }) {
   const posts = (await getCollection("blog")).sort(
@@ -24,6 +24,8 @@ const pageTitle = page.currentPage === 1
   ? text.allPosts
   : `${text.allPosts} · ${text.pageLabel(page.currentPage)}`;
 const canonicalArchivePath = (path: string) => path.endsWith("/") ? path : `${path}/`;
+const index = design.pages.index;
+const item = index.item;
 ---
 
 <SiteLayout title={`${pageTitle} · ${SITE_TITLE}`} description={SITE_DESCRIPTION}>
@@ -32,8 +34,8 @@ const canonicalArchivePath = (path: string) => path.endsWith("/") ? path : `${pa
     <h1>{text.allPosts}</h1>
     <p>{text.postsByDate(page.total)}</p>
   </header>
-  <section class={`blog-index layout-${design.pages.index.layout} columns-${design.pages.index.columns}`}>
-    <PostList posts={page.data} variant={design.pages.index.itemVariant} columns={design.pages.index.columns} showDescription={design.pages.index.showDescription} showTags={design.pages.index.showTags} />
+  <section class={`blog-index layout-${index.layout} columns-${index.columns}`} data-design-role="index-root">
+    <PostList posts={page.data} variant={item.variant} columns={index.columns} showDescription={item.showDescription} showTags={item.showTags} />
   </section>
   {
     page.lastPage > 1 && (

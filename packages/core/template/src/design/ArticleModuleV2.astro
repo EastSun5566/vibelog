@@ -1,0 +1,52 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import type { ArticleModuleV2 } from '../design-v2';
+import FormattedDate from '../components/FormattedDate.astro';
+import PostList from '../components/PostList.astro';
+import TableOfContents from '../components/TableOfContents.astro';
+import TagList from '../components/TagList.astro';
+import { text } from '../localization';
+
+interface TocHeading { depth: number; slug: string; text: string }
+interface Props {
+  id: string;
+  module: ArticleModuleV2;
+  title: string;
+  description?: string;
+  date: Date;
+  updatedDate?: Date;
+  tags: CollectionEntry<'blog'>['data']['tags'];
+  headings: TocHeading[];
+  author: CollectionEntry<'author'>;
+  related: CollectionEntry<'blog'>[];
+  newerPost?: CollectionEntry<'blog'>;
+  olderPost?: CollectionEntry<'blog'>;
+}
+const { id, module, description, date, updatedDate, tags, headings, author, related, newerPost, olderPost } = Astro.props;
+const labelId = `article-${id}-heading`;
+const showUpdatedDate = updatedDate && updatedDate > date && updatedDate.toISOString().slice(0, 10) !== date.toISOString().slice(0, 10);
+---
+
+{module.type === 'metadata' && <div class={`article-module article-metadata variant-${module.variant}`} data-design-node={id}>
+  {module.variant === 'detailed' && description && <p class="blog-post-description">{description}</p>}
+  {showUpdatedDate && <p class="blog-post-update">{text.updatedAt} <FormattedDate date={updatedDate} /></p>}
+</div>}
+
+{module.type === 'tags' && tags.length > 0 && <div class="article-module article-tags" data-design-node={id}><TagList {tags} /></div>}
+
+{module.type === 'toc' && headings.length >= 2 && <div class={`article-module table-of-contents-placement toc-${module.variant}`} data-design-node={id}><TableOfContents {headings} /></div>}
+
+{module.type === 'author' && <section class={`article-module article-author variant-${module.variant}`} data-design-node={id} aria-labelledby={labelId}>
+  <h2 id={labelId}>{author.data.name}</h2>
+  {module.variant === 'profile' && author.body && <p>{author.body}</p>}
+</section>}
+
+{module.type === 'related-posts' && related.length > 0 && <section class={`article-module article-related variant-${module.variant}`} data-design-node={id} aria-labelledby={labelId}>
+  <h2 id={labelId}>{text.relatedPosts}</h2>
+  <PostList posts={related.slice(0, module.limit)} headingLevel="h3" variant={module.variant === 'cards' ? 'cards' : 'divided'} />
+</section>}
+
+{module.type === 'navigation' && (newerPost || olderPost) && <nav class={`article-module article-navigation variant-${module.variant}`} data-design-node={id} aria-label={text.postNavigation}>
+  {newerPost ? <a class="article-navigation-link newer" href={`/blog/${newerPost.id}/`}><span>{text.newerPost}</span><strong>{newerPost.data.title}</strong></a> : <span />}
+  {olderPost && <a class="article-navigation-link older" href={`/blog/${olderPost.id}/`}><span>{text.olderPost}</span><strong>{olderPost.data.title}</strong></a>}
+</nav>}

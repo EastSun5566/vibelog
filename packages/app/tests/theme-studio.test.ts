@@ -1,139 +1,64 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_DESIGN, contrastRatio } from '@vibelog/core';
+import { DEFAULT_DESIGN_V2, analyzeDesignImpact, contrastRatio } from '@vibelog/core';
 import { describeTheme, paletteForTheme, THEME_PALETTES, themeFromControls, themesEqual, visualThemeFromControls } from '../src/theme-studio.js';
 
 const controls = {
   preset: 'editorial', palette: 'newsprint', bodyFont: 'system-serif', headingFont: 'system-sans',
   scale: 'large', contentWidth: 'wide', density: 'compact', radius: 'none',
-  headerStyle: 'centered', footerStyle: 'minimal', postListStyle: 'numbered', indexLayout: 'list',
+  headerStyle: 'centered', footerStyle: 'minimal', homeLayout: 'stack', postListStyle: 'numbered', indexLayout: 'list',
   indexColumns: '1', indexShowDescription: 'true', indexShowTags: 'true',
   articleLayout: 'reading', articleToc: 'auto-inline', articleHeader: 'simple', articleMetadata: 'compact', articleNavigation: 'links', codeBlockStyle: 'panel',
 };
 
-describe('Theme Studio controls', () => {
-  it('maps curated controls to one deterministic safe theme', () => {
-    const theme = themeFromControls(DEFAULT_DESIGN, controls);
-    expect(theme).toMatchObject({
-      version: 1,
-      theme: {
-        motif: 'editorial', appearance: 'light', colors: THEME_PALETTES.newsprint.colors,
-        typography: { bodyFont: 'system-serif', headingFont: 'system-sans', scale: 'large' },
-        layout: { contentWidth: 'wide', density: 'compact', radius: 'none' },
-      },
-      chrome: { header: { variant: 'centered' }, footer: { variant: 'minimal' } },
-      pages: { index: { layout: 'list', itemVariant: 'numbered' }, article: { layout: 'reading', codeBlock: 'panel' } },
-      description: 'Editorial · Newsprint · Serif / Sans · Large · Centered header · Numbered list · Code panel',
+describe('V2 design studio', () => {
+  it('maps curated controls to validated V2 without mutating the original', () => {
+    const original = structuredClone(DEFAULT_DESIGN_V2);
+    const design = themeFromControls(original, controls);
+    expect(design).toMatchObject({ version: 2, theme: { motif: 'editorial', colors: THEME_PALETTES.newsprint.colors }, pages: { index: { item: { variant: 'numbered' } }, article: { prose: { codeBlock: 'panel' } } } });
+    expect(paletteForTheme(design)).toBe('newsprint');
+    expect(describeTheme(design)).toBe(design.description);
+    expect(original).toEqual(DEFAULT_DESIGN_V2);
+  });
+
+  it('keeps an AI palette when no replacement is selected and supports mono text', () => {
+    const design = themeFromControls(DEFAULT_DESIGN_V2, { ...controls, palette: undefined, bodyFont: 'system-mono' });
+    expect(design.theme.colors).toEqual(DEFAULT_DESIGN_V2.theme.colors);
+    expect(design.theme.typography.bodyFont).toBe('system-mono');
+  });
+
+  it('edits keyed home nodes and semantic presentation', () => {
+    const design = themeFromControls(DEFAULT_DESIGN_V2, {
+      ...controls, 'home:intro:variant': 'centered', 'home:intro:showAuthor': 'false',
+      'home:recent:variant': 'grid', 'home:recent:limit': '6', 'home:recent:columns': '2',
+      'presentation:home.intro:align': 'center', 'presentation:home.intro:spacing': 'relaxed',
     });
-    expect(paletteForTheme(theme)).toBe('newsprint');
-    expect(describeTheme(theme)).toBe(theme.description);
+    expect(design.pages.home.sections.intro).toMatchObject({ type: 'intro', variant: 'centered', showAuthor: false, presentation: { align: 'center', spacing: 'relaxed' } });
+    expect(design.pages.home.sections.recent).toMatchObject({ type: 'posts', variant: 'grid', columns: 2, limit: 6 });
+    expect(analyzeDesignImpact(DEFAULT_DESIGN_V2, design)).toBe('structure');
   });
 
-  it('keeps an AI palette unless the user selects a curated replacement', () => {
-    const aiTheme = { ...DEFAULT_DESIGN, theme: { ...DEFAULT_DESIGN.theme, colors: { ...DEFAULT_DESIGN.theme.colors, accent: '#075985' } }, description: 'AI design' };
-    const theme = themeFromControls(aiTheme, { ...controls, palette: undefined });
-    expect(theme.theme.colors).toEqual(aiTheme.theme.colors);
-    expect(paletteForTheme(theme)).toBeNull();
+  it('keeps structural edits out of the live CSS preview', () => {
+    const preview = visualThemeFromControls(DEFAULT_DESIGN_V2, { ...controls, headerStyle: 'masthead', indexLayout: 'grid', indexColumns: '2', 'presentation:home.intro:align': 'center' });
+    expect(preview.theme.motif).toBe('editorial');
+    expect(preview.chrome.header.variant).toBe(DEFAULT_DESIGN_V2.chrome.header.variant);
+    expect(preview.pages.index.layout).toBe(DEFAULT_DESIGN_V2.pages.index.layout);
+    expect(preview.pages.home.sections.intro?.presentation).toEqual({ align: 'center' });
+    expect(analyzeDesignImpact(DEFAULT_DESIGN_V2, preview)).toBe('presentation');
   });
 
-  it('supports a monospaced body through Fine-tune controls', () => {
-    const theme = themeFromControls(DEFAULT_DESIGN, { ...controls, bodyFont: 'system-mono' });
-    expect(theme.theme.typography.bodyFont).toBe('system-mono');
-    expect(theme.description).toContain('Mono / Sans');
+  it('validates palette and module placement rather than emitting arbitrary CSS', () => {
+    expect(() => themeFromControls(DEFAULT_DESIGN_V2, { ...controls, palette: 'custom' })).toThrow('palette');
+    expect(() => themeFromControls(DEFAULT_DESIGN_V2, { ...controls, preset: 'magazine' })).toThrow('preset');
+    expect(() => themeFromControls(DEFAULT_DESIGN_V2, { ...controls, 'presentation:home.intro:surface': 'url(javascript:alert(1))' })).toThrow('presentation');
+    expect(() => themeFromControls(DEFAULT_DESIGN_V2, { ...controls, articleToc: 'auto-aside', articleLayout: 'reading' })).toThrow();
+    expect(themesEqual(DEFAULT_DESIGN_V2, structuredClone(DEFAULT_DESIGN_V2))).toBe(true);
   });
 
-  it('edits and reorders typed homepage sections without accepting invalid combinations', () => {
-    const base = structuredClone(DEFAULT_DESIGN);
-    base.pages.home.sections = [
-      { type: 'intro', variant: 'minimal', showAuthor: true },
-      { type: 'recent-posts', variant: 'list', limit: 5, columns: 1 },
-    ];
-    const updated = themeFromControls(base, {
-      ...controls,
-      'homeSection:0:variant': 'centered',
-      'homeSection:0:showAuthor': 'false',
-      'homeSection:1:variant': 'grid',
-      'homeSection:1:limit': '6',
-      'homeSection:1:columns': '2',
-      homeSections: JSON.stringify(base.pages.home.sections),
-      compositionAction: 'up:1',
-    });
-    expect(updated.pages.home.sections).toEqual([
-      { type: 'recent-posts', variant: 'grid', limit: 6, columns: 2 },
-      { type: 'intro', variant: 'centered', showAuthor: false },
-    ]);
-    expect(() => themeFromControls(base, { ...controls, articleToc: 'auto-aside', articleLayout: 'reading' })).toThrow('Aside TOC');
-  });
-
-  it('edits index metadata and constrained semantic styles through the same validator', () => {
-    const design = themeFromControls(DEFAULT_DESIGN, {
-      ...controls,
-      indexLayout: 'grid',
-      indexColumns: '3',
-      indexShowDescription: 'false',
-      indexShowTags: 'true',
-      'style:home.intro:textAlign': 'center',
-      'style:home.intro:paddingBlock': 'xl',
-      'style:home.intro:gap': '',
-      'style:home.intro:surface': 'surface',
-      'style:home.intro:border': 'hairline',
-      'style:home.intro:width': 'reading',
-    });
-    expect(design.pages.index).toMatchObject({ layout: 'grid', columns: 3, showDescription: false, showTags: true });
-    expect(design.styles.rules).toEqual([{
-      target: 'home.intro',
-      declarations: { textAlign: 'center', paddingBlock: 'xl', surface: 'surface', border: 'hairline', width: 'reading' },
-    }]);
-    expect(() => themeFromControls(DEFAULT_DESIGN, { ...controls, indexColumns: '2' })).toThrow('List columns');
-  });
-
-  it('drops redundant decoration when editing an older design', () => {
-    const base = structuredClone(DEFAULT_DESIGN);
-    base.styles.rules = [
-      { target: 'posts.items', declarations: { border: 'strong', surface: 'surface', gap: 'lg' } },
-      { target: 'article.toc', declarations: { border: 'strong', surface: 'surface', paddingBlock: 'sm' } },
-      { target: 'site.footer', declarations: { border: 'hairline', textAlign: 'center' } },
-    ];
-    const updated = themeFromControls(base, controls);
-    expect(updated.styles.rules).toEqual([
-      { target: 'posts.items', declarations: { gap: 'lg' } },
-      { target: 'article.toc', declarations: { paddingBlock: 'sm' } },
-      { target: 'site.footer', declarations: { textAlign: 'center' } },
-    ]);
-    expect(base.styles.rules[1]?.declarations).toMatchObject({ border: 'strong', surface: 'surface' });
-  });
-
-  it('keeps structural controls out of the live visual preview', () => {
-    const preview = visualThemeFromControls(DEFAULT_DESIGN, {
-      ...controls,
-      headerStyle: 'masthead',
-      postListStyle: 'numbered',
-      indexLayout: 'magazine',
-      articleLayout: 'wide',
-      codeBlockStyle: 'panel',
-      'style:home.intro:textAlign': 'center',
-    });
-    expect(preview.theme).toMatchObject({
-      motif: 'editorial',
-      colors: THEME_PALETTES.newsprint.colors,
-      typography: { bodyFont: 'system-serif', headingFont: 'system-sans', scale: 'large' },
-    });
-    expect(preview.chrome).toEqual(DEFAULT_DESIGN.chrome);
-    expect(preview.pages).toEqual(DEFAULT_DESIGN.pages);
-    expect(preview.styles.rules).toEqual([{ target: 'home.intro', declarations: { textAlign: 'center' } }]);
-  });
-
-  it('ships six palettes with readable text and links', () => {
+  it('ships six readable palettes', () => {
     expect(Object.keys(THEME_PALETTES)).toEqual(['paper', 'newsprint', 'mist', 'pine', 'midnight', 'charcoal']);
     for (const palette of Object.values(THEME_PALETTES)) {
       expect(contrastRatio(palette.colors.text, palette.colors.background)).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(palette.colors.accent, palette.colors.background)).toBeGreaterThanOrEqual(4.5);
     }
-  });
-
-  it('rejects unknown controls and compares complete themes', () => {
-    expect(() => themeFromControls(DEFAULT_DESIGN, { ...controls, palette: 'custom' })).toThrow('palette');
-    expect(() => themeFromControls(DEFAULT_DESIGN, { ...controls, preset: 'magazine' })).toThrow('preset');
-    expect(themesEqual(DEFAULT_DESIGN, structuredClone(DEFAULT_DESIGN))).toBe(true);
-    expect(themesEqual(DEFAULT_DESIGN, { ...DEFAULT_DESIGN, theme: { ...DEFAULT_DESIGN.theme, layout: { ...DEFAULT_DESIGN.theme.layout, radius: 'round' } } })).toBe(false);
   });
 });
