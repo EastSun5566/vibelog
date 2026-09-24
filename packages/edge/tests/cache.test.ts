@@ -30,3 +30,24 @@ describe('public blog edge cache', () => {
     expect((await forwarded(url, method)).cf).toBeUndefined();
   });
 });
+
+describe('edge maintenance gate', () => {
+  it.each(['draining', 'locked'])('blocks every host before reaching origin in %s', async (stage) => {
+    const fetch = vi.spyOn(globalThis, 'fetch');
+    for (const url of ['https://example.com/', 'https://writer.example.com/blog/', 'https://preview.example.com/']) {
+      const response = await handleRequest(new Request(url), { ...env, MAINTENANCE_STAGE: stage });
+      expect(response.status).toBe(503);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+    }
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('leaves health reachable and HEAD responses empty', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
+    expect((await handleRequest(new Request('https://example.com/health'), { ...env, MAINTENANCE_STAGE: 'locked' })).status).toBe(200);
+    expect(fetch).toHaveBeenCalledOnce();
+    const response = await handleRequest(new Request('https://writer.example.com/', { method: 'HEAD' }), { ...env, MAINTENANCE_STAGE: 'locked' });
+    expect(response.status).toBe(503);
+    expect(await response.text()).toBe('');
+  });
+});

@@ -1,4 +1,4 @@
-interface Env { ORIGIN_URL: string; EDGE_SHARED_SECRET: string; ROOT_DOMAIN: string }
+interface Env { ORIGIN_URL: string; EDGE_SHARED_SECRET: string; ROOT_DOMAIN: string; MAINTENANCE_STAGE?: string }
 function base64url(bytes: ArrayBuffer): string {
   return btoa(String.fromCharCode(...new Uint8Array(bytes))).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
 }
@@ -11,6 +11,12 @@ function isPublicBlogRequest(request: Request, url: URL, rootDomain: string): bo
 }
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const incoming = new URL(request.url); const origin = new URL(env.ORIGIN_URL);
+  if (env.MAINTENANCE_STAGE && env.MAINTENANCE_STAGE !== 'normal' && incoming.pathname !== '/health') {
+    return new Response(request.method === 'HEAD' ? null : 'VibeLog is temporarily unavailable for maintenance. Please try again shortly.', {
+      status: 503,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', 'Retry-After': '300' },
+    });
+  }
   origin.pathname = incoming.pathname; origin.search = incoming.search;
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const payload = `${timestamp}\n${incoming.host}\n${incoming.pathname}${incoming.search}`;

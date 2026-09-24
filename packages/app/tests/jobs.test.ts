@@ -35,6 +35,7 @@ const historicalTheme: ThemeRevisionRecord = {
 };
 const config: OperationRuntimeConfig = {
   appOrigin: 'https://vibelog.org', appHostname: 'vibelog.org', databaseUrl: 'postgresql://unused',
+  maintenanceStage: 'normal',
   objectStore: { endpoint: 'https://unused.example.com', region: 'auto', bucket: 'unused', accessKeyId: 'unused', secretAccessKey: 'unused', forcePathStyle: false },
   queueMode: 'direct', operationPollIntervalMs: 1000, hackmdBaseUrl: 'https://hackmd.io', aiProvider: 'opencode-go', aiModel: 'qwen3.8-flash', aiFallbackModels: ['glm-5.3-flash'],
 };

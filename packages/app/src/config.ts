@@ -1,9 +1,11 @@
 import { getAiProviderNames } from '@vibelog/core';
+import type { MaintenanceStage } from './maintenance.js';
 
 export interface ObjectStoreConfig { endpoint: string; region: string; bucket: string; accessKeyId: string; secretAccessKey: string; forcePathStyle: boolean }
 export type EmailConfig = { provider: 'resend'; apiKey: string } | { provider: 'mailpit'; apiUrl: string };
 export interface OperationRuntimeConfig {
   appOrigin: string; appHostname: string; databaseUrl: string; objectStore: ObjectStoreConfig;
+  maintenanceStage: MaintenanceStage;
   queueMode: 'direct' | 'postgres' | 'cloud-tasks'; operationPollIntervalMs: number;
   cloudTasks?: { project: string; location: string; queue: string; workerUrl: string; serviceAccountEmail: string };
   taskQueueName?: string; hackmdBaseUrl: string; aiProvider: string; aiModel: string; aiFallbackModels: string[];
@@ -21,6 +23,11 @@ function optional(env: NodeJS.ProcessEnv, name: string): string | undefined { co
 function parseOrigin(value: string, name: string): URL { const url = new URL(value); if (!['http:', 'https:'].includes(url.protocol) || url.pathname !== '/' || url.search || url.hash) throw new Error(`${name} must be an http(s) origin without a path`); return url; }
 function positiveInteger(value: string | undefined, fallback: number, name: string): number { const parsed = Number(value ?? fallback); if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`${name} must be a positive integer`); return parsed; }
 function boolean(value: string | undefined, fallback: boolean): boolean { if (value === undefined) return fallback; if (value === 'true') return true; if (value === 'false') return false; throw new Error('Boolean configuration must be true or false'); }
+function maintenanceStage(value: string | undefined): MaintenanceStage {
+  if (value === undefined || value === 'normal') return 'normal';
+  if (value === 'draining' || value === 'locked') return value;
+  throw new Error('VIBELOG_MAINTENANCE_STAGE must be normal, draining, or locked');
+}
 function stringArray(value: string | undefined, name: string): string[] {
   if (value === undefined || value.trim().length === 0) return [];
   let parsed: unknown;
@@ -48,6 +55,7 @@ function loadOperationRuntimeConfig(env: NodeJS.ProcessEnv): OperationRuntimeCon
   } : undefined;
   return {
     appOrigin: origin.origin, appHostname: origin.hostname, databaseUrl: required(env, 'DATABASE_URL'),
+    maintenanceStage: maintenanceStage(env.VIBELOG_MAINTENANCE_STAGE),
     objectStore: { endpoint: required(env, 'OBJECT_STORE_ENDPOINT'), region: env.OBJECT_STORE_REGION ?? 'auto', bucket: required(env, 'OBJECT_STORE_BUCKET'), accessKeyId: required(env, 'OBJECT_STORE_ACCESS_KEY_ID'), secretAccessKey: required(env, 'OBJECT_STORE_SECRET_ACCESS_KEY'), forcePathStyle: boolean(env.OBJECT_STORE_FORCE_PATH_STYLE, false) },
     queueMode: queueMode as OperationRuntimeConfig['queueMode'], operationPollIntervalMs: positiveInteger(env.OPERATION_POLL_INTERVAL_MS, 1000, 'OPERATION_POLL_INTERVAL_MS'),
     cloudTasks, taskQueueName: optional(env, 'TASK_QUEUE_NAME'), hackmdBaseUrl: parseOrigin(env.HACKMD_BASE_URL ?? 'https://hackmd.io', 'HACKMD_BASE_URL').origin,

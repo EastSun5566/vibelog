@@ -2,12 +2,17 @@ import { Hono } from 'hono';
 import { CloudTasksRequestVerifier, LocalTaskRequestVerifier } from './adapters/cloud-tasks-request-verifier.js';
 import { handleOperationTask } from './adapters/cloud-tasks-transport.js';
 import { loadWorkerConfig } from './config.js';
+import { blocksRequest, maintenanceResponse } from './maintenance.js';
 import { createWorkerRuntimeDependencies } from './runtime-dependencies.js';
 import { closeHttpServer, startHttpServer } from './server-runtime.js';
 
 const config = loadWorkerConfig(); const dependencies = createWorkerRuntimeDependencies(config);
 const verifier = config.taskQueueName ? new CloudTasksRequestVerifier(config.taskQueueName) : new LocalTaskRequestVerifier();
 const app = new Hono();
+app.use('*', async (c, next) => {
+  if (blocksRequest(config.maintenanceStage, 'worker', c.req.path)) return maintenanceResponse(c.req.method);
+  await next();
+});
 app.get('/health', async (c) => { await dependencies.database.ping(); return c.json({ status: 'ok', service: 'vibelog-worker' }); });
 app.post('/tasks/operations', (c) => handleOperationTask(c.req.raw, verifier, dependencies.executor));
 app.post('/tasks/outbox', async (c) => c.json({ dispatched: await dependencies.dispatcher.dispatch() }));
