@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_THEME, contrastRatio, renderThemeCss, validateThemeConfig } from '../src/theme.js';
+import { DEFAULT_DESIGN_V2 } from '../src/design/defaults-v2.js';
+import { compileDesignCss } from '../src/design/compile-css-v2.js';
 
 describe('theme contract', () => {
   it('renders each repository-owned preset deterministically', () => {
@@ -14,15 +16,15 @@ describe('theme contract', () => {
       expect(css.slice(css.indexOf(`/* Preset: ${preset} */`))).toMatchSnapshot();
     }
   });
-  it('keeps selectors required by current and V1 templates', () => {
-    const css = renderThemeCss(DEFAULT_THEME);
+  it('keeps selectors required by the V2 template', () => {
+    const css = compileDesignCss(DEFAULT_DESIGN_V2);
     const template = [
       '../template/src/components/Header.astro',
       '../template/src/components/Footer.astro',
       '../template/src/components/PostList.astro',
       '../template/src/components/TagList.astro',
       '../template/src/components/TableOfContents.astro',
-      '../template/src/layouts/BlogPost.astro',
+      '../template/src/layouts/BlogPostV2.astro',
     ].map((path) => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n');
     for (const selector of ['.site-header', '.site-footer', '.blog-list-item', '.blog-post', '.prose', '.tag-link', '.table-of-contents', '.article-back-to-start']) {
       expect(css).toContain(selector);

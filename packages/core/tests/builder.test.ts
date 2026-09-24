@@ -4,8 +4,8 @@ import { basename, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import matter from 'gray-matter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildBlog, buildFromVibelog, ContentSourceName, createDevBuilder, DEFAULT_DESIGN, HackMdSource, renderDesignCss, writeSourceSnapshot } from '../src/index.js';
-import type { BlogDesignSpecV1, ContentSource } from '../src/index.js';
+import { buildBlog, buildFromVibelog, ContentSourceName, createDevBuilder, DEFAULT_DESIGN_V2, HackMdSource, writeSourceSnapshot } from '../src/index.js';
+import type { ContentSource } from '../src/index.js';
 
 const roots: string[] = [];
 const contentHash = (content: string) => createHash('sha256').update(content, 'utf8').digest('hex');
@@ -117,36 +117,44 @@ describe('DevBuilder content summary', () => {
     const sourceDir = join(root, 'source-snapshot');
     await writeSourceSnapshot(builder.vibelogDir, sourceDir, summary);
 
-    const editorial = structuredClone(DEFAULT_DESIGN);
+    const editorial = structuredClone(DEFAULT_DESIGN_V2);
     editorial.theme.motif = 'editorial';
     editorial.chrome.header.variant = 'masthead';
     editorial.chrome.footer.variant = 'profile';
-    editorial.pages.home.sections = [
-      { type: 'intro', variant: 'centered', showAuthor: true },
-      { type: 'featured-posts', variant: 'hero', count: 1 },
-      { type: 'recent-posts', variant: 'grid', limit: 6, columns: 2 },
-      { type: 'topics', variant: 'list', limit: 12 },
-    ];
-    editorial.pages.index = { layout: 'magazine', itemVariant: 'numbered', columns: 2, showDescription: true, showTags: true };
-    editorial.pages.article = { layout: 'with-aside', header: 'editorial', toc: 'auto-aside', metadata: 'detailed', navigation: 'links', codeBlock: 'panel' };
+    editorial.pages.home.sections = {
+      intro: { type: 'intro', variant: 'centered', showAuthor: true },
+      featured: { type: 'posts', source: { strategy: 'latest' }, variant: 'hero', limit: 1 },
+      recent: { type: 'posts', source: { strategy: 'latest' }, variant: 'grid', limit: 6, columns: 2, exclude: { sections: ['featured'] } },
+      topics: { type: 'topics', variant: 'list', limit: 12 },
+    };
+    editorial.pages.home.regions = { main: ['intro', 'featured', 'recent', 'topics'] };
+    editorial.pages.index = { layout: 'magazine', columns: 2, item: { variant: 'numbered', showDescription: true, showTags: true } };
+    editorial.pages.article.layout = 'with-aside';
+    editorial.pages.article.header.variant = 'editorial';
+    editorial.pages.article.prose.codeBlock = 'panel';
+    editorial.pages.article.modules.toc = { type: 'toc', variant: 'aside' };
+    editorial.pages.article.regions = { beforeBody: ['metadata', 'tags'], aside: ['toc'], afterBody: ['navigation'] };
     editorial.description = 'An editorial magazine layout.';
 
-    const notebook = structuredClone(DEFAULT_DESIGN);
+    const notebook = structuredClone(DEFAULT_DESIGN_V2);
     notebook.theme.motif = 'notebook';
-    notebook.pages.home.sections = [
-      { type: 'author', variant: 'profile' },
-      { type: 'recent-posts', variant: 'cards', limit: 5, columns: 2 },
-      { type: 'topics', variant: 'cloud', limit: 12 },
-    ];
-    notebook.pages.index = { layout: 'grid', itemVariant: 'cards', columns: 2, showDescription: true, showTags: true };
-    notebook.pages.article = { layout: 'wide', header: 'simple', toc: 'auto-inline', metadata: 'compact', navigation: 'cards', codeBlock: 'panel' };
+    notebook.pages.home.sections = {
+      author: { type: 'author', variant: 'profile' },
+      recent: { type: 'posts', source: { strategy: 'latest' }, variant: 'cards', limit: 5, columns: 2 },
+      topics: { type: 'topics', variant: 'cloud', limit: 12 },
+    };
+    notebook.pages.home.regions = { main: ['author', 'recent', 'topics'] };
+    notebook.pages.index = { layout: 'grid', columns: 2, item: { variant: 'cards', showDescription: true, showTags: true } };
+    notebook.pages.article.layout = 'wide';
+    notebook.pages.article.prose.codeBlock = 'panel';
+    notebook.pages.article.modules.navigation = { type: 'navigation', variant: 'cards' };
     notebook.description = 'A personal notebook layout.';
 
-    const fixtures: [string, BlogDesignSpecV1, string[]][] = [
-      ['minimal', structuredClone(DEFAULT_DESIGN), ['home-hero variant-minimal', 'recent-posts variant-list']],
-      ['editorial', editorial, ['site-header variant-masthead', 'featured-posts variant-hero', 'recent-posts variant-grid', 'home-topics variant-list']],
-      ['notebook', notebook, ['home-author variant-profile', 'recent-posts variant-cards', 'home-topics variant-cloud']],
-    ];
+    const fixtures = [
+      ['minimal', structuredClone(DEFAULT_DESIGN_V2), ['data-design-node="intro"', 'data-design-node="recent"']],
+      ['editorial', editorial, ['variant-masthead', 'data-design-node="featured"', 'data-design-node="topics"']],
+      ['notebook', notebook, ['data-design-node="author"', 'data-design-node="recent"', 'data-design-node="topics"']],
+    ] as const;
     const homes: string[] = [];
     for (const [name, design, signatures] of fixtures) {
       const workDir = join(root, `compile-${name}`);
@@ -165,15 +173,67 @@ describe('DevBuilder content summary', () => {
       expect(css).not.toMatch(/\.home-hero\s*\{\s*padding-block-end/u);
       const article = await readFile(join(outDir, 'blog', 'first', 'index.html'), 'utf8');
       expect(article).not.toContain('<body class="page-home">');
-      if (name === 'notebook') {
-        const themeCss = await readFile(join(outDir, 'theme.css'), 'utf8');
-        expect(themeCss).toBe(renderDesignCss(design));
-        expect(themeCss).toContain('body.page-home{background-image:');
-        expect(themeCss).not.toContain('body{background-image:');
-      }
+      const designCss = await readFile(join(outDir, 'design.css'), 'utf8');
+      if (name === 'notebook') expect(designCss).toContain('body.page-home{background-image:');
+      expect(designCss).not.toContain('body{background-image:');
       await expect(stat(join(outDir, 'pagefind', 'pagefind.js'))).resolves.toBeTruthy();
     }
     expect(new Set(homes).size).toBe(3);
+  });
+
+  it('builds a complete V2 blog from frozen content and resolved home sections', { timeout: 30_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-design-v2-build-')); roots.push(root);
+    const builder = createDevBuilder({ root, contentSource: {
+      name: ContentSourceName.HACKMD,
+      getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Notes' }),
+      getPosts: () => Promise.resolve({ posts: [
+        { id: 'new', title: 'New', slug: 'new', date: '2026-02-01T00:00:00Z', content: '## About\n\nNew body.\n\n## Details\n\nMore.' },
+        { id: 'old', title: 'Old', slug: 'old', date: '2026-01-01T00:00:00Z', content: 'Old body.' },
+      ] }),
+    } });
+    await builder.prepare({ installDependencies: false });
+    const summary = await builder.fetchContent();
+    const sourceDir = join(root, 'source');
+    await writeSourceSnapshot(builder.vibelogDir, sourceDir, summary);
+    const design = structuredClone(DEFAULT_DESIGN_V2);
+    design.pages.home = {
+      layout: 'sidebar',
+      sections: {
+        intro: { type: 'intro', variant: 'minimal', showAuthor: true },
+        featured: { type: 'posts', source: { strategy: 'latest' }, variant: 'hero', limit: 1 },
+        recent: { type: 'posts', source: { strategy: 'latest' }, variant: 'list', limit: 5, exclude: { sections: ['featured'] } },
+      },
+      regions: { main: ['intro', 'featured'], aside: ['recent'] },
+    };
+    design.pages.article.layout = 'with-aside';
+    design.pages.article.modules.toc = { type: 'toc', variant: 'aside' };
+    design.pages.article.regions = { beforeBody: ['metadata', 'tags'], aside: ['toc'], afterBody: ['navigation'] };
+    const workDir = join(root, 'compile');
+    const outDir = join(workDir, 'dist');
+    await buildBlog({ sourceDir, design, workDir, outDir, site: 'https://writer.example.com', searchIdentity: 'frozen-source-v2' });
+    const home = await readFile(join(outDir, 'index.html'), 'utf8');
+    expect(home).toContain('data-design-node="featured"');
+    expect(home).toContain('data-design-node="recent"');
+    expect(home).toContain('home-region-aside');
+    const feature = home.slice(home.indexOf('data-design-node="featured"'), home.indexOf('data-design-node="recent"'));
+    expect(feature).toContain('New');
+    expect(feature).not.toContain('Old');
+    expect(home.slice(home.indexOf('data-design-node="recent"'))).toContain('Old');
+    expect(home).toContain('<link rel="stylesheet" href="/design.css">');
+    const article = await readFile(join(outDir, 'blog', 'new', 'index.html'), 'utf8');
+    expect(article).toContain('data-design-node="article-prose"');
+    expect(article).toContain('data-design-node="toc"');
+    expect(article).toContain('data-pagefind-body');
+    await expect(stat(join(outDir, 'design.css'))).resolves.toBeTruthy();
+    await expect(stat(join(outDir, 'components.css'))).resolves.toBeTruthy();
+    await expect(stat(join(outDir, 'prose.css'))).resolves.toBeTruthy();
+    await expect(stat(join(outDir, 'pagefind', 'pagefind.js'))).resolves.toBeTruthy();
+    const restyled = structuredClone(design);
+    restyled.theme.typography.scale = 'large';
+    const secondWork = join(root, 'restyled');
+    const secondOut = join(secondWork, 'dist');
+    await buildBlog({ sourceDir, design: restyled, workDir: secondWork, outDir: secondOut, site: 'https://writer.example.com', searchIdentity: 'frozen-source-v2', searchCache: { directory: outDir, identity: 'frozen-source-v2' } });
+    expect(await readFile(join(secondOut, 'pagefind', 'pagefind.js'))).toEqual(await readFile(join(outDir, 'pagefind', 'pagefind.js')));
   });
 
   it('keeps short article outlines open and folds long ones', { timeout: 45_000 }, async () => {
@@ -196,7 +256,7 @@ describe('DevBuilder content summary', () => {
     await writeSourceSnapshot(builder.vibelogDir, sourceDir, summary);
     const workDir = join(root, 'compile');
     const outDir = join(workDir, 'dist');
-    await buildBlog({ sourceDir, design: DEFAULT_DESIGN, workDir, outDir, site: 'https://writer.example.com' });
+    await buildBlog({ sourceDir, design: DEFAULT_DESIGN_V2, workDir, outDir, site: 'https://writer.example.com' });
 
     for (const count of counts) {
       const article = await readFile(join(outDir, 'blog', `outline-${String(count)}`, 'index.html'), 'utf8');
@@ -225,7 +285,7 @@ describe('DevBuilder content summary', () => {
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 15 });
+    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 16 });
     await expect(stat(join(root, '.vibelog', 'src', 'styles', 'global.css'))).rejects.toThrow();
     expect(await readFile(join(root, '.vibelog', 'public', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
   });
@@ -277,7 +337,7 @@ describe('DevBuilder content summary', () => {
     });
 
     const home = await readFile(join(output, 'index.html'), 'utf8');
-    expect(home).toContain('<h1 id="site-heading">Writer Journal</h1>');
+    expect(home).toContain('<h1 id="home-intro-heading">Writer Journal</h1>');
     expect(home).toContain('<p class="site-description">Essays from Writer.</p>');
     expect(home).not.toContain('A short public author bio.');
     expect(home).not.toContain('class="author-bio"');
@@ -306,7 +366,7 @@ describe('DevBuilder content summary', () => {
     expect(article).toContain('<meta property="article:tag" content="Even">');
     expect(article).toContain('<meta property="article:tag" content="Writing">');
     expect(article).toContain('更新於');
-    expect(article).toContain('<link rel="canonical" href="https://writer.example.com/blog/article-4/">');
+    expect(article).toContain('<link rel="canonical" href="https://writer.example.com/blog/article-4/" data-pagefind-meta="canonical[href]">');
     expect(article).toContain('較新文章');
     expect(article).toContain('Article 5');
     expect(article).toContain('較舊文章');
@@ -316,6 +376,11 @@ describe('DevBuilder content summary', () => {
     expect(article).not.toContain('pagefind-component-ui.js');
     expect(article).toContain('data-pagefind-body');
     expect(article).toContain('data-pagefind-meta="title"');
+    expect(article).toContain('data-pagefind-meta="description[content]"');
+    expect(article).toContain('data-pagefind-meta="tags[content]"');
+    expect(article).toContain('data-pagefind-meta="canonical[href]"');
+    expect(article).toMatch(/<div class="prose" data-pagefind-body data-design-node="article-prose">/u);
+    expect(article).not.toMatch(/<div class="blog-post-content" data-pagefind-body>/u);
     expect(article).toMatch(/<pre class="astro-code[^"<]*"[^>]*data-language="ts"/u);
     expect(article).toMatch(/<pre class="astro-code[^"<]*"[^>]*data-language="bash"/u);
     expect(article).toContain('<link rel="stylesheet" href="/syntax.css">');

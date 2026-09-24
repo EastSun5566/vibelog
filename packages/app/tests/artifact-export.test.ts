@@ -17,6 +17,7 @@ function artifactStore(objects: Record<string, string>): { store: ArtifactStore;
     uploadDirectory: vi.fn(),
     materializeArtifact: vi.fn(),
     copyArtifact: vi.fn(),
+    putObject: vi.fn(),
     listObjects: vi.fn(() => Promise.resolve(Object.keys(objects))),
     readObject,
     deleteArtifact: vi.fn(),

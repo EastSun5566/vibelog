@@ -1,4 +1,6 @@
 import type { ThemeConfig } from './types.js';
+import { contrastRatio } from './design/color.js';
+export { contrastRatio } from './design/color.js';
 
 const HEX = /^#[0-9a-f]{6}$/i;
 const ENUMS = {
@@ -28,24 +30,6 @@ export const DEFAULT_THEME: ThemeConfig = {
 function assertExactKeys(value: Record<string, unknown>, expected: string[], label: string): void {
   const actual = Object.keys(value).sort();
   if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) throw new Error(`${label} contains missing or unknown fields`);
-}
-
-function channel(value: string): number {
-  const normalized = Number.parseInt(value, 16) / 255;
-  return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
-}
-
-export function contrastRatio(foreground: string, background: string): number {
-  if (!HEX.test(foreground) || !HEX.test(background)) throw new Error('Contrast colors must be six-digit hex values');
-  const luminance = (color: string) => {
-    const red = channel(color.slice(1, 3));
-    const green = channel(color.slice(3, 5));
-    const blue = channel(color.slice(5, 7));
-    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-  };
-  const first = luminance(foreground);
-  const second = luminance(background);
-  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
 }
 
 export function validateThemeConfig(input: unknown): ThemeConfig {

@@ -12,7 +12,7 @@ interface Props {
 const { name, bio = "", variant = "minimal" } = Astro.props;
 ---
 
-<footer class={`site-footer variant-${variant}`} data-design-target="site.footer">
+<footer class={`site-footer variant-${variant}`} data-design-target="site.footer" data-design-role="site-footer">
   <small>&copy; {today.getFullYear()} {name}</small>
   {variant === "profile" && bio && <p>{bio}</p>}
   <nav aria-label={text.footerNavigation}>

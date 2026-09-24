@@ -1,0 +1,44 @@
+---
+import { getCollection, type CollectionEntry } from 'astro:content';
+import FormattedDate from '../components/FormattedDate.astro';
+import ArticleModuleV2 from '../design/ArticleModuleV2.astro';
+import SiteLayout from './SiteLayout.astro';
+import { SITE_TITLE } from '../consts';
+import { design } from '../design-v2';
+import { text } from '../localization';
+
+interface TocHeading { depth: number; slug: string; text: string }
+type Props = CollectionEntry<'blog'>['data'] & {
+  postId: string;
+  newerPost?: CollectionEntry<'blog'>;
+  olderPost?: CollectionEntry<'blog'>;
+  headings?: TocHeading[];
+};
+const { postId, title, description, date, updatedDate, tags, newerPost, olderPost, headings = [] } = Astro.props;
+const article = design.pages.article;
+const [author] = await getCollection('author');
+const related = (await getCollection('blog'))
+  .filter((post) => post.id !== postId)
+  .sort((left, right) => right.data.date.valueOf() - left.data.date.valueOf() || left.id.localeCompare(right.id));
+const moduleProps = { title, description, date, updatedDate, tags, headings, author, related, newerPost, olderPost };
+const moduleIn = (region: 'beforeBody' | 'aside' | 'afterBody') => article.regions[region].map((id) => ({ id, module: article.modules[id] }));
+---
+
+<SiteLayout title={`${title} · ${SITE_TITLE}`} {description} kind="article" articleTitle={title} publishedAt={date} modifiedAt={updatedDate} tags={tags.map((tag) => tag.name)}>
+  <article class={`blog-post layout-${article.layout} code-${article.prose.codeBlock}`} data-design-role="article-root">
+    <div class="blog-post-content">
+      <header class={`blog-post-header variant-${article.header.variant}`} id="article-start" data-design-node="article-header">
+        <p class="blog-post-date"><FormattedDate {date} /></p>
+        <h1 class="blog-post-title" data-pagefind-meta="title">{title}</h1>
+      </header>
+      <div class="article-before-body">{moduleIn('beforeBody').map(({ id, module }) => module && <ArticleModuleV2 {id} {module} {...moduleProps} />)}</div>
+      <div class="article-body-grid">
+        <div class="prose" data-pagefind-body data-design-node="article-prose"><slot /></div>
+        {article.regions.aside.length > 0 && <aside class="article-aside" aria-label={text.articleExtras}>{moduleIn('aside').map(({ id, module }) => module && <ArticleModuleV2 {id} {module} {...moduleProps} />)}</aside>}
+      </div>
+      <div class="article-after-body">{moduleIn('afterBody').map(({ id, module }) => module && <ArticleModuleV2 {id} {module} {...moduleProps} />)}</div>
+      {headings.length >= 2 && Object.values(article.modules).some((module) => module.type === 'toc') &&
+        <a class="article-back-to-start" href="#article-start">{text.backToStart}</a>}
+    </div>
+  </article>
+</SiteLayout>

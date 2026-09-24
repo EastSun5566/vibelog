@@ -20,16 +20,30 @@ import { z } from 'zod';
 import { resolvePostDescription } from '../description.js';
 import { ContentSourceName } from '../consts.js';
 import { createContentProfile } from '../design/profile.js';
-import { renderDesignCss } from '../design/styles.js';
-import type { BlogDesignSpecV1, ContentProfile, SourceSnapshotV1 } from '../design/types.js';
-import { validateBlogDesignSpec, validateSourceSnapshot } from '../design/validate.js';
+import { compileDesignCss } from '../design/compile-css-v2.js';
+import { resolveHomeComposition, type ResolvablePost } from '../design/resolve-v2.js';
+import { validateBlogDesignSpecV2, type BlogDesignSpecV2 } from '../design/schema-v2.js';
+import type { ContentProfile, SourceSnapshotV1 } from '../design/types.js';
+import { validateSourceSnapshot } from '../design/validate.js';
 import { remarkHackmdCompatibility } from '../markdown/hackmd.js';
 import { generateSlug, slugify } from './utils.js';
 import { logger } from './logger.js';
 import type { ContentSource, Post } from '../types.js';
 import { loadConfig } from './config.js';
 
-const TEMPLATE_VERSION = 15;
+export const TEMPLATE_VERSION = 16;
+export const SEARCH_SCHEMA_VERSION = 2;
+export function searchIndexIdentity(sourceArtifactId: string, site: string): string {
+  return createHash('sha256').update(sourceArtifactId).update('\0').update(new URL(site).origin).update('\0').update(String(SEARCH_SCHEMA_VERSION)).digest('hex');
+}
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).filter(([, child]) => child !== undefined).sort(([left], [right]) => left.localeCompare(right)).map(([key, child]) => [key, canonical(child)]));
+  return value;
+}
+export function structuralBuildIdentity(sourceArtifactId: string, design: BlogDesignSpecV2, site: string): string {
+  return createHash('sha256').update(JSON.stringify(canonical({ sourceArtifactId, design: validateBlogDesignSpecV2(design), site: new URL(site).origin, templateVersion: TEMPLATE_VERSION, searchSchemaVersion: SEARCH_SCHEMA_VERSION }))).digest('hex');
+}
 
 interface ShikiElement {
   properties: Record<string, unknown>;
@@ -446,9 +460,39 @@ export interface BuildOptions {
   vibelogDir: string;
   outDir: string;
   site: string;
+  onStageTiming?: (stage: BuildStage, durationMs: number) => void;
+  searchIdentity?: string;
+  searchCache?: { directory: string; identity: string };
+  buildIdentity?: string;
 }
-export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOptions) {
+export type BuildStage = 'prepare' | 'source-copy' | 'astro' | 'syntax-css' | 'pagefind' | 'promote';
+async function timed<T>(stage: BuildStage, report: BuildOptions['onStageTiming'], work: () => Promise<T>): Promise<T> {
+  const started = performance.now();
+  try { return await work(); }
+  finally { report?.(stage, Math.round(performance.now() - started)); }
+}
+async function prepareDesignAssets(vibelogDir: string): Promise<void> {
+  const design = validateBlogDesignSpecV2(await fs.readJson(join(vibelogDir, 'src', 'generated', 'design.json')));
+  const blogDirectory = join(vibelogDir, 'src', 'content', 'blog');
+  const posts: ResolvablePost[] = [];
+  for (const name of await fs.readdir(blogDirectory)) {
+    if (!name.endsWith('.md')) continue;
+    const sourcePost = matter(await fs.readFile(join(blogDirectory, name), 'utf8'));
+    posts.push({
+      slug: name.slice(0, -3),
+      publishedAt: new Date(String(sourcePost.data.date)).toISOString(),
+      ...(sourcePost.data.updatedDate ? { updatedAt: new Date(String(sourcePost.data.updatedDate)).toISOString() } : {}),
+    });
+  }
+  const composition = resolveHomeComposition(design.pages.home, posts);
+  await fs.writeJson(join(vibelogDir, 'src', 'generated', 'resolved-home.json'), Object.fromEntries(
+    Object.values(composition.regions).flat().filter((section) => section.posts).map((section) => [section.id, section.posts?.map((post) => post.slug) ?? []]),
+  ));
+  await fs.writeFile(join(vibelogDir, 'public', 'design.css'), compileDesignCss(design));
+}
+export async function buildFromVibelog({ vibelogDir, outDir, site, onStageTiming, searchIdentity, searchCache, buildIdentity }: BuildOptions) {
   logger.info('Starting production build...');
+  if (searchCache && searchIdentity !== searchCache.identity) throw new Error('Search cache identity does not match build identity');
 
   if (!await fs.exists(vibelogDir)) {
     throw new Error('The generated Astro draft is missing. Sync the HackMD content first.');
@@ -472,6 +516,8 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
     throw new Error('Build output must be a safe directory inside the project root');
   }
 
+  await prepareDesignAssets(resolvedVibelogDir);
+
   logger.info('Building with Astro...');
 
   // Keep prerender chunks below the generated runtime so Node can resolve
@@ -484,7 +530,7 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
     // elsewhere. Keeping cwd inside the generated project also keeps module
     // resolution inside the pinned, offline template runtime.
     process.chdir(resolvedVibelogDir);
-    await astroBuild({
+    await timed('astro', onStageTiming, () => astroBuild({
       root: resolvedVibelogDir,
       cacheDir: join(resolvedVibelogDir, '.astro'),
       outDir: tempOutDir,
@@ -520,11 +566,19 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
       vite: {
         logLevel: 'warn',
       },
-    });
+    }));
 
-    await externalizeShikiStyles(tempOutDir);
+    await timed('syntax-css', onStageTiming, () => externalizeShikiStyles(tempOutDir));
 
+    if (searchCache) {
+      await timed('pagefind', onStageTiming, async () => {
+        const marker = await fs.readJson(join(searchCache.directory, 'search-index.json')).catch(() => null) as { identity?: string } | null;
+        if (marker?.identity !== searchCache.identity || !await fs.exists(join(searchCache.directory, 'pagefind', 'pagefind.js'))) throw new Error('Search cache identity or files are invalid');
+        await fs.copy(join(searchCache.directory, 'pagefind'), join(tempOutDir, 'pagefind'), { overwrite: true });
+      });
+    } else {
     logger.info('Indexing selected articles with Pagefind...');
+    await timed('pagefind', onStageTiming, async () => {
     const created = await pagefind.createIndex({ verbose: false });
     if (!created.index || created.errors.length) {
       await pagefind.close();
@@ -542,6 +596,10 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
       await index.deleteIndex();
       await pagefind.close();
     }
+    });
+    }
+    if (searchIdentity) await fs.writeJson(join(tempOutDir, 'search-index.json'), { identity: searchIdentity });
+    if (buildIdentity) await fs.writeJson(join(tempOutDir, 'build-identity.json'), { identity: buildIdentity });
   } catch (error) {
     await fs.remove(tempOutDir);
     throw error;
@@ -549,6 +607,7 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
     process.chdir(previousWorkingDirectory);
   }
 
+  await timed('promote', onStageTiming, async () => {
   const hadOutput = await fs.exists(finalOutDir);
   if (hadOutput) await fs.move(finalOutDir, backupOutDir);
   try {
@@ -562,6 +621,7 @@ export async function buildFromVibelog({ vibelogDir, outDir, site }: BuildOption
     }
     throw error;
   }
+  });
 
   logger.info(`Production build completed in ${outDir}`);
 }
@@ -579,29 +639,32 @@ export async function writeSourceSnapshot(vibelogDir: string, outDir: string, su
 
 export interface CompileBlogOptions {
   sourceDir: string;
-  design: BlogDesignSpecV1;
+  design: BlogDesignSpecV2;
   workDir: string;
   outDir: string;
   site: string;
+  onStageTiming?: BuildOptions['onStageTiming'];
+  searchIdentity?: string;
+  searchCache?: BuildOptions['searchCache'];
+  buildIdentity?: string;
 }
 
-export async function buildBlog({ sourceDir, design: inputDesign, workDir, outDir, site }: CompileBlogOptions): Promise<void> {
+export async function buildBlog({ sourceDir, design: inputDesign, workDir, outDir, site, onStageTiming, searchIdentity, searchCache, buildIdentity }: CompileBlogOptions): Promise<void> {
   const sourceRoot = resolve(sourceDir);
   const root = resolve(workDir);
   const finalOutDir = resolve(outDir);
   if (!isPathInside(root, finalOutDir)) throw new Error('Compiled output must be inside the build work directory');
   const source = validateSourceSnapshot(await fs.readJson(join(sourceRoot, 'source.json')));
-  const design = validateBlogDesignSpec(inputDesign);
+  const design = validateBlogDesignSpecV2(inputDesign);
   const builder = new DevBuilder({ root, contentSource: {
     name: ContentSourceName.HACKMD,
     getPosts: () => Promise.reject(new Error('Frozen source build cannot fetch posts')),
     getAuthor: () => Promise.reject(new Error('Frozen source build cannot fetch author')),
   } });
-  await builder.prepare({ installDependencies: false });
-  await fs.copy(join(sourceRoot, 'content'), join(builder.vibelogDir, 'src', 'content'), { overwrite: true });
+  await timed('prepare', onStageTiming, () => builder.prepare({ installDependencies: false }));
+  await timed('source-copy', onStageTiming, () => fs.copy(join(sourceRoot, 'content'), join(builder.vibelogDir, 'src', 'content'), { overwrite: true }));
   await fs.ensureDir(join(builder.vibelogDir, 'src', 'generated'));
   await fs.writeJson(join(builder.vibelogDir, 'src', 'generated', 'design.json'), design, { spaces: 2 });
   await fs.writeFile(join(builder.vibelogDir, 'src', 'consts.ts'), `// Auto-generated site configuration\nexport const SITE_TITLE = ${JSON.stringify(source.site.title)};\nexport const SITE_DESCRIPTION = ${JSON.stringify(source.site.description)};\nexport const SITE_LANGUAGE = ${JSON.stringify(source.site.language)};\n`);
-  await fs.writeFile(join(builder.vibelogDir, 'public', 'theme.css'), renderDesignCss(design));
-  await buildFromVibelog({ vibelogDir: builder.vibelogDir, outDir: finalOutDir, site });
+  await buildFromVibelog({ vibelogDir: builder.vibelogDir, outDir: finalOutDir, site, onStageTiming, searchIdentity, searchCache, buildIdentity });
 }

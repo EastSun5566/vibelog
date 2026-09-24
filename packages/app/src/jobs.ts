@@ -1,8 +1,8 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AiProviderRequestError, AiProviderTimeoutError, HackMdSource, buildBlog, createAiProviderChain, createDevBuilder, isHackMdSourceError, validateBlogDesignSpec, writeSourceSnapshot } from '@vibelog/core';
-import type { AiProvider, BlogDesignSpecV1, ContentSource } from '@vibelog/core';
+import { AiProviderRequestError, AiProviderTimeoutError, HackMdSource, analyzeDesignImpact, buildBlog, createAiProviderChain, createDevBuilder, isHackMdSourceError, searchIndexIdentity, structuralBuildIdentity, validateBlogDesignSpecV2, writeSourceSnapshot } from '@vibelog/core';
+import type { AiProvider, BlogDesignSpecV2, ContentSource } from '@vibelog/core';
 import { parseSyncOperationPayload } from './blog-sync.js';
 import type { OperationRuntimeConfig } from './config.js';
 import type { AppDatabase, OperationRecord } from './database.js';
@@ -10,6 +10,9 @@ import { OperationLeaseLostError } from './database.js';
 import type { ArtifactStore } from './ports/artifact-store.js';
 import type { OperationDispatcher, OperationExecutor, OperationQueue, OperationResult } from './ports/operation-queue.js';
 import { createReleaseSnapshot } from './publication-diff.js';
+import { copyPresentationDraft } from './design-draft.js';
+import { materializeSearchCache } from './search-cache.js';
+import { findReusableBuild } from './build-cache.js';
 
 function safeTechnicalError(error: unknown): string {
   const message = error instanceof Error ? (error.stack ?? error.message) : 'Operation failed';
@@ -51,6 +54,14 @@ export class RetryableOperationError extends Error {
 function publicOrigin(config: OperationRuntimeConfig, username: string): string {
   const app = new URL(config.appOrigin); return `${app.protocol}//${username}.${app.hostname}${app.port ? `:${app.port}` : ''}`;
 }
+async function measure<T>(operationId: string, stage: string, work: () => Promise<T>): Promise<T> {
+  const started = performance.now();
+  try { return await work(); }
+  finally { console.info(JSON.stringify({ event: 'operation_stage', operationId, stage, durationMs: Math.round(performance.now() - started) })); }
+}
+function reportBuildStage(operationId: string): (stage: string, durationMs: number) => void {
+  return (stage, durationMs) => { console.info(JSON.stringify({ event: 'operation_stage', operationId, stage, durationMs })); };
+}
 
 export class AppOperationExecutor implements OperationExecutor {
   constructor(private readonly database: AppDatabase, private readonly artifacts: ArtifactStore, private readonly config: OperationRuntimeConfig, private readonly dependencies: { contentSource?: (username: string) => ContentSource; aiProvider?: () => AiProvider } = {}) {}
@@ -82,54 +93,99 @@ export class AppOperationExecutor implements OperationExecutor {
       try {
         await this.database.updateOperationProgress(operation, { kind: 'determinate', value: 0, max: 4 }, 'Reading HackMD');
         const source = this.dependencies.contentSource?.(blog.hackmdUsername) ?? new HackMdSource(blog.hackmdUsername, { baseUrl: this.config.hackmdBaseUrl });
-        const [{ posts }, author] = await Promise.all([source.getPosts(), source.getAuthor()]);
+        const [{ posts }, author] = await measure(operation.id, 'content-fetch', () => Promise.all([source.getPosts(), source.getAuthor()]));
         const payload = parseSyncOperationPayload(operation.payload);
         const site = payload.intent === 'identity' ? payload.site : { title: blog.title ?? `${author.name}'s blog`, description: blog.description ?? author.bio, language: blog.language };
         await writeFile(join(work, 'vibelog.config.json'), JSON.stringify({ site }), { mode: 0o600 });
         const snapshotSource: ContentSource = { name: source.name, getPosts: () => Promise.resolve({ posts }), getAuthor: () => Promise.resolve(author) };
-        const builder = createDevBuilder({ root: work, contentSource: snapshotSource }); await builder.prepare({ installDependencies: false });
+        const builder = createDevBuilder({ root: work, contentSource: snapshotSource }); await measure(operation.id, 'prepare-source', () => builder.prepare({ installDependencies: false }));
         const excludedSlugs = payload.excludedSlugs ?? blog.contentManifest?.filter((post) => !post.included).map((post) => post.slug) ?? [];
-        const summary = await builder.fetchContent({ excludedSlugs });
+        const summary = await measure(operation.id, 'source-snapshot', () => builder.fetchContent({ excludedSlugs }));
         const activeDesign = await this.database.getActiveDesign(blog.id); if (!activeDesign) throw new Error('Active design not found');
         await this.database.updateOperationProgress(operation, { kind: 'determinate', value: 2, max: 4 }, 'Building static preview');
         const sourceDirectory = join(work, 'source');
         await writeSourceSnapshot(builder.vibelogDir, sourceDirectory, summary);
-        await this.artifacts.uploadDirectory(sourceArtifact.id, sourceDirectory);
+        await measure(operation.id, 'upload-source', () => this.artifacts.uploadDirectory(sourceArtifact.id, sourceDirectory));
         const compileRoot = join(work, 'compile'); const output = join(compileRoot, 'dist');
-        await buildBlog({ sourceDir: sourceDirectory, design: activeDesign.config, workDir: compileRoot, outDir: output, site: publicOrigin(this.config, blog.username) });
-        await this.artifacts.uploadDirectory(draftArtifact.id, output);
+        const publicSite = publicOrigin(this.config, blog.username);
+        await buildBlog({ sourceDir: sourceDirectory, design: activeDesign.config, workDir: compileRoot, outDir: output, site: publicSite, searchIdentity: searchIndexIdentity(sourceArtifact.id, publicSite), buildIdentity: structuralBuildIdentity(sourceArtifact.id, activeDesign.config, publicSite), onStageTiming: reportBuildStage(operation.id) });
+        await measure(operation.id, 'upload-draft', () => this.artifacts.uploadDirectory(draftArtifact.id, output));
         const message = payload.intent === 'identity' ? 'Blog details and content updated' : payload.intent === 'selection' ? 'Article selection and draft updated' : 'Content synced';
-        await this.database.completeSyncOperation(operation, { ...site, author: summary.author.name, sourceArtifactId: sourceArtifact.id, draftArtifactId: draftArtifact.id, designRevisionId: activeDesign.id, contentProfile: summary.contentProfile, contentManifest: summary.posts }, { message });
+        await measure(operation.id, 'commit-draft', () => this.database.completeSyncOperation(operation, { ...site, author: summary.author.name, sourceArtifactId: sourceArtifact.id, draftArtifactId: draftArtifact.id, designRevisionId: activeDesign.id, contentProfile: summary.contentProfile, contentManifest: summary.posts }, { message }));
         return { message };
       } catch (error) { await Promise.all([this.database.markArtifactCleanup(sourceArtifact.id), this.database.markArtifactCleanup(draftArtifact.id)]); throw error; }
       finally { await rm(work, { recursive: true, force: true }); }
     }
     if (operation.type === 'generate_design' || operation.type === 'apply_design' || operation.type === 'activate_design') {
       if (!blog.sourceArtifactId || !blog.contentProfile) throw new Error('Sync the content before changing the design');
+      const currentSourceArtifactId = blog.sourceArtifactId;
+      const contentProfile = blog.contentProfile;
       const sourceArtifactId = operation.payload.sourceArtifactId;
       if (sourceArtifactId !== blog.sourceArtifactId) throw new Error('Source changed before design build');
-      let design: BlogDesignSpecV1;
+      let design: BlogDesignSpecV2;
       if (operation.type === 'generate_design') {
         await this.database.updateOperationProgress(operation, { kind: 'indeterminate' }, 'AI is designing a new presentation…');
         const prompt = operation.payload.prompt; if (typeof prompt !== 'string') throw new Error('Design description is required');
         const current = await this.database.getActiveDesign(blog.id); if (!current) throw new Error('Active design not found');
-        const baseDesign = operation.payload.baseDesign ? validateBlogDesignSpec(operation.payload.baseDesign) : current.config;
-        design = await (this.dependencies.aiProvider?.() ?? createAiProviderChain(this.config.aiProvider, this.config.aiModel, this.config.aiFallbackModels)).generate({ blog: { title: blog.title ?? blog.username, description: blog.description ?? '', author: blog.author ?? blog.username }, contentProfile: blog.contentProfile, currentDesign: baseDesign, prompt }, { sessionId: operation.id });
+        const baseDesign = operation.payload.baseDesign ? validateBlogDesignSpecV2(operation.payload.baseDesign) : current.config;
+        design = await measure(operation.id, 'ai', () => (this.dependencies.aiProvider?.() ?? createAiProviderChain(this.config.aiProvider, this.config.aiModel, this.config.aiFallbackModels)).generate({ blog: { title: blog.title ?? blog.username, description: blog.description ?? '', author: blog.author ?? blog.username }, contentProfile, currentDesign: baseDesign, prompt }, { sessionId: operation.id }));
       } else if (operation.type === 'apply_design') {
-        design = validateBlogDesignSpec(operation.payload.design);
+        design = validateBlogDesignSpecV2(operation.payload.design);
       } else {
         const revisionId = operation.payload.designRevisionId; if (typeof revisionId !== 'string') throw new Error('Design revision is required');
         const revision = await this.database.getDesignRevision(revisionId, blog.id); if (!revision) throw new Error('Design revision not found');
         design = revision.config;
       }
+      design = validateBlogDesignSpecV2(design);
+      const active = await this.database.getActiveDesign(blog.id);
+      if (!active) throw new Error('Active design not found');
+      const site = publicOrigin(this.config, blog.username);
+      const buildIdentity = structuralBuildIdentity(currentSourceArtifactId, design, site);
+      const impact = analyzeDesignImpact(active.config, design);
+      console.info(JSON.stringify({ event: 'design_impact', operationId: operation.id, impact }));
+      if (impact === 'none') {
+        const revision = await this.database.completeNoopDesignOperation(operation, { message: 'Design unchanged' });
+        return { message: 'Design unchanged', revisionId: revision.id };
+      }
+      if (impact === 'presentation') {
+        const draftArtifactId = blog.draftArtifactId;
+        if (!draftArtifactId) throw new Error('Compiled draft not found');
+        const artifact = await this.database.createArtifact(blog.id, 'draft');
+        try {
+          await this.database.updateOperationProgress(operation, { kind: 'determinate', value: 1, max: 2 }, 'Updating design styles');
+          await measure(operation.id, 'copy-and-compile-css', () => copyPresentationDraft(this.artifacts, draftArtifactId, artifact.id, design, buildIdentity));
+          const revision = await measure(operation.id, 'commit-draft', () => this.database.completeDesignOperation(operation, design, artifact.id, { message: 'New design ready' }));
+          return { message: 'New design ready', revisionId: revision.id };
+        } catch (error) { await this.database.markArtifactCleanup(artifact.id); throw error; }
+      }
+      let reusable: string | undefined;
+      try {
+        const candidates = await this.database.listBuildCacheCandidates(blog.id);
+        reusable = await measure(operation.id, 'build-cache-read', () => findReusableBuild(this.artifacts, candidates, buildIdentity));
+      } catch { reusable = undefined; }
+      if (reusable) {
+        const artifact = await this.database.createArtifact(blog.id, 'draft');
+        try {
+          await measure(operation.id, 'build-cache-copy', () => this.artifacts.copyArtifact(reusable, artifact.id));
+          const revision = await measure(operation.id, 'commit-draft', () => this.database.completeDesignOperation(operation, design, artifact.id, { message: 'New design ready' }));
+          return { message: 'New design ready', revisionId: revision.id };
+        } catch (error) { await this.database.markArtifactCleanup(artifact.id); throw error; }
+      }
       const work = await mkdtemp(join(tmpdir(), 'vibelog-design-')); const artifact = await this.database.createArtifact(blog.id, 'draft');
       try {
         await this.database.updateOperationProgress(operation, { kind: 'determinate', value: 1, max: 3 }, 'Building design preview');
-        const sourceDirectory = join(work, 'source'); await this.artifacts.materializeArtifact(blog.sourceArtifactId, sourceDirectory);
+        const sourceDirectory = join(work, 'source'); await measure(operation.id, 'materialize-source', () => this.artifacts.materializeArtifact(currentSourceArtifactId, sourceDirectory));
         const compileRoot = join(work, 'compile'); const output = join(compileRoot, 'dist');
-        await buildBlog({ sourceDir: sourceDirectory, design, workDir: compileRoot, outDir: output, site: publicOrigin(this.config, blog.username) });
-        await this.artifacts.uploadDirectory(artifact.id, output);
-        const revision = await this.database.completeDesignOperation(operation, design, artifact.id, { message: 'New design ready' });
+        const identity = searchIndexIdentity(currentSourceArtifactId, site);
+        let searchCache: Awaited<ReturnType<typeof materializeSearchCache>>;
+        const previousDraft = blog.draftArtifactId;
+        if (previousDraft) {
+          try { searchCache = await measure(operation.id, 'search-cache-read', () => materializeSearchCache(this.artifacts, previousDraft, identity, join(work, 'search-cache'))); }
+          catch { searchCache = undefined; }
+        }
+        await buildBlog({ sourceDir: sourceDirectory, design, workDir: compileRoot, outDir: output, site, searchIdentity: identity, searchCache, buildIdentity, onStageTiming: reportBuildStage(operation.id) });
+        await measure(operation.id, 'upload-draft', () => this.artifacts.uploadDirectory(artifact.id, output));
+        const revision = await measure(operation.id, 'commit-draft', () => this.database.completeDesignOperation(operation, design, artifact.id, { message: 'New design ready' }));
         return { message: 'New design ready', revisionId: revision.id };
       } catch (error) { await this.database.markArtifactCleanup(artifact.id); throw error; }
       finally { await rm(work, { recursive: true, force: true }); }

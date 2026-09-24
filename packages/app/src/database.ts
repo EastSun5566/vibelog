@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import type { BlogDesignSpecV1, ContentProfile } from '@vibelog/core';
-import { DEFAULT_DESIGN, contentProfileSchema, parsePersistedDesign, validateBlogDesignSpec } from '@vibelog/core';
+import type { BlogDesignSpecV2, ContentProfile } from '@vibelog/core';
+import { DEFAULT_DESIGN_V2, contentProfileSchema, validateBlogDesignSpecV2 } from '@vibelog/core';
 import { z } from 'zod';
 import { parseSyncOperationPayload } from './blog-sync.js';
 import type { OperationMessage } from './ports/operation-queue.js';
@@ -19,7 +19,7 @@ export interface SyncedPostTag { name: string; slug: string }
 export interface SyncedPostSummary { title: string; slug: string; description?: string; publishedAt: string; included: boolean; tags?: SyncedPostTag[]; updatedAt?: string; contentHash?: string }
 export interface BlogRecord { id: string; userId: string; username: string; hackmdUsername: string; title: string | null; description: string | null; author: string | null; language: string; state: BlogState; lastError: string | null; sourceArtifactId: string | null; draftArtifactId: string | null; draftDesignRevisionId: string | null; contentVersion: number; contentProfile: ContentProfile | null; contentManifest: SyncedPostSummary[] | null; lastSyncedAt: string | null; createdAt: string; updatedAt: string }
 export interface ArtifactRecord { id: string; blogId: string; kind: 'source' | 'draft' | 'release'; keyPrefix: string; state: ArtifactState; createdAt: string; readyAt: string | null }
-export interface DesignRevisionRecord { id: string; blogId: string; config: BlogDesignSpecV1; prompt: string | null; description: string; source: ThemeRevisionSource; active: boolean; createdAt: string }
+export interface DesignRevisionRecord { id: string; blogId: string; config: BlogDesignSpecV2; prompt: string | null; description: string; source: ThemeRevisionSource; active: boolean; createdAt: string }
 /** Legacy name retained only for downstream source compatibility. */
 export type ThemeRevisionRecord = DesignRevisionRecord;
 export interface OperationRecord { id: string; userId: string; blogId: string; type: OperationType; status: OperationStatus; payload: Record<string, unknown>; result: Record<string, unknown> | null; errorMessage: string | null; attempts: number; lockedAt: string | null; leaseExpiresAt: string | null; createdAt: string; updatedAt: string }
@@ -27,7 +27,7 @@ type OperationLease = Pick<OperationRecord, 'id' | 'attempts'>;
 export class OperationLeaseLostError extends Error { constructor() { super('Operation lease is no longer owned'); this.name = 'OperationLeaseLostError'; } }
 export interface ReleaseSnapshot { site: { title: string; description: string; author: string; language: string }; posts: SyncedPostSummary[] }
 export interface PublishedReleaseRecord { id: string; blogId: string; themeRevisionId: string; contentVersion: number; snapshot: ReleaseSnapshot | null; artifactId: string; active: boolean; createdAt: string }
-export interface PreviewSessionRecord { tokenHash: string; userId: string; blogId: string; designConfig: BlogDesignSpecV1 | null; expiresAt: string }
+export interface PreviewSessionRecord { tokenHash: string; userId: string; blogId: string; designConfig: BlogDesignSpecV2 | null; expiresAt: string }
 export interface BlogDeletionPlan { blogId: string; artifacts: ArtifactRecord[] }
 export interface AiQuotaLimits { userDailyLimit: number; globalDailyLimit: number; at?: Date }
 export interface OutboxRecord { id: string; operationId: string; message: OperationMessage }
@@ -54,9 +54,9 @@ const releaseSnapshotSchema = z.object({ site: z.object({ title: z.string().min(
 const iso = (value: Date | null) => value?.toISOString() ?? null;
 const mapBlog = (row: typeof schema.blogs.$inferSelect): BlogRecord => ({ ...row, contentProfile: row.contentProfile ? contentProfileSchema.parse(row.contentProfile) : null, contentManifest: row.contentManifest ? contentManifestSchema.parse(row.contentManifest) : null, lastSyncedAt: iso(row.lastSyncedAt), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() });
 const mapArtifact = (row: typeof schema.artifacts.$inferSelect): ArtifactRecord => ({ ...row, createdAt: row.createdAt.toISOString(), readyAt: iso(row.readyAt) });
-const mapTheme = (row: typeof schema.themeRevisions.$inferSelect): DesignRevisionRecord => ({ ...row, config: parsePersistedDesign(row.config), createdAt: row.createdAt.toISOString() });
+const mapTheme = (row: typeof schema.themeRevisions.$inferSelect): DesignRevisionRecord => ({ ...row, config: validateBlogDesignSpecV2(row.config), createdAt: row.createdAt.toISOString() });
 const mapOperation = (row: typeof schema.operations.$inferSelect): OperationRecord => ({ ...row, payload: row.payload, result: row.result, lockedAt: iso(row.lockedAt), leaseExpiresAt: iso(row.leaseExpiresAt), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() });
-const mapPreview = (row: typeof schema.previewSessions.$inferSelect): PreviewSessionRecord => ({ tokenHash: row.tokenHash, userId: row.userId, blogId: row.blogId, designConfig: row.themeConfig ? parsePersistedDesign(row.themeConfig) : null, expiresAt: row.expiresAt.toISOString() });
+const mapPreview = (row: typeof schema.previewSessions.$inferSelect): PreviewSessionRecord => ({ tokenHash: row.tokenHash, userId: row.userId, blogId: row.blogId, designConfig: row.themeConfig ? validateBlogDesignSpecV2(row.themeConfig) : null, expiresAt: row.expiresAt.toISOString() });
 const mapRelease = (row: typeof schema.publishedReleases.$inferSelect): PublishedReleaseRecord => ({ ...row, snapshot: row.snapshot ? releaseSnapshotSchema.parse(row.snapshot) : null, createdAt: row.createdAt.toISOString() });
 function quotaWindow(at: Date): { date: string; retryAfter: number } { const next = Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate() + 1); return { date: at.toISOString().slice(0, 10), retryAfter: Math.max(1, Math.ceil((next - at.getTime()) / 1000)) }; }
 function newOperation(userId: string, blogId: string, type: OperationType, payload: Record<string, unknown>) {
@@ -96,7 +96,7 @@ export class AppDatabase {
       const [blog] = await tx.insert(schema.blogs).values({ id, userId, username, hackmdUsername, language, state: 'syncing' })
         .onConflictDoNothing({ target: schema.blogs.username }).returning();
       if (!blog) throw new BlogAddressTakenError(username);
-      await tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId: id, config: DEFAULT_DESIGN, description: DEFAULT_DESIGN.description, source: 'system', active: true });
+      await tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId: id, config: DEFAULT_DESIGN_V2, description: DEFAULT_DESIGN_V2.description, source: 'system', active: true });
       const [operation] = await tx.insert(schema.operations).values(op).returning();
       await insertOutbox(tx, operation.id);
       return { blog: mapBlog(blog), operation: mapOperation(operation) };
@@ -144,15 +144,21 @@ export class AppDatabase {
   async listDesignRevisions(blogId: string): Promise<DesignRevisionRecord[]> { return (await this.db.select().from(schema.themeRevisions).where(eq(schema.themeRevisions.blogId, blogId)).orderBy(desc(schema.themeRevisions.createdAt))).map(mapTheme); }
   async getDesignRevision(id: string, blogId: string): Promise<DesignRevisionRecord | null> { const [row] = await this.db.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.id, id), eq(schema.themeRevisions.blogId, blogId))); return row ? mapTheme(row) : null; }
   async getActiveDesign(blogId: string): Promise<DesignRevisionRecord | null> { const [row] = await this.db.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.blogId, blogId), eq(schema.themeRevisions.active, true))); return row ? mapTheme(row) : null; }
-  async completeDesignOperation(lease: OperationLease, config: BlogDesignSpecV1, artifactId: string, result: Record<string, unknown>): Promise<DesignRevisionRecord> {
-    const validated = validateBlogDesignSpec(config);
+  async listBuildCacheCandidates(blogId: string): Promise<string[]> {
+    const rows = await this.db.select({ id: schema.artifacts.id }).from(schema.artifacts)
+      .where(and(eq(schema.artifacts.blogId, blogId), eq(schema.artifacts.state, 'ready'), inArray(schema.artifacts.kind, ['draft', 'release'])))
+      .orderBy(desc(schema.artifacts.readyAt)).limit(30);
+    return rows.map((row) => row.id);
+  }
+  async completeDesignOperation(lease: OperationLease, config: BlogDesignSpecV2, artifactId: string, result: Record<string, unknown>): Promise<DesignRevisionRecord> {
+    const validated = validateBlogDesignSpecV2(config);
     return this.db.transaction(async (tx) => {
       const [row] = await tx.select().from(schema.operations).where(and(ownedLease(lease), inArray(schema.operations.type, ['generate_design', 'apply_design', 'activate_design']))).for('update');
       if (!row) throw new OperationLeaseLostError();
       const sourceArtifactId = row.payload.sourceArtifactId;
       const contentVersion = row.payload.contentVersion;
-      const [blog] = await tx.select({ sourceArtifactId: schema.blogs.sourceArtifactId, draftArtifactId: schema.blogs.draftArtifactId, contentVersion: schema.blogs.contentVersion }).from(schema.blogs).where(and(eq(schema.blogs.id, row.blogId), eq(schema.blogs.userId, row.userId)));
-      if (!blog || blog.sourceArtifactId !== sourceArtifactId || blog.contentVersion !== contentVersion) throw new Error('Source changed before design completion');
+      const [blog] = await tx.select({ sourceArtifactId: schema.blogs.sourceArtifactId, draftArtifactId: schema.blogs.draftArtifactId, draftDesignRevisionId: schema.blogs.draftDesignRevisionId, contentVersion: schema.blogs.contentVersion }).from(schema.blogs).where(and(eq(schema.blogs.id, row.blogId), eq(schema.blogs.userId, row.userId)));
+      if (!blog || blog.sourceArtifactId !== sourceArtifactId || blog.contentVersion !== contentVersion || blog.draftArtifactId !== row.payload.draftArtifactId || blog.draftDesignRevisionId !== row.payload.draftDesignRevisionId) throw new Error('Draft changed before design completion');
       const [artifact] = await tx.update(schema.artifacts).set({ state: 'ready', readyAt: new Date() }).where(and(eq(schema.artifacts.id, artifactId), eq(schema.artifacts.blogId, row.blogId), eq(schema.artifacts.kind, 'draft'), eq(schema.artifacts.state, 'uploading'))).returning();
       if (!artifact) throw new Error('Uploading draft artifact not found');
       let revision: typeof schema.themeRevisions.$inferSelect | undefined;
@@ -160,7 +166,7 @@ export class AppDatabase {
         const revisionId = row.payload.designRevisionId;
         if (typeof revisionId !== 'string') throw new Error('Design revision is required');
         [revision] = await tx.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.id, revisionId), eq(schema.themeRevisions.blogId, row.blogId)));
-        if (!revision || JSON.stringify(parsePersistedDesign(revision.config)) !== JSON.stringify(validated)) throw new Error('Design revision changed');
+        if (!revision || JSON.stringify(validateBlogDesignSpecV2(revision.config)) !== JSON.stringify(validated)) throw new Error('Design revision changed');
       } else {
         const prompt = row.type === 'generate_design' && typeof row.payload.prompt === 'string' ? row.payload.prompt : null;
         [revision] = await tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId: row.blogId, config: validated, prompt, description: validated.description, source: row.type === 'generate_design' ? 'ai' : 'manual', active: false }).returning();
@@ -170,6 +176,28 @@ export class AppDatabase {
       await tx.update(schema.themeRevisions).set({ active: true }).where(eq(schema.themeRevisions.id, revision.id));
       await tx.update(schema.blogs).set({ draftArtifactId: artifact.id, draftDesignRevisionId: revision.id, updatedAt: new Date() }).where(eq(schema.blogs.id, row.blogId));
       if (blog.draftArtifactId) await tx.update(schema.artifacts).set({ state: 'cleanup_pending' }).where(eq(schema.artifacts.id, blog.draftArtifactId));
+      await tx.update(schema.operations).set({ status: 'succeeded', result: { ...result, revisionId: revision.id }, errorMessage: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, lease.id));
+      return mapTheme(revision);
+    });
+  }
+
+  async completeNoopDesignOperation(lease: OperationLease, result: Record<string, unknown>): Promise<DesignRevisionRecord> {
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.select().from(schema.operations).where(and(ownedLease(lease), inArray(schema.operations.type, ['generate_design', 'apply_design', 'activate_design']))).for('update');
+      if (!row) throw new OperationLeaseLostError();
+      const [blog] = await tx.select().from(schema.blogs).where(and(eq(schema.blogs.id, row.blogId), eq(schema.blogs.userId, row.userId))).for('update');
+      if (!blog || blog.sourceArtifactId !== row.payload.sourceArtifactId || blog.contentVersion !== row.payload.contentVersion || blog.draftArtifactId !== row.payload.draftArtifactId || blog.draftDesignRevisionId !== row.payload.draftDesignRevisionId) throw new Error('Draft changed before design completion');
+      const [active] = await tx.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.blogId, row.blogId), eq(schema.themeRevisions.active, true)));
+      if (!active || blog.draftDesignRevisionId !== active.id) throw new Error('Active design changed before completion');
+      let revision = active;
+      if (row.type === 'activate_design') {
+        const [target] = await tx.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.id, String(row.payload.designRevisionId)), eq(schema.themeRevisions.blogId, row.blogId)));
+        if (!target || JSON.stringify(validateBlogDesignSpecV2(target.config)) !== JSON.stringify(validateBlogDesignSpecV2(active.config))) throw new Error('Design revision changed');
+        await tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, row.blogId));
+        await tx.update(schema.themeRevisions).set({ active: true }).where(eq(schema.themeRevisions.id, target.id));
+        await tx.update(schema.blogs).set({ draftDesignRevisionId: target.id, updatedAt: new Date() }).where(eq(schema.blogs.id, row.blogId));
+        revision = target;
+      }
       await tx.update(schema.operations).set({ status: 'succeeded', result: { ...result, revisionId: revision.id }, errorMessage: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(schema.operations.id, lease.id));
       return mapTheme(revision);
     });
@@ -202,12 +230,12 @@ export class AppDatabase {
     return this.createOperation(userId, blogId, 'publish', { contentVersion: blog.contentVersion, designRevisionId: theme.id, draftArtifactId: blog.draftArtifactId, previewPath });
   }
   async createDesignOperation(userId: string, blogId: string, prompt: string, baseDesign: unknown, limits: AiQuotaLimits, previewPath = '/'): Promise<OperationRecord> {
-    const validatedBase = validateBlogDesignSpec(baseDesign); const at = limits.at ?? new Date(); const window = quotaWindow(at);
+    const validatedBase = validateBlogDesignSpecV2(baseDesign); const at = limits.at ?? new Date(); const window = quotaWindow(at);
     return this.db.transaction(async (tx) => {
       const [active] = await tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))); if (active) throw new Error('Blog already has an active operation');
-      const [blog] = await tx.select({ sourceArtifactId: schema.blogs.sourceArtifactId, contentVersion: schema.blogs.contentVersion }).from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId)));
+      const [blog] = await tx.select({ sourceArtifactId: schema.blogs.sourceArtifactId, draftArtifactId: schema.blogs.draftArtifactId, draftDesignRevisionId: schema.blogs.draftDesignRevisionId, contentVersion: schema.blogs.contentVersion }).from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId)));
       if (!blog?.sourceArtifactId) throw new Error('Sync the content before changing the design');
-      const op = newOperation(userId, blogId, 'generate_design', { prompt, baseDesign: validatedBase, sourceArtifactId: blog.sourceArtifactId, contentVersion: blog.contentVersion, previewPath });
+      const op = newOperation(userId, blogId, 'generate_design', { prompt, baseDesign: validatedBase, sourceArtifactId: blog.sourceArtifactId, draftArtifactId: blog.draftArtifactId, draftDesignRevisionId: blog.draftDesignRevisionId, contentVersion: blog.contentVersion, previewPath });
       for (const item of [{ scope: 'user' as const, subject: userId, limit: limits.userDailyLimit }, { scope: 'global' as const, subject: '*', limit: limits.globalDailyLimit }]) {
         const [usage] = await tx.insert(schema.aiDailyUsage).values({ usageDate: window.date, scope: item.scope, subject: item.subject, count: 1 }).onConflictDoUpdate({ target: [schema.aiDailyUsage.usageDate, schema.aiDailyUsage.scope, schema.aiDailyUsage.subject], set: { count: sql`${schema.aiDailyUsage.count} + 1` } }).returning({ count: schema.aiDailyUsage.count });
         if (!usage || usage.count > item.limit) throw new AiQuotaExceededError(window.retryAfter);
@@ -217,14 +245,14 @@ export class AppDatabase {
     });
   }
   async createApplyDesignOperation(userId: string, blogId: string, design: unknown, previewPath = '/'): Promise<OperationRecord> {
-    const validated = validateBlogDesignSpec(design);
+    const validated = validateBlogDesignSpecV2(design);
     const blog = await this.getBlog(blogId); if (!blog || blog.userId !== userId || !blog.sourceArtifactId) throw new Error('Sync the content before changing the design');
-    return this.createOperation(userId, blogId, 'apply_design', { design: validated, sourceArtifactId: blog.sourceArtifactId, contentVersion: blog.contentVersion, previewPath });
+    return this.createOperation(userId, blogId, 'apply_design', { design: validated, sourceArtifactId: blog.sourceArtifactId, draftArtifactId: blog.draftArtifactId, draftDesignRevisionId: blog.draftDesignRevisionId, contentVersion: blog.contentVersion, previewPath });
   }
   async createActivateDesignOperation(userId: string, blogId: string, designRevisionId: string, previewPath = '/'): Promise<OperationRecord> {
     const blog = await this.getBlog(blogId); if (!blog || blog.userId !== userId || !blog.sourceArtifactId) throw new Error('Sync the content before changing the design');
     const revision = await this.getDesignRevision(designRevisionId, blogId); if (!revision) throw new Error('Design revision not found');
-    return this.createOperation(userId, blogId, 'activate_design', { designRevisionId, sourceArtifactId: blog.sourceArtifactId, contentVersion: blog.contentVersion, previewPath });
+    return this.createOperation(userId, blogId, 'activate_design', { designRevisionId, sourceArtifactId: blog.sourceArtifactId, draftArtifactId: blog.draftArtifactId, draftDesignRevisionId: blog.draftDesignRevisionId, contentVersion: blog.contentVersion, previewPath });
   }
   async getOperation(id: string, userId?: string): Promise<OperationRecord | null> {
     const where = userId ? and(eq(schema.operations.id, id), eq(schema.operations.userId, userId)) : eq(schema.operations.id, id);
@@ -395,12 +423,12 @@ export class AppDatabase {
     });
   }
 
-  async createPreviewSession(tokenHash: string, userId: string, blogId: string, expiresAt: string, designConfig: BlogDesignSpecV1): Promise<void> {
-    const validated = validateBlogDesignSpec(designConfig); await this.db.transaction(async (tx) => { await tx.delete(schema.previewSessions).where(lt(schema.previewSessions.expiresAt, new Date())); await tx.insert(schema.previewSessions).values({ tokenHash, userId, blogId, themeConfig: validated, expiresAt: new Date(expiresAt) }); });
+  async createPreviewSession(tokenHash: string, userId: string, blogId: string, expiresAt: string, designConfig: BlogDesignSpecV2): Promise<void> {
+    const validated = validateBlogDesignSpecV2(designConfig); await this.db.transaction(async (tx) => { await tx.delete(schema.previewSessions).where(lt(schema.previewSessions.expiresAt, new Date())); await tx.insert(schema.previewSessions).values({ tokenHash, userId, blogId, themeConfig: validated, expiresAt: new Date(expiresAt) }); });
   }
   async getPreviewSession(tokenHash: string): Promise<PreviewSessionRecord | null> { const [row] = await this.db.select().from(schema.previewSessions).where(and(eq(schema.previewSessions.tokenHash, tokenHash), gt(schema.previewSessions.expiresAt, new Date()))); return row ? mapPreview(row) : null; }
-  async updatePreviewDesign(tokenHash: string, userId: string, blogId: string, config: BlogDesignSpecV1): Promise<BlogDesignSpecV1> {
-    const validated = validateBlogDesignSpec(config); const [row] = await this.db.update(schema.previewSessions).set({ themeConfig: validated }).where(and(eq(schema.previewSessions.tokenHash, tokenHash), eq(schema.previewSessions.userId, userId), eq(schema.previewSessions.blogId, blogId), gt(schema.previewSessions.expiresAt, new Date()))).returning();
+  async updatePreviewDesign(tokenHash: string, userId: string, blogId: string, config: BlogDesignSpecV2): Promise<BlogDesignSpecV2> {
+    const validated = validateBlogDesignSpecV2(config); const [row] = await this.db.update(schema.previewSessions).set({ themeConfig: validated }).where(and(eq(schema.previewSessions.tokenHash, tokenHash), eq(schema.previewSessions.userId, userId), eq(schema.previewSessions.blogId, blogId), gt(schema.previewSessions.expiresAt, new Date()))).returning();
     if (!row) throw new Error('Preview session expired or invalid'); return validated;
   }
 }

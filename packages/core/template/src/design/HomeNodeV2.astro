@@ -1,0 +1,47 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import type { HomeSectionV2 } from '../design-v2';
+import PostList from '../components/PostList.astro';
+import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import { text } from '../localization';
+
+interface Props {
+  id: string;
+  section: HomeSectionV2;
+  posts: CollectionEntry<'blog'>[];
+  selected: CollectionEntry<'blog'>[];
+  author: CollectionEntry<'author'>;
+}
+const { id, section, posts, selected, author } = Astro.props;
+const headingId = `home-${id}-heading`;
+const counts = new Map<string, { name: string; count: number }>();
+if (section.type === 'topics') {
+  for (const post of posts) for (const tag of post.data.tags) {
+    counts.set(tag.slug, { name: tag.name, count: (counts.get(tag.slug)?.count ?? 0) + 1 });
+  }
+}
+const topics = [...counts].sort(([, left], [, right]) => right.count - left.count || left.name.localeCompare(right.name)).slice(0, section.type === 'topics' ? section.limit : 0);
+const isFeatured = section.type === 'posts' && (section.variant === 'hero' || section.variant === 'split');
+const listVariant = section.type === 'posts' && (section.variant === 'cards' || section.variant === 'grid' || section.variant === 'split') ? 'cards' : 'divided';
+---
+
+{section.type === 'intro' && <section class={`home-section home-hero variant-${section.variant}`} data-design-node={id} aria-labelledby={headingId}>
+  {section.showAuthor && <p class="eyebrow">{author.data.name}</p>}
+  <h1 id={headingId}>{SITE_TITLE}</h1>
+  {SITE_DESCRIPTION && <p class="site-description">{SITE_DESCRIPTION}</p>}
+</section>}
+
+{section.type === 'posts' && <section class={`home-section ${isFeatured ? 'featured-posts' : 'recent-posts'} variant-${section.variant}`} data-design-node={id} aria-labelledby={headingId}>
+  <div class="section-heading"><h2 id={headingId}>{isFeatured ? text.featuredPosts : text.latestPosts}</h2>{!isFeatured && <a class="all-posts-link" href="/blog">{text.viewAllPosts}</a>}</div>
+  <PostList posts={selected} headingLevel="h3" variant={listVariant} columns={section.columns} />
+</section>}
+
+{section.type === 'topics' && topics.length > 0 && <section class={`home-section home-topics variant-${section.variant}`} data-design-node={id} aria-labelledby={headingId}>
+  <h2 id={headingId}>{text.tags}</h2>
+  <ul class="home-topic-list" role="list">{topics.map(([slug, topic]) => <li><a class="tag-link" href={`/tags/${slug}/`}>{topic.name} <span class="tag-count">{topic.count}</span></a></li>)}</ul>
+</section>}
+
+{section.type === 'author' && <section class={`home-section home-author variant-${section.variant}`} data-design-node={id} aria-labelledby={headingId}>
+  <p class="eyebrow">{text.aboutAuthor}</p><h2 id={headingId}>{author.data.name}</h2>
+  {section.variant === 'profile' && author.body && <p>{author.body}</p>}
+</section>}

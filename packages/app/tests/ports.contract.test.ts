@@ -10,12 +10,14 @@ describe('provider-neutral I/O contracts', () => {
       uploadDirectory: vi.fn((id: string) => { objects.set(`${id}/index.html`, new TextEncoder().encode('hello')); return Promise.resolve(); }),
       materializeArtifact: vi.fn(() => Promise.resolve()),
       copyArtifact: vi.fn((source: string, destination: string) => { const body = objects.get(`${source}/index.html`); if (!body) return Promise.reject(new Error('Source missing')); objects.set(`${destination}/index.html`, body); return Promise.resolve(); }),
+      putObject: vi.fn((id: string, path: string, body: string | Uint8Array) => { objects.set(`${id}/${path}`, typeof body === 'string' ? new TextEncoder().encode(body) : body); return Promise.resolve(); }),
       listObjects: vi.fn((id: string) => Promise.resolve([...objects.keys()].filter((key) => key.startsWith(`${id}/`)).map((key) => key.slice(id.length + 1)))),
       readObject: vi.fn((id: string, path: string) => { const body = objects.get(`${id}/${path}`); return Promise.resolve(body ? { body: new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(body); controller.close(); } }) } : null); }),
       deleteArtifact: vi.fn((id: string) => { for (const objectKey of objects.keys()) if (objectKey.startsWith(`${id}/`)) objects.delete(objectKey); return Promise.resolve(); }),
     };
     await store.uploadDirectory('draft', '/ignored'); await store.copyArtifact('draft', 'release');
-    await expect(store.listObjects('release')).resolves.toEqual(['index.html']);
+    await store.putObject('release', 'design.css', ':root{color:red}');
+    await expect(store.listObjects('release')).resolves.toEqual(['index.html', 'design.css']);
     const release = await store.readObject('release', 'index.html'); expect(release).not.toBeNull();
     if (!release) throw new Error('Release missing');
     expect(await new Response(release.body).text()).toBe('hello');

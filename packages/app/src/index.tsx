@@ -4,7 +4,7 @@ import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
-import { renderDesignCss } from '@vibelog/core';
+import { compileDesignCss } from '@vibelog/core';
 import { createArtifactZip } from './artifact-export.js';
 import { findArtifactObject } from './artifact-serving.js';
 import { createAuth, readSession, type AppVariables } from './auth.js';
@@ -74,10 +74,10 @@ export function createApp(options: CreateAppOptions) {
       const token = cookieValue(c.req.header('cookie'), 'vibelog_preview'); const preview = token ? await database.getPreviewSession(hashToken(token)) : null;
       if (!preview) throw new AppError('preview_access_denied', 'Preview access expired or invalid', 403);
       const blog = await database.getBlog(preview.blogId); if (!blog?.draftArtifactId || blog.state === 'deleting') throw new AppError('preview_not_ready', 'Preview is not ready', 404);
-      if (c.req.path === '/theme.css') {
+      if (c.req.path === '/design.css') {
         c.header('Content-Security-Policy', `default-src 'self'; script-src 'none'; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors ${config.appOrigin}`);
         const design = await database.getActiveDesign(blog.id); if (!design) throw new AppError('design_not_found', 'Design not found', 404);
-        c.header('Content-Type', 'text/css; charset=utf-8'); c.header('Cache-Control', 'private, no-store'); return c.body(renderDesignCss(preview.designConfig ?? design.config));
+        c.header('Content-Type', 'text/css; charset=utf-8'); c.header('Cache-Control', 'private, no-store'); return c.body(compileDesignCss(preview.designConfig ?? design.config));
       }
       const nonce = randomBytes(18).toString('base64');
       const previewScripts = usesSearchScripts(c.req.path) ? `'nonce-${nonce}' 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:` : `'nonce-${nonce}'`;

@@ -59,6 +59,15 @@ export class S3ArtifactStore implements ArtifactStore {
       token = page.NextContinuationToken;
     } while (token);
   }
+  async putObject(artifactId: string, path: string, body: string | Uint8Array, options: { contentType?: string } = {}): Promise<void> {
+    if (!path || path.startsWith('/')) throw new Error('Object path must be relative and non-empty');
+    await this.client.send(new PutObjectCommand({
+      Bucket: this.config.bucket,
+      Key: key(artifactId, path),
+      Body: body,
+      ContentType: options.contentType ?? contentType(path),
+    }));
+  }
   async listObjects(artifactId: string): Promise<string[]> {
     const prefix = key(artifactId);
     const paths: string[] = [];

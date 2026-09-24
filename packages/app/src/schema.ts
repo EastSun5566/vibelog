@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean, check, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid,
 } from 'drizzle-orm/pg-core';
-import type { BlogDesignSpecV1, ContentProfile } from '@vibelog/core';
+import type { BlogDesignSpecV2, ContentProfile } from '@vibelog/core';
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -63,7 +63,7 @@ export const artifacts = pgTable('artifacts', {
 ]);
 export const themeRevisions = pgTable('theme_revisions', {
   id: uuid('id').primaryKey(), blogId: uuid('blog_id').notNull().references(() => blogs.id, { onDelete: 'cascade' }),
-  config: jsonb('config').$type<BlogDesignSpecV1>().notNull(), prompt: text('prompt'), description: text('description').notNull(),
+  config: jsonb('config').$type<BlogDesignSpecV2>().notNull(), prompt: text('prompt'), description: text('description').notNull(),
   source: text('source', { enum: ['system', 'ai', 'manual'] }).notNull().default('system'),
   active: boolean('active').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -110,7 +110,7 @@ export const previewSessions = pgTable('preview_sessions', {
   tokenHash: text('token_hash').primaryKey(),
   userId: uuid('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   blogId: uuid('blog_id').notNull().references(() => blogs.id, { onDelete: 'cascade' }),
-  themeConfig: jsonb('theme_config').$type<BlogDesignSpecV1 | null>(),
+  themeConfig: jsonb('theme_config').$type<BlogDesignSpecV2 | null>(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

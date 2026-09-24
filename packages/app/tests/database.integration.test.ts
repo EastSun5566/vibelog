@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
-import { DEFAULT_DESIGN } from '@vibelog/core';
+import { DEFAULT_DESIGN_V2 } from '@vibelog/core';
 import { AppDatabase, BlogAddressTakenError, MAX_OPERATION_ATTEMPTS, OperationLeaseLostError } from '../src/database.js';
 import { AppOperationExecutor, OutboxDispatcher, RetryableOperationError } from '../src/jobs.js';
 import { loadWorkerConfig } from '../src/config.js';
@@ -153,7 +153,7 @@ describe.skipIf(!url)('operation crash recovery', () => {
   }
   function executor() {
     const config = loadWorkerConfig({ DATABASE_URL: url, OBJECT_STORE_ENDPOINT: 'http://unused', OBJECT_STORE_BUCKET: 'unused', OBJECT_STORE_ACCESS_KEY_ID: 'unused', OBJECT_STORE_SECRET_ACCESS_KEY: 'unused' });
-    const artifacts = { uploadDirectory: () => Promise.resolve(), materializeArtifact: () => Promise.resolve(), copyArtifact: () => Promise.resolve(), listObjects: () => Promise.resolve([]), readObject: () => Promise.resolve(null), deleteArtifact: () => Promise.resolve() };
+    const artifacts = { uploadDirectory: () => Promise.resolve(), materializeArtifact: () => Promise.resolve(), copyArtifact: () => Promise.resolve(), putObject: () => Promise.resolve(), listObjects: () => Promise.resolve([]), readObject: () => Promise.resolve(null), deleteArtifact: () => Promise.resolve() };
     return new AppOperationExecutor(database, artifacts, config);
   }
   it('reopens one crashed delivery and fences all writes from the previous attempt', async () => {
@@ -217,10 +217,10 @@ describe.skipIf(!url)('operation crash recovery', () => {
       contentProfile: { postCount: 0, tagCount: 0, averageLength: 'short', codeUsage: 'none', imageUsage: 'none', mathUsage: 'none' },
     }, {});
     let operation;
-    if (type === 'apply_design') operation = await database.createApplyDesignOperation(blog.userId, blog.id, DEFAULT_DESIGN);
+    if (type === 'apply_design') operation = await database.createApplyDesignOperation(blog.userId, blog.id, DEFAULT_DESIGN_V2);
     else {
       const tokenHash = randomUUID();
-      await database.createPreviewSession(tokenHash, blog.userId, blog.id, '2099-01-01T00:00:00.000Z', DEFAULT_DESIGN);
+      await database.createPreviewSession(tokenHash, blog.userId, blog.id, '2099-01-01T00:00:00.000Z', DEFAULT_DESIGN_V2);
       operation = await database.createPublishOperation(blog.userId, blog.id, tokenHash);
     }
     const first = await database.claimOperation(operation.id); if (!first) throw new Error('Missing first claim');
@@ -228,7 +228,7 @@ describe.skipIf(!url)('operation crash recovery', () => {
     const current = await database.claimOperation(operation.id); if (!current) throw new Error('Missing recovered claim');
     const artifact = await database.createArtifact(blog.id, type === 'apply_design' ? 'draft' : 'release');
     const complete = (lease: typeof first) => type === 'apply_design'
-      ? database.completeDesignOperation(lease, DEFAULT_DESIGN, artifact.id, {})
+      ? database.completeDesignOperation(lease, DEFAULT_DESIGN_V2, artifact.id, {})
       : database.completePublishOperation(lease, artifact.id, { site: { title: 'Test', description: '', author: 'Writer', language: 'en' }, posts: [] }, {});
     await expect(complete(first)).rejects.toBeInstanceOf(OperationLeaseLostError);
     expect((await database.getActiveDesign(blog.id))?.id).toBe(initialDesign.id);
