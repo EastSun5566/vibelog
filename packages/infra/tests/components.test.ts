@@ -58,6 +58,7 @@ describe('Pulumi components', () => {
       const provider = new gcp.Provider('test-gcp', { project: 'vibelog-test-project', region: 'asia-east1' });
       const runtime = new GcpContainerRuntime('test-runtime', {
       project: 'vibelog-test-project', region: 'asia-east1', environment: 'prod', imageDigest: 'asia-east1-docker.pkg.dev/project/repo/app@sha256:abc',
+      maintenanceStage: 'normal',
       deployerServiceAccountEmail: 'vibelog-deployer@vibelog-test-project.iam.gserviceaccount.com',
       appOrigin: 'https://example.com', previewOrigin: 'https://preview.example.com', objectStoreEndpoint: 'https://account.r2.cloudflarestorage.com',
       objectStoreBucket: 'artifacts', aiProvider: 'openai', aiModel: 'gpt-4o-mini', aiFallbackModels: ['fallback-model'],
@@ -120,11 +121,11 @@ describe('Pulumi components', () => {
     const outbox = schedulers.find((item) => item.name.endsWith('-outbox'));
     const maintenance = schedulers.find((item) => item.name.endsWith('-maintenance'));
     expect(outbox?.inputs).toMatchObject({
-      schedule: '17 * * * *', timeZone: 'Etc/UTC',
+      schedule: '17 * * * *', timeZone: 'Etc/UTC', paused: false,
       httpTarget: { httpMethod: 'POST', uri: 'https://test-runtime-worker.run.test/tasks/outbox', oidcToken: { audience: 'https://test-runtime-worker.run.test' } },
     });
     expect(maintenance?.inputs).toMatchObject({
-      schedule: '18 3 * * *', timeZone: 'Etc/UTC',
+      schedule: '18 3 * * *', timeZone: 'Etc/UTC', paused: false,
       httpTarget: { httpMethod: 'POST', uri: 'https://test-runtime-worker.run.test/tasks/maintenance', oidcToken: { audience: 'https://test-runtime-worker.run.test' } },
     });
     const deployerIdentityBindings = registrations.filter((item) => item.type.includes('serviceaccount/iAMMember:IAMMember') && item.name.includes('-deployer-'));
@@ -137,6 +138,37 @@ describe('Pulumi components', () => {
     expect(runtimeSource).toContain('version: definition.version.version');
     expect(childUrns).toHaveLength(3);
     expect(childUrns.every((urn) => urn.includes('vibelog:infra:GcpContainerRuntime$gcp:'))).toBe(true);
+  });
+  it.each([
+    ['draining', false, true],
+    ['locked', true, true],
+  ] as const)('pauses only the appropriate schedules in %s', async (stage, outboxPaused, maintenancePaused) => {
+    await pulumi.runtime.runInPulumiStack(async () => {
+      const provider = new gcp.Provider(`gcp-${stage}`, { project: 'vibelog-test-project' });
+      const runtime = new GcpContainerRuntime(`runtime-${stage}`, {
+        project: 'vibelog-test-project', region: 'asia-east1', environment: 'prod', imageDigest: 'ghcr.io/example/app@sha256:abc',
+        maintenanceStage: stage, deployerServiceAccountEmail: 'deployer@example.iam.gserviceaccount.com',
+        appOrigin: 'https://example.com', previewOrigin: 'https://preview.example.com',
+        objectStoreEndpoint: 'https://account.r2.cloudflarestorage.com', objectStoreBucket: 'artifacts',
+        aiProvider: 'openai', aiModel: 'gpt-4o-mini', aiFallbackModels: [], aiApiKeyEnv: 'OPENAI_API_KEY',
+        emailFrom: 'login@example.com', emailReplyTo: 'support@example.com', minInstances: 0, maxInstances: 3,
+        secrets: { databaseUrl: pulumi.secret('database'), objectStoreAccessKeyId: pulumi.secret('key'), objectStoreSecretAccessKey: pulumi.secret('secret'), resendApiKey: pulumi.secret('resend'), betterAuthSecret: pulumi.secret('auth'), aiApiKey: pulumi.secret('ai'), edgeSharedSecret: pulumi.secret('edge') },
+        provider,
+      }, { providers: [provider] });
+      await resolveOutput(runtime.workerUrl);
+      await resolveOutput(runtime.web.urn);
+      await resolveOutput(runtime.worker.urn);
+      await resolveOutput(runtime.queue.urn);
+      await resolveOutput(runtime.taskInvokerEmail);
+    });
+    const schedulers = registrations.filter((item) => item.type.includes('cloudscheduler/job:Job'));
+    expect(schedulers.find((item) => item.name.endsWith('-outbox'))?.inputs.paused).toBe(outboxPaused);
+    expect(schedulers.find((item) => item.name.endsWith('-maintenance'))?.inputs.paused).toBe(maintenancePaused);
+    const services = registrations.filter((item) => item.type.includes('cloudrunv2/service:Service'));
+    for (const service of services) {
+      const template = service.inputs.template as { containers: { envs: { name: string; value: string }[] }[] };
+      expect(template.containers[0]?.envs).toContainEqual({ name: 'VIBELOG_MAINTENANCE_STAGE', value: stage });
+    }
   });
   it('owns the Resend sending domain, exact DNS records, runtime key, and Email Routing foundation', async () => {
     await pulumi.runtime.runInPulumiStack(async () => {
@@ -229,7 +261,7 @@ describe('Pulumi components', () => {
       const provider = new cloudflare.Provider('test-cloudflare', { apiToken: pulumi.secret('token') });
       const forwardingAddress = new cloudflare.EmailRoutingAddress('test-forwarding-address', { accountId: 'account', email: 'owner@example.net' }, { provider });
       const delivery = new CloudflareDelivery('test-delivery', {
-        accountId: 'account', zoneId: 'zone', rootDomain: 'example.com', originUrl: 'https://web.run.test', edgeSharedSecret: pulumi.secret('edge'),
+        accountId: 'account', zoneId: 'zone', rootDomain: 'example.com', maintenanceStage: 'normal', originUrl: 'https://web.run.test', edgeSharedSecret: pulumi.secret('edge'),
         supportAddress: 'support@example.com', forwardingDestination: pulumi.secret('owner@example.net'), forwardingAddress,
         provider, bundlePath: fileURLToPath(new URL('./fixture-worker.js', import.meta.url)),
       }, { providers: [provider] });
@@ -243,6 +275,7 @@ describe('Pulumi components', () => {
     expect(script.inputs.compatibilityDate).toBe('2026-08-29');
     const bindings = (record(script.inputs.bindings).value ?? script.inputs.bindings) as unknown[];
     expect(bindings.map(record)).toContainEqual({ name: 'ROOT_DOMAIN', type: 'plain_text', text: 'example.com' });
+    expect(bindings.map(record)).toContainEqual({ name: 'MAINTENANCE_STAGE', type: 'plain_text', text: 'normal' });
     const routes = registrations.filter((item) => item.type.includes('workersRoute:WorkersRoute')).map((item) => item.inputs.pattern);
     expect(routes.sort()).toEqual(['*.example.com/*', 'example.com/*']);
     const dns = registrations.filter((item) => item.type.includes('dnsRecord:DnsRecord'));

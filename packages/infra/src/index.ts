@@ -54,6 +54,8 @@ const databaseUrl = securePostgresUrl(foundation.database.connectionUriPooler);
 const directDatabaseUrl = securePostgresUrl(foundation.database.connectionUri);
 
 function createApplication() {
+  const maintenanceStage = config.get('maintenanceStage') ?? 'normal';
+  if (maintenanceStage !== 'normal' && maintenanceStage !== 'draining' && maintenanceStage !== 'locked') throw new Error('vibelog:maintenanceStage must be normal, draining, or locked');
   const gcpConfig = new pulumi.Config('gcp');
   const project = gcpConfig.require('project');
   const region = config.require('gcpRegion');
@@ -72,6 +74,7 @@ function createApplication() {
     project,
     region,
     environment,
+    maintenanceStage,
     imageDigest: image.reference,
     deployerServiceAccountEmail,
     appOrigin: pulumi.interpolate`https://${rootDomain}`,
@@ -102,6 +105,7 @@ function createApplication() {
     accountId,
     zoneId,
     rootDomain,
+    maintenanceStage,
     originUrl: runtime.webUrl,
     edgeSharedSecret,
     supportAddress: `support@${rootDomain}`,
@@ -109,12 +113,13 @@ function createApplication() {
     forwardingAddress: email.forwardingAddress,
     provider: cloudflareDeliveryProvider,
   }, { providers: [cloudflareDeliveryProvider] });
-  return { runtime, image };
+  return { runtime, image, maintenanceStage };
 }
 
 const application = phase === 'application' ? createApplication() : undefined;
 
 export const deploymentPhase = phase;
+export const maintenanceStage = application?.maintenanceStage ?? 'normal';
 export const r2Bucket = foundation.bucket.name;
 export const databaseProjectId = foundation.database.id;
 export const databaseMigrationUrl = directDatabaseUrl;

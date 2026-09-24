@@ -13,6 +13,8 @@
         "playwright.config.ts",
         ".github/scripts/container-smoke.mjs",
         ".github/scripts/guard-pulumi-preview.mjs",
+        ".github/scripts/guard-maintenance-stage.mjs",
+        ".github/scripts/guard-maintenance-stage.test.mjs",
         "e2e/run-local.mjs",
         "e2e/**/*.spec.ts"
       ],
@@ -21,6 +23,8 @@
         "playwright.config.ts",
         ".github/scripts/container-smoke.mjs",
         ".github/scripts/guard-pulumi-preview.mjs",
+        ".github/scripts/guard-maintenance-stage.mjs",
+        ".github/scripts/guard-maintenance-stage.test.mjs",
         "e2e/run-local.mjs",
         "e2e/tsconfig.json",
         "e2e/**/*.ts"

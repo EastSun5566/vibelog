@@ -50,6 +50,8 @@ Store these secret `vibelog:` values in ESC:
 - `aiApiKey`
 - `edgeSharedSecret`
 
+For production deployments, also set the non-secret ESC value `vibelog:maintenanceStage` to `normal`, `draining`, or `locked`. Self-hosted instances default to `normal`. The deployment workflow requires an explicit production value and reports the stage applied by Pulumi.
+
 The environment must also expose the short-lived `GOOGLE_OAUTH_ACCESS_TOKEN`. Never put credentials in the repository or non-secret stack outputs.
 
 Use separate Cloudflare credentials for R2 administration, Worker and DNS delivery, and bucket-scoped application object access. Pulumi creates a sending-only Resend runtime key and injects it into Cloud Run; do not copy that runtime key into ESC.
@@ -88,3 +90,14 @@ The image resource builds from the checked-out source and pushes to public GHCR.
 - An active operation lease must remain retryable. Delivery retries outlive the lease, while PostgreSQL limits execution attempts.
 - Completion, failure, and progress writes require the current attempt identity so an old worker cannot overwrite a newer claim.
 - The worker smoke intentionally executes one invalid-theme fixture through Cloud Tasks and removes the task and database fixture afterward. It does not replace the full local E2E suite.
+
+## Maintenance window
+
+Use the same **Deploy production** workflow and exact main commit for each stage change. Review the Pulumi preview at every step. The workflow allows `normal → draining → locked → normal` and safe retries of the current stage; it rejects other transitions.
+
+1. Set `vibelog:maintenanceStage` to `draining` in prod ESC, then deploy. Public entry points and the direct web URL return uncached 503 except `/health`. The worker continues queued work; daily cleanup pauses while outbox recovery stays active.
+2. Wait for old web requests to end. Confirm there are no queued or running operations, pending outbox rows, Cloud Tasks tasks, or in-flight worker requests. The deployment checks the first two database counts. **Cloud Tasks and in-flight requests must be checked independently** before selecting `confirmDrained` on the next workflow run.
+3. Set the stage to `locked`, select `confirmDrained`, and deploy the same application commit. Both Scheduler jobs pause, and new worker requests return uncached 503. Verify both Cloud Run revisions are ready and `/health` works. Keep the site locked while backing up and changing incompatible data.
+4. After the migration and new application revision are verified, set the stage to `normal`, select `confirmResume`, and deploy. Confirm web, edge, private worker smoke, and both Scheduler jobs. A locked deployment intentionally skips worker smoke until this step.
+
+Do not unlock simply because the deployment succeeded. Before an irreversible data conversion, test a database backup restore on an isolated copy and record its recovery point. After conversion commits, do not roll back only the runtime image to a version that cannot read the new data.

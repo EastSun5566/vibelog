@@ -7,6 +7,7 @@ export interface RuntimeSecretInputs {
 }
 export interface GcpContainerRuntimeArgs {
   project: pulumi.Input<string>; region: pulumi.Input<string>; environment: string; imageDigest: pulumi.Input<string>;
+  maintenanceStage: 'normal' | 'draining' | 'locked';
   deployerServiceAccountEmail: pulumi.Input<string>;
   appOrigin: pulumi.Input<string>; previewOrigin: pulumi.Input<string>; objectStoreEndpoint: pulumi.Input<string>;
   objectStoreBucket: pulumi.Input<string>;
@@ -63,6 +64,7 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
     const secretEnv = (kind: 'web' | 'worker') => Object.entries(managedSecrets).filter(([, definition]) => definition.services.includes(kind)).map(([envName, definition]) => ({ name: envName === 'AI_API_KEY' ? args.aiApiKeyEnv : envName, valueSource: { secretKeyRef: { secret: definition.secret.secretId, version: definition.version.version } } }));
     const operationEnv = [
       { name: 'NODE_ENV', value: 'production' }, { name: 'APP_ORIGIN', value: args.appOrigin },
+      { name: 'VIBELOG_MAINTENANCE_STAGE', value: args.maintenanceStage },
       { name: 'OBJECT_STORE_ENDPOINT', value: args.objectStoreEndpoint }, { name: 'OBJECT_STORE_REGION', value: 'auto' },
       { name: 'OBJECT_STORE_BUCKET', value: args.objectStoreBucket }, { name: 'OBJECT_STORE_FORCE_PATH_STYLE', value: 'false' },
       { name: 'VIBELOG_AI_PROVIDER', value: args.aiProvider }, { name: 'VIBELOG_AI_MODEL', value: args.aiModel },
@@ -96,7 +98,7 @@ export class GcpContainerRuntime extends pulumi.ComponentResource {
     new gcp.cloudtasks.QueueIamMember(`${name}-worker-enqueuer`, { project: args.project, location: args.region, name: this.queue.name, role: 'roles/cloudtasks.enqueuer', member: pulumi.interpolate`serviceAccount:${workerAccount.email}` }, resourceOptions);
     new gcp.serviceaccount.IAMMember(`${name}-web-task-identity`, { serviceAccountId: tasksAccount.name, role: 'roles/iam.serviceAccountUser', member: pulumi.interpolate`serviceAccount:${webAccount.email}` }, resourceOptions);
     new gcp.serviceaccount.IAMMember(`${name}-worker-task-identity`, { serviceAccountId: tasksAccount.name, role: 'roles/iam.serviceAccountUser', member: pulumi.interpolate`serviceAccount:${workerAccount.email}` }, resourceOptions);
-    for (const [schedule, path] of [['outbox', '/tasks/outbox'], ['maintenance', '/tasks/maintenance']] as const) new gcp.cloudscheduler.Job(`${name}-${schedule}`, { project: args.project, region: args.region, name: `vibelog-${schedule}-${args.environment}`, schedule: schedule === 'outbox' ? '17 * * * *' : '18 3 * * *', timeZone: 'Etc/UTC', httpTarget: { httpMethod: 'POST', uri: pulumi.interpolate`${this.worker.uri}${path}`, oidcToken: { serviceAccountEmail: tasksAccount.email, audience: this.worker.uri } } }, { ...resourceOptions, dependsOn: [this.worker, deployerActAs.tasks] });
+    for (const [schedule, path] of [['outbox', '/tasks/outbox'], ['maintenance', '/tasks/maintenance']] as const) new gcp.cloudscheduler.Job(`${name}-${schedule}`, { project: args.project, region: args.region, name: `vibelog-${schedule}-${args.environment}`, schedule: schedule === 'outbox' ? '17 * * * *' : '18 3 * * *', timeZone: 'Etc/UTC', paused: schedule === 'maintenance' ? args.maintenanceStage !== 'normal' : args.maintenanceStage === 'locked', httpTarget: { httpMethod: 'POST', uri: pulumi.interpolate`${this.worker.uri}${path}`, oidcToken: { serviceAccountEmail: tasksAccount.email, audience: this.worker.uri } } }, { ...resourceOptions, dependsOn: [this.worker, deployerActAs.tasks] });
     this.webUrl = this.web.uri;
     this.workerUrl = this.worker.uri;
     this.taskQueuePath = pulumi.interpolate`projects/${args.project}/locations/${args.region}/queues/${this.queue.name}`;
