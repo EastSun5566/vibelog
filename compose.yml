@@ -14,29 +14,17 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
-  minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
-    command: server /data --console-address :9001
+  s3mock:
+    image: adobe/s3mock:5.2.2
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: vibelog
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9090/vibelog/ || exit 1"]
       interval: 2s
       timeout: 2s
-      retries: 20
-    volumes:
-      - minio_data:/data
+      retries: 40
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
-  minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["mc alias set local http://minio:9000 minioadmin minioadmin && mc mb --ignore-existing local/vibelog"]
+      - "${S3MOCK_PORT:-9000}:9090"
   mailpit:
     image: axllent/mailpit:v1.27.8
     ports:
@@ -83,7 +71,7 @@ services:
       MAILPIT_API_URL: http://mailpit:8025
       EMAIL_FROM: ${EMAIL_FROM:-VibeLog <login@send.example.com>}
       EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-support@example.com}
-      OBJECT_STORE_ENDPOINT: http://minio:9000
+      OBJECT_STORE_ENDPOINT: http://s3mock:9090
       OBJECT_STORE_REGION: us-east-1
       OBJECT_STORE_BUCKET: vibelog
       OBJECT_STORE_ACCESS_KEY_ID: minioadmin
@@ -101,8 +89,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      minio-init:
-        condition: service_completed_successfully
+      s3mock:
+        condition: service_healthy
       mailpit:
         condition: service_healthy
     stop_grace_period: 30s
@@ -113,9 +101,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      minio-init:
-        condition: service_completed_successfully
+      s3mock:
+        condition: service_healthy
     stop_grace_period: 30s
 volumes:
   postgres_data:
-  minio_data:

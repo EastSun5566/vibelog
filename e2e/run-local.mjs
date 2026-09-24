@@ -5,8 +5,7 @@ const project = `vibelog-e2e-${String(process.pid)}`;
 const appImage = 'vibelog-app:e2e';
 const appPort = 20_000 + offset;
 const postgresPort = 30_000 + offset;
-const minioPort = 40_000 + offset;
-const minioConsolePort = 50_000 + offset;
+const s3mockPort = 40_000 + offset;
 const mailpitPort = 60_000 + (offset % 5_000);
 // Exercise the cloud hostname layout: apex app, preview.<apex>, alice.<apex>.
 const appOrigin = `http://localtest.me:${String(appPort)}`;
@@ -19,8 +18,7 @@ const environment = {
   GOOGLE_ANALYTICS_MEASUREMENT_ID: 'G-TEST123',
   PORT: String(appPort),
   POSTGRES_PORT: String(postgresPort),
-  MINIO_PORT: String(minioPort),
-  MINIO_CONSOLE_PORT: String(minioConsolePort),
+  S3MOCK_PORT: String(s3mockPort),
   MAILPIT_PORT: String(mailpitPort),
   E2E_APP_ORIGIN: appOrigin,
   E2E_MAILPIT_URL: `http://127.0.0.1:${String(mailpitPort)}`,

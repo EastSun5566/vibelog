@@ -13,7 +13,7 @@ The containers keep no durable state on disk. Runtime queries use pooled `DATABA
 
 ## Boundaries
 
-Provider-neutral interfaces live in `src/ports`; integrations live in `src/adapters`; `src/runtime-dependencies.ts` connects them. Production uses R2, Cloud Tasks, and Resend. Local Compose substitutes MinIO, a PostgreSQL outbox worker, and Mailpit.
+Provider-neutral interfaces live in `src/ports`; integrations live in `src/adapters`; `src/runtime-dependencies.ts` connects them. Production uses R2, Cloud Tasks, and Resend. Local Compose substitutes an S3 mock, a PostgreSQL outbox worker, and Mailpit.
 
 Queue modes are intentionally small:
 
