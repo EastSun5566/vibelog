@@ -89,6 +89,18 @@ jobs:
           echo "::add-mask::$database_migration_url"
           export DATABASE_MIGRATION_URL="$database_migration_url"
           node packages/app/scripts/check-rollout-drain.ts
+      - name: Refuse V2 deployment before locked conversion
+        run: |
+          previous_design="$(pnpm exec pulumi stack output --json --cwd packages/infra --stack "$PULUMI_STACK" | jq -r '.presentationVersion // ""')"
+          if test "$previous_design" != 2; then
+            test '${{ steps.maintenance.outputs.previous }}' = locked
+            test '${{ steps.maintenance.outputs.value }}' = locked
+          fi
+          database_migration_url="$(pnpm exec pulumi stack output databaseMigrationUrl --show-secrets --cwd packages/infra --stack "$PULUMI_STACK")"
+          test -n "$database_migration_url"
+          echo "::add-mask::$database_migration_url"
+          export DATABASE_MIGRATION_URL="$database_migration_url"
+          node packages/app/scripts/check-design-v2-compatibility.ts
       - name: Authenticate Docker to GHCR
         uses: docker/login-action@v4.6.0
         with:

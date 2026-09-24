@@ -1,0 +1,97 @@
+name: Run production data migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      migration:
+        description: One-time migration to run
+        type: choice
+        required: true
+        options:
+          - design-v2
+      expectedV1Revisions:
+        description: V1 revision count from the locked read-only audit
+        type: string
+        required: true
+      backupConfirmed:
+        description: Confirm a restorable database backup was tested on an isolated copy
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: deploy-vibelog-prod
+  cancel-in-progress: false
+
+env:
+  PULUMI_STACK: EastSun5566/vibelog/prod
+  DEPLOY_SHA: ${{ github.sha }}
+
+jobs:
+  migrate:
+    if: github.ref == 'refs/heads/main' && inputs.migration == 'design-v2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: production
+    steps:
+      - name: Require verified backup before conversion
+        run: test '${{ inputs.backupConfirmed }}' = true
+      - name: Require successful CI for the selected main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ci_passed="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+            -f branch=main -f event=push -f head_sha="$DEPLOY_SHA" -F per_page=1 \
+            --jq '.workflow_runs[0] | .status == "completed" and .conclusion == "success"')"
+          test "$ci_passed" = true
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @vibelog/core build
+      - run: pnpm --filter @vibelog/app build
+      - name: Authenticate with Pulumi Cloud using GitHub OIDC
+        uses: pulumi/auth-actions@v2
+        with:
+          organization: EastSun5566
+          requested-token-type: urn:pulumi:token-type:access_token:personal
+          scope: user:EastSun5566
+      - name: Load short-lived GCP credentials and secrets from ESC
+        uses: pulumi/esc-action@v3
+        with:
+          environment: EastSun5566/vibelog/prod
+      - name: Audit and convert Design V2 while locked
+        env:
+          EXPECTED_V1: ${{ inputs.expectedV1Revisions }}
+        run: |
+          [[ "$EXPECTED_V1" =~ ^(0|[1-9][0-9]*)$ ]]
+          test "$(pnpm exec pulumi config get vibelog:maintenanceStage --cwd packages/infra --stack "$PULUMI_STACK")" = locked
+          stack_json="$(pnpm exec pulumi stack output --json --cwd packages/infra --stack "$PULUMI_STACK")"
+          test "$(jq -r '.maintenanceStage // ""' <<< "$stack_json")" = locked
+          test "$(jq -r '.presentationVersion // ""' <<< "$stack_json")" != 2
+          database_url="$(pnpm exec pulumi stack output databaseMigrationUrl --show-secrets --cwd packages/infra --stack "$PULUMI_STACK")"
+          access_key_id="$(pnpm exec pulumi config get vibelog:objectStoreAccessKeyId --cwd packages/infra --stack "$PULUMI_STACK")"
+          secret_access_key="$(pnpm exec pulumi config get vibelog:objectStoreSecretAccessKey --cwd packages/infra --stack "$PULUMI_STACK")"
+          test -n "$database_url" && test -n "$access_key_id" && test -n "$secret_access_key"
+          echo "::add-mask::$database_url"
+          echo "::add-mask::$access_key_id"
+          echo "::add-mask::$secret_access_key"
+          export DATABASE_URL="$database_url" OBJECT_STORE_ACCESS_KEY_ID="$access_key_id" OBJECT_STORE_SECRET_ACCESS_KEY="$secret_access_key"
+          export OBJECT_STORE_ENDPOINT="https://$(pnpm exec pulumi config get vibelog:cloudflareAccountId --cwd packages/infra --stack "$PULUMI_STACK").r2.cloudflarestorage.com"
+          export OBJECT_STORE_BUCKET="$(jq -r '.r2Bucket' <<< "$stack_json")" OBJECT_STORE_REGION=auto OBJECT_STORE_FORCE_PATH_STYLE=false
+          export APP_ORIGIN="https://$(pnpm exec pulumi config get vibelog:rootDomain --cwd packages/infra --stack "$PULUMI_STACK")"
+          node packages/app/dist/migrate-design-v2.js > "$RUNNER_TEMP/design-v2-before.jsonl"
+          node .github/scripts/check-design-v2-audit.mjs "$RUNNER_TEMP/design-v2-before.jsonl" "$EXPECTED_V1"
+          node packages/app/dist/migrate-design-v2.js --apply --maintenance-mode "--expected-v1=$EXPECTED_V1"
+          node packages/app/dist/migrate-design-v2.js > "$RUNNER_TEMP/design-v2-after.jsonl"
+          node .github/scripts/check-design-v2-audit.mjs "$RUNNER_TEMP/design-v2-after.jsonl" zero
