@@ -6,6 +6,7 @@ import * as pulumi from '@pulumi/pulumi';
 
 export interface CloudflareDeliveryArgs {
   accountId: pulumi.Input<string>; zoneId: pulumi.Input<string>; rootDomain: pulumi.Input<string>;
+  maintenanceStage: 'normal' | 'draining' | 'locked';
   originUrl: pulumi.Input<string>;
   edgeSharedSecret: pulumi.Input<string>; supportAddress: pulumi.Input<string>; forwardingDestination: pulumi.Input<string>;
   forwardingAddress: cloudflare.EmailRoutingAddress; provider: cloudflare.Provider; bundlePath?: string;
@@ -27,6 +28,7 @@ export class CloudflareDelivery extends pulumi.ComponentResource {
       content, mainModule: 'index.js', bindings: [
         { name: 'ORIGIN_URL', type: 'plain_text', text: args.originUrl },
         { name: 'ROOT_DOMAIN', type: 'plain_text', text: args.rootDomain },
+        { name: 'MAINTENANCE_STAGE', type: 'plain_text', text: args.maintenanceStage },
         { name: 'EDGE_SHARED_SECRET', type: 'secret_text', text: pulumi.secret(args.edgeSharedSecret) },
       ],
     }, resourceOptions);

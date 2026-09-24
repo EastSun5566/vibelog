@@ -2,6 +2,15 @@ name: Deploy production
 
 on:
   workflow_dispatch:
+    inputs:
+      confirmDrained:
+        description: Confirm Cloud Tasks is empty and old worker requests have finished before locking
+        type: boolean
+        default: false
+      confirmResume:
+        description: Confirm the data migration and locked deployment are verified before reopening
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -64,6 +73,22 @@ jobs:
         run: |
           test "$(pnpm exec pulumi config get vibelog:deploymentPhase --cwd packages/infra --stack "$PULUMI_STACK")" = application
           test -n "$GOOGLE_OAUTH_ACCESS_TOKEN"
+      - name: Guard maintenance stage transition
+        id: maintenance
+        run: |
+          desired_stage="$(pnpm exec pulumi config get vibelog:maintenanceStage --cwd packages/infra --stack "$PULUMI_STACK")"
+          current_stage="$(pnpm exec pulumi stack output --json --cwd packages/infra --stack "$PULUMI_STACK" | jq -r '.maintenanceStage // ""')"
+          node .github/scripts/guard-maintenance-stage.mjs "$current_stage" "$desired_stage" '${{ inputs.confirmDrained }}' '${{ inputs.confirmResume }}'
+          echo "previous=$current_stage" >> "$GITHUB_OUTPUT"
+          echo "value=$desired_stage" >> "$GITHUB_OUTPUT"
+      - name: Verify drained database before locking
+        if: steps.maintenance.outputs.previous == 'draining' && steps.maintenance.outputs.value == 'locked'
+        run: |
+          database_migration_url="$(pnpm exec pulumi stack output databaseMigrationUrl --show-secrets --cwd packages/infra --stack "$PULUMI_STACK")"
+          test -n "$database_migration_url"
+          echo "::add-mask::$database_migration_url"
+          export DATABASE_MIGRATION_URL="$database_migration_url"
+          node packages/app/scripts/check-rollout-drain.ts
       - name: Authenticate Docker to GHCR
         uses: docker/login-action@v4.6.0
         with:
@@ -96,6 +121,7 @@ jobs:
           curl --fail --show-error --retry 6 --retry-all-errors --max-time 20 "$web_url/health"
           curl --fail --show-error --retry 6 --retry-all-errors --max-time 20 "https://${root_domain}/health"
       - name: Smoke test private worker through Cloud Tasks
+        if: steps.maintenance.outputs.value != 'locked'
         run: |
           database_migration_url="$(pnpm exec pulumi stack output databaseMigrationUrl --show-secrets --cwd packages/infra --stack "$PULUMI_STACK")"
           test -n "$database_migration_url"

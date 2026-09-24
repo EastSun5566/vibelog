@@ -64,10 +64,9 @@ docker([
   '-v', 'ON_ERROR_STOP=1', '-c',
   "CREATE TABLE IF NOT EXISTS container_smoke (id text PRIMARY KEY); INSERT INTO container_smoke VALUES ('external-state') ON CONFLICT DO NOTHING;",
 ]);
-docker([
-  'compose', 'run', '--rm', '--no-deps', '--entrypoint', '/bin/sh', 'minio-init', '-c',
-  "mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null && printf external-object | mc pipe local/vibelog/container-smoke/marker >/dev/null",
-]);
+const objectUrl = `http://127.0.0.1:${process.env.S3MOCK_PORT ?? '9000'}/vibelog/container-smoke/marker`;
+const objectPut = await fetch(objectUrl, { method: 'PUT', body: 'external-object' });
+if (!objectPut.ok) throw new Error(`Could not write object marker: ${String(objectPut.status)}`);
 
 docker(['compose', 'restart', 'web', 'worker'], { stdio: 'inherit' });
 await eventually(webIsHealthy);
@@ -78,10 +77,9 @@ const databaseMarker = docker([
 ]);
 if (databaseMarker !== 'external-state') throw new Error('PostgreSQL state did not survive app container restart');
 
-const objectMarker = docker([
-  'compose', 'run', '--rm', '--no-deps', '--entrypoint', '/bin/sh', 'minio-init', '-c',
-  "mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null && mc cat local/vibelog/container-smoke/marker",
-]);
+const objectGet = await fetch(objectUrl);
+if (!objectGet.ok) throw new Error(`Could not read object marker: ${String(objectGet.status)}`);
+const objectMarker = await objectGet.text();
 if (objectMarker !== 'external-object') throw new Error('Object state did not survive app container restart');
 
 const containerId = docker(['compose', 'ps', '--all', '--quiet', 'web']);

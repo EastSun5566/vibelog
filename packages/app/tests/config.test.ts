@@ -27,3 +27,14 @@ describe('AI fallback config', () => {
     expect(() => loadWorkerConfig({ ...baseEnv, VIBELOG_AI_FALLBACK_MODELS: value })).toThrow(message);
   });
 });
+
+describe('maintenance stage config', () => {
+  it('defaults to normal for self-hosting and accepts the rollout stages', () => {
+    expect(loadWorkerConfig(baseEnv).maintenanceStage).toBe('normal');
+    expect(loadWorkerConfig({ ...baseEnv, VIBELOG_MAINTENANCE_STAGE: 'draining' }).maintenanceStage).toBe('draining');
+    expect(loadWorkerConfig({ ...baseEnv, VIBELOG_MAINTENANCE_STAGE: 'locked' }).maintenanceStage).toBe('locked');
+  });
+  it('rejects unknown stages', () => {
+    expect(() => loadWorkerConfig({ ...baseEnv, VIBELOG_MAINTENANCE_STAGE: 'open' })).toThrow('VIBELOG_MAINTENANCE_STAGE');
+  });
+});

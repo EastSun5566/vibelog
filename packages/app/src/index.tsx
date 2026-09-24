@@ -14,6 +14,7 @@ import { AiQuotaExceededError, AppDatabase, BlogAddressTakenError, type BlogReco
 import { AppError, assertCsrfToken, assertMutationOrigin, jsonError, requestContext } from './http.js';
 import type { OperationDispatcher } from './ports/operation-queue.js';
 import { operationMessage, operationProgress } from './operation-status.js';
+import { blocksRequest, maintenanceResponse } from './maintenance.js';
 import type { ArtifactStore } from './ports/artifact-store.js';
 import type { TransactionalEmailSender } from './ports/transactional-email.js';
 import { editorUrlWithPreviewPath, safePreviewPath } from './preview-path.js';
@@ -65,6 +66,10 @@ export function createApp(options: CreateAppOptions) {
     c.set('edgeHost', edgeHost); return next();
   });
   app.use('*', bodyLimit({ maxSize: 64 * 1024, onError: () => Response.json({ error: { code: 'payload_too_large', message: 'Request body exceeds 64 KiB', requestId: randomUUID() } }, { status: 413 }) }));
+  app.use('*', async (c, next) => {
+    if (blocksRequest(config.maintenanceStage, 'web', c.req.path)) return maintenanceResponse(c.req.method);
+    await next();
+  });
   app.onError((error, c) => jsonError(c, error)); app.notFound((c) => jsonError(c, new AppError('not_found', 'Page not found', 404)));
   app.get('/health', async (c) => { await database.ping(); return c.json({ status: 'ok', service: 'vibelog' }); });
   app.use('*', async (c, next) => {

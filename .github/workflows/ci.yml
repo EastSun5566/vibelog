@@ -25,10 +25,9 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Start PostgreSQL and MinIO
+      - name: Start PostgreSQL and S3 mock
         run: |
-          docker compose up --detach --wait postgres minio
-          docker compose up minio-init
+          docker compose up --detach --wait postgres s3mock
       - run: pnpm check
       - name: Verify Drizzle baseline is current
         run: |
@@ -79,5 +78,5 @@ jobs:
           PORT: 34123
         run: |
           trap 'docker compose down --volumes' EXIT
-          docker compose up --detach --build postgres minio minio-init migrate web worker
+          docker compose up --detach --build postgres s3mock migrate web worker
           node .github/scripts/container-smoke.mjs
