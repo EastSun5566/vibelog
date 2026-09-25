@@ -35,6 +35,7 @@ function assertSafeValue(value: unknown): void {
 }
 
 function arrayIndex(key: string, length: number, allowEnd: boolean): number {
+  if (key === '-' && allowEnd) return length;
   if (!/^(0|[1-9][0-9]*)$/u.test(key)) throw new Error('Patch array index is invalid');
   const index = Number(key);
   if (!Number.isSafeInteger(index) || index > length || (!allowEnd && index === length)) throw new Error('Patch array index is out of bounds');

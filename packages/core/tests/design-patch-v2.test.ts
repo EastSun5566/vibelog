@@ -20,6 +20,13 @@ describe('bounded design refinement', () => {
     const sidebar = validateBlogDesignSpecV2({ ...DEFAULT_DESIGN_V2, pages: { ...DEFAULT_DESIGN_V2.pages, home: { ...DEFAULT_DESIGN_V2.pages.home, layout: 'sidebar', regions: { main: ['intro', 'recent'], aside: [] } } } });
     const across = applyDesignPatchV2(sidebar, [{ op: 'move', from: '/pages/home/regions/main/1', path: '/pages/home/regions/aside/0' }]);
     expect(across.pages.home.regions).toEqual({ main: ['intro'], aside: ['recent'] });
+    const appended = applyDesignPatchV2(sidebar, [{ op: 'move', from: '/pages/home/regions/main/0', path: '/pages/home/regions/main/-' }]);
+    expect(appended.pages.home.regions.main).toEqual(['recent', 'intro']);
+    const added = applyDesignPatchV2(sidebar, [
+      { op: 'remove', path: '/pages/home/regions/main/0' },
+      { op: 'add', path: '/pages/home/regions/main/-', value: 'intro' },
+    ]);
+    expect(added.pages.home.regions.main).toEqual(['recent', 'intro']);
     expect(sidebar.pages.home.regions).toEqual({ main: ['intro', 'recent'], aside: [] });
   });
 
@@ -37,6 +44,9 @@ describe('bounded design refinement', () => {
     [{ op: 'replace', path: '/theme/__proto__/polluted', value: true }],
     [{ op: 'replace', path: '/theme/colors/~2text', value: '#123456' }],
     [{ op: 'replace', path: '/pages/home/regions/main/9', value: 'intro' }],
+    [{ op: 'replace', path: '/pages/home/regions/main/-', value: 'intro' }],
+    [{ op: 'remove', path: '/pages/home/regions/main/-' }],
+    [{ op: 'move', from: '/pages/home/regions/main/-', path: '/pages/home/regions/aside/0' }],
     [{ op: 'move', from: '/pages/home/regions/main/0', path: '/pages/article/regions/beforeBody/0' }],
     [{ op: 'remove', path: '/pages/home/sections/recent' }],
     [{ op: 'replace', path: '/theme/colors/text', value: '#ffffff' }],

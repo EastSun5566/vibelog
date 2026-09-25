@@ -47,6 +47,7 @@ describe('PiAiProvider design proposal', () => {
     await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toMatchObject({ theme: { typography: { bodyFont: 'system-mono' } } });
     expect(complete.mock.calls[1]?.[1].tools?.map((tool) => tool.name)).toEqual(['refine_design']);
     expect(complete.mock.calls[1]?.[1].systemPrompt).toContain('bodyFont');
+    expect(complete.mock.calls[1]?.[1].systemPrompt).not.toContain('create a complete version 2 VibeLog design');
     expect(complete.mock.calls[1]?.[1].systemPrompt).not.toContain('comic');
     await expect(subject([bad, bad]).generate(input)).rejects.toThrow('current design was not changed');
   });
@@ -70,6 +71,7 @@ describe('PiAiProvider design proposal', () => {
 
     await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toEqual(DEFAULT_DESIGN_V2);
     const correctionPrompt = complete.mock.calls[1]?.[1].systemPrompt;
+    expect(correctionPrompt).toContain('For propose_design, create a complete version 2 VibeLog design');
     expect(correctionPrompt).toContain('bodyFont');
     expect(correctionPrompt).not.toContain('Received arguments');
     expect(correctionPrompt).not.toContain('display');
