@@ -19,7 +19,7 @@ import type { ArtifactStore } from './ports/artifact-store.js';
 import type { TransactionalEmailSender } from './ports/transactional-email.js';
 import { editorUrlWithPreviewPath, safePreviewPath } from './preview-path.js';
 import { hashToken, randomToken } from './security/crypto.js';
-import { themeFromControls, visualThemeFromControls } from './theme-studio.js';
+import { hasUnsavedFineTuneChanges, themeFromControls, visualThemeFromControls } from './theme-studio.js';
 import { deletionPage, editorPage, guidePage, landingPage, loginPage, onboardingPage, operationPage, type AnalyticsDocumentConfig, type DeletionError } from './views.js';
 
 const RESERVED = new Set(['preview', 'www', 'api', 'admin', 'assets']);
@@ -156,7 +156,7 @@ export function createApp(options: CreateAppOptions) {
   async function enqueue(c: AppContext, type: OperationType, payload: Record<string, unknown> = {}) {
     const blog = await ownedBlog(c); const previewPath = typeof payload.previewPath === 'string' ? payload.previewPath : '/';
     try {
-      const operation = type === 'generate_design' ? await database.createDesignOperation(blog.userId, blog.id, String(payload.prompt), payload.baseDesign, { userDailyLimit: config.aiUserDailyLimit, globalDailyLimit: config.aiGlobalDailyLimit }, previewPath)
+      const operation = type === 'generate_design' ? await database.createDesignOperation(blog.userId, blog.id, String(payload.prompt), String(payload.baseRevisionId), { userDailyLimit: config.aiUserDailyLimit, globalDailyLimit: config.aiGlobalDailyLimit }, previewPath)
         : type === 'apply_design' ? await database.createApplyDesignOperation(blog.userId, blog.id, payload.design, previewPath)
           : type === 'activate_design' ? await database.createActivateDesignOperation(blog.userId, blog.id, String(payload.designRevisionId), previewPath)
             : type === 'publish' ? await database.createPublishOperation(blog.userId, blog.id, hashToken(String(payload.previewToken)), previewPath) : await database.createSyncOperation(blog.userId, blog.id, payload);
@@ -169,6 +169,7 @@ export function createApp(options: CreateAppOptions) {
         'Unknown article selection': ['invalid_article_selection', 'The article selection is stale. Refresh and try again.', 409], 'Article selection unavailable': ['article_selection_unavailable', 'Finish the first content sync.', 409],
         'Blog has no compiled draft. Sync the content first.': ['preview_not_ready', 'Finish the first content sync.', 409], 'Preview has unsaved design changes': ['unsaved_design', 'Save the design before publishing.', 409],
         'Preview session expired or invalid': ['preview_session_expired', 'The preview expired. Refresh the editor.', 409],
+        'Active design changed before generation': ['design_changed', 'The saved design changed. Refresh the editor and try again.', 409],
       };
       if (error instanceof Error) {
         const knownError = known[error.message];
@@ -196,7 +197,7 @@ export function createApp(options: CreateAppOptions) {
   app.post('/actions/blog/selection', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); if (!blog.contentManifest?.length) throw new AppError('article_selection_unavailable', 'Finish the first content sync.', 409); const included = new Set(Object.entries(body).filter(([name, value]) => name.startsWith('article:') && value === 'included').map(([name]) => name.slice(8))); const excludedSlugs = blog.contentManifest.filter((post) => !included.has(post.slug)).map((post) => post.slug); return enqueue(c, 'sync', { intent: 'selection', excludedSlugs, previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
   async function designFromBody(c: AppContext, body: Record<string, string | File>) {
     const blog = await ownedBlog(c); const activeDesign = await database.getActiveDesign(blog.id); if (!activeDesign) throw new AppError('design_not_found', 'Design not found', 404);
-    try { return { blog, design: themeFromControls(activeDesign.config, body) }; }
+    try { return { blog, activeDesign, design: themeFromControls(activeDesign.config, body) }; }
     catch { throw new AppError('invalid_design', 'Check the design controls and try again.', 400); }
   }
   function readPreviewToken(body: Record<string, string | File>): string { const token = previewTokenInput.safeParse(formValue(body, 'previewToken')); if (!token.success) throw new AppError('preview_session_expired', 'The preview expired. Refresh the editor.', 409); return token.data; }
@@ -211,7 +212,7 @@ export function createApp(options: CreateAppOptions) {
     return c.json({ status: 'succeeded', message: 'Visual preview updated; changes are not saved' });
   });
   app.post('/actions/design/apply', async (c) => { const body = await mutationBody(c); const { blog, design } = await designFromBody(c, body); await assertOwnedPreview(blog, readPreviewToken(body)); return enqueue(c, 'apply_design', { design, previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
-  app.post('/actions/design/generate', async (c) => { const body = await mutationBody(c); const input = designInput.safeParse({ prompt: formValue(body, 'prompt') }); if (!input.success) throw new AppError('invalid_design_prompt', 'Describe the design in 1–1000 characters.', 400); const { blog, design } = await designFromBody(c, body); await assertOwnedPreview(blog, readPreviewToken(body)); const previewPath = safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin); return enqueue(c, 'generate_design', { ...input.data, baseDesign: design, previewPath }); });
+  app.post('/actions/design/generate', async (c) => { const body = await mutationBody(c); const input = designInput.safeParse({ prompt: formValue(body, 'prompt') }); if (!input.success) throw new AppError('invalid_design_prompt', 'Describe the design in 1–1000 characters.', 400); const blog = await ownedBlog(c); const activeDesign = await database.getActiveDesign(blog.id); if (!activeDesign) throw new AppError('design_not_found', 'Design not found', 404); await assertOwnedPreview(blog, readPreviewToken(body)); if (hasUnsavedFineTuneChanges(activeDesign.config, body)) throw new AppError('unsaved_design_changes', 'Save your Fine-tune changes before generating with AI.', 409); const previewPath = safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin); return enqueue(c, 'generate_design', { ...input.data, baseRevisionId: activeDesign.id, previewPath }); });
   app.post('/actions/design/:id/activate', async (c) => { const body = await mutationBody(c); return enqueue(c, 'activate_design', { designRevisionId: uuidInput.parse(c.req.param('id')), previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
   app.post('/actions/publish', async (c) => { const body = await mutationBody(c); return enqueue(c, 'publish', { previewToken: readPreviewToken(body), previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
   app.post('/actions/releases/:id/activate', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); const release = await database.getRelease(uuidInput.parse(c.req.param('id')), blog.id); if (!release || !(await database.getArtifact(release.artifactId))?.readyAt) throw new AppError('release_unavailable', 'This release artifact is unavailable.', 409); await database.activateExistingRelease(release.id, blog.id); return c.redirect(editorUrlWithPreviewPath(safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin)), 303); });

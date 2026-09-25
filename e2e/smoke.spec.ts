@@ -196,7 +196,7 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await page.route('**/api/operations/mock-ai', (route) => {
     aiPolls += 1;
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(aiPolls === 1
-      ? { status: 'running', message: 'AI is designing a new presentation…', progress: { kind: 'indeterminate' } }
+      ? { status: 'running', message: 'AI is shaping your design…', progress: { kind: 'indeterminate' } }
       : { status: 'succeeded', message: 'New design ready', progress: { kind: 'indeterminate' } }) });
   });
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -210,7 +210,7 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   });
   await page.getByLabel('Describe the reading experience').press('Control+Enter');
   const aiFeedback = page.locator('.studio-primary [data-feedback-slot="ai"]');
-  await expect(aiFeedback.getByText('AI is designing a new presentation…')).toBeVisible();
+  await expect(aiFeedback.getByText('AI is shaping your design…')).toBeVisible();
   await expect(aiFeedback.locator('[data-operation-progress]')).toBeHidden();
   await expect(aiFeedback.locator('.operation-indicator')).toHaveCSS('animation-name', 'none');
   await expect(page.locator('details[data-disclosure-key="fine-tune"] [data-feedback-slot="ai"]')).toHaveCount(0);
@@ -231,6 +231,14 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expectNoPageReload(page);
   await page.unroute('**/actions/design/generate');
   await page.unroute('**/api/operations/mock-ai-failed');
+
+  await page.locator('details[data-disclosure-key="fine-tune"] > summary').click();
+  await page.locator('input[name="bodyFont"][value="system-serif"]').check();
+  await page.getByLabel('Describe the reading experience').fill('Keep the saved design simple');
+  await page.getByRole('button', { name: 'Generate with AI' }).click();
+  await expect(page.locator('.studio-primary [data-feedback-slot="ai"]')).toContainText('Save your Fine-tune changes before generating with AI.');
+  await expectNoPageReload(page);
+  await page.locator('input[name="bodyFont"][value="system-sans"]').check();
 
   let syncPolls = 0;
   await page.route('**/actions/blog/sync', (route) => route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ pollUrl: '/api/operations/mock-sync', successUrl: '/editor' }) }));

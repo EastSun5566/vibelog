@@ -510,7 +510,7 @@ export function editorPage(input: EditorPageInput) {
             <section class="studio-primary">
               <header><strong>Generate with AI</strong><p>Start with a direction or write your own.</p></header>
               <div class="studio-primary-body">
-                <div class="field"><label for="prompt">Describe the reading experience</label><textarea id="prompt" name="prompt" required minlength={1} maxlength={1000} placeholder="A restrained independent magazine for long articles" aria-describedby="prompt-help"></textarea><p id="prompt-help">AI sees blog details, a content profile, the current design, and this prompt. It never receives article bodies.</p></div>
+                <div class="field"><label for="prompt">Describe the reading experience</label><textarea id="prompt" name="prompt" required minlength={1} maxlength={1000} placeholder="A restrained independent magazine for long articles" aria-describedby="prompt-help"></textarea><p id="prompt-help">AI starts from your saved design. Save Fine-tune changes first. It sees blog details and a content profile, never article bodies.</p></div>
                 <div class="prompt-starters" aria-label="Prompt starters">
                   {['A restrained independent magazine', 'Make long articles easier to read', 'Keep it minimal but add personality', 'A dark design for night reading'].map((prompt) => <button class="btn prompt-chip" data-variant="outline" data-size="compact" type="button" data-prompt-starter={prompt}>{prompt}</button>)}
                 </div>

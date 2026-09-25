@@ -30,6 +30,26 @@ describe('PiAiProvider design proposal', () => {
     const response = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN_V2), { stopReason: 'toolUse' });
     await expect(subject([response]).generate(input)).resolves.toEqual(DEFAULT_DESIGN_V2);
   });
+  it('lets the model choose a focused refinement in the same request', async () => {
+    const response = fauxAssistantMessage(fauxToolCall('refine_design', { patches: [{ op: 'replace', path: '/theme/layout/radius', value: 'round' }] }), { stopReason: 'toolUse' });
+    const { provider, complete } = instrumentedSubject('test', [response]);
+    const result = await provider.generate({ ...input, prompt: 'Make the corners softer' });
+    expect(result.theme.layout.radius).toBe('round');
+    expect(result.pages).toEqual(input.currentDesign.pages);
+    expect(complete).toHaveBeenCalledOnce();
+    expect(complete.mock.calls[0]?.[1].tools?.map((tool) => tool.name)).toEqual(['propose_design', 'refine_design']);
+    expect(complete.mock.calls[0]?.[1].systemPrompt).toContain('Prefer refine_design for a focused or ambiguous request');
+  });
+  it('keeps the refinement mode during one correction', async () => {
+    const bad = fauxAssistantMessage(fauxToolCall('refine_design', { patches: [{ op: 'replace', path: '/theme/typography/bodyFont', value: 'comic' }] }), { stopReason: 'toolUse' });
+    const good = fauxAssistantMessage(fauxToolCall('refine_design', { patches: [{ op: 'replace', path: '/theme/typography/bodyFont', value: 'system-mono' }] }), { stopReason: 'toolUse' });
+    const { provider, complete } = instrumentedSubject('test', [bad, good]);
+    await expect(provider.generate(input, { sessionId: 'operation-1' })).resolves.toMatchObject({ theme: { typography: { bodyFont: 'system-mono' } } });
+    expect(complete.mock.calls[1]?.[1].tools?.map((tool) => tool.name)).toEqual(['refine_design']);
+    expect(complete.mock.calls[1]?.[1].systemPrompt).toContain('bodyFont');
+    expect(complete.mock.calls[1]?.[1].systemPrompt).not.toContain('comic');
+    await expect(subject([bad, bad]).generate(input)).rejects.toThrow('current design was not changed');
+  });
   it('normalizes an otherwise valid V2 proposal', async () => {
     const proposal = structuredClone(DEFAULT_DESIGN_V2);
     proposal.theme.colors.background = '#FFFFFF';
