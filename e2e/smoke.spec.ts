@@ -353,7 +353,11 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Save design version' }));
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Publish changes' }));
   await openDisclosure(page, 'release-history');
-  await expectPartialRefresh(page, page.getByRole('button', { name: 'Restore live' }).first());
+  const restoreLive = page.getByRole('button', { name: 'Restore live' }).first();
+  const releaseIndex = await restoreLive.locator('xpath=../..').evaluate((row) => Array.from(row.parentElement?.children ?? []).indexOf(row));
+  await restoreLive.click();
+  await expect(page.locator('details[data-disclosure-key="release-history"] .revision').nth(releaseIndex).getByText('Live now')).toBeVisible();
+  await expectNoPageReload(page);
 
   const publicUrl = new URL(page.url());
   publicUrl.hostname = `alice.${publicUrl.hostname}`;
