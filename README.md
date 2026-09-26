@@ -4,7 +4,7 @@
 
 # VibeLog
 
-VibeLog turns public HackMD articles into a fast, customizable blog. Writers keep using HackMD; VibeLog handles the preview, theme, release history, and hosting.
+VibeLog turns public HackMD articles into a searchable blog with RSS, a sitemap, llms.txt, and per-post Markdown. Keep writing in HackMD while AI shapes the site's look through a validated design specification. VibeLog builds the blog, and you decide when to publish.
 
 ## How it works
 

@@ -15,7 +15,7 @@ export function document(title: string, content: unknown, session?: AppSession, 
     <head>
       <meta charset="utf-8"/>
       <meta name="viewport" content="width=device-width, initial-scale=1"/>
-      <meta name="description" content="Turn public HackMD articles into a fast, customizable blog."/>
+      <meta name="description" content="Publish your HackMD articles as a searchable blog with AI-designed styles, RSS, a sitemap, and llms.txt."/>
       <title>{title} · VibeLog</title>
       <link rel="icon" type="image/svg+xml" href="/assets/logo.svg"/>
       <link rel="stylesheet" href="/assets/app.css"/>
@@ -62,15 +62,15 @@ export function landingPage(analytics?: AnalyticsDocumentConfig) {
       <header class="landing-hero">
         <p class="auth-kicker">Open beta</p>
         <h1>Keep writing in HackMD.<br/>Publish a real blog.</h1>
-        <p class="landing-intro">Turn your public articles into a fast, customizable site without moving your writing workflow.</p>
+        <p class="landing-intro">Your public articles become a searchable blog with RSS, a sitemap, and llms.txt—without changing how you write.</p>
         <div class="landing-actions">
           <a class="btn" href="/auth/login">Start publishing</a>
         </div>
       </header>
       <ul class="landing-points">
-        <li><strong>Keep your workflow</strong><span>Write and publish in HackMD as usual.</span></li>
-        <li><strong>Review before publishing</strong><span>Content changes stay in a private preview until you approve them.</span></li>
-        <li><strong>Make it yours</strong><span>Choose a design, publish to your subdomain, and restore earlier releases.</span></li>
+        <li><strong>Built for reading</strong><span>Search, feeds, and article pages are built in.</span></li>
+        <li><strong>Designed with AI</strong><span>Shape the layout, type, and colors while the blog's features stay intact.</span></li>
+        <li><strong>Publish on your terms</strong><span>Review a private preview, then go live or restore an earlier release.</span></li>
       </ul>
     </section>
     <footer class="landing-footer">
@@ -127,8 +127,13 @@ export function guidePage(session?: AppSession, analytics?: AnalyticsDocumentCon
       <h2 id="updates">Update and restore safely</h2>
       <p>Syncing rebuilds only the draft. Publishing is always explicit, and release history lets you restore an earlier live version without changing your draft.</p>
     </section>
+    <section aria-labelledby="blog-features">
+      <h2 id="blog-features">A complete blog from your articles</h2>
+      <p>Every build includes article search, RSS, a sitemap, and llms.txt. Readers can browse your posts; other tools can discover them through predictable URLs and per-post Markdown.</p>
+    </section>
     <section aria-labelledby="ai-privacy">
       <h2 id="ai-privacy">AI design and privacy</h2>
+      <p>AI chooses the layout, typography, colors, and spacing in a Presentation IR—a design specification that VibeLog validates before building. The site structure and features stay consistent while you make the look your own.</p>
       <p>AI receives only your blog identity, content profile, current design, and prompt. Article bodies are never sent to the AI provider.</p>
     </section>
   </article>, session, false, analytics);
