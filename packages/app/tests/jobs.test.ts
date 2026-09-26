@@ -14,7 +14,7 @@ vi.mock('@vibelog/core', async (importOriginal) => {
 const now = '2026-09-10T00:00:00.000Z';
 const operation = (id: string): OperationRecord => ({
   id, userId: 'user', blogId: 'blog', type: 'generate_design', status: 'running',
-  payload: { prompt: 'Quiet editorial design', baseDesign: DEFAULT_DESIGN_V2, sourceArtifactId: 'source', draftArtifactId: 'draft', draftDesignRevisionId: 'theme', contentVersion: 1 }, result: null,
+  payload: { prompt: 'Quiet editorial design', baseDesign: DEFAULT_DESIGN_V2, baseRevisionId: 'theme', sourceArtifactId: 'source', draftArtifactId: 'draft', draftDesignRevisionId: 'theme', contentVersion: 1 }, result: null,
   errorMessage: null, attempts: 1, lockedAt: now, leaseExpiresAt: now, createdAt: now, updatedAt: now,
 });
 const blog: BlogRecord = {
@@ -71,6 +71,21 @@ describe('AI operation execution', () => {
     ]);
   });
 
+  it('rejects a stale saved revision before calling the model or creating a draft', async () => {
+    const generate = vi.fn<AiProvider['generate']>();
+    const createArtifact = vi.fn();
+    const stale = operation('88888888-8888-4888-8888-888888888888');
+    stale.payload.baseRevisionId = 'older-design';
+    const database = {
+      claimOperation: vi.fn(() => Promise.resolve(stale)), getBlog: vi.fn(() => Promise.resolve(blog)),
+      getActiveDesign: vi.fn(() => Promise.resolve(theme)), updateOperationProgress: vi.fn(() => Promise.resolve()),
+      createArtifact, failOperation: vi.fn(() => Promise.resolve()),
+    } as unknown as AppDatabase;
+    await expect(new AppOperationExecutor(database, {} as ArtifactStore, config, { aiProvider: () => ({ name: 'test', modelId: 'model', generate }) }).execute(stale.id)).rejects.toBeInstanceOf(TerminalOperationError);
+    expect(generate).not.toHaveBeenCalled();
+    expect(createArtifact).not.toHaveBeenCalled();
+  });
+
   it('changes only design.css for a presentation edit', async () => {
     const next = { ...DEFAULT_DESIGN_V2, theme: { ...DEFAULT_DESIGN_V2.theme, typography: { ...DEFAULT_DESIGN_V2.theme.typography, scale: 'large' as const } } };
     const apply = operation('55555555-5555-4555-8555-555555555555');
@@ -99,6 +114,21 @@ describe('AI operation execution', () => {
     const createArtifact = vi.fn(); const completeNoopDesignOperation = vi.fn(() => Promise.resolve(theme));
     const database = { claimOperation: vi.fn(() => Promise.resolve(apply)), getBlog: vi.fn(() => Promise.resolve(blog)), getActiveDesign: vi.fn(() => Promise.resolve(theme)), createArtifact, completeNoopDesignOperation } as unknown as AppDatabase;
     await expect(new AppOperationExecutor(database, {} as ArtifactStore, config).execute(apply.id)).resolves.toMatchObject({ message: 'Design unchanged', revisionId: theme.id });
+    expect(createArtifact).not.toHaveBeenCalled();
+  });
+
+  it('keeps the saved revision when AI returns an unchanged design', async () => {
+    const ai = operation('99999999-9999-4999-8999-999999999999');
+    const createArtifact = vi.fn(); const completeNoopDesignOperation = vi.fn(() => Promise.resolve(theme));
+    const generate = vi.fn<AiProvider['generate']>(() => Promise.resolve(DEFAULT_DESIGN_V2));
+    const database = {
+      claimOperation: vi.fn(() => Promise.resolve(ai)), getBlog: vi.fn(() => Promise.resolve(blog)),
+      getActiveDesign: vi.fn(() => Promise.resolve(theme)), updateOperationProgress: vi.fn(() => Promise.resolve()),
+      createArtifact, completeNoopDesignOperation,
+    } as unknown as AppDatabase;
+    await expect(new AppOperationExecutor(database, {} as ArtifactStore, config, { aiProvider: () => ({ name: 'test', modelId: 'model', generate }) }).execute(ai.id)).resolves.toMatchObject({ message: 'Design unchanged', revisionId: theme.id });
+    expect(generate).toHaveBeenCalledOnce();
+    expect(completeNoopDesignOperation).toHaveBeenCalledOnce();
     expect(createArtifact).not.toHaveBeenCalled();
   });
 

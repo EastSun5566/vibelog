@@ -55,6 +55,47 @@ export function themeControlValues(design: BlogDesignSpecV2): ThemeControlValues
     codeBlockStyle: design.pages.article.prose.codeBlock,
   };
 }
+
+export function hasUnsavedFineTuneChanges(design: BlogDesignSpecV2, input: Record<string, unknown>): boolean {
+  const controls = themeControlValues(design);
+  const expected: Record<string, string> = {
+    preset: controls.preset, bodyFont: controls.bodyFont, headingFont: controls.headingFont, scale: controls.scale,
+    contentWidth: controls.contentWidth, density: controls.density, radius: controls.radius,
+    headerStyle: controls.headerStyle, footerStyle: controls.footerStyle, homeLayout: controls.homeLayout,
+    postListStyle: controls.postListStyle, indexLayout: controls.indexLayout,
+    indexColumns: String(design.pages.index.columns ?? 1),
+    indexShowDescription: String(design.pages.index.item.showDescription), indexShowTags: String(design.pages.index.item.showTags),
+    articleLayout: controls.articleLayout, articleToc: controls.articleToc, articleHeader: controls.articleHeader,
+    articleMetadata: controls.articleMetadata, articleNavigation: controls.articleNavigation, codeBlockStyle: controls.codeBlockStyle,
+  };
+  if (controls.palette) expected.palette = controls.palette;
+  for (const [id, section] of Object.entries(design.pages.home.sections)) {
+    const prefix = `home:${id}:`;
+    const region = Object.entries(design.pages.home.regions).find(([, ids]) => ids.includes(id))?.[0];
+    if (!region) return true;
+    expected[`${prefix}region`] = region;
+    expected[`${prefix}variant`] = section.variant;
+    if (section.type === 'intro') expected[`${prefix}showAuthor`] = String(section.showAuthor);
+    if (section.type === 'posts') {
+      expected[`${prefix}source`] = section.source.strategy;
+      expected[`${prefix}limit`] = String(section.limit);
+      expected[`${prefix}columns`] = String(section.columns ?? 1);
+    }
+    if (section.type === 'topics') expected[`${prefix}limit`] = String(section.limit);
+  }
+  const presentations: Record<string, PresentationSpec | undefined> = {
+    'chrome.header': design.chrome.header.presentation, 'chrome.footer': design.chrome.footer.presentation,
+    home: design.pages.home.presentation, index: design.pages.index.presentation, 'index.item': design.pages.index.item.presentation,
+    article: design.pages.article.presentation, 'article.header': design.pages.article.header.presentation, 'article.prose': design.pages.article.prose.presentation,
+  };
+  for (const [id, section] of Object.entries(design.pages.home.sections)) presentations[`home.${id}`] = section.presentation;
+  for (const [id, module] of Object.entries(design.pages.article.modules)) presentations[`article.${id}`] = module.presentation;
+  for (const [path, presentation] of Object.entries(presentations)) {
+    for (const field of Object.keys(PRESENTATION_OPTIONS) as (keyof PresentationSpec)[]) expected[`presentation:${path}:${field}`] = presentation?.[field] ?? '';
+  }
+  for (const [name, value] of Object.entries(expected)) if (input[name] !== value) return true;
+  return !controls.palette && typeof input.palette === 'string';
+}
 const LABELS = { preset: { minimal: 'Minimal', editorial: 'Editorial', notebook: 'Notebook' }, bodyFont: { 'system-sans': 'Sans', 'system-serif': 'Serif', 'system-mono': 'Mono' }, headingFont: { 'system-sans': 'Sans', 'system-serif': 'Serif', 'system-mono': 'Mono' }, scale: { compact: 'Compact', comfortable: 'Medium', large: 'Large' }, headerStyle: { compact: 'Compact header', centered: 'Centered header', masthead: 'Masthead' }, postListStyle: { divided: 'Divided list', cards: 'Cards', numbered: 'Numbered list' }, codeBlockStyle: { plain: 'Plain code', panel: 'Code panel' } } as const;
 export function describeTheme(design: BlogDesignSpecV2): string { const palette = paletteForTheme(design); return `${LABELS.preset[design.theme.motif]} · ${palette ? THEME_PALETTES[palette].label : 'AI palette'} · ${LABELS.bodyFont[design.theme.typography.bodyFont]} / ${LABELS.headingFont[design.theme.typography.headingFont]} · ${LABELS.scale[design.theme.typography.scale]} · ${LABELS.headerStyle[design.chrome.header.variant]} · ${LABELS.postListStyle[design.pages.index.item.variant]} · ${LABELS.codeBlockStyle[design.pages.article.prose.codeBlock]}`; }
 

@@ -124,10 +124,11 @@ export class AppOperationExecutor implements OperationExecutor {
       if (sourceArtifactId !== blog.sourceArtifactId) throw new Error('Source changed before design build');
       let design: BlogDesignSpecV2;
       if (operation.type === 'generate_design') {
-        await this.database.updateOperationProgress(operation, { kind: 'indeterminate' }, 'AI is designing a new presentation…');
+        await this.database.updateOperationProgress(operation, { kind: 'indeterminate' }, 'AI is shaping your design…');
         const prompt = operation.payload.prompt; if (typeof prompt !== 'string') throw new Error('Design description is required');
         const current = await this.database.getActiveDesign(blog.id); if (!current) throw new Error('Active design not found');
-        const baseDesign = operation.payload.baseDesign ? validateBlogDesignSpecV2(operation.payload.baseDesign) : current.config;
+        if (current.id !== operation.payload.baseRevisionId || current.id !== operation.payload.draftDesignRevisionId || blog.draftDesignRevisionId !== current.id) throw new Error('Active design changed before generation');
+        const baseDesign = validateBlogDesignSpecV2(operation.payload.baseDesign);
         design = await measure(operation.id, 'ai', () => (this.dependencies.aiProvider?.() ?? createAiProviderChain(this.config.aiProvider, this.config.aiModel, this.config.aiFallbackModels)).generate({ blog: { title: blog.title ?? blog.username, description: blog.description ?? '', author: blog.author ?? blog.username }, contentProfile, currentDesign: baseDesign, prompt }, { sessionId: operation.id }));
       } else if (operation.type === 'apply_design') {
         design = validateBlogDesignSpecV2(operation.payload.design);

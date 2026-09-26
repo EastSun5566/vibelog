@@ -11,7 +11,7 @@ const OPERATION_LABELS: Record<OperationRecord['type'], string> = {
 
 const PENDING_MESSAGES: Record<OperationRecord['type'], Record<'queued' | 'running', string>> = {
   sync: { queued: 'Waiting to sync…', running: 'Reading HackMD and building the preview…' },
-  generate_design: { queued: 'Waiting for AI design generation…', running: 'AI is designing a new presentation…' },
+  generate_design: { queued: 'Waiting for AI design generation…', running: 'AI is shaping your design…' },
   apply_design: { queued: 'Waiting to build the design…', running: 'Building the design preview…' },
   activate_design: { queued: 'Waiting to restore the design…', running: 'Rebuilding the selected design…' },
   publish: { queued: 'Waiting to publish…', running: 'Building a new live release…' },

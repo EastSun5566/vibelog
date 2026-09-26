@@ -80,3 +80,16 @@ export const designToolV2: Tool = {
     description: Type.String({ minLength: 1, maxLength: 240 }),
   }, { additionalProperties: false }),
 };
+
+export const refineDesignToolV2: Tool = {
+  name: 'refine_design',
+  description: 'Make a focused edit to the saved version 2 design. Return only the fields that need to change as bounded JSON Patch operations. Use move only to reorder existing homepage sections in regions.',
+  parameters: Type.Object({
+    patches: Type.Array(Type.Union([
+      Type.Object({ op: Type.Literal('add'), path: Type.String(), value: Type.Any() }, { additionalProperties: false }),
+      Type.Object({ op: Type.Literal('replace'), path: Type.String(), value: Type.Any() }, { additionalProperties: false }),
+      Type.Object({ op: Type.Literal('remove'), path: Type.String() }, { additionalProperties: false }),
+      Type.Object({ op: Type.Literal('move'), from: Type.String(), path: Type.String() }, { additionalProperties: false }),
+    ]), { minItems: 1, maxItems: 16 }),
+  }, { additionalProperties: false }),
+};

@@ -157,8 +157,12 @@ export class AppDatabase {
       if (!row) throw new OperationLeaseLostError();
       const sourceArtifactId = row.payload.sourceArtifactId;
       const contentVersion = row.payload.contentVersion;
-      const [blog] = await tx.select({ sourceArtifactId: schema.blogs.sourceArtifactId, draftArtifactId: schema.blogs.draftArtifactId, draftDesignRevisionId: schema.blogs.draftDesignRevisionId, contentVersion: schema.blogs.contentVersion }).from(schema.blogs).where(and(eq(schema.blogs.id, row.blogId), eq(schema.blogs.userId, row.userId)));
+      const [blog] = await tx.select({ sourceArtifactId: schema.blogs.sourceArtifactId, draftArtifactId: schema.blogs.draftArtifactId, draftDesignRevisionId: schema.blogs.draftDesignRevisionId, contentVersion: schema.blogs.contentVersion }).from(schema.blogs).where(and(eq(schema.blogs.id, row.blogId), eq(schema.blogs.userId, row.userId))).for('update');
       if (!blog || blog.sourceArtifactId !== sourceArtifactId || blog.contentVersion !== contentVersion || blog.draftArtifactId !== row.payload.draftArtifactId || blog.draftDesignRevisionId !== row.payload.draftDesignRevisionId) throw new Error('Draft changed before design completion');
+      if (row.type === 'generate_design') {
+        const [active] = await tx.select({ id: schema.themeRevisions.id }).from(schema.themeRevisions).where(and(eq(schema.themeRevisions.blogId, row.blogId), eq(schema.themeRevisions.active, true)));
+        if (!active || active.id !== row.payload.baseRevisionId) throw new Error('Active design changed before design completion');
+      }
       const [artifact] = await tx.update(schema.artifacts).set({ state: 'ready', readyAt: new Date() }).where(and(eq(schema.artifacts.id, artifactId), eq(schema.artifacts.blogId, row.blogId), eq(schema.artifacts.kind, 'draft'), eq(schema.artifacts.state, 'uploading'))).returning();
       if (!artifact) throw new Error('Uploading draft artifact not found');
       let revision: typeof schema.themeRevisions.$inferSelect | undefined;
@@ -189,6 +193,7 @@ export class AppDatabase {
       if (!blog || blog.sourceArtifactId !== row.payload.sourceArtifactId || blog.contentVersion !== row.payload.contentVersion || blog.draftArtifactId !== row.payload.draftArtifactId || blog.draftDesignRevisionId !== row.payload.draftDesignRevisionId) throw new Error('Draft changed before design completion');
       const [active] = await tx.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.blogId, row.blogId), eq(schema.themeRevisions.active, true)));
       if (!active || blog.draftDesignRevisionId !== active.id) throw new Error('Active design changed before completion');
+      if (row.type === 'generate_design' && active.id !== row.payload.baseRevisionId) throw new Error('Active design changed before completion');
       let revision = active;
       if (row.type === 'activate_design') {
         const [target] = await tx.select().from(schema.themeRevisions).where(and(eq(schema.themeRevisions.id, String(row.payload.designRevisionId)), eq(schema.themeRevisions.blogId, row.blogId)));
@@ -229,13 +234,15 @@ export class AppDatabase {
     const release = await this.getActiveRelease(blogId); if (release?.contentVersion === blog.contentVersion && release.themeRevisionId === theme.id) throw new Error('Nothing to publish');
     return this.createOperation(userId, blogId, 'publish', { contentVersion: blog.contentVersion, designRevisionId: theme.id, draftArtifactId: blog.draftArtifactId, previewPath });
   }
-  async createDesignOperation(userId: string, blogId: string, prompt: string, baseDesign: unknown, limits: AiQuotaLimits, previewPath = '/'): Promise<OperationRecord> {
-    const validatedBase = validateBlogDesignSpecV2(baseDesign); const at = limits.at ?? new Date(); const window = quotaWindow(at);
+  async createDesignOperation(userId: string, blogId: string, prompt: string, expectedRevisionId: string, limits: AiQuotaLimits, previewPath = '/'): Promise<OperationRecord> {
+    const at = limits.at ?? new Date(); const window = quotaWindow(at);
     return this.db.transaction(async (tx) => {
       const [active] = await tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blogId), inArray(schema.operations.status, ['queued', 'running']))); if (active) throw new Error('Blog already has an active operation');
-      const [blog] = await tx.select({ sourceArtifactId: schema.blogs.sourceArtifactId, draftArtifactId: schema.blogs.draftArtifactId, draftDesignRevisionId: schema.blogs.draftDesignRevisionId, contentVersion: schema.blogs.contentVersion }).from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId)));
+      const [blog] = await tx.select({ sourceArtifactId: schema.blogs.sourceArtifactId, draftArtifactId: schema.blogs.draftArtifactId, draftDesignRevisionId: schema.blogs.draftDesignRevisionId, contentVersion: schema.blogs.contentVersion }).from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId))).for('update');
       if (!blog?.sourceArtifactId) throw new Error('Sync the content before changing the design');
-      const op = newOperation(userId, blogId, 'generate_design', { prompt, baseDesign: validatedBase, sourceArtifactId: blog.sourceArtifactId, draftArtifactId: blog.draftArtifactId, draftDesignRevisionId: blog.draftDesignRevisionId, contentVersion: blog.contentVersion, previewPath });
+      const [base] = await tx.select({ id: schema.themeRevisions.id, config: schema.themeRevisions.config }).from(schema.themeRevisions).where(and(eq(schema.themeRevisions.blogId, blogId), eq(schema.themeRevisions.active, true)));
+      if (!base || base.id !== blog.draftDesignRevisionId || base.id !== expectedRevisionId) throw new Error('Active design changed before generation');
+      const op = newOperation(userId, blogId, 'generate_design', { prompt, baseDesign: validateBlogDesignSpecV2(base.config), baseRevisionId: base.id, sourceArtifactId: blog.sourceArtifactId, draftArtifactId: blog.draftArtifactId, draftDesignRevisionId: blog.draftDesignRevisionId, contentVersion: blog.contentVersion, previewPath });
       for (const item of [{ scope: 'user' as const, subject: userId, limit: limits.userDailyLimit }, { scope: 'global' as const, subject: '*', limit: limits.globalDailyLimit }]) {
         const [usage] = await tx.insert(schema.aiDailyUsage).values({ usageDate: window.date, scope: item.scope, subject: item.subject, count: 1 }).onConflictDoUpdate({ target: [schema.aiDailyUsage.usageDate, schema.aiDailyUsage.scope, schema.aiDailyUsage.subject], set: { count: sql`${schema.aiDailyUsage.count} + 1` } }).returning({ count: schema.aiDailyUsage.count });
         if (!usage || usage.count > item.limit) throw new AiQuotaExceededError(window.retryAfter);

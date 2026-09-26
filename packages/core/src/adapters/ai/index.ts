@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { ZodError } from 'zod';
 import { createModels, createProvider, validateToolCall, type Api, type Context, type Model, type Models, type MutableModels, type ProviderEnv, type ProviderStreams, type SimpleStreamOptions } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { builtinModels, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all';
@@ -7,11 +8,13 @@ import type { DesignProposalInput } from '../../design/types.js';
 import type { BlogDesignSpecV2 } from '../../design/schema-v2.js';
 import { DESIGN_CATALOG_V2_INSTRUCTIONS } from '../../design/catalog-v2.js';
 import { normalizeDesignV2 } from '../../design/normalize-v2.js';
+import { applyDesignPatchV2 } from '../../design/patch-v2.js';
 import { validateBlogDesignSpecV2 } from '../../design/schema-v2.js';
-import { designToolV2 } from './tool-v2.js';
+import { designToolV2, refineDesignToolV2 } from './tool-v2.js';
 import { logger } from '../../core/index.js';
 
 const DESIGN_TOOL_NAME = 'propose_design';
+const REFINE_TOOL_NAME = 'refine_design';
 const OLLAMA_PROVIDER = 'ollama';
 const OLLAMA_BASE_URL = 'http://localhost:11434/v1';
 const KEYLESS_OLLAMA_TRANSPORT_KEY = 'ollama-local';
@@ -52,8 +55,14 @@ function safeProviderError(error: unknown): string {
   return secrets.reduce((output, secret) => output.replaceAll(secret, '[REDACTED]'), message).replaceAll(/(?:sk-|Bearer\s+)[A-Za-z0-9._-]+/gi, '[REDACTED]').slice(0, 500);
 }
 function safeToolValidationError(error: unknown): string {
-  const [message] = safeProviderError(error).split('\n\nReceived arguments:');
-  return message || 'Unknown validation error';
+  if (error instanceof ZodError) {
+    const issue = error.issues[0];
+    const path = issue?.path.map((part) => typeof part === 'number' ? String(part) : /^[a-zA-Z][a-zA-Z0-9-]{0,47}$/u.test(String(part)) ? String(part) : 'field').join('.');
+    return path ? `Invalid design value at ${path}` : 'Invalid design value';
+  }
+  const message = safeProviderError(error);
+  const knownField = ['bodyFont', 'headingFont', 'appearance', 'theme', 'chrome', 'pages', 'description', 'patches'].find((field) => message.includes(field));
+  return knownField ? `Invalid design tool arguments at ${knownField}` : 'Invalid design tool arguments';
 }
 export type AiProviderFailureKind = 'cancelled' | 'configuration' | 'http' | 'network' | 'timeout' | 'upstream';
 export interface AiProviderRequestErrorOptions extends ErrorOptions {
@@ -77,6 +86,13 @@ export class AiProviderTimeoutError extends AiProviderRequestError {
   constructor(options?: ErrorOptions) { super('AI provider request timed out', { ...options, kind: 'timeout', retryable: true }); this.name = 'AiProviderTimeoutError'; }
 }
 export function getAiProviderNames(): string[] { return [...getBuiltinProviders(), OLLAMA_PROVIDER]; }
+
+class AiDesignValidationError extends Error {
+  constructor(message: string, readonly selectedTool?: typeof DESIGN_TOOL_NAME | typeof REFINE_TOOL_NAME, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'AiDesignValidationError';
+  }
+}
 
 interface ProviderRequestMetadata {
   networkFailure: boolean;
@@ -133,10 +149,11 @@ export class PiAiProvider implements AiProvider {
     this.model = model;
     logger.info(`AI provider: ${name} (${modelId})`);
   }
-  private async generateOnce(input: DesignProposalInput, sessionId: string, signal: AbortSignal, previousError?: string): Promise<BlogDesignSpecV2> {
+  private async generateOnce(input: DesignProposalInput, sessionId: string, signal: AbortSignal, previousError?: string, selectedTool?: typeof DESIGN_TOOL_NAME | typeof REFINE_TOOL_NAME): Promise<BlogDesignSpecV2> {
+    const tools = selectedTool === DESIGN_TOOL_NAME ? [designToolV2] : selectedTool === REFINE_TOOL_NAME ? [refineDesignToolV2] : [designToolV2, refineDesignToolV2];
     const context: Context = {
-      systemPrompt: `You are VibeLog's blog presentation designer. Call ${DESIGN_TOOL_NAME} exactly once with a complete version 2 design. ${DESIGN_CATALOG_V2_INSTRUCTIONS} Ensure text and accent colors each have WCAG AA contrast against the background.${previousError ? ` Previous proposal error: ${previousError}. Correct it.` : ''}`,
-      messages: [{ role: 'user', content: JSON.stringify(input), timestamp: Date.now() }], tools: [designToolV2],
+      systemPrompt: `You are VibeLog's blog presentation designer. Call exactly one tool. Prefer ${REFINE_TOOL_NAME} for a focused or ambiguous request; preserve every unrelated choice in the current saved design. Use ${DESIGN_TOOL_NAME} only when the writer clearly asks for a broad redesign. For ${REFINE_TOOL_NAME}, return only necessary JSON Patch operations; use move only for homepage region reordering. ${selectedTool === REFINE_TOOL_NAME ? '' : `For ${DESIGN_TOOL_NAME}, create a complete version 2 VibeLog design. `}${DESIGN_CATALOG_V2_INSTRUCTIONS} Ensure text and accent colors each have WCAG AA contrast against the background.${previousError ? ` Previous proposal error: ${previousError}. Correct it with the available tool.` : ''}`,
+      messages: [{ role: 'user', content: JSON.stringify(input), timestamp: Date.now() }], tools,
     };
     let response;
     const openCode = OPENCODE_PROVIDERS.has(this.name);
@@ -160,13 +177,20 @@ export class PiAiProvider implements AiProvider {
     }
     if (response.stopReason === 'length') throw new Error('AI response exceeded the model output limit.');
     const toolCalls = response.content.filter((block) => block.type === 'toolCall');
-    if (response.stopReason !== 'toolUse' || toolCalls.length !== 1) throw new Error(`AI must call ${DESIGN_TOOL_NAME} exactly once.`);
+    if (response.stopReason !== 'toolUse' || toolCalls.length !== 1) throw new AiDesignValidationError('AI must call exactly one design tool.', selectedTool);
     const [toolCall] = toolCalls;
-    if (toolCall.name !== DESIGN_TOOL_NAME) throw new Error(`AI called an unexpected tool: ${toolCall.name}`);
+    if (toolCall.name !== DESIGN_TOOL_NAME && toolCall.name !== REFINE_TOOL_NAME) throw new AiDesignValidationError('AI called an unexpected design tool.', selectedTool);
+    if (selectedTool && toolCall.name !== selectedTool) throw new AiDesignValidationError('AI changed design mode during correction.', selectedTool);
     let candidate: unknown;
-    try { candidate = validateToolCall([designToolV2], toolCall); }
-    catch (error) { throw new Error(`AI returned invalid arguments for ${DESIGN_TOOL_NAME}: ${safeToolValidationError(error)}`); }
-    return normalizeDesignV2(validateBlogDesignSpecV2(candidate));
+    try { candidate = validateToolCall(tools, toolCall); }
+    catch (error) { throw new AiDesignValidationError(`AI returned invalid arguments for ${toolCall.name}: ${safeToolValidationError(error)}`, toolCall.name, { cause: error }); }
+    try {
+      return toolCall.name === REFINE_TOOL_NAME
+        ? applyDesignPatchV2(input.currentDesign, (candidate as { patches: unknown }).patches)
+        : normalizeDesignV2(validateBlogDesignSpecV2(candidate));
+    } catch (error) {
+      throw new AiDesignValidationError(`AI returned an invalid ${toolCall.name === REFINE_TOOL_NAME ? 'patch' : 'design'}: ${safeToolValidationError(error)}`, toolCall.name, { cause: error });
+    }
   }
   async generate(input: DesignProposalInput, context?: AiGenerationContext): Promise<BlogDesignSpecV2> {
     const sessionId = context?.sessionId ?? randomUUID();
@@ -174,7 +198,7 @@ export class PiAiProvider implements AiProvider {
     try { return await this.generateOnce(input, sessionId, signal); }
     catch (firstError) {
       if (firstError instanceof AiProviderRequestError) throw firstError;
-      try { return await this.generateOnce(input, sessionId, signal, safeProviderError(firstError)); }
+      try { return await this.generateOnce(input, sessionId, signal, safeProviderError(firstError), firstError instanceof AiDesignValidationError ? firstError.selectedTool : undefined); }
       catch (secondError) {
         if (secondError instanceof AiProviderRequestError) throw secondError;
         throw new Error(`AI could not create a safe design after one correction: ${safeProviderError(secondError)}. Your current design was not changed.`, { cause: secondError });

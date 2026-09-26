@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { DEFAULT_DESIGN_V2 } from '@vibelog/core';
 import { AppDatabase, BlogAddressTakenError, MAX_OPERATION_ATTEMPTS, OperationLeaseLostError } from '../src/database.js';
 import { AppOperationExecutor, OutboxDispatcher, RetryableOperationError } from '../src/jobs.js';
@@ -10,7 +10,7 @@ import { loadWorkerConfig } from '../src/config.js';
 import { smokeWorker } from '../scripts/worker-smoke.js';
 import { CloudTasksRequestVerifier } from '../src/adapters/cloud-tasks-request-verifier.js';
 import { handleOperationTask } from '../src/adapters/cloud-tasks-transport.js';
-import { aiDailyUsage, operationOutbox, operations, previewSessions, rateLimit, user } from '../src/schema.js';
+import { aiDailyUsage, blogs, operationOutbox, operations, previewSessions, rateLimit, user } from '../src/schema.js';
 
 const url = process.env.TEST_DATABASE_URL;
 describe.skipIf(!url)('PostgreSQL operation repository', () => {
@@ -236,6 +236,28 @@ describe.skipIf(!url)('operation crash recovery', () => {
     await complete(current);
     await expect(complete(first)).rejects.toBeInstanceOf(OperationLeaseLostError);
     expect(type === 'apply_design' ? (await database.listDesignRevisions(blog.id)).length : (await database.listReleases(blog.id)).length).toBe(type === 'apply_design' ? 2 : 1);
+  });
+  it('snapshots the saved AI base and rejects stale design completion', async () => {
+    const { operation: syncOperation, blog } = await fixture();
+    const syncLease = await database.claimOperation(syncOperation.id); if (!syncLease) throw new Error('Missing sync claim');
+    const initial = await database.getActiveDesign(blog.id); if (!initial) throw new Error('Missing initial design');
+    const source = await database.createArtifact(blog.id, 'source');
+    const draft = await database.createArtifact(blog.id, 'draft');
+    await database.completeSyncOperation(syncLease, {
+      title: 'Writer', description: '', author: 'Writer', sourceArtifactId: source.id, draftArtifactId: draft.id,
+      designRevisionId: initial.id,
+      contentProfile: { postCount: 0, tagCount: 0, averageLength: 'short', codeUsage: 'none', imageUsage: 'none', mathUsage: 'none' },
+    }, {});
+    const limits = { userDailyLimit: 1000, globalDailyLimit: 100_000, at: new Date('2026-09-26T00:00:00Z') };
+    await expect(database.createDesignOperation(blog.userId, blog.id, 'Make it warmer', randomUUID(), limits)).rejects.toThrow('Active design changed before generation');
+    const ai = await database.createDesignOperation(blog.userId, blog.id, 'Make it warmer', initial.id, limits);
+    expect(ai.payload).toMatchObject({ baseRevisionId: initial.id, baseDesign: initial.config });
+    const aiLease = await database.claimOperation(ai.id); if (!aiLease) throw new Error('Missing AI claim');
+    await database.db.update(blogs).set({ contentVersion: sql`${blogs.contentVersion} + 1` }).where(eq(blogs.id, blog.id));
+    const staleArtifact = await database.createArtifact(blog.id, 'draft');
+    await expect(database.completeDesignOperation(aiLease, DEFAULT_DESIGN_V2, staleArtifact.id, {})).rejects.toThrow('Draft changed before design completion');
+    expect((await database.getActiveDesign(blog.id))?.id).toBe(initial.id);
+    expect((await database.getBlog(blog.id))?.draftArtifactId).toBe(draft.id);
   });
   it('runs the deployment smoke fixture through real DB execution and removes it afterwards', async () => {
     let operationId = '';
