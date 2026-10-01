@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.10.0](https://github.com/EastSun5566/vibelog/compare/v0.9.0...v0.10.0) (2026-10-01)
+
+### Features
+
+* add Presentation IR ([e021460](https://github.com/EastSun5566/vibelog/commit/e02146051b526e30cc3c8b58acea1d3a2decbece))
+* **ai:** refine saved designs from one prompt ([b414d46](https://github.com/EastSun5566/vibelog/commit/b414d46bdd9c2b8b20c8e5a980b3dad2bd92ddf6))
+* **app:** export published static sites ([32ba4fd](https://github.com/EastSun5566/vibelog/commit/32ba4fd9888f36ab642fb8da2d7b699feffc1717))
+* **infra:** add reusable maintenance stages ([8a9a2ce](https://github.com/EastSun5566/vibelog/commit/8a9a2ce86d84b6be446d7e96a1ece8f93848af9a))
+* introduce presentation IR v2 ([ebfc7c1](https://github.com/EastSun5566/vibelog/commit/ebfc7c150710f15692882cf7a1694e76fbf79f8e))
+
+### Bug Fixes
+
+* address Presentation IR review feedback ([94652fe](https://github.com/EastSun5566/vibelog/commit/94652fe570cf242d48266644ee9bff380971fdf6))
+* **ai:** clarify refinement prompts and allow patch append ([75d981d](https://github.com/EastSun5566/vibelog/commit/75d981d456e7fec007a6e7f3d98e7dda545458f7))
+* **ci:** replace unavailable MinIO test images ([451ab60](https://github.com/EastSun5566/vibelog/commit/451ab60678f3779e6b3dc778a1689b52e8796be3))
+* **ci:** update Presentation IR worker smoke ([8b6b55a](https://github.com/EastSun5566/vibelog/commit/8b6b55adcfc51db72c5b58de2c9067a14096fbdc))
+* **core:** refine HackMD summaries and compatibility ([eee2fea](https://github.com/EastSun5566/vibelog/commit/eee2fea43b9dfcf78b55f529d5a65feaaa7a2c2f))
+* **deps:** patch release dependency advisories ([2adb8b5](https://github.com/EastSun5566/vibelog/commit/2adb8b5dd55f8105b2db0e08981d3491c54b0899))
+* **edge:** respect browser cache headers ([658c90e](https://github.com/EastSun5566/vibelog/commit/658c90e46c894f9bb516d40c486606276028d0fb))
+* **infra:** allow runtime secret rotation ([48f273a](https://github.com/EastSun5566/vibelog/commit/48f273a45b0e3aeb7d64417a239bee717bbcad87))
+* **infra:** let Neon compute scale to zero ([bec9c59](https://github.com/EastSun5566/vibelog/commit/bec9c59584af178afa92d128e1ca839d5d13425b))
+* **migration:** preserve drafts without frozen sources ([9b4f61f](https://github.com/EastSun5566/vibelog/commit/9b4f61f4f2212e102f8de7c982d3e9882fc14f3b))
+* **theme:** add cross-theme visual guardrails ([5543a87](https://github.com/EastSun5566/vibelog/commit/5543a87a7dac51c9ae388aa447c6d9fc91e91cd0))
+* **theme:** improve post list spacing ([ffb5df3](https://github.com/EastSun5566/vibelog/commit/ffb5df3c974954b101158147bd9d4d1920119cfe))
+* **theme:** reduce redundant blog decoration ([f447ce4](https://github.com/EastSun5566/vibelog/commit/f447ce4f229eef8f9b229aaf42442bb02390865a))
 ## [0.9.0](https://github.com/EastSun5566/vibelog/compare/v0.8.0...v0.9.0) (2026-09-16)
 
 ### Features
