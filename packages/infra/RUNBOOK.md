@@ -35,7 +35,9 @@ environment:
   - <esc-project>/prod
 ```
 
-`containerImageRepository` is required only in application mode and must name a public GHCR package without a tag. Optional application settings are `aiProvider`, `aiModel`, `aiFallbackModels`, `aiApiKeyEnv`, `googleAnalyticsMeasurementId`, and `neonProjectName`. Fallback models use the same provider and API key as the primary model. The Neon project name defaults to `vibelog-<environment>`.
+`containerImageRepository` is required only in application mode and must name a public GHCR package without a tag. Optional application settings are `aiProvider`, `aiModel`, `aiFallbackModels`, `aiApiKeyEnv`, `googleAnalyticsMeasurementId`, `agentCliVersion`, and `neonProjectName`. Fallback models use the same provider and API key as the primary model. The Neon project name defaults to `vibelog-<environment>`.
+
+`agentCliVersion` enables the homepage agent prompt and `/agent-setup/prompt.md` on web only. Pin a stable CLI version after verifying anonymous npm installation and the deployed draft API; omit the setting to keep the prompt disabled.
 
 Store these secret `vibelog:` values in ESC:
 

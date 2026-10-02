@@ -62,7 +62,7 @@ describe('Pulumi components', () => {
       deployerServiceAccountEmail: 'vibelog-deployer@vibelog-test-project.iam.gserviceaccount.com',
       appOrigin: 'https://example.com', previewOrigin: 'https://preview.example.com', objectStoreEndpoint: 'https://account.r2.cloudflarestorage.com',
       objectStoreBucket: 'artifacts', aiProvider: 'openai', aiModel: 'gpt-4o-mini', aiFallbackModels: ['fallback-model'],
-      aiApiKeyEnv: 'OPENAI_API_KEY', googleAnalyticsMeasurementId: 'G-TEST123', emailFrom: 'VibeLog <login@send.example.com>', emailReplyTo: 'support@example.com',
+      aiApiKeyEnv: 'OPENAI_API_KEY', googleAnalyticsMeasurementId: 'G-TEST123', agentCliVersion: '0.1.0', emailFrom: 'VibeLog <login@send.example.com>', emailReplyTo: 'support@example.com',
       minInstances: 0, maxInstances: 3, provider,
       secrets: { databaseUrl: pulumi.secret('database'), objectStoreAccessKeyId: pulumi.secret('key'), objectStoreSecretAccessKey: pulumi.secret('secret'), resendApiKey: pulumi.secret('resend'), betterAuthSecret: pulumi.secret('auth'), aiApiKey: pulumi.secret('ai'), edgeSharedSecret: pulumi.secret('edge') },
       }, { providers: [provider] });
@@ -100,8 +100,10 @@ describe('Pulumi components', () => {
     const workerTemplate = worker.inputs.template as { containers: { envs: { name: string }[] }[] };
     const webTemplate = web.inputs.template as { containers: { envs: { name: string; value?: string }[] }[] };
     expect(webTemplate.containers[0]?.envs).toContainEqual({ name: 'GOOGLE_ANALYTICS_MEASUREMENT_ID', value: 'G-TEST123' });
+    expect(webTemplate.containers[0]?.envs).toContainEqual({ name: 'VIBELOG_AGENT_CLI_VERSION', value: '0.1.0' });
     const workerSecretNames = new Set(workerTemplate.containers[0]?.envs.map((env) => env.name) ?? []);
     expect(workerSecretNames.has('GOOGLE_ANALYTICS_MEASUREMENT_ID')).toBe(false);
+    expect(workerSecretNames.has('VIBELOG_AGENT_CLI_VERSION')).toBe(false);
     expect(workerSecretNames.has('RESEND_API_KEY')).toBe(false);
     expect(workerSecretNames.has('BETTER_AUTH_SECRET')).toBe(false);
     expect(workerSecretNames.has('GITHUB_CLIENT_SECRET')).toBe(false);
@@ -168,6 +170,7 @@ describe('Pulumi components', () => {
     for (const service of services) {
       const template = service.inputs.template as { containers: { envs: { name: string; value: string }[] }[] };
       expect(template.containers[0]?.envs).toContainEqual({ name: 'VIBELOG_MAINTENANCE_STAGE', value: stage });
+      expect(template.containers[0]?.envs.some((env) => env.name === 'VIBELOG_AGENT_CLI_VERSION')).toBe(false);
     }
   });
   it('owns the Resend sending domain, exact DNS records, runtime key, and Email Routing foundation', async () => {

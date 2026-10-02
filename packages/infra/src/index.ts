@@ -86,6 +86,7 @@ function createApplication() {
     aiFallbackModels: config.getObject<string[]>('aiFallbackModels') ?? [],
     aiApiKeyEnv: config.get('aiApiKeyEnv') ?? 'OPENAI_API_KEY',
     googleAnalyticsMeasurementId: config.get('googleAnalyticsMeasurementId'),
+    agentCliVersion: config.get('agentCliVersion'),
     emailFrom: `VibeLog <login@send.${rootDomain}>`,
     emailReplyTo: `support@${rootDomain}`,
     minInstances: config.getNumber('minInstances') ?? 0,
