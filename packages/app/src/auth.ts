@@ -14,7 +14,7 @@ export function magicLinkIdempotencyKey(token: string): string {
 }
 export interface AuthUser { id: string; email: string; name: string }
 export interface AppSession { id: string; user: AuthUser; csrfToken: string; expiresAt: string }
-export interface AppVariables { requestId: string; session: AppSession; edgeHost?: string }
+export interface AppVariables { requestId: string; session: AppSession; edgeHost?: string; edgeClientKey?: string }
 
 export function createAuth(database: AppDatabase, config: AppConfig, emailSender: TransactionalEmailSender) {
   const socialProviders = {

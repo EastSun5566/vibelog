@@ -2,7 +2,7 @@ import { AGENT_API } from './agent/contracts.js';
 import { agentRoutes } from './agent/routes.js';
 import { AgentRepository } from './agent/repository.js';
 import { agentInstructions, authorizationPage, grantsPage, onboardingPrompt } from './agent/views.js';
-import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -23,6 +23,7 @@ import type { ArtifactStore } from './ports/artifact-store.js';
 import type { TransactionalEmailSender } from './ports/transactional-email.js';
 import { editorUrlWithPreviewPath, safePreviewPath } from './preview-path.js';
 import { hashToken, randomToken } from './security/crypto.js';
+import { edgeIdentity } from './security/edge-identity.js';
 import { hasUnsavedFineTuneChanges, themeFromControls, visualThemeFromControls } from './theme-studio.js';
 import { deletionPage, editorPage, guidePage, landingPage, loginPage, onboardingPage, operationPage, type AnalyticsDocumentConfig, type DeletionError } from './views.js';
 
@@ -61,14 +62,7 @@ export function createApp(options: CreateAppOptions) {
   const config = options.config ?? loadAppConfig(); const database = options.database ?? new AppDatabase(config.databaseUrl);
   const auth = createAuth(database, config, options.emailSender); const app = new Hono<AppEnv>();
   app.use('*', requestContext());
-  app.use('*', async (c, next) => {
-    const edgeHost = c.req.header('x-vibelog-host'); if (!edgeHost) return next();
-    const timestamp = c.req.header('x-vibelog-timestamp'); const signature = c.req.header('x-vibelog-signature');
-    if (!config.edgeSharedSecret || !timestamp || !signature || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) throw new AppError('edge_identity_invalid', 'Invalid edge identity', 401);
-    const url = new URL(c.req.url); const expected = createHmac('sha256', config.edgeSharedSecret).update(`${timestamp}\n${edgeHost}\n${url.pathname}${url.search}`).digest('base64url');
-    const left = Buffer.from(signature); const right = Buffer.from(expected); if (left.length !== right.length || !timingSafeEqual(left, right)) throw new AppError('edge_identity_invalid', 'Invalid edge identity', 401);
-    c.set('edgeHost', edgeHost); return next();
-  });
+  app.use('*', edgeIdentity(config.edgeSharedSecret));
   app.use('*', bodyLimit({ maxSize: 64 * 1024, onError: () => Response.json({ error: { code: 'payload_too_large', message: 'Request body exceeds 64 KiB', requestId: randomUUID() } }, { status: 413 }) }));
   app.use('*', async (c, next) => {
     if (blocksRequest(config.maintenanceStage, 'web', c.req.path)) return maintenanceResponse(c.req.method);
@@ -144,7 +138,7 @@ export function createApp(options: CreateAppOptions) {
     const response = await internalAuthPost(c, '/sign-in/social', { provider, callbackURL: returnTo(formValue(await c.req.parseBody(), 'returnTo')) }); copyCookies(c, response);
     const data = await response.json().catch(() => null) as { url?: string } | null; if (!response.ok || !data?.url) throw new AppError('oauth_failed', 'Could not start OAuth sign-in.', 502); return c.redirect(data.url);
   });
-  app.route(AGENT_API, agentRoutes(database, options.dispatcher, config.appOrigin));
+  app.route(AGENT_API, agentRoutes(database, options.dispatcher, config.appOrigin, config));
   const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => { const session = await readSession(c, auth, config); if (!session) return c.redirect(`/auth/login?returnTo=${encodeURIComponent(returnTo(c.req.path + new URL(c.req.url).search))}`); c.set('session', session); await next(); };
   for (const path of ['/editor', '/onboarding', '/operations/*', '/actions/*', '/api/*', '/auth/logout', '/agent/authorize', '/account/agents', '/account/agents/*']) app.use(path, requireSession);
   app.post('/auth/logout', async (c) => { const body = await c.req.parseBody(); assertMutationOrigin(c, config); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); const response = await internalAuthPost(c, '/sign-out', {}); copyCookies(c, response); return c.redirect('/auth/login', 303); });

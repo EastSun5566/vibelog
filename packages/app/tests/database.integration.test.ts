@@ -1,4 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
+import { Hono } from 'hono';
+import type { AppVariables } from '../src/auth.js';
+import { edgeIdentity } from '../src/security/edge-identity.js';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -298,6 +301,46 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     const pairing = await repository.createPairing(); await repository.approve(id, pairing.userCode, true);
     const result = await repository.redeem(pairing.deviceCode); if (result.status !== 'approved') throw new Error('Expected approval'); return { pairing, ...result };
   }
+  it('limits an anonymous client before shared pairing/poll budgets and isolates another client', async () => {
+    const secret = 'test-edge-secret'; const nonce = randomUUID();
+    const client = createHmac('sha256', secret).update(`${nonce}:attacker`).digest('base64url');
+    const legitimate = createHmac('sha256', secret).update(`${nonce}:legitimate`).digest('base64url');
+    const app = new Hono<{ Variables: AppVariables }>().use('*', requestContext()).use('*', edgeIdentity(secret));
+    app.route('/api/agent/v1', agentRoutes(database, { dispatch: () => Promise.resolve(0) }, 'https://vibelog.org', { edgeSharedSecret: secret, betterAuthSecret: 'test' }));
+    app.onError((error, c) => jsonError(c, error));
+    const request = (path: string, key: string, body = '{}') => {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const signature = createHmac('sha256', secret).update(`${timestamp}\nvibelog.org\n/api/agent/v1${path}\n${key}`).digest('base64url');
+      return app.request(`/api/agent/v1${path}`, { method: 'POST', body, headers: {
+        'Content-Type': 'application/json', 'x-vibelog-host': 'vibelog.org', 'x-vibelog-timestamp': timestamp,
+        'x-vibelog-client-key': key, 'x-vibelog-signature': signature,
+      } });
+    };
+    const usage = async (key: string) => (await database.db.select().from(rateLimit).where(eq(rateLimit.key, `agent:${key}`)))[0]?.count ?? 0;
+    const pairingBefore = await usage('pairing:global');
+    for (let i = 0; i < 10; i++) expect((await request('/pairings', client)).status).toBe(201);
+    expect((await request('/pairings', client)).status).toBe(429);
+    expect(await usage('pairing:global')).toBe(pairingBefore + 10);
+    expect((await request('/pairings', legitimate)).status).toBe(201);
+    const pollBefore = await usage('poll:global');
+    expect((await request('/pairings/token', client, '{}')).status).toBe(400);
+    for (let i = 0; i < 59; i++) expect((await request('/pairings/token', client, JSON.stringify({ deviceCode: 'a'.repeat(43) }))).status).toBe(410);
+    const blocked = await request('/pairings/token', client, '{}');
+    expect(blocked.status).toBe(429); expect(blocked.headers.get('Retry-After')).toBe('60');
+    expect(await usage('poll:global')).toBe(pollBefore);
+    const pairing = await repository.createPairing(); const id = await owner(); await repository.approve(id, pairing.userCode, true);
+    expect((await request('/pairings/token', legitimate, JSON.stringify({ deviceCode: pairing.deviceCode }))).status).toBe(200);
+    expect(await usage('poll:global')).toBe(pollBefore + 1);
+    // Calling Cloud Run directly cannot rotate a spoofed IP header to bypass the client budget.
+    expect((await app.request('/api/agent/v1/pairings', { method: 'POST', headers: { 'cf-connecting-ip': '192.0.2.30', 'x-vibelog-client-key': legitimate } })).status).toBe(401);
+  });
+  it('self-host client budgets use the socket peer rather than spoofable proxy headers', async () => {
+    const router = agentRoutes(database, { dispatch: () => Promise.resolve(0) }, 'http://localhost', { betterAuthSecret: randomUUID() });
+    const env = { incoming: { socket: { remoteAddress: '127.0.0.1' } } };
+    for (let i = 0; i < 10; i++) expect((await router.request('/pairings', { method: 'POST', headers: { 'x-forwarded-for': `192.0.2.${String(i)}` } }, env)).status).toBe(201);
+    expect((await router.request('/pairings', { method: 'POST', headers: { 'cf-connecting-ip': '192.0.2.100', 'x-vibelog-client-key': 'b'.repeat(43) } }, env)).status).toBe(429);
+    expect((await router.request('/pairings', { method: 'POST' }, { incoming: { socket: { remoteAddress: '127.0.0.2' } } })).status).toBe(201);
+  });
   it('requires explicit approval and redeems a hash-only grant exactly once', async () => {
     const id = await owner(); const pairing = await repository.createPairing();
     await expect(repository.redeem(pairing.deviceCode)).rejects.toMatchObject({ code: 'slow_down' });
@@ -404,7 +447,7 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
       contentProfile: { postCount: 0, tagCount: 0, averageLength: 'short', codeUsage: 'none', imageUsage: 'none', mathUsage: 'none' },
     }, {});
     const current = await database.getBlog(blog.id); if (!current) throw new Error('Missing blog');
-    const router = agentRoutes(database, { dispatch: () => Promise.reject(new Error('No dispatch expected')) }, 'https://vibelog.org');
+    const router = agentRoutes(database, { dispatch: () => Promise.reject(new Error('No dispatch expected')) }, 'https://vibelog.org', { betterAuthSecret: 'test-secret' });
     const response = await router.request('/design', {
       method: 'POST', headers: { Authorization: `Bearer ${approved.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
       body: JSON.stringify({ stateVersion: stateVersion(current), design: initial.config }),
@@ -418,7 +461,7 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
   it('agent router returns JSON for auth/ownership errors and cannot publish or call hosted AI', async () => {
     const id = await owner(); const other = await owner(); const approved = await grant(id);
     const { operation } = await database.createBlog(other, `other-${other.slice(0, 8)}`, 'alice');
-    const router = agentRoutes(database, { dispatch: () => Promise.resolve(0) }, 'https://vibelog.org');
+    const router = agentRoutes(database, { dispatch: () => Promise.resolve(0) }, 'https://vibelog.org', { betterAuthSecret: 'test-secret' });
     router.use('*', requestContext()); router.onError((error, c) => jsonError(c, error));
     const headers = { Authorization: `Bearer ${approved.token}` };
     expect((await router.request('/context')).status).toBe(401);

@@ -1,9 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { blogs } from '../schema.js';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
+import { createHmac } from 'node:crypto';
+import { getConnInfo } from '@hono/node-server/conninfo';
 import { z } from 'zod';
 import { analyzeDesignImpact, designContractV2 } from '@vibelog/core';
 import type { AppVariables } from '../auth.js';
+import type { AppConfig } from '../config.js';
 import { blogIdentitySchema, blogLanguageSchema } from '../blog-sync.js';
 import { AppDatabase, BlogAddressTakenError } from '../database.js';
 import { AppError, jsonError } from '../http.js';
@@ -21,7 +24,7 @@ const connect = z.object({
 const reserved = new Set(['preview', 'www', 'api', 'admin', 'assets']);
 type Variables = AppVariables & { agentUserId: string; agentGrantId: string };
 
-export function agentRoutes(database: AppDatabase, dispatcher: OperationDispatcher, origin: string) {
+export function agentRoutes(database: AppDatabase, dispatcher: OperationDispatcher, origin: string, config: Pick<AppConfig, 'edgeSharedSecret' | 'betterAuthSecret'>) {
   const app = new Hono<{ Variables: Variables }>();
   const repo = new AgentRepository(database);
   app.onError((error, c) => {
@@ -31,6 +34,21 @@ export function agentRoutes(database: AppDatabase, dispatcher: OperationDispatch
     return c.json({ error: { code: 'internal_error', message: 'The request could not be completed.', requestId: c.get('requestId') } }, 500);
   });
   app.use('*', async (c, next) => { c.header('Cache-Control', 'no-store'); await next(); });
+  app.use('*', async (c: Context<{ Variables: Variables }>, next) => {
+    if (!c.req.path.endsWith('/pairings') && !c.req.path.endsWith('/pairings/token')) return next();
+    let clientKey = c.get('edgeClientKey');
+    if (!clientKey) {
+      if (config.edgeSharedSecret) throw new AppError('edge_identity_required', 'Start CLI login through the public site.', 401);
+      // Self-hosting trusts the actual socket peer, never caller-supplied proxy/IP headers.
+      let address: string | undefined;
+      try { address = getConnInfo(c).remote.address; } catch { /* No Node socket in synthetic requests. */ }
+      if (!address) throw new AppError('client_identity_unavailable', 'Client identity is unavailable.', 503);
+      clientKey = createHmac('sha256', config.betterAuthSecret).update(`agent-client\n${address}`).digest('base64url');
+    }
+    const polling = c.req.path.endsWith('/token');
+    await repo.limited(`${polling ? 'poll' : 'pairing'}:client:${clientKey}`, polling ? 60 : 10, polling ? 60 : 3600);
+    await next();
+  });
   app.post('/pairings', async (c) => {
     const pairing = await repo.createPairing();
     return c.json({ ...pairing, authorizationUrl: new URL(`/agent/authorize?code=${pairing.userCode}`, origin).href, permission: AGENT_PERMISSION }, 201);

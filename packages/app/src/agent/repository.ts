@@ -35,16 +35,18 @@ export class AgentRepository {
     if (!row) throw new AppError('pairing_unavailable', 'This request expired or has already been handled.', 409);
   }
   async redeem(deviceCode: string) {
-    await this.limited('poll:global', 600, 60);
-    return this.database.db.transaction(async (tx) => {
+    return this.database.transaction(async (db) => {
+      const tx = db.db;
       const [row] = await tx.select().from(schema.agentPairings).where(eq(schema.agentPairings.deviceHash, hashToken(deviceCode))).for('update');
       if (!row || row.expiresAt <= new Date()) throw new AppError('pairing_expired', 'Start a new login request.', 410);
       if (row.status === 'pending') {
         if (Date.now() - row.updatedAt.getTime() < 5000) throw new AppError('slow_down', 'Poll no more than once every five seconds.', 429, { 'Retry-After': '5' });
+        await new AgentRepository(db).limited('poll:global', 600, 60);
         await tx.update(schema.agentPairings).set({ updatedAt: new Date() }).where(eq(schema.agentPairings.id, row.id));
         return { status: 'pending' as const };
       }
       if (row.status !== 'approved' || !row.userId) throw new AppError('pairing_denied', 'This request was denied or already consumed.', 403);
+      await new AgentRepository(db).limited('poll:global', 600, 60);
       const token = `vl_agent_${randomToken()}`;
       const expiresAt = new Date(Date.now() + AGENT_TOKEN_SECONDS * 1000);
       await tx.insert(schema.agentGrants).values({ id: randomUUID(), userId: row.userId, tokenHash: hashToken(token), expiresAt });

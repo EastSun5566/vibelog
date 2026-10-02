@@ -51,3 +51,26 @@ describe('edge maintenance gate', () => {
     expect(await response.text()).toBe('');
   });
 });
+
+describe('anonymous agent client identity', () => {
+  it('overwrites caller identity and binds an opaque client key into the edge signature', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
+    const clientIp = '192.0.2.10';
+    await handleRequest(new Request('https://example.com/api/agent/v1/pairings', {
+      method: 'POST', headers: { 'cf-connecting-ip': clientIp, 'x-vibelog-client-key': 'forged', 'x-forwarded-for': '192.0.2.20' },
+    }), env);
+    const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(env.EDGE_SHARED_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const digest = async (payload: string) => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload))))).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+    const clientKey = await digest(`agent-client\n${clientIp}`);
+    expect(headers.get('x-vibelog-client-key')).toBe(clientKey); expect(clientKey).not.toContain(clientIp);
+    expect(headers.get('x-vibelog-signature')).toBe(await digest(`${headers.get('x-vibelog-timestamp') ?? ''}\nexample.com\n/api/agent/v1/pairings\n${clientKey}`));
+    await handleRequest(new Request('https://example.com/api/agent/v1/pairings/token', { headers: { 'cf-connecting-ip': clientIp } }), env);
+    expect(new Headers(fetch.mock.calls[1]?.[1]?.headers).get('x-vibelog-client-key')).toBe(clientKey);
+  });
+  it('removes a forged client key when Cloudflare supplies no client address', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
+    await handleRequest(new Request('https://example.com/api/agent/v1/pairings', { headers: { 'x-vibelog-client-key': 'forged' } }), env);
+    expect(new Headers(fetch.mock.calls[0]?.[1]?.headers).has('x-vibelog-client-key')).toBe(false);
+  });
+});
