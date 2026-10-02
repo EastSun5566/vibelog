@@ -7,7 +7,7 @@ npx --yes @vibelog/cli@0.1.0 --help
 npx --yes @vibelog/cli@0.1.0 login
 ```
 
-The package is not public yet. Until its first approved release, use `pnpm --filter @vibelog/cli build` and `node packages/cli/dist/main.js` from this repository instead. The server must also be deployed before using its agent endpoints.
+For local development, use `pnpm --filter @vibelog/cli build` and `node packages/cli/dist/main.js` from this repository. The server must support the agent API before using the CLI against it.
 
 Login prints an approval URL and a code, **never a token**. Confirm the code in the browser, sign in, and approve draft access. The separate authorization expires after 12 hours, has no refresh token, and can be revoked at `/account/agents` or with `logout`. Never copy browser cookies into the CLI.
 
