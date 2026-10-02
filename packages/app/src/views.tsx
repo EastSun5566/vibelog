@@ -38,7 +38,7 @@ export function document(title: string, content: unknown, session?: AppSession, 
         </header>
         <main class="app-main" id="main-content" tabindex={-1}>{content}</main>
       </div>
-      {editor ? <script type="module" src="/assets/client.js"></script> : null}
+      {editor ? <script type="module" src="/assets/client.js" nonce={analytics?.nonce}></script> : null}
       {analytics ? <>
         <aside class="analytics-consent card" role="region" aria-labelledby="analytics-consent-title" aria-describedby="analytics-consent-description" data-analytics-consent hidden>
           <section>

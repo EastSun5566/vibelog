@@ -28,6 +28,15 @@ describe('agent design contract', () => {
     expect(agentInstructions('https://vibelog.org', '0.1.0')).toContain('Do not print');
     expect(agentInstructions('https://vibelog.org', '0.1.0')).toContain('Never attempt publish');
   });
+  it('authorizes the onboarding client with the analytics CSP nonce', async () => {
+    const app = new Hono().get('/', (c) => c.html(landingPage(
+      { measurementId: 'G-TEST123', nonce: 'test-csp-nonce' },
+      onboardingPrompt('https://vibelog.org', '0.1.0'),
+    )));
+    const html = await (await app.request('/')).text();
+    expect(html).toContain('<script type="module" src="/assets/client.js" nonce="test-csp-nonce">');
+    expect(html).toContain('nonce="test-csp-nonce" data-analytics-loader');
+  });
   it('keeps the onboarding entry disabled unless an explicit stable CLI version is configured', async () => {
     const env = {
       DATABASE_URL: 'postgresql://unused', BETTER_AUTH_SECRET: 'local-test-secret-at-least-32-characters',
