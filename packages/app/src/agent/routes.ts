@@ -8,7 +8,7 @@ import { analyzeDesignImpact, designContractV2 } from '@vibelog/core';
 import type { AppVariables } from '../auth.js';
 import type { AppConfig } from '../config.js';
 import { blogIdentitySchema, blogLanguageSchema } from '../blog-sync.js';
-import { AppDatabase, BlogAddressTakenError } from '../database.js';
+import { AppDatabase, BlogAddressTakenError, BlogAlreadyExistsError } from '../database.js';
 import { AppError, jsonError } from '../http.js';
 import { operationMessage, operationProgress } from '../operation-status.js';
 import type { OperationDispatcher } from '../ports/operation-queue.js';
@@ -130,7 +130,11 @@ export function agentRoutes(database: AppDatabase, dispatcher: OperationDispatch
             return operationResult(await db.retryInitialSync(blog.userId, input.hackmdUsername, input.language));
           }
           try { return operationResult((await db.createBlog(c.get('agentUserId'), input.username, input.hackmdUsername, input.language)).operation); }
-          catch (error) { if (error instanceof BlogAddressTakenError) throw new AppError('blog_address_taken', 'That blog address is already taken.', 409); throw error; }
+          catch (error) {
+            if (error instanceof BlogAddressTakenError) throw new AppError('blog_address_taken', 'That blog address is already taken.', 409);
+            if (error instanceof BlogAlreadyExistsError) throw new AppError('blog_already_connected', 'A blog was connected by another request. Read the context again.', 409);
+            throw error;
+          }
         }
         if (!blog?.sourceArtifactId) throw new AppError('draft_not_ready', 'Finish connecting and syncing first.', 409);
         if (action === 'design' && design) {

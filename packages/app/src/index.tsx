@@ -14,7 +14,7 @@ import { findArtifactObject } from './artifact-serving.js';
 import { createAuth, readSession, type AppVariables } from './auth.js';
 import { blogIdentitySchema, blogLanguageSchema } from './blog-sync.js';
 import { loadAppConfig, type AppConfig } from './config.js';
-import { AiQuotaExceededError, AppDatabase, BlogAddressTakenError, type BlogRecord, type OperationRecord, type OperationType } from './database.js';
+import { AiQuotaExceededError, AppDatabase, BlogAddressTakenError, BlogAlreadyExistsError, type BlogRecord, type OperationRecord, type OperationType } from './database.js';
 import { AppError, assertCsrfToken, assertMutationOrigin, jsonError, requestContext } from './http.js';
 import type { OperationDispatcher } from './ports/operation-queue.js';
 import { operationMessage, operationProgress } from './operation-status.js';
@@ -210,6 +210,7 @@ export function createApp(options: CreateAppOptions) {
       operation = blog ? await database.retryInitialSync(session.user.id, input.data.hackmdUsername, input.data.language) : (await database.createBlog(session.user.id, input.data.username, input.data.hackmdUsername, input.data.language)).operation;
     } catch (error) {
       if (error instanceof BlogAddressTakenError) throw new AppError('blog_address_taken', 'That blog address is already taken. Choose another one.', 409);
+      if (error instanceof BlogAlreadyExistsError) throw new AppError('blog_already_connected', 'A blog was connected by another request. Refresh to continue.', 409);
       throw error;
     }
     return dispatchAndRedirect(c, operation);

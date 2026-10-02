@@ -34,6 +34,7 @@ export interface OutboxRecord { id: string; operationId: string; message: Operat
 export interface TransientCleanupResult { previewSessions: number; operations: number; aiUsage: number; rateLimits: number; agentPairings: number; agentGrants: number; agentUsage: number; agentRequests: number }
 export class AiQuotaExceededError extends Error { constructor(readonly retryAfter: number) { super('AI daily quota exceeded'); this.name = 'AiQuotaExceededError'; } }
 export class BlogAddressTakenError extends Error { constructor(readonly username: string) { super(`Blog address is already taken: ${username}`); this.name = 'BlogAddressTakenError'; } }
+export class BlogAlreadyExistsError extends Error { constructor() { super('A blog is already connected'); this.name = 'BlogAlreadyExistsError'; } }
 
 export const MAX_OPERATION_ATTEMPTS = 3;
 const OPERATION_LEASE_SECONDS = 35 * 60;
@@ -102,6 +103,10 @@ export class AppDatabase {
   async createBlog(userId: string, username: string, hackmdUsername: string, language = 'en'): Promise<{ blog: BlogRecord; operation: OperationRecord }> {
     const id = randomUUID(); const op = newOperation(userId, id, 'sync', { intent: 'content', excludedSlugs: [] });
     return this.db.transaction(async (tx) => {
+      // Share the agent admission lock while allowing existing operations' foreign-key checks.
+      await tx.select({ id: schema.user.id }).from(schema.user).where(eq(schema.user.id, userId)).for('no key update');
+      const [existing] = await tx.select({ id: schema.blogs.id }).from(schema.blogs).where(eq(schema.blogs.userId, userId));
+      if (existing) throw new BlogAlreadyExistsError();
       const [blog] = await tx.insert(schema.blogs).values({ id, userId, username, hackmdUsername, language, state: 'syncing' })
         .onConflictDoNothing({ target: schema.blogs.username }).returning();
       if (!blog) throw new BlogAddressTakenError(username);

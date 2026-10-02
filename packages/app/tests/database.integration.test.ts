@@ -373,6 +373,64 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     expect((await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id)))[0]?.count).toBe(1);
     await expect(repository.mutation(id, key, 'connect', { username: 'changed' }, work)).rejects.toMatchObject({ code: 'idempotency_conflict' });
   });
+  it('serializes first-time browser bootstrap behind an agent that already read no blog', async () => {
+    const id = await owner(); const username = `agent-first-${id.slice(0, 8)}`;
+    let markLocked: ((pid: number) => void) | undefined; let releaseAgent: (() => void) | undefined;
+    const locked = new Promise<number>((resolve) => { markLocked = resolve; });
+    const continueAgent = new Promise<void>((resolve) => { releaseAgent = resolve; });
+    const agent = repository.mutation(id, randomUUID(), 'connect', { username }, async (db, blog) => {
+      expect(blog).toBeNull();
+      const backend = await db.db.execute<{ pid: number }>(sql`select pg_backend_pid() as pid`);
+      markLocked?.(backend.rows[0].pid); await continueAgent;
+      return operationResult((await db.createBlog(id, username, 'alice')).operation);
+    }).then((result) => result, (error: unknown) => error);
+    const pid = await locked;
+    const browser = database.createBlog(id, `browser-first-${id.slice(0, 8)}`, 'alice').then((result) => result, (error: unknown) => error);
+    let waiting = false;
+    try {
+      for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
+        waiting = (await database.pool.query<{ waiting: boolean }>('select exists (select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid))) as waiting', [pid])).rows[0].waiting;
+        if (!waiting) await new Promise<void>((resolve) => { setTimeout(resolve, 10); });
+      }
+    } finally { releaseAgent?.(); }
+    const [agentResult, browserResult] = await Promise.all([agent, browser]);
+    expect(waiting).toBe(true);
+    expect(agentResult).toMatchObject({ status: 'accepted' });
+    expect(browserResult).toMatchObject({ name: 'BlogAlreadyExistsError' });
+    expect((await database.getBlogForUser(id))?.username).toBe(username);
+    expect(await database.db.select().from(agentRequests).where(eq(agentRequests.userId, id))).toHaveLength(1);
+    expect((await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id)))[0]?.count).toBe(1);
+  });
+  it('returns a source conflict instead of 500 when first-time browser bootstrap wins', async () => {
+    const id = await owner(); const approved = await grant(id); const username = `browser-wins-${id.slice(0, 8)}`;
+    let markLocked: ((pid: number) => void) | undefined; let releaseBrowser: (() => void) | undefined;
+    const locked = new Promise<number>((resolve) => { markLocked = resolve; });
+    const continueBrowser = new Promise<void>((resolve) => { releaseBrowser = resolve; });
+    const browser = database.transaction(async (db) => {
+      const result = await db.createBlog(id, username, 'alice');
+      const backend = await db.db.execute<{ pid: number }>(sql`select pg_backend_pid() as pid`);
+      markLocked?.(backend.rows[0].pid); await continueBrowser; return result;
+    });
+    const pid = await locked;
+    const router = agentRoutes(database, { dispatch: () => Promise.resolve(0) }, 'https://vibelog.org', { betterAuthSecret: 'test-secret' });
+    const response = router.request('/connect', {
+      method: 'POST', headers: { Authorization: `Bearer ${approved.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
+      body: JSON.stringify({ username: `agent-loses-${id.slice(0, 8)}`, hackmdUsername: 'alice', language: 'en' }),
+    });
+    let waiting = false;
+    try {
+      for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
+        waiting = (await database.pool.query<{ waiting: boolean }>('select exists (select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid))) as waiting', [pid])).rows[0].waiting;
+        if (!waiting) await new Promise<void>((resolve) => { setTimeout(resolve, 10); });
+      }
+    } finally { releaseBrowser?.(); }
+    const [created, result] = await Promise.all([browser, response]);
+    expect(waiting).toBe(true); expect(result.status).toBe(409);
+    expect(await result.json()).toMatchObject({ error: { code: 'source_locked' } });
+    expect((await database.getBlogForUser(id))?.id).toBe(created.blog.id);
+    expect(await database.db.select().from(agentRequests).where(eq(agentRequests.userId, id))).toHaveLength(0);
+    expect(await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id))).toHaveLength(0);
+  });
   it('cooperates with concurrent browser admission without blocking its user foreign key', async () => {
     const id = await owner(); const { blog, operation } = await database.createBlog(id, `concurrent-${id.slice(0, 8)}`, 'alice');
     await database.db.update(operations).set({ status: 'failed' }).where(eq(operations.id, operation.id));

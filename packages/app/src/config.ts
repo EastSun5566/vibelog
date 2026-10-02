@@ -73,7 +73,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (betterAuthSecret.length < 32) throw new Error('BETTER_AUTH_SECRET must be at least 32 characters');
   const googleAnalyticsMeasurementId = optional(env, 'GOOGLE_ANALYTICS_MEASUREMENT_ID');
   const agentCliVersion = optional(env, 'VIBELOG_AGENT_CLI_VERSION');
-  if (agentCliVersion && !/^\d+\.\d+\.\d+$/u.test(agentCliVersion)) throw new Error('VIBELOG_AGENT_CLI_VERSION must be a pinned stable version');
+  if (agentCliVersion && !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u.test(agentCliVersion)) throw new Error('VIBELOG_AGENT_CLI_VERSION must be a pinned stable version');
   if (googleAnalyticsMeasurementId && !/^G-[A-Z0-9]+$/u.test(googleAnalyticsMeasurementId)) throw new Error('GOOGLE_ANALYTICS_MEASUREMENT_ID must be a GA4 measurement ID');
   const emailProvider = env.EMAIL_PROVIDER ?? 'resend';
   if (!['resend', 'mailpit'].includes(emailProvider)) throw new Error('EMAIL_PROVIDER must be resend or mailpit');
