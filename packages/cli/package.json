@@ -1,0 +1,20 @@
+{
+  "name": "@vibelog/cli",
+  "version": "0.1.0",
+  "description": "Draft-only VibeLog onboarding for coding agents",
+  "type": "module",
+  "bin": { "vibelog": "dist/main.js" },
+  "files": ["dist", "README.md"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/EastSun5566/vibelog.git", "directory": "packages/cli" },
+  "engines": { "node": ">=24.0.0" },
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "prepack": "pnpm build"
+  },
+  "dependencies": { "@napi-rs/keyring": "2.1.0" },
+  "devDependencies": { "@types/node": "^24.0.0", "typescript": "7.0.2" }
+}

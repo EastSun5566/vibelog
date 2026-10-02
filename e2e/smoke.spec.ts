@@ -1,17 +1,18 @@
+import type { BlogDesignSpecV2 } from '@vibelog/core';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 
 interface MailpitMessageSummary { id?: string; ID?: string }
 interface MailpitMessage { text?: string; Text?: string }
 
-async function requestMagicLink(page: Page, request: APIRequestContext, mailpitUrl: string, email: string): Promise<string> {
-  await page.goto('/auth/login');
+async function requestMagicLink(page: Page, request: APIRequestContext, mailpitUrl: string, email: string, returnTo = ''): Promise<string> {
+  await page.goto(returnTo ? `/auth/login?returnTo=${encodeURIComponent(returnTo)}` : '/auth/login');
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
   await expect(page.getByLabel('Email')).toHaveCSS('font-size', '16px');
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByLabel('Email').fill(email);
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
-  await expect(page).toHaveURL(/\/auth\/login\?sent=1$/u);
+  await expect(page).toHaveURL(/\/auth\/login\?sent=1(?:&returnTo=.*)?$/u);
   await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
   await expect(page.getByRole('status')).toContainText('We sent a one-time sign-in link. It expires in 10 minutes.');
   await expect(page.getByLabel('Email')).toHaveCount(0);
@@ -473,4 +474,65 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(page.getByText('Your VibeLog account was deleted.')).toBeVisible();
   expect(browserErrors).toEqual([]);
   expect(searchErrors).toEqual([]);
+});
+
+test('agent pairing builds only a private draft, then the human publishes', async ({ page, request }) => {
+  test.setTimeout(240_000);
+  const origin = process.env.E2E_APP_ORIGIN;
+  const mailpitUrl = process.env.E2E_MAILPIT_URL;
+  if (!origin || !mailpitUrl) throw new Error('E2E origins are required');
+  const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
+  const pairingResponse = await request.post('/api/agent/v1/pairings', { data: {} });
+  expect(pairingResponse.status()).toBe(201);
+  const pairing = await pairingResponse.json() as { authorizationUrl: string; userCode: string; deviceCode: string };
+  await page.goto(pairing.authorizationUrl); await expect(page).toHaveURL(/\/auth\/login\?returnTo=/u);
+  const returnTo = `/agent/authorize?code=${pairing.userCode}`;
+  const email = `agent-${String(Date.now())}@example.com`;
+  const link = await requestMagicLink(page, request, mailpitUrl, email, returnTo);
+  await page.goto(link); await expect(page.getByRole('heading', { name: 'Authorize your agent' })).toBeVisible();
+  await expect(page.getByText(pairing.userCode, { exact: true })).toBeVisible();
+  const form = page.locator('form[action="/agent/authorize"]');
+  const csrf = await form.locator('input[name="csrfToken"]').inputValue();
+  await page.setViewportSize({ width: 390, height: 844 }); await expectNoHorizontalOverflow(page);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  expect((await page.request.post('/agent/authorize', { headers: { origin }, form: { code: pairing.userCode, decision: 'approve', csrfToken: 'invalid' }, maxRedirects: 0 })).status()).toBe(403);
+  await page.getByRole('button', { name: 'Authorize draft access' }).click();
+  const tokenResponse = await request.post('/api/agent/v1/pairings/token', { data: { deviceCode: pairing.deviceCode } });
+  expect(tokenResponse.ok()).toBe(true);
+  const credentials = await tokenResponse.json() as { token: string; expiresAt: string };
+  const headers = { authorization: `Bearer ${credentials.token}` };
+  expect((await request.post('/api/agent/v1/pairings/token', { data: { deviceCode: pairing.deviceCode } })).status()).toBe(403);
+  expect((await page.request.get('/api/agent/v1/context')).status()).toBe(401);
+  expect((await request.post('/actions/publish', { headers, data: {}, maxRedirects: 0 })).status()).toBe(302);
+  const username = `agent-${String(Date.now())}`;
+  const key = `connect-${String(Date.now())}-request`;
+  const connect = { username, hackmdUsername: 'alice-hackmd', language: 'en' };
+  const result = await request.post('/api/agent/v1/connect', { headers: { ...headers, 'Idempotency-Key': key }, data: connect });
+  expect(result.status()).toBe(202); const accepted = await result.json() as { operationId: string };
+  const replay = await request.post('/api/agent/v1/connect', { headers: { ...headers, 'Idempotency-Key': key }, data: connect });
+  expect(await replay.json()).toEqual(accepted);
+  await expect.poll(async () => (await (await request.get(`/api/agent/v1/operations/${accepted.operationId}`, { headers })).json() as { status: string }).status, { timeout: 90_000, intervals: [5000] }).toBe('succeeded');
+  const context = await (await request.get('/api/agent/v1/context', { headers })).json() as { stateVersion: string; design: BlogDesignSpecV2; editorUrl: string };
+  expect(context.editorUrl).toBe(`${origin}/editor`); expect(JSON.stringify(context)).not.toContain('/preview-access/'); expect(JSON.stringify(context)).not.toContain('This article came through');
+  const design = { ...context.design, theme: { ...context.design.theme, typography: { ...context.design.theme.typography, bodyFont: 'system-mono' as const } }, description: 'Agent-designed private draft' };
+  expect((await request.post('/api/agent/v1/design/validate', { headers, data: { design } })).status()).toBe(200);
+  const submit = await request.post('/api/agent/v1/design', { headers: { ...headers, 'Idempotency-Key': `design-${String(Date.now())}-request` }, data: { stateVersion: context.stateVersion, design } });
+  expect(submit.status()).toBe(202); const operation = await submit.json() as { operationId: string };
+  await expect.poll(async () => (await (await request.get(`/api/agent/v1/operations/${operation.operationId}`, { headers })).json() as { status: string }).status, { timeout: 90_000, intervals: [5000] }).toBe('succeeded');
+  expect((await request.post('/api/agent/v1/publish', { headers, data: {} })).status()).toBe(404);
+  const publicUrl = new URL(origin); publicUrl.hostname = `${username}.${publicUrl.hostname}`;
+  expect((await request.get(publicUrl.href)).status()).toBe(404);
+  await page.goto(context.editorUrl); await expect(page.getByText('Agent-designed private draft', { exact: true }).first()).toBeVisible();
+  await expect(page.locator('iframe[data-preview-url]')).toBeVisible();
+  await markPage(page); await expectPartialRefresh(page, page.getByRole('button', { name: 'Publish first release' }));
+  expect((await request.get(publicUrl.href)).status()).toBe(200);
+  await page.goto('/account/agents'); await page.getByRole('button', { name: 'Revoke access' }).click();
+  expect((await request.get('/api/agent/v1/context', { headers })).status()).toBe(401);
+  // The migration rehearsal that follows uses Alice's retained blog as its only fixture.
+  await page.goto('/editor'); await openDisclosure(page, 'danger-zone');
+  await page.getByLabel(`Type ${email} to confirm`).fill(email);
+  await page.getByRole('button', { name: 'Delete account' }).click();
+  await expect(page).toHaveURL(/\/auth\/login\?deleted=1$/u);
+  expect((await request.get(publicUrl.href)).status()).toBe(404);
+  expect(csrf).toBeTruthy(); expect(errors).toEqual([]);
 });

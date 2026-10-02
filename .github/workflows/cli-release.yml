@@ -1,0 +1,60 @@
+name: Publish CLI
+
+on:
+  push:
+    tags: ["cli-v*.*.*"]
+
+concurrency:
+  group: cli-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+      - name: Check independent CLI version and main ancestry
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('packages/cli/package.json', 'utf8'));
+          if (!/^cli-v\d+\.\d+\.\d+$/.test(process.env.TAG) || process.env.TAG !== `cli-v${pkg.version}` || pkg.name !== '@vibelog/cli') process.exit(1);
+          NODE
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Require successful exact-SHA CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          passed="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" -f branch=main -f event=push -f head_sha="$GITHUB_SHA" -F per_page=100 --jq ".workflow_runs | any(.head_sha == \"${GITHUB_SHA}\" and .status == \"completed\" and .conclusion == \"success\")")"
+          test "$passed" = true
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @vibelog/cli build
+      - run: node .github/scripts/cli-pack-smoke.mjs
+      - name: Require first-publish bootstrap and OIDC-capable npm
+        run: |
+          npm view @vibelog/cli name --registry=https://registry.npmjs.org
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          const [major, minor, patch] = execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim().split('.').map(Number);
+          if (!(major > 11 || major === 11 && (minor > 5 || minor === 5 && patch >= 1))) process.exit(1);
+          NODE
+      - name: Publish using the configured npm trusted publisher
+        working-directory: packages/cli
+        run: npm publish --access public --provenance --ignore-scripts

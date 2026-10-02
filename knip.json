@@ -18,7 +18,8 @@
         ".github/scripts/check-design-v2-audit.mjs",
         ".github/scripts/check-design-v2-audit.test.mjs",
         "e2e/run-local.mjs",
-        "e2e/**/*.spec.ts"
+        "e2e/**/*.spec.ts",
+        ".github/scripts/cli-pack-smoke.mjs"
       ],
       "project": [
         "vitest.config.ts",
@@ -31,7 +32,8 @@
         ".github/scripts/check-design-v2-audit.test.mjs",
         "e2e/run-local.mjs",
         "e2e/tsconfig.json",
-        "e2e/**/*.ts"
+        "e2e/**/*.ts",
+        ".github/scripts/cli-pack-smoke.mjs"
       ],
       "ignoreBinaries": ["pulumi"]
     },
@@ -47,6 +49,10 @@
     "packages/edge": {
       "entry": ["src/index.ts"],
       "project": ["src/**/*.ts"]
+    },
+    "packages/cli": {
+      "entry": ["src/main.ts", "tests/**/*.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
     },
     "packages/infra": {
       "entry": ["src/index.ts", "tests/**/*.test.{ts,mjs}"],

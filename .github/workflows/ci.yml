@@ -35,6 +35,7 @@ jobs:
           git diff --exit-code -- packages/app/src/drizzle
           test -z "$(git status --porcelain -- packages/app/src/drizzle)"
       - run: pnpm build
+      - run: node .github/scripts/cli-pack-smoke.mjs
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       - name: Stop integration services

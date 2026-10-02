@@ -61,10 +61,10 @@ time { font-variant-numeric: tabular-nums; }
 .app-skip-link:focus { transform: translateY(0); }
 
 .app-shell { width: min(100% - 2rem, 90rem); margin-inline: auto; padding-block: 1rem 2.5rem; }
-.app-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 3.75rem; border-bottom: 1px solid var(--border); }
+.app-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; min-height: 3.75rem; padding-block: 0.5rem; border-bottom: 1px solid var(--border); }
 .app-brand { display: inline-flex; align-items: center; gap: 0.55rem; color: var(--proof-ink); font-weight: 780; letter-spacing: -0.025em; text-decoration: none; }
 .app-brand img { display: block; width: 1.75rem; height: 1.75rem; }
-.account-nav, .account-nav form { display: flex; align-items: center; gap: 0.4rem; margin: 0; }
+.account-nav, .account-nav form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0; }
 .app-main { padding-block-start: 1.5rem; }
 
 .auth-kicker, .workspace-kicker, .preview-label {

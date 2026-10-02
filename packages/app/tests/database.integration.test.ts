@@ -2,13 +2,18 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { DEFAULT_DESIGN_V2 } from '@vibelog/core';
 import { AppDatabase, BlogAddressTakenError, MAX_OPERATION_ATTEMPTS, OperationLeaseLostError } from '../src/database.js';
 import { AppOperationExecutor, OutboxDispatcher, RetryableOperationError } from '../src/jobs.js';
 import { loadWorkerConfig } from '../src/config.js';
 import { smokeWorker } from '../scripts/worker-smoke.js';
 import { CloudTasksRequestVerifier } from '../src/adapters/cloud-tasks-request-verifier.js';
+import { AgentRepository, operationResult } from '../src/agent/repository.js';
+import { stateVersion } from '../src/agent/contracts.js';
+import { agentRoutes } from '../src/agent/routes.js';
+import { jsonError, requestContext } from '../src/http.js';
+import { agentDailyUsage, agentGrants, agentPairings, agentRequests } from '../src/schema.js';
 import { handleOperationTask } from '../src/adapters/cloud-tasks-transport.js';
 import { aiDailyUsage, blogs, operationOutbox, operations, previewSessions, rateLimit, user } from '../src/schema.js';
 
@@ -123,7 +128,7 @@ describe.skipIf(!url)('PostgreSQL operation repository', () => {
         { id: randomUUID(), key: `current-${id}`, count: 1, lastRequest: Math.floor(at.getTime() / 1000) - 86_400 },
       ]);
 
-      expect(await database.pruneTransientData(at)).toEqual({ previewSessions: 2, operations: 1, aiUsage: 1, rateLimits: 1 });
+      expect(await database.pruneTransientData(at)).toMatchObject({ previewSessions: 2, operations: 1, aiUsage: 1, rateLimits: 1 });
       expect(await database.getOperation(operation.id)).toBeNull();
       expect(await database.getOperation(recentOperationId)).not.toBeNull();
       expect(await database.getOperation(activeOperationId)).not.toBeNull();
@@ -276,5 +281,170 @@ describe.skipIf(!url)('operation crash recovery', () => {
     await smokeWorker({ workerUrl: 'https://worker.run.app', queuePath: 'projects/test/locations/region/queues/operations', invokerEmail: 'tasks@test', accessToken: 'fake' }, database.pool, { fetch: request, polls: 1 });
     expect(operationId).not.toBe('');
     expect(await database.getOperation(operationId)).toBeNull();
+  });
+});
+
+describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
+  const database = new AppDatabase(url ?? 'postgresql://unused');
+  const repository = new AgentRepository(database);
+  const ids: string[] = [];
+  beforeAll(async () => { await migrate(database.db, { migrationsFolder: fileURLToPath(new URL('../src/drizzle', import.meta.url)) }); });
+  afterAll(async () => {
+    for (const id of ids) { await database.db.delete(agentDailyUsage).where(eq(agentDailyUsage.subject, id)); await database.db.delete(user).where(eq(user.id, id)); }
+    await database.close();
+  });
+  async function owner() { const id = randomUUID(); ids.push(id); await database.db.insert(user).values({ id, name: 'Agent owner', email: `${id}@example.com` }); return id; }
+  async function grant(id: string) {
+    const pairing = await repository.createPairing(); await repository.approve(id, pairing.userCode, true);
+    const result = await repository.redeem(pairing.deviceCode); if (result.status !== 'approved') throw new Error('Expected approval'); return { pairing, ...result };
+  }
+  it('requires explicit approval and redeems a hash-only grant exactly once', async () => {
+    const id = await owner(); const pairing = await repository.createPairing();
+    await expect(repository.redeem(pairing.deviceCode)).rejects.toMatchObject({ code: 'slow_down' });
+    await database.db.update(agentPairings).set({ updatedAt: new Date(Date.now() - 6000) }).where(eq(agentPairings.userCode, pairing.userCode));
+    expect(await repository.redeem(pairing.deviceCode)).toEqual({ status: 'pending' });
+    await repository.approve(id, pairing.userCode, true);
+    const result = await repository.redeem(pairing.deviceCode); expect(result.status).toBe('approved');
+    if (result.status !== 'approved') throw new Error('Expected approval');
+    const saved = await repository.grant(result.token); expect(saved.userId).toBe(id); expect(saved.tokenHash).not.toBe(result.token);
+    expect(new Date(result.expiresAt).getTime() - Date.now()).toBeGreaterThan(43190_000);
+    await expect(repository.redeem(pairing.deviceCode)).rejects.toMatchObject({ code: 'pairing_denied' });
+    await expect(repository.approve(id, pairing.userCode, true)).rejects.toMatchObject({ code: 'pairing_unavailable' });
+  });
+  it('denial, expiry and owner-only revocation reject authorization', async () => {
+    const id = await owner(); const other = await owner(); const pairing = await repository.createPairing();
+    await repository.approve(id, pairing.userCode, false); await expect(repository.redeem(pairing.deviceCode)).rejects.toMatchObject({ code: 'pairing_denied' });
+    const approved = await grant(id); const saved = await repository.grant(approved.token);
+    await repository.revoke(other, saved.id); expect((await repository.grant(approved.token)).id).toBe(saved.id);
+    await repository.revoke(id, saved.id); await expect(repository.grant(approved.token)).rejects.toMatchObject({ code: 'agent_unauthorized' });
+    const expired = await grant(id); await database.db.update(agentGrants).set({ expiresAt: new Date(0) }).where(eq(agentGrants.userId, id));
+    await expect(repository.grant(expired.token)).rejects.toMatchObject({ code: 'agent_unauthorized' });
+    await database.db.update(agentPairings).set({ expiresAt: new Date(0) }).where(eq(agentPairings.userCode, expired.pairing.userCode));
+    await expect(repository.redeem(expired.pairing.deviceCode)).rejects.toMatchObject({ code: 'pairing_expired' });
+  });
+  it('serializes duplicate bootstrap and rejects changed payloads without charging twice', async () => {
+    const id = await owner(); const key = randomUUID(); const body = { username: `agent-${id.slice(0, 8)}` };
+    const work = async (db: AppDatabase) => operationResult((await db.createBlog(id, body.username, 'alice')).operation);
+    const [first, second] = await Promise.all([repository.mutation(id, key, 'connect', body, work), repository.mutation(id, key, 'connect', body, work)]);
+    expect(first).toEqual(second); expect(await database.db.select().from(agentRequests).where(eq(agentRequests.userId, id))).toHaveLength(1);
+    expect((await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id)))[0]?.count).toBe(1);
+    await expect(repository.mutation(id, key, 'connect', { username: 'changed' }, work)).rejects.toMatchObject({ code: 'idempotency_conflict' });
+  });
+  it('cooperates with concurrent browser admission without blocking its user foreign key', async () => {
+    const id = await owner(); const { blog, operation } = await database.createBlog(id, `concurrent-${id.slice(0, 8)}`, 'alice');
+    await database.db.update(operations).set({ status: 'failed' }).where(eq(operations.id, operation.id));
+    let markLocked: ((pid: number) => void) | undefined; let releaseBrowser: (() => void) | undefined;
+    const locked = new Promise<number>((resolve) => { markLocked = resolve; });
+    const continueBrowser = new Promise<void>((resolve) => { releaseBrowser = resolve; });
+    const browserResult = database.transaction(async (db) => {
+      await db.db.execute(sql`set local lock_timeout = '2s'`);
+      await db.db.select().from(blogs).where(eq(blogs.id, blog.id)).for('update');
+      const backend = await db.db.execute<{ pid: number }>(sql`select pg_backend_pid() as pid`);
+      markLocked?.(backend.rows[0].pid); await continueBrowser;
+      await db.createSyncOperation(id, blog.id, { intent: 'content' });
+    }).then(() => null, (error: unknown) => error);
+    const pid = await locked;
+    const agentResult = repository.mutation(id, randomUUID(), 'design', { stateVersion: stateVersion(blog) }, () => Promise.resolve({ status: 'unchanged' }))
+      .then((result) => result, (error: unknown) => error);
+    try {
+      let waiting = false;
+      for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
+        waiting = (await database.pool.query<{ waiting: boolean }>('select exists (select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid))) as waiting', [pid])).rows[0].waiting;
+        if (!waiting) await new Promise<void>((resolve) => { setTimeout(resolve, 10); });
+      }
+      expect(waiting).toBe(true);
+    } finally { releaseBrowser?.(); }
+    expect(await browserResult).toBeNull();
+    expect(await agentResult).toMatchObject({ code: 'operation_in_progress' });
+    expect(await database.db.select().from(agentRequests).where(eq(agentRequests.userId, id))).toHaveLength(0);
+  });
+  it('rolls back operation, outbox and request record when quota is exhausted', async () => {
+    const id = await owner(); const date = new Date().toISOString().slice(0, 10);
+    await database.db.insert(agentDailyUsage).values({ usageDate: date, subject: id, count: 10 });
+    const key = randomUUID();
+    await expect(repository.mutation(id, key, 'connect', {}, async (db) => operationResult((await db.createBlog(id, `quota-${id.slice(0, 8)}`, 'alice')).operation))).rejects.toMatchObject({ code: 'agent_build_quota_exceeded' });
+    expect(await database.getBlogForUser(id)).toBeNull(); expect(await database.db.select().from(agentRequests).where(eq(agentRequests.userId, id))).toHaveLength(0);
+    expect((await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id)))[0]?.count).toBe(10);
+  });
+  it('rejects stale state and retains no-op request without charging build quota', async () => {
+    const id = await owner(); const { blog, operation } = await database.createBlog(id, `state-${id.slice(0, 8)}`, 'alice');
+    await database.db.update(operations).set({ status: 'failed' }).where(eq(operations.id, operation.id));
+    const input = { stateVersion: stateVersion(blog) };
+    expect(await repository.mutation(id, randomUUID(), 'design', input, () => Promise.resolve({ status: 'unchanged' }))).toEqual({ status: 'unchanged' });
+    expect(await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id))).toHaveLength(0);
+    await database.db.update(blogs).set({ contentVersion: blog.contentVersion + 1 }).where(eq(blogs.id, blog.id));
+    await expect(repository.mutation(id, randomUUID(), 'design', input, () => Promise.resolve({ status: 'unchanged' }))).rejects.toMatchObject({ code: 'state_changed' });
+  });
+  it('rolls back admission when the shared global build quota is exhausted', async () => {
+    const id = await owner(); const date = new Date().toISOString().slice(0, 10);
+    const condition = and(eq(agentDailyUsage.usageDate, date), eq(agentDailyUsage.subject, '*'));
+    const [previous] = await database.db.select().from(agentDailyUsage).where(condition);
+    await database.db.insert(agentDailyUsage).values({ usageDate: date, subject: '*', count: 50 })
+      .onConflictDoUpdate({ target: [agentDailyUsage.usageDate, agentDailyUsage.subject], set: { count: 50 } });
+    try {
+      await expect(repository.mutation(id, randomUUID(), 'connect', {}, async (db) => operationResult((await db.createBlog(id, `global-${id.slice(0, 8)}`, 'alice')).operation))).rejects.toMatchObject({ code: 'agent_build_quota_exceeded' });
+      expect(await database.getBlogForUser(id)).toBeNull();
+      expect(await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id))).toHaveLength(0);
+      expect(await database.db.select().from(agentRequests).where(eq(agentRequests.userId, id))).toHaveLength(0);
+      expect((await database.db.select().from(agentDailyUsage).where(condition))[0]?.count).toBe(50);
+    } finally {
+      if (previous) await database.db.update(agentDailyUsage).set({ count: previous.count }).where(condition);
+      else await database.db.delete(agentDailyUsage).where(condition);
+    }
+  });
+  it('treats an identical design submission as an unchanged draft', async () => {
+    const id = await owner(); const approved = await grant(id);
+    const { blog, operation } = await database.createBlog(id, `noop-${id.slice(0, 8)}`, 'alice');
+    const lease = await database.claimOperation(operation.id); if (!lease) throw new Error('Missing sync claim');
+    const initial = await database.getActiveDesign(blog.id); if (!initial) throw new Error('Missing initial design');
+    const source = await database.createArtifact(blog.id, 'source'); const draft = await database.createArtifact(blog.id, 'draft');
+    await database.completeSyncOperation(lease, {
+      title: 'Writer', description: '', author: 'Writer', sourceArtifactId: source.id, draftArtifactId: draft.id,
+      designRevisionId: initial.id,
+      contentProfile: { postCount: 0, tagCount: 0, averageLength: 'short', codeUsage: 'none', imageUsage: 'none', mathUsage: 'none' },
+    }, {});
+    const current = await database.getBlog(blog.id); if (!current) throw new Error('Missing blog');
+    const router = agentRoutes(database, { dispatch: () => Promise.reject(new Error('No dispatch expected')) }, 'https://vibelog.org');
+    const response = await router.request('/design', {
+      method: 'POST', headers: { Authorization: `Bearer ${approved.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
+      body: JSON.stringify({ stateVersion: stateVersion(current), design: initial.config }),
+    });
+    expect(response.status).toBe(200); expect(await response.json()).toEqual({ status: 'unchanged' });
+    expect(await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id))).toHaveLength(0);
+    expect(await database.getActiveOperation(blog.id, id)).toBeNull();
+    expect(await database.listDesignRevisions(blog.id)).toHaveLength(1);
+    expect((await database.getBlog(blog.id))?.draftArtifactId).toBe(draft.id);
+  });
+  it('agent router returns JSON for auth/ownership errors and cannot publish or call hosted AI', async () => {
+    const id = await owner(); const other = await owner(); const approved = await grant(id);
+    const { operation } = await database.createBlog(other, `other-${other.slice(0, 8)}`, 'alice');
+    const router = agentRoutes(database, { dispatch: () => Promise.resolve(0) }, 'https://vibelog.org');
+    router.use('*', requestContext()); router.onError((error, c) => jsonError(c, error));
+    const headers = { Authorization: `Bearer ${approved.token}` };
+    expect((await router.request('/context')).status).toBe(401);
+    const foreign = await router.request(`/operations/${operation.id}`, { headers }); expect(foreign.status).toBe(404); expect(await foreign.json()).toHaveProperty('error.code', 'operation_not_found');
+    for (const path of ['/publish', '/generate', '/export', '/delete', '/releases/restore']) expect((await router.request(path, { method: 'POST', headers })).status).toBe(404);
+    const context = await router.request('/context', { headers }); expect(context.headers.get('cache-control')).toBe('no-store'); expect(await context.json()).toMatchObject({ blog: null, editorUrl: 'https://vibelog.org/editor' });
+    await repository.revoke(id, (await repository.grant(approved.token)).id); expect((await router.request('/context', { headers })).status).toBe(401);
+  });
+  it('daily cleanup expires grants and old requests but retains active operation recovery', async () => {
+    const id = await owner(); const expired = await grant(id); const live = await grant(id);
+    const at = new Date(); const old = new Date('2000-01-01T00:00:00Z');
+    await database.db.update(agentGrants).set({ expiresAt: at }).where(eq(agentGrants.id, (await repository.grant(expired.token)).id));
+    await database.db.update(agentPairings).set({ expiresAt: at }).where(eq(agentPairings.userCode, expired.pairing.userCode));
+    await database.db.insert(agentDailyUsage).values({ subject: id, usageDate: '2000-01-01', count: 1 });
+    const { operation } = await database.createBlog(id, `cleanup-${id.slice(0, 8)}`, 'alice');
+    await database.db.insert(agentRequests).values([
+      { userId: id, key: 'old-completed', requestHash: 'test', response: { status: 'unchanged' }, createdAt: old },
+      { userId: id, key: 'old-pending', requestHash: 'test', response: { operationId: operation.id }, operationId: operation.id, createdAt: old },
+    ]);
+    await database.pruneTransientData(at);
+    await expect(repository.grant(expired.token)).rejects.toMatchObject({ code: 'agent_unauthorized' });
+    expect((await repository.grant(live.token)).userId).toBe(id);
+    expect(await repository.pairing(expired.pairing.userCode)).toBeNull();
+    expect((await database.db.select().from(agentRequests).where(eq(agentRequests.userId, id))).map((row) => row.key)).toEqual(['old-pending']);
+    expect(await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id))).toHaveLength(0);
+    expect((await database.getOperation(operation.id))?.status).toBe('queued');
+    expect((await database.listPendingOutbox()).some((row) => row.operationId === operation.id)).toBe(true);
   });
 });

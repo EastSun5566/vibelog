@@ -14,6 +14,7 @@ export interface AppConfig extends OperationRuntimeConfig {
   appOrigin: string; appHostname: string; previewOrigin: string; databaseUrl: string; betterAuthSecret: string;
   githubClientId?: string; githubClientSecret?: string; googleClientId?: string; googleClientSecret?: string;
   googleAnalyticsMeasurementId?: string;
+  agentCliVersion?: string;
   email: EmailConfig; emailFrom: string; emailReplyTo: string; objectStore: ObjectStoreConfig;
   edgeSharedSecret?: string;
   aiUserDailyLimit: number; aiGlobalDailyLimit: number; aiProvider: string; aiModel: string; secureCookies: boolean;
@@ -71,6 +72,8 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const betterAuthSecret = required(env, 'BETTER_AUTH_SECRET');
   if (betterAuthSecret.length < 32) throw new Error('BETTER_AUTH_SECRET must be at least 32 characters');
   const googleAnalyticsMeasurementId = optional(env, 'GOOGLE_ANALYTICS_MEASUREMENT_ID');
+  const agentCliVersion = optional(env, 'VIBELOG_AGENT_CLI_VERSION');
+  if (agentCliVersion && !/^\d+\.\d+\.\d+$/u.test(agentCliVersion)) throw new Error('VIBELOG_AGENT_CLI_VERSION must be a pinned stable version');
   if (googleAnalyticsMeasurementId && !/^G-[A-Z0-9]+$/u.test(googleAnalyticsMeasurementId)) throw new Error('GOOGLE_ANALYTICS_MEASUREMENT_ID must be a GA4 measurement ID');
   const emailProvider = env.EMAIL_PROVIDER ?? 'resend';
   if (!['resend', 'mailpit'].includes(emailProvider)) throw new Error('EMAIL_PROVIDER must be resend or mailpit');
@@ -81,7 +84,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ...runtime, previewOrigin, betterAuthSecret,
     githubClientId: optional(env, 'GITHUB_CLIENT_ID'), githubClientSecret: optional(env, 'GITHUB_CLIENT_SECRET'),
     googleClientId: optional(env, 'GOOGLE_CLIENT_ID'), googleClientSecret: optional(env, 'GOOGLE_CLIENT_SECRET'),
-    googleAnalyticsMeasurementId,
+    googleAnalyticsMeasurementId, agentCliVersion,
     email, emailFrom: required(env, 'EMAIL_FROM'), emailReplyTo: env.EMAIL_REPLY_TO ?? 'support@example.com',
     edgeSharedSecret: optional(env, 'EDGE_SHARED_SECRET'), aiUserDailyLimit: positiveInteger(env.VIBELOG_AI_USER_DAILY_LIMIT, 20, 'VIBELOG_AI_USER_DAILY_LIMIT'),
     aiGlobalDailyLimit: positiveInteger(env.VIBELOG_AI_GLOBAL_DAILY_LIMIT, 200, 'VIBELOG_AI_GLOBAL_DAILY_LIMIT'), secureCookies: origin.protocol === 'https:',

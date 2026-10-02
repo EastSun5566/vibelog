@@ -2,6 +2,9 @@
   "extends": "../packages/app/tsconfig.json",
   "compilerOptions": {
     "rootDir": "..",
+    "paths": {
+      "@vibelog/core": ["../packages/core/src/index.ts"]
+    },
     "noEmit": true
   },
   "include": ["./smoke.spec.ts", "../playwright.config.ts"]
