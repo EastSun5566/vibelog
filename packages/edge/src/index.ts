@@ -19,10 +19,15 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   }
   origin.pathname = incoming.pathname; origin.search = incoming.search;
   const timestamp = Math.floor(Date.now() / 1000).toString();
-  const payload = `${timestamp}\n${incoming.host}\n${incoming.pathname}${incoming.search}`;
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(env.EDGE_SHARED_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const clientIp = request.headers.get('cf-connecting-ip');
+  const clientKey = incoming.pathname.startsWith('/api/agent/v1/pairings') && clientIp
+    ? base64url(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`agent-client\n${clientIp}`))) : undefined;
+  const payload = `${timestamp}\n${incoming.host}\n${incoming.pathname}${incoming.search}${clientKey ? `\n${clientKey}` : ''}`;
   const signature = base64url(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)));
   const headers = new Headers(request.headers);
+  headers.delete('x-vibelog-client-key');
+  if (clientKey) headers.set('x-vibelog-client-key', clientKey);
   headers.set('x-vibelog-host', incoming.host); headers.set('x-vibelog-timestamp', timestamp); headers.set('x-vibelog-signature', signature);
   const init: RequestInit = { method: request.method, headers, body: request.body, redirect: 'manual' };
   if (isPublicBlogRequest(request, incoming, env.ROOT_DOMAIN)) init.cf = {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadWorkerConfig } from '../src/config.js';
+import { loadAppConfig, loadWorkerConfig } from '../src/config.js';
 
 const baseEnv: NodeJS.ProcessEnv = {
   DATABASE_URL: 'postgresql://unused',
@@ -36,5 +36,15 @@ describe('maintenance stage config', () => {
   });
   it('rejects unknown stages', () => {
     expect(() => loadWorkerConfig({ ...baseEnv, VIBELOG_MAINTENANCE_STAGE: 'open' })).toThrow('VIBELOG_MAINTENANCE_STAGE');
+  });
+});
+
+describe('pinned agent CLI version', () => {
+  const env = { ...baseEnv, BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-characters', EMAIL_PROVIDER: 'mailpit', MAILPIT_API_URL: 'http://localhost:8025', EMAIL_FROM: 'login@example.com' };
+  it.each(['0.1.0', '1.0.0', '10.20.30'])('accepts stable version %s', (version) => {
+    expect(loadAppConfig({ ...env, VIBELOG_AGENT_CLI_VERSION: version }).agentCliVersion).toBe(version);
+  });
+  it.each(['01.2.3', '1.02.3', '1.2.03', '1.2.3-beta', 'latest'])('rejects invalid stable version %s', (version) => {
+    expect(() => loadAppConfig({ ...env, VIBELOG_AGENT_CLI_VERSION: version })).toThrow('pinned stable version');
   });
 });

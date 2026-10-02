@@ -38,6 +38,7 @@ export type {
 } from './types.js';
 
 export { DEFAULT_DESIGN_V2 } from './design/defaults-v2.js';
+export { designContractV2 } from './design/contract-v2.js';
 export { contrastRatio } from './design/color.js';
 export { createContentProfile } from './design/profile.js';
 export { contentProfileSchema, sourceSnapshotV1Schema, validateSourceSnapshot } from './design/validate.js';

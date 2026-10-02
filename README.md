@@ -57,6 +57,8 @@ The monorepo is split by responsibility:
 
 ## Deployment
 
+Agent onboarding is being prepared in [#19](https://github.com/EastSun5566/vibelog/issues/19): a coding agent can build a private draft through the independent [`@vibelog/cli`](packages/cli/README.md). Browser approval grants draft access for 12 hours; only the writer publishes. The homepage prompt stays disabled until the CLI is publicly installable and its API is deployed.
+
 Local development uses Compose. The cloud `prod` stack uses Neon PostgreSQL, Cloudflare R2 and Workers, GCP Cloud Run and Cloud Tasks, and Resend.
 
 Production deploys are manual. The GitHub workflow checks the exact commit's CI result, runs a guarded Pulumi preview, then performs one `pulumi up`. See the [infrastructure guide](packages/infra/README.md) for normal operation and the [bootstrap runbook](packages/infra/RUNBOOK.md) for a new stack.

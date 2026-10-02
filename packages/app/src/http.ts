@@ -39,8 +39,8 @@ export function assertCsrfToken(actual: string | undefined, expected: string): v
   }
 }
 
-export function jsonError<Path extends string, RequestInput extends Input>(c: Context<{ Variables: AppVariables }, Path, RequestInput>, error: unknown) {
-  const requestId = c.get('requestId') || randomUUID();
+export function jsonError<Environment extends { Variables: AppVariables }, Path extends string, RequestInput extends Input>(c: Context<Environment, Path, RequestInput>, error: unknown) {
+  const requestId = String(c.get('requestId') || randomUUID());
   if (error instanceof AppError) {
     for (const [name, value] of Object.entries(error.headers ?? {})) c.header(name, value);
     return c.json({ error: { code: error.code, message: error.message, requestId } }, error.status);

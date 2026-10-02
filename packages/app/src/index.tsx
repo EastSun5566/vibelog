@@ -1,4 +1,8 @@
-import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { AGENT_API } from './agent/contracts.js';
+import { agentRoutes } from './agent/routes.js';
+import { AgentRepository } from './agent/repository.js';
+import { agentInstructions, authorizationPage, grantsPage, onboardingPrompt } from './agent/views.js';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -10,7 +14,7 @@ import { findArtifactObject } from './artifact-serving.js';
 import { createAuth, readSession, type AppVariables } from './auth.js';
 import { blogIdentitySchema, blogLanguageSchema } from './blog-sync.js';
 import { loadAppConfig, type AppConfig } from './config.js';
-import { AiQuotaExceededError, AppDatabase, BlogAddressTakenError, type BlogRecord, type OperationRecord, type OperationType } from './database.js';
+import { AiQuotaExceededError, AppDatabase, BlogAddressTakenError, BlogAlreadyExistsError, type BlogRecord, type OperationRecord, type OperationType } from './database.js';
 import { AppError, assertCsrfToken, assertMutationOrigin, jsonError, requestContext } from './http.js';
 import type { OperationDispatcher } from './ports/operation-queue.js';
 import { operationMessage, operationProgress } from './operation-status.js';
@@ -19,6 +23,7 @@ import type { ArtifactStore } from './ports/artifact-store.js';
 import type { TransactionalEmailSender } from './ports/transactional-email.js';
 import { editorUrlWithPreviewPath, safePreviewPath } from './preview-path.js';
 import { hashToken, randomToken } from './security/crypto.js';
+import { edgeIdentity } from './security/edge-identity.js';
 import { hasUnsavedFineTuneChanges, themeFromControls, visualThemeFromControls } from './theme-studio.js';
 import { deletionPage, editorPage, guidePage, landingPage, loginPage, onboardingPage, operationPage, type AnalyticsDocumentConfig, type DeletionError } from './views.js';
 
@@ -57,15 +62,8 @@ export function createApp(options: CreateAppOptions) {
   const config = options.config ?? loadAppConfig(); const database = options.database ?? new AppDatabase(config.databaseUrl);
   const auth = createAuth(database, config, options.emailSender); const app = new Hono<AppEnv>();
   app.use('*', requestContext());
-  app.use('*', async (c, next) => {
-    const edgeHost = c.req.header('x-vibelog-host'); if (!edgeHost) return next();
-    const timestamp = c.req.header('x-vibelog-timestamp'); const signature = c.req.header('x-vibelog-signature');
-    if (!config.edgeSharedSecret || !timestamp || !signature || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) throw new AppError('edge_identity_invalid', 'Invalid edge identity', 401);
-    const url = new URL(c.req.url); const expected = createHmac('sha256', config.edgeSharedSecret).update(`${timestamp}\n${edgeHost}\n${url.pathname}${url.search}`).digest('base64url');
-    const left = Buffer.from(signature); const right = Buffer.from(expected); if (left.length !== right.length || !timingSafeEqual(left, right)) throw new AppError('edge_identity_invalid', 'Invalid edge identity', 401);
-    c.set('edgeHost', edgeHost); return next();
-  });
-  app.use('*', bodyLimit({ maxSize: 64 * 1024, onError: () => Response.json({ error: { code: 'payload_too_large', message: 'Request body exceeds 64 KiB', requestId: randomUUID() } }, { status: 413 }) }));
+  app.use('*', edgeIdentity(config.edgeSharedSecret));
+  app.use(`${AGENT_API}/*`, bodyLimit({ maxSize: 64 * 1024, onError: () => Response.json({ error: { code: 'payload_too_large', message: 'Request body exceeds 64 KiB', requestId: randomUUID() } }, { status: 413 }) }));
   app.use('*', async (c, next) => {
     if (blocksRequest(config.maintenanceStage, 'web', c.req.path)) return maintenanceResponse(c.req.method);
     await next();
@@ -122,26 +120,50 @@ export function createApp(options: CreateAppOptions) {
     c.set('analyticsNonce', nonce);
     return { measurementId: config.googleAnalyticsMeasurementId, nonce };
   };
-  app.get('/auth/login', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(loginPage({ deleted: c.req.query('deleted') === '1', github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), sent: c.req.query('sent') === '1' }, analyticsDocument(c))));
+  const returnTo = (value: string | undefined) => value === '/account/agents' || /^\/agent\/authorize\?code=[A-F0-9]{10}$/u.test(value ?? '') ? (value ?? '/editor') : '/editor';
+  app.get('/auth/login', async (c) => await readSession(c, auth, config) ? c.redirect(returnTo(c.req.query('returnTo'))) : c.html(loginPage({ returnTo: returnTo(c.req.query('returnTo')), deleted: c.req.query('deleted') === '1', github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), sent: c.req.query('sent') === '1' }, analyticsDocument(c))));
   app.post('/auth/magic-link', async (c) => {
     assertMutationOrigin(c, config); const body = await c.req.parseBody().catch(() => ({})); const parsed = emailInput.safeParse(formValue(body, 'email')?.trim().toLowerCase());
-    if (!parsed.success) return c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Enter a valid email address.' }, analyticsDocument(c)), 400);
+    const callbackURL = returnTo(formValue(body, 'returnTo'));
+    if (!parsed.success) return c.html(loginPage({ returnTo: callbackURL, github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Enter a valid email address.' }, analyticsDocument(c)), 400);
     const key = createHmacKey(config.betterAuthSecret, parsed.data);
-    if (!await database.consumeRateLimit(`magic:minute:${key}`, 1, 60) || !await database.consumeRateLimit(`magic:hour:${key}`, 3, 3600)) return c.html(loginPage({ github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Please wait before requesting another link.' }, analyticsDocument(c)), 429);
-    const response = await internalAuthPost(c, '/sign-in/magic-link', { email: parsed.data, name: parsed.data.split('@')[0], callbackURL: '/editor' });
+    if (!await database.consumeRateLimit(`magic:minute:${key}`, 1, 60) || !await database.consumeRateLimit(`magic:hour:${key}`, 3, 3600)) return c.html(loginPage({ returnTo: callbackURL, github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Please wait before requesting another link.' }, analyticsDocument(c)), 429);
+    const response = await internalAuthPost(c, '/sign-in/magic-link', { email: parsed.data, name: parsed.data.split('@')[0], callbackURL });
     if (!response.ok) throw new AppError('magic_link_failed', 'Could not send a sign-in link.', 502);
-    return c.redirect('/auth/login?sent=1', 303);
+    return c.redirect(callbackURL === '/editor' ? '/auth/login?sent=1' : `/auth/login?sent=1&returnTo=${encodeURIComponent(callbackURL)}`, 303);
   });
   app.post('/auth/oauth/:provider', async (c) => {
     assertMutationOrigin(c, config); const provider = c.req.param('provider');
     if ((provider !== 'github' || !config.githubClientId) && (provider !== 'google' || !config.googleClientId)) throw new AppError('oauth_unavailable', 'OAuth provider is unavailable.', 404);
-    const response = await internalAuthPost(c, '/sign-in/social', { provider, callbackURL: '/editor' }); copyCookies(c, response);
+    const response = await internalAuthPost(c, '/sign-in/social', { provider, callbackURL: returnTo(formValue(await c.req.parseBody(), 'returnTo')) }); copyCookies(c, response);
     const data = await response.json().catch(() => null) as { url?: string } | null; if (!response.ok || !data?.url) throw new AppError('oauth_failed', 'Could not start OAuth sign-in.', 502); return c.redirect(data.url);
   });
-  const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => { const session = await readSession(c, auth, config); if (!session) return c.redirect('/auth/login'); c.set('session', session); await next(); };
-  for (const path of ['/editor', '/onboarding', '/operations/*', '/actions/*', '/api/*', '/auth/logout']) app.use(path, requireSession);
+  app.route(AGENT_API, agentRoutes(database, options.dispatcher, config.appOrigin, config));
+  const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => { const session = await readSession(c, auth, config); if (!session) return c.redirect(`/auth/login?returnTo=${encodeURIComponent(returnTo(c.req.path + new URL(c.req.url).search))}`); c.set('session', session); await next(); };
+  for (const path of ['/editor', '/onboarding', '/operations/*', '/actions/*', '/api/*', '/auth/logout', '/agent/authorize', '/account/agents', '/account/agents/*']) app.use(path, requireSession);
   app.post('/auth/logout', async (c) => { const body = await c.req.parseBody(); assertMutationOrigin(c, config); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); const response = await internalAuthPost(c, '/sign-out', {}); copyCookies(c, response); return c.redirect('/auth/login', 303); });
-  app.get('/', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(landingPage(analyticsDocument(c))));
+  app.get('/', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(landingPage(analyticsDocument(c), config.agentCliVersion ? onboardingPrompt(config.appOrigin, config.agentCliVersion) : undefined)));
+  const agentRepository = new AgentRepository(database);
+  app.get('/agent-setup/prompt.md', (c) => {
+    if (!config.agentCliVersion) throw new AppError('not_found', 'Agent onboarding is not enabled yet.', 404);
+    c.header('Content-Type', 'text/markdown; charset=utf-8'); c.header('Cache-Control', 'no-cache');
+    return c.body(agentInstructions(config.appOrigin, config.agentCliVersion));
+  });
+  app.get('/agent/authorize', async (c) => { c.header('Cache-Control', 'private, no-store'); return c.html(authorizationPage(c.get('session'), await agentRepository.pairing(c.req.query('code') ?? ''), c.req.query('done') === '1')); });
+  app.post('/agent/authorize', async (c) => {
+    const body = await mutationBody(c);
+    const input = z.object({ code: z.string().regex(/^[A-F0-9]{10}$/u), decision: z.enum(['approve', 'deny']) }).safeParse({ code: formValue(body, 'code'), decision: formValue(body, 'decision') });
+    if (!input.success) throw new AppError('invalid_pairing', 'Check the authorization code and decision.', 400);
+    await agentRepository.approve(c.get('session').user.id, input.data.code, input.data.decision === 'approve');
+    return c.redirect('/agent/authorize?done=1', 303);
+  });
+  app.get('/account/agents', async (c) => { c.header('Cache-Control', 'private, no-store'); return c.html(grantsPage(c.get('session'), await agentRepository.grants(c.get('session').user.id))); });
+  app.post('/account/agents/revoke', async (c) => {
+    const body = await mutationBody(c); const id = z.uuid().safeParse(formValue(body, 'id'));
+    if (!id.success) throw new AppError('invalid_grant', 'Select a valid authorization.', 400);
+    await agentRepository.revoke(c.get('session').user.id, id.data);
+    return c.redirect('/account/agents', 303);
+  });
   app.get('/guide', async (c) => { const session = (await readSession(c, auth, config)) ?? undefined; return c.html(guidePage(session, session ? undefined : analyticsDocument(c))); });
   function deletionError(value: string | undefined): DeletionError | undefined { return value === 'busy' || value === 'cleanup' || value === 'confirmation' ? value : undefined; }
   app.get('/onboarding', async (c) => { const blog = await database.getBlogForUser(c.get('session').user.id); if (blog?.state === 'deleting' || blog?.draftArtifactId) return c.redirect('/editor'); const operation = blog ? await database.getActiveOperation(blog.id, blog.userId) : null; return c.html(onboardingPage(c.get('session'), blog, operation, config.appHostname, { deleted: c.req.query('deleted') === '1', deletionError: deletionError(c.req.query('deleteError')) })); });
@@ -188,6 +210,7 @@ export function createApp(options: CreateAppOptions) {
       operation = blog ? await database.retryInitialSync(session.user.id, input.data.hackmdUsername, input.data.language) : (await database.createBlog(session.user.id, input.data.username, input.data.hackmdUsername, input.data.language)).operation;
     } catch (error) {
       if (error instanceof BlogAddressTakenError) throw new AppError('blog_address_taken', 'That blog address is already taken. Choose another one.', 409);
+      if (error instanceof BlogAlreadyExistsError) throw new AppError('blog_already_connected', 'A blog was connected by another request. Refresh to continue.', 409);
       throw error;
     }
     return dispatchAndRedirect(c, operation);

@@ -13,7 +13,7 @@ export type BlogState = 'syncing' | 'ready' | 'failed' | 'deleting';
 export type OperationType = 'sync' | 'generate_design' | 'apply_design' | 'activate_design' | 'publish';
 export type OperationStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type OperationProgress = { kind: 'indeterminate' } | { kind: 'determinate'; value: number; max: number };
-export type ThemeRevisionSource = 'system' | 'ai' | 'manual';
+export type ThemeRevisionSource = 'system' | 'ai' | 'manual' | 'agent';
 export type ArtifactState = 'uploading' | 'ready' | 'cleanup_pending';
 export interface SyncedPostTag { name: string; slug: string }
 export interface SyncedPostSummary { title: string; slug: string; description?: string; publishedAt: string; included: boolean; tags?: SyncedPostTag[]; updatedAt?: string; contentHash?: string }
@@ -31,9 +31,10 @@ export interface PreviewSessionRecord { tokenHash: string; userId: string; blogI
 export interface BlogDeletionPlan { blogId: string; artifacts: ArtifactRecord[] }
 export interface AiQuotaLimits { userDailyLimit: number; globalDailyLimit: number; at?: Date }
 export interface OutboxRecord { id: string; operationId: string; message: OperationMessage }
-export interface TransientCleanupResult { previewSessions: number; operations: number; aiUsage: number; rateLimits: number }
+export interface TransientCleanupResult { previewSessions: number; operations: number; aiUsage: number; rateLimits: number; agentPairings: number; agentGrants: number; agentUsage: number; agentRequests: number }
 export class AiQuotaExceededError extends Error { constructor(readonly retryAfter: number) { super('AI daily quota exceeded'); this.name = 'AiQuotaExceededError'; } }
 export class BlogAddressTakenError extends Error { constructor(readonly username: string) { super(`Blog address is already taken: ${username}`); this.name = 'BlogAddressTakenError'; } }
+export class BlogAlreadyExistsError extends Error { constructor() { super('A blog is already connected'); this.name = 'BlogAlreadyExistsError'; } }
 
 export const MAX_OPERATION_ATTEMPTS = 3;
 const OPERATION_LEASE_SECONDS = 35 * 60;
@@ -78,6 +79,15 @@ export class AppDatabase {
   async close(): Promise<void> { await this.pool.end(); }
   async ping(): Promise<void> { await this.pool.query('select 1'); }
 
+  /** Reuse repository operations inside one transaction; their nested transactions become savepoints. */
+  async transaction<T>(work: (database: AppDatabase) => Promise<T>): Promise<T> {
+    return this.db.transaction(async (tx) => {
+      const scoped = Object.create(this) as AppDatabase;
+      Object.defineProperty(scoped, 'db', { value: tx });
+      return work(scoped);
+    });
+  }
+
   async consumeRateLimit(key: string, limit: number, windowSeconds: number, at = new Date()): Promise<boolean> {
     const timestamp = Math.floor(at.getTime() / 1000);
     const [row] = await this.db.insert(schema.rateLimit).values({ id: randomUUID(), key, count: 1, lastRequest: timestamp }).onConflictDoUpdate({
@@ -93,6 +103,10 @@ export class AppDatabase {
   async createBlog(userId: string, username: string, hackmdUsername: string, language = 'en'): Promise<{ blog: BlogRecord; operation: OperationRecord }> {
     const id = randomUUID(); const op = newOperation(userId, id, 'sync', { intent: 'content', excludedSlugs: [] });
     return this.db.transaction(async (tx) => {
+      // Share the agent admission lock while allowing existing operations' foreign-key checks.
+      await tx.select({ id: schema.user.id }).from(schema.user).where(eq(schema.user.id, userId)).for('no key update');
+      const [existing] = await tx.select({ id: schema.blogs.id }).from(schema.blogs).where(eq(schema.blogs.userId, userId));
+      if (existing) throw new BlogAlreadyExistsError();
       const [blog] = await tx.insert(schema.blogs).values({ id, userId, username, hackmdUsername, language, state: 'syncing' })
         .onConflictDoNothing({ target: schema.blogs.username }).returning();
       if (!blog) throw new BlogAddressTakenError(username);
@@ -173,7 +187,7 @@ export class AppDatabase {
         if (!revision || JSON.stringify(validateBlogDesignSpecV2(revision.config)) !== JSON.stringify(validated)) throw new Error('Design revision changed');
       } else {
         const prompt = row.type === 'generate_design' && typeof row.payload.prompt === 'string' ? row.payload.prompt : null;
-        [revision] = await tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId: row.blogId, config: validated, prompt, description: validated.description, source: row.type === 'generate_design' ? 'ai' : 'manual', active: false }).returning();
+        [revision] = await tx.insert(schema.themeRevisions).values({ id: randomUUID(), blogId: row.blogId, config: validated, prompt, description: validated.description, source: row.type === 'generate_design' ? 'ai' : row.payload.source === 'agent' ? 'agent' : 'manual', active: false }).returning();
       }
       if (!revision) throw new Error('Design revision not found');
       await tx.update(schema.themeRevisions).set({ active: false }).where(eq(schema.themeRevisions.blogId, row.blogId));
@@ -251,10 +265,10 @@ export class AppDatabase {
       return mapOperation(row);
     });
   }
-  async createApplyDesignOperation(userId: string, blogId: string, design: unknown, previewPath = '/'): Promise<OperationRecord> {
+  async createApplyDesignOperation(userId: string, blogId: string, design: unknown, previewPath = '/', source: 'manual' | 'agent' = 'manual'): Promise<OperationRecord> {
     const validated = validateBlogDesignSpecV2(design);
     const blog = await this.getBlog(blogId); if (!blog || blog.userId !== userId || !blog.sourceArtifactId) throw new Error('Sync the content before changing the design');
-    return this.createOperation(userId, blogId, 'apply_design', { design: validated, sourceArtifactId: blog.sourceArtifactId, draftArtifactId: blog.draftArtifactId, draftDesignRevisionId: blog.draftDesignRevisionId, contentVersion: blog.contentVersion, previewPath });
+    return this.createOperation(userId, blogId, 'apply_design', { design: validated, source, sourceArtifactId: blog.sourceArtifactId, draftArtifactId: blog.draftArtifactId, draftDesignRevisionId: blog.draftDesignRevisionId, contentVersion: blog.contentVersion, previewPath });
   }
   async createActivateDesignOperation(userId: string, blogId: string, designRevisionId: string, previewPath = '/'): Promise<OperationRecord> {
     const blog = await this.getBlog(blogId); if (!blog || blog.userId !== userId || !blog.sourceArtifactId) throw new Error('Sync the content before changing the design');
@@ -377,11 +391,15 @@ export class AppDatabase {
     const usageCutoff = operationCutoff.toISOString().slice(0, 10);
     const rateLimitCutoff = Math.floor(at.getTime() / 1000) - 24 * 60 * 60;
     return this.db.transaction(async (tx) => {
+      const agentPairings = await tx.delete(schema.agentPairings).where(lte(schema.agentPairings.expiresAt, at)).returning({ id: schema.agentPairings.id });
+      const agentGrants = await tx.delete(schema.agentGrants).where(lte(schema.agentGrants.expiresAt, at)).returning({ id: schema.agentGrants.id });
+      const agentUsage = await tx.delete(schema.agentDailyUsage).where(lt(schema.agentDailyUsage.usageDate, usageCutoff)).returning({ date: schema.agentDailyUsage.usageDate });
+      const agentRequests = await tx.delete(schema.agentRequests).where(and(lt(schema.agentRequests.createdAt, operationCutoff), sql`(${schema.agentRequests.operationId} is null or not exists (select 1 from ${schema.operations} where ${schema.operations.id} = ${schema.agentRequests.operationId} and ${schema.operations.status} in ('queued', 'running')))`)).returning({ key: schema.agentRequests.key });
       const previewSessions = await tx.delete(schema.previewSessions).where(lte(schema.previewSessions.expiresAt, at)).returning({ id: schema.previewSessions.tokenHash });
       const operations = await tx.delete(schema.operations).where(and(inArray(schema.operations.status, ['succeeded', 'failed']), lt(schema.operations.updatedAt, operationCutoff))).returning({ id: schema.operations.id });
       const aiUsage = await tx.delete(schema.aiDailyUsage).where(lt(schema.aiDailyUsage.usageDate, usageCutoff)).returning({ date: schema.aiDailyUsage.usageDate });
       const rateLimits = await tx.delete(schema.rateLimit).where(lt(schema.rateLimit.lastRequest, rateLimitCutoff)).returning({ id: schema.rateLimit.id });
-      return { previewSessions: previewSessions.length, operations: operations.length, aiUsage: aiUsage.length, rateLimits: rateLimits.length };
+      return { previewSessions: previewSessions.length, operations: operations.length, aiUsage: aiUsage.length, rateLimits: rateLimits.length, agentPairings: agentPairings.length, agentGrants: agentGrants.length, agentUsage: agentUsage.length, agentRequests: agentRequests.length };
     });
   }
 
@@ -425,6 +443,7 @@ export class AppDatabase {
         if (artifact) throw new Error('Blog artifacts remain');
       }
       await tx.delete(schema.aiDailyUsage).where(and(eq(schema.aiDailyUsage.scope, 'user'), eq(schema.aiDailyUsage.subject, userId)));
+      await tx.delete(schema.agentDailyUsage).where(eq(schema.agentDailyUsage.subject, userId));
       if (rateLimitKeys.length > 0) await tx.delete(schema.rateLimit).where(inArray(schema.rateLimit.key, rateLimitKeys));
       await tx.delete(schema.user).where(eq(schema.user.id, userId));
     });

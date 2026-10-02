@@ -64,7 +64,7 @@ export const artifacts = pgTable('artifacts', {
 export const themeRevisions = pgTable('theme_revisions', {
   id: uuid('id').primaryKey(), blogId: uuid('blog_id').notNull().references(() => blogs.id, { onDelete: 'cascade' }),
   config: jsonb('config').$type<BlogDesignSpecV2>().notNull(), prompt: text('prompt'), description: text('description').notNull(),
-  source: text('source', { enum: ['system', 'ai', 'manual'] }).notNull().default('system'),
+  source: text('source', { enum: ['system', 'ai', 'manual', 'agent'] }).notNull().default('system'),
   active: boolean('active').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -124,3 +124,24 @@ export const aiDailyUsage = pgTable('ai_daily_usage', {
 ]);
 
 export const authSchema = { user, session, account, verification, rateLimit };
+
+export const agentPairings = pgTable('agent_pairings', {
+  id: uuid('id').primaryKey(), deviceHash: text('device_hash').notNull().unique(), userCode: text('user_code').notNull().unique(),
+  userId: uuid('user_id').references(() => user.id, { onDelete: 'cascade' }),
+  status: text('status', { enum: ['pending', 'approved', 'denied', 'consumed'] }).notNull().default('pending'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(), ...timestamps,
+});
+export const agentGrants = pgTable('agent_grants', {
+  id: uuid('id').primaryKey(), userId: uuid('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(), expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index('agent_grants_user_idx').on(table.userId)]);
+export const agentRequests = pgTable('agent_requests', {
+  userId: uuid('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }), key: text('key').notNull(),
+  requestHash: text('request_hash').notNull(), response: jsonb('response').$type<Record<string, unknown>>().notNull(),
+  operationId: uuid('operation_id').references(() => operations.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [primaryKey({ columns: [table.userId, table.key] })]);
+export const agentDailyUsage = pgTable('agent_daily_usage', {
+  usageDate: date('usage_date').notNull(), subject: text('subject').notNull(), count: integer('count').notNull(),
+}, (table) => [primaryKey({ columns: [table.usageDate, table.subject] })]);
