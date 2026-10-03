@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.11.0](https://github.com/EastSun5566/vibelog/compare/v0.10.0...v0.11.0) (2026-10-03)
+
+### Features
+
+* **agent:** add draft-only CLI onboarding ([#20](https://github.com/EastSun5566/vibelog/issues/20)) ([34db404](https://github.com/EastSun5566/vibelog/commit/34db40407705d06babc8bffa402ab77580904417))
+* **agent:** enable production onboarding prompt ([37618ac](https://github.com/EastSun5566/vibelog/commit/37618ac9048385389b832de8d671b2091125119a))
+
+### Bug Fixes
+
+* **agent:** authorize onboarding client under analytics CSP ([6610a99](https://github.com/EastSun5566/vibelog/commit/6610a99ba8a97e34b69db80a830f83acd84d93d4))
+* **agent:** smooth authorization and resume existing drafts ([#21](https://github.com/EastSun5566/vibelog/issues/21)) ([ced61de](https://github.com/EastSun5566/vibelog/commit/ced61de7b44cffd58bb5781ebbc60484fafc95bf))
 ## [0.10.0](https://github.com/EastSun5566/vibelog/compare/v0.9.0...v0.10.0) (2026-10-01)
 
 ### Features
