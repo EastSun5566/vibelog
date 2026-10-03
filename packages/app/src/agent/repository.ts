@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { AppDatabase, type BlogRecord, type OperationRecord } from '../database.js';
 import { AppError } from '../http.js';
 import { hashToken, randomToken } from '../security/crypto.js';
@@ -7,7 +7,10 @@ import * as schema from '../schema.js';
 import { AGENT_TOKEN_SECONDS, PAIRING_SECONDS, requestHash, stateVersion } from './contracts.js';
 
 type Grant = typeof schema.agentGrants.$inferSelect;
-export type AgentPairing = typeof schema.agentPairings.$inferSelect;
+export interface AgentAuthorization {
+  userCode: string;
+  status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired';
+}
 export interface AgentResult { operationId?: string; status: string; [key: string]: unknown }
 
 export class AgentRepository {
@@ -24,9 +27,11 @@ export class AgentRepository {
     await this.database.db.insert(schema.agentPairings).values({ id: randomUUID(), deviceHash: hashToken(deviceCode), userCode, expiresAt });
     return { deviceCode, userCode, expiresAt: expiresAt.toISOString(), interval: 5 };
   }
-  async pairing(userCode: string): Promise<AgentPairing | null> {
-    const [row] = await this.database.db.select().from(schema.agentPairings).where(and(eq(schema.agentPairings.userCode, userCode), gt(schema.agentPairings.expiresAt, new Date())));
-    return row ?? null;
+  async authorization(userId: string, userCode: string): Promise<AgentAuthorization | null> {
+    const [row] = await this.database.db.select({ userCode: schema.agentPairings.userCode, status: schema.agentPairings.status, expiresAt: schema.agentPairings.expiresAt })
+      .from(schema.agentPairings).where(and(eq(schema.agentPairings.userCode, userCode), or(eq(schema.agentPairings.status, 'pending'), eq(schema.agentPairings.userId, userId))));
+    if (!row) return null;
+    return { userCode: row.userCode, status: (row.status === 'pending' || row.status === 'approved') && row.expiresAt <= new Date() ? 'expired' : row.status };
   }
   async approve(userId: string, userCode: string, approved: boolean): Promise<void> {
     await this.limited(`approve:${userId}`, 20, 3600);

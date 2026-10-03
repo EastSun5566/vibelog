@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { DEFAULT_DESIGN_V2, designContractV2 } from '@vibelog/core';
 import { requestHash, validateAgentDesign } from '../src/agent/contracts.js';
-import { agentInstructions, onboardingPrompt } from '../src/agent/views.js';
+import { agentInstructions, authorizationPage, grantsPage, onboardingPrompt } from '../src/agent/views.js';
+import type { AppSession } from '../src/auth.js';
 import { loadAppConfig } from '../src/config.js';
-import { landingPage } from '../src/views.js';
+import { landingPage, loginPage } from '../src/views.js';
+
+const session: AppSession = { id: 'session', user: { id: 'writer', email: 'writer@example.com', name: 'Writer' }, csrfToken: 'csrf-test', expiresAt: '2099-01-01' };
+async function htmlOf(content: ReturnType<typeof loginPage>) { return (await new Hono().get('/', (c) => c.html(content)).request('/')).text(); }
 
 describe('agent design contract', () => {
   it('exposes an example accepted by the real validator without altering it', () => {
@@ -27,6 +31,42 @@ describe('agent design contract', () => {
     expect(onboardingPrompt('https://vibelog.org', '0.1.0')).toContain('@vibelog/cli@0.1.0');
     expect(agentInstructions('https://vibelog.org', '0.1.0')).toContain('Do not print');
     expect(agentInstructions('https://vibelog.org', '0.1.0')).toContain('Never attempt publish');
+    const instructions = agentInstructions('https://vibelog.org', '0.1.0');
+    expect(instructions).toContain('Run `status` first');
+    expect(instructions).toContain('Read `context` before');
+    expect(instructions).toContain('network or secure-storage error');
+    expect(instructions).toContain('reuse them even when a later operation failed');
+    expect(instructions).toContain('Run `sync` only when the human requests');
+    expect(instructions).toContain('without asking for an extra');
+    expect(onboardingPrompt('https://vibelog.org', '0.1.0')).toContain('only if I have no blog');
+  });
+  it('explains the authorization handoff without changing normal email login', async () => {
+    const input = { github: false, google: false, returnTo: '/agent/authorize?code=AABBCCDDEE' };
+    expect(await htmlOf(loginPage(input))).toContain('Sign in first, then approve');
+    const sent = await htmlOf(loginPage({ ...input, sent: true }));
+    expect(sent).toContain('Open the link to sign in, then approve'); expect(sent).not.toContain('name="email"');
+    expect(sent).toContain('returnTo=%2Fagent%2Fauthorize%3Fcode%3DAABBCCDDEE');
+    expect(await htmlOf(loginPage({ github: false, google: false }))).toContain('We’ll email you a one-time sign-in link.');
+    expect(await htmlOf(loginPage({ ...input, returnTo: 'https://example.com' }))).not.toContain('Sign in first, then approve');
+  });
+  it.each([
+    ['pending', 'Authorize your agent'], ['approved', 'Draft access approved'], ['consumed', 'Agent connected'],
+    ['denied', 'Access denied'], ['expired', 'Request expired'],
+  ] as const)('renders real %s authorization state', async (status, title) => {
+    const html = await htmlOf(authorizationPage(session, { userCode: 'AABBCCDDEE', status }));
+    expect(html).toContain(`<h1>${title}</h1>`); expect(html).toContain('writer@example.com');
+    if (status === 'pending') {
+      expect(html).toContain('Use a different account'); expect(html).toContain('action="/auth/logout"');
+      expect(html).toContain('value="/agent/authorize?code=AABBCCDDEE"'); expect(html).toContain('value="csrf-test"');
+    } else expect(html).not.toContain('action="/agent/authorize"');
+  });
+  it('does not claim unavailable requests were approved and shares the prompt with signed-in users', async () => {
+    const unavailable = await htmlOf(authorizationPage(session, null));
+    expect(unavailable).toContain('Request unavailable'); expect(unavailable).not.toContain('Draft access approved');
+    const prompt = onboardingPrompt('https://vibelog.org', '0.1.0');
+    const grants = await htmlOf(grantsPage(session, [], prompt));
+    expect(grants).toContain('data-copy-agent-prompt'); expect(grants).toContain('/assets/client.js'); expect(grants).toContain('@vibelog/cli@0.1.0');
+    expect(await htmlOf(grantsPage(session, []))).not.toContain('data-copy-agent-prompt');
   });
   it('authorizes the onboarding client with the analytics CSP nonce', async () => {
     const app = new Hono().get('/', (c) => c.html(landingPage(

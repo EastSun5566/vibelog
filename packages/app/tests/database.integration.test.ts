@@ -365,6 +365,62 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     await database.db.update(agentPairings).set({ expiresAt: new Date(0) }).where(eq(agentPairings.userCode, expired.pairing.userCode));
     await expect(repository.redeem(expired.pairing.deviceCode)).rejects.toMatchObject({ code: 'pairing_expired' });
   });
+  it('shows approval outcomes only to their owner and distinguishes request expiry from consumption', async () => {
+    const id = await owner(); const other = await owner(); const pairing = await repository.createPairing();
+    expect(await repository.authorization(other, pairing.userCode)).toMatchObject({ status: 'pending' });
+    await repository.approve(id, pairing.userCode, true);
+    expect(await repository.authorization(id, pairing.userCode)).toMatchObject({ status: 'approved' });
+    expect(await repository.authorization(other, pairing.userCode)).toBeNull();
+    await repository.redeem(pairing.deviceCode);
+    await database.db.update(agentPairings).set({ expiresAt: new Date(0) }).where(eq(agentPairings.userCode, pairing.userCode));
+    expect(await repository.authorization(id, pairing.userCode)).toMatchObject({ status: 'consumed' });
+    expect(await repository.authorization(other, pairing.userCode)).toBeNull();
+    const denied = await repository.createPairing(); await repository.approve(id, denied.userCode, false);
+    expect(await repository.authorization(id, denied.userCode)).toMatchObject({ status: 'denied' });
+    expect(await repository.authorization(other, denied.userCode)).toBeNull();
+    const expired = await repository.createPairing();
+    await database.db.update(agentPairings).set({ expiresAt: new Date(0) }).where(eq(agentPairings.userCode, expired.userCode));
+    expect(await repository.authorization(id, expired.userCode)).toMatchObject({ status: 'expired' });
+    const unredeemed = await repository.createPairing(); await repository.approve(id, unredeemed.userCode, true);
+    await database.db.update(agentPairings).set({ expiresAt: new Date(0) }).where(eq(agentPairings.userCode, unredeemed.userCode));
+    expect(await repository.authorization(id, unredeemed.userCode)).toMatchObject({ status: 'expired' });
+  });
+  it('distinguishes initial-sync recovery, retained drafts and deleting blogs without rebuilding a ready draft', async () => {
+    const id = await owner(); const approved = await grant(id);
+    const router = agentRoutes(database, { dispatch: () => Promise.resolve(0) }, 'https://vibelog.org', { betterAuthSecret: 'test-secret' });
+    const headers = { Authorization: `Bearer ${approved.token}` };
+    const context = async () => (await router.request('/context', { headers })).json() as Promise<unknown>;
+    expect(await context()).toMatchObject({ blog: null, sourceReady: false, draftReady: false });
+    const input = { username: `resume-${id.slice(0, 8)}`, hackmdUsername: 'alice', language: 'en' };
+    const { blog, operation } = await database.createBlog(id, input.username, input.hackmdUsername);
+    expect(await context()).toMatchObject({ blog: { state: 'syncing' }, sourceReady: false, draftReady: false, operationId: operation.id });
+    await database.db.update(operations).set({ status: 'failed' }).where(eq(operations.id, operation.id));
+    await database.db.update(blogs).set({ state: 'failed' }).where(eq(blogs.id, blog.id));
+    expect(await context()).toMatchObject({ blog: { state: 'failed' }, sourceReady: false, draftReady: false, operationId: null });
+    const connect = (body = input) => router.request('/connect', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
+    const retry = await connect(); expect(retry.status).toBe(202);
+    const accepted = await retry.json() as { operationId: string };
+    expect(await context()).toMatchObject({ operationId: accepted.operationId });
+    const lease = await database.claimOperation(accepted.operationId); if (!lease) throw new Error('Missing sync claim');
+    const initial = await database.getActiveDesign(blog.id); if (!initial) throw new Error('Missing initial design');
+    const source = await database.createArtifact(blog.id, 'source'); const draft = await database.createArtifact(blog.id, 'draft');
+    await database.completeSyncOperation(lease, {
+      title: 'Writer', description: '', author: 'Writer', sourceArtifactId: source.id, draftArtifactId: draft.id, designRevisionId: initial.id,
+      contentProfile: { postCount: 0, tagCount: 0, averageLength: 'short', codeUsage: 'none', imageUsage: 'none', mathUsage: 'none' },
+    }, {});
+    // A later failure must not make the existing draft look like a fresh account.
+    await database.db.update(blogs).set({ state: 'failed' }).where(eq(blogs.id, blog.id));
+    const readyContext = await context();
+    expect(readyContext).toMatchObject({ blog: { state: 'failed' }, sourceReady: true, draftReady: true, operationId: null });
+    expect(JSON.stringify(readyContext)).not.toContain(source.id); expect(JSON.stringify(readyContext)).not.toContain(draft.id);
+    expect(await (await connect()).json()).toEqual({ status: 'unchanged' });
+    expect((await connect({ ...input, hackmdUsername: 'other-profile' })).status).toBe(409);
+    expect(await database.getActiveOperation(blog.id, id)).toBeNull(); expect(await database.listDesignRevisions(blog.id)).toHaveLength(1);
+    expect((await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id)))[0]?.count).toBe(1);
+    await database.beginBlogDeletion(id);
+    expect(await context()).toMatchObject({ blog: { state: 'deleting' }, sourceReady: true, draftReady: true });
+    expect((await connect()).status).toBe(409);
+  });
   it('serializes duplicate bootstrap and rejects changed payloads without charging twice', async () => {
     const id = await owner(); const key = randomUUID(); const body = { username: `agent-${id.slice(0, 8)}` };
     const work = async (db: AppDatabase) => operationResult((await db.createBlog(id, body.username, 'alice')).operation);
@@ -542,7 +598,7 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     await database.pruneTransientData(at);
     await expect(repository.grant(expired.token)).rejects.toMatchObject({ code: 'agent_unauthorized' });
     expect((await repository.grant(live.token)).userId).toBe(id);
-    expect(await repository.pairing(expired.pairing.userCode)).toBeNull();
+    expect(await repository.authorization(id, expired.pairing.userCode)).toBeNull();
     expect((await database.db.select().from(agentRequests).where(eq(agentRequests.userId, id))).map((row) => row.key)).toEqual(['old-pending']);
     expect(await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id))).toHaveLength(0);
     expect((await database.getOperation(operation.id))?.status).toBe('queued');
