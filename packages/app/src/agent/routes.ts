@@ -72,11 +72,12 @@ export function agentRoutes(database: AppDatabase, dispatcher: OperationDispatch
   app.get('/context', async (c) => c.json(await database.transaction(async (db) => {
     await db.db.select({ id: blogs.id }).from(blogs).where(eq(blogs.userId, c.get('agentUserId'))).for('share');
     const blog = await db.getBlogForUser(c.get('agentUserId'));
-    if (!blog || blog.state === 'deleting') return { blog: null, editorUrl: new URL('/editor', origin).href };
+    if (!blog) return { blog: null, sourceReady: false, draftReady: false, editorUrl: new URL('/editor', origin).href };
     const design = await db.getActiveDesign(blog.id);
     return {
       blog: { username: blog.username, hackmdUsername: blog.hackmdUsername, title: blog.title, description: blog.description, language: blog.language, state: blog.state },
       stateVersion: stateVersion(blog), design: design?.config ?? null, profile: blog.contentProfile,
+      sourceReady: Boolean(blog.sourceArtifactId), draftReady: Boolean(blog.draftArtifactId),
       operationId: (await db.getActiveOperation(blog.id, blog.userId))?.id ?? null,
       editorUrl: new URL('/editor', origin).href,
     };

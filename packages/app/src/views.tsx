@@ -57,6 +57,16 @@ export function document(title: string, content: unknown, session?: AppSession, 
   </html>;
 }
 
+export function agentPromptEntry(prompt: string) {
+  return <details class="agent-prompt"><summary>Work with your coding agent</summary>
+    <div class="stack">
+      <p class="field-hint">Set up a blog or update your private draft. You approve access in your browser and publish yourself.</p>
+      <div class="field"><label for="agent-prompt">Agent prompt</label><textarea id="agent-prompt" readonly rows={6}>{prompt}</textarea></div>
+      <button class="btn" data-variant="outline" type="button" data-copy-agent-prompt>Copy prompt</button><output data-agent-copy-status aria-live="polite"></output>
+    </div>
+  </details>;
+}
+
 export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: string) {
   return document('Publish your HackMD as a blog', <>
     <section class="landing">
@@ -73,11 +83,7 @@ export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: s
         <li><strong>Designed with AI</strong><span>Shape the layout, type, and colors while the blog's features stay intact.</span></li>
         <li><strong>Publish on your terms</strong><span>Review a private preview, then go live or restore an earlier release.</span></li>
       </ul>
-      {agentPrompt ? <details class="stack"><summary>Set up with your coding agent</summary>
-        <p>Copy this prompt into your agent. You approve draft access in your browser and publish yourself.</p>
-        <label for="agent-prompt">Onboarding prompt</label><textarea id="agent-prompt" readonly rows={6}>{agentPrompt}</textarea>
-        <button class="btn" data-variant="outline" type="button" data-copy-agent-prompt>Copy prompt</button><output data-agent-copy-status aria-live="polite"></output>
-      </details> : null}
+      {agentPrompt ? agentPromptEntry(agentPrompt) : null}
     </section>
     <footer class="landing-footer">
       <a class="github-link" href="https://github.com/EastSun5566/vibelog" target="_blank" rel="noreferrer" aria-label="VibeLog source code on GitHub" title="VibeLog is open source on GitHub">
@@ -89,16 +95,17 @@ export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: s
 
 export function loginPage(input: { deleted?: boolean; github: boolean; google: boolean; message?: string; sent?: boolean; returnTo?: string }, analytics?: AnalyticsDocumentConfig) {
   const hasSocialLogin = input.github || input.google;
+  const agentLogin = /^\/agent\/authorize\?code=[A-F0-9]{10}$/u.test(input.returnTo ?? '');
   if (input.sent) return document('Check your email', <section class="auth-shell card">
     <header><p class="auth-kicker">One more step</p><h1>Check your email</h1></header>
     <section class="stack">
       <div class="alert" role="status"><section>We sent a one-time sign-in link. It expires in 10 minutes.</section></div>
-      <p class="muted">You can close this tab after opening the link.</p>
+      <p class="muted">{agentLogin ? 'Open the link to sign in, then approve your agent’s draft access. You can close this tab.' : 'You can close this tab after opening the link.'}</p>
       <a href={input.returnTo ? `/auth/login?returnTo=${encodeURIComponent(input.returnTo)}` : '/auth/login'}>Use a different email</a>
     </section>
   </section>, undefined, false, analytics);
   return document('Sign in', <section class="auth-shell card">
-    <header><p class="auth-kicker">Welcome back</p><h1>Sign in to VibeLog</h1><p>{hasSocialLogin ? 'Choose an account or use a one-time email link.' : 'We’ll email you a one-time sign-in link.'}</p></header>
+    <header><p class="auth-kicker">{agentLogin ? 'Agent setup' : 'Welcome back'}</p><h1>Sign in to VibeLog</h1><p>{agentLogin ? 'Sign in first, then approve your agent’s access to your private draft.' : hasSocialLogin ? 'Choose an account or use a one-time email link.' : 'We’ll email you a one-time sign-in link.'}</p></header>
     <section class="stack">
       {input.deleted ? <div class="alert" role="status"><section>Your VibeLog account was deleted.</section></div> : null}
       {input.message ? <div class="alert" data-variant="destructive" role="alert"><section>{input.message}</section></div> : null}

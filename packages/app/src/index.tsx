@@ -141,7 +141,12 @@ export function createApp(options: CreateAppOptions) {
   app.route(AGENT_API, agentRoutes(database, options.dispatcher, config.appOrigin, config));
   const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => { const session = await readSession(c, auth, config); if (!session) return c.redirect(`/auth/login?returnTo=${encodeURIComponent(returnTo(c.req.path + new URL(c.req.url).search))}`); c.set('session', session); await next(); };
   for (const path of ['/editor', '/onboarding', '/operations/*', '/actions/*', '/api/*', '/auth/logout', '/agent/authorize', '/account/agents', '/account/agents/*']) app.use(path, requireSession);
-  app.post('/auth/logout', async (c) => { const body = await c.req.parseBody(); assertMutationOrigin(c, config); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); const response = await internalAuthPost(c, '/sign-out', {}); copyCookies(c, response); return c.redirect('/auth/login', 303); });
+  app.post('/auth/logout', async (c) => {
+    const body = await c.req.parseBody(); assertMutationOrigin(c, config); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken);
+    const response = await internalAuthPost(c, '/sign-out', {}); copyCookies(c, response);
+    const destination = returnTo(formValue(body, 'returnTo'));
+    return c.redirect(destination === '/editor' ? '/auth/login' : `/auth/login?returnTo=${encodeURIComponent(destination)}`, 303);
+  });
   app.get('/', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(landingPage(analyticsDocument(c), config.agentCliVersion ? onboardingPrompt(config.appOrigin, config.agentCliVersion) : undefined)));
   const agentRepository = new AgentRepository(database);
   app.get('/agent-setup/prompt.md', (c) => {
@@ -149,15 +154,22 @@ export function createApp(options: CreateAppOptions) {
     c.header('Content-Type', 'text/markdown; charset=utf-8'); c.header('Cache-Control', 'no-cache');
     return c.body(agentInstructions(config.appOrigin, config.agentCliVersion));
   });
-  app.get('/agent/authorize', async (c) => { c.header('Cache-Control', 'private, no-store'); return c.html(authorizationPage(c.get('session'), await agentRepository.pairing(c.req.query('code') ?? ''), c.req.query('done') === '1')); });
+  app.get('/agent/authorize', async (c) => {
+    c.header('Cache-Control', 'private, no-store');
+    const session = c.get('session');
+    return c.html(authorizationPage(session, await agentRepository.authorization(session.user.id, c.req.query('code') ?? '')));
+  });
   app.post('/agent/authorize', async (c) => {
     const body = await mutationBody(c);
     const input = z.object({ code: z.string().regex(/^[A-F0-9]{10}$/u), decision: z.enum(['approve', 'deny']) }).safeParse({ code: formValue(body, 'code'), decision: formValue(body, 'decision') });
     if (!input.success) throw new AppError('invalid_pairing', 'Check the authorization code and decision.', 400);
     await agentRepository.approve(c.get('session').user.id, input.data.code, input.data.decision === 'approve');
-    return c.redirect('/agent/authorize?done=1', 303);
+    return c.redirect(`/agent/authorize?code=${input.data.code}`, 303);
   });
-  app.get('/account/agents', async (c) => { c.header('Cache-Control', 'private, no-store'); return c.html(grantsPage(c.get('session'), await agentRepository.grants(c.get('session').user.id))); });
+  app.get('/account/agents', async (c) => {
+    c.header('Cache-Control', 'private, no-store');
+    return c.html(grantsPage(c.get('session'), await agentRepository.grants(c.get('session').user.id), config.agentCliVersion ? onboardingPrompt(config.appOrigin, config.agentCliVersion) : undefined));
+  });
   app.post('/account/agents/revoke', async (c) => {
     const body = await mutationBody(c); const id = z.uuid().safeParse(formValue(body, 'id'));
     if (!id.success) throw new AppError('invalid_grant', 'Select a valid authorization.', 400);
