@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { compileDesignCss } from '@vibelog/core';
 import { createArtifactZip } from './artifact-export.js';
 import { findArtifactObject } from './artifact-serving.js';
-import { createAuth, readSession, type AppVariables } from './auth.js';
+import { createAuth, emailRateLimitKey, readSession, type AppVariables } from './auth.js';
 import { blogIdentitySchema, blogLanguageSchema } from './blog-sync.js';
 import { loadAppConfig, type AppConfig } from './config.js';
 import { AiQuotaExceededError, AppDatabase, BlogAddressTakenError, BlogAlreadyExistsError, type BlogRecord, type OperationRecord, type OperationType } from './database.js';
@@ -126,9 +126,8 @@ export function createApp(options: CreateAppOptions) {
     assertMutationOrigin(c, config); const body = await c.req.parseBody().catch(() => ({})); const parsed = emailInput.safeParse(formValue(body, 'email')?.trim().toLowerCase());
     const callbackURL = returnTo(formValue(body, 'returnTo'));
     if (!parsed.success) return c.html(loginPage({ returnTo: callbackURL, github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Enter a valid email address.' }, analyticsDocument(c)), 400);
-    const key = createHmacKey(config.betterAuthSecret, parsed.data);
-    if (!await database.consumeRateLimit(`magic:minute:${key}`, 1, 60) || !await database.consumeRateLimit(`magic:hour:${key}`, 3, 3600)) return c.html(loginPage({ returnTo: callbackURL, github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Please wait before requesting another link.' }, analyticsDocument(c)), 429);
     const response = await internalAuthPost(c, '/sign-in/magic-link', { email: parsed.data, name: parsed.data.split('@')[0], callbackURL });
+    if (response.status === 429) return c.html(loginPage({ returnTo: callbackURL, github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Please wait before requesting another link.' }, analyticsDocument(c)), 429);
     if (!response.ok) throw new AppError('magic_link_failed', 'Could not send a sign-in link.', 502);
     return c.redirect(callbackURL === '/editor' ? '/auth/login?sent=1' : `/auth/login?sent=1&returnTo=${encodeURIComponent(callbackURL)}`, 303);
   });
@@ -290,7 +289,7 @@ export function createApp(options: CreateAppOptions) {
         await database.deleteArtifactRecord(artifact.id);
       }
       if (kind === 'account') {
-        const key = createHmacKey(config.betterAuthSecret, session.user.email);
+        const key = emailRateLimitKey(config.betterAuthSecret, session.user.email);
         await database.finishAccountDeletion(session.user.id, plan?.blogId ?? null, [`magic:minute:${key}`, `magic:hour:${key}`]);
         setCookie(c, 'vibelog.session_token', '', { httpOnly: true, secure: config.secureCookies, sameSite: 'Lax', path: '/', maxAge: 0 });
         return c.redirect('/auth/login?deleted=1', 303);
@@ -322,4 +321,3 @@ export function createApp(options: CreateAppOptions) {
   app.get('/preview-access/:token', async (c) => { const preview = await database.getPreviewSession(hashToken(c.req.param('token'))); if (!preview) throw new AppError('preview_access_denied', 'Preview access expired or invalid', 403); setCookie(c, 'vibelog_preview', c.req.param('token'), { httpOnly: true, secure: config.secureCookies, sameSite: 'Lax', path: '/', maxAge: 900 }); return c.redirect(safePreviewPath(c.req.query('returnTo'), config.previewOrigin)); });
   return { app, auth, database, config };
 }
-function createHmacKey(secret: string, email: string): string { return createHash('sha256').update(secret).update('\0').update(email).digest('base64url'); }

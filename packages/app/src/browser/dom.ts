@@ -1,4 +1,5 @@
 import type { ApiPayload } from './api.js';
+import { safePreviewPath } from '../preview-path.js';
 
 export type ClientRoot = Document | Element;
 export type InitializeEditor = (root: ClientRoot) => void;
@@ -33,18 +34,9 @@ export function createEditorDom(initializeEditor: InitializeEditor): EditorDom {
 
   const currentPreview = () => document.querySelector<HTMLIFrameElement>('iframe[data-preview-url]');
   const currentPreviewOrigin = () => currentPreview()?.dataset.previewOrigin;
-  const safePreviewPath = (value: unknown) => {
-    const origin = currentPreviewOrigin();
-    if (typeof value !== 'string' || value.length === 0 || value.length > 2048 || !value.startsWith('/') || value.startsWith('//') || !origin) return '/';
-    try {
-      const url = new URL(value, origin);
-      return url.origin === new URL(origin).origin ? url.pathname + url.search + url.hash : '/';
-    } catch {
-      return '/';
-    }
-  };
   const rememberPreviewPath = (value: unknown) => {
-    currentPreviewPath = safePreviewPath(value);
+    const origin = currentPreviewOrigin();
+    currentPreviewPath = origin ? safePreviewPath(value, origin) : '/';
     for (const input of document.querySelectorAll<HTMLInputElement>('[data-preview-path-input]')) input.value = currentPreviewPath;
   };
   const showStatus = (node: HTMLElement | null, message: string, state = 'running') => {

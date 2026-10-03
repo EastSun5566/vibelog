@@ -5,7 +5,7 @@ export function safePreviewPath(value: unknown, previewOrigin: string): string {
   try {
     const origin = new URL(previewOrigin).origin;
     const url = new URL(value, origin);
-    return url.origin === origin ? `${url.pathname}${url.search}${url.hash}` : '/';
+    return url.origin === origin && !url.pathname.startsWith('//') ? `${url.pathname}${url.search}${url.hash}` : '/';
   } catch {
     return '/';
   }

@@ -8,7 +8,6 @@ import * as pagefind from 'pagefind';
 import { unified } from '@astrojs/markdown-remark';
 import sitemap from '@astrojs/sitemap';
 import fs from 'fs-extra';
-import matter from 'gray-matter';
 import rehypeKatex from 'rehype-katex';
 import { defListHastHandlers, remarkDefinitionList } from 'remark-definition-list';
 import remarkDirective from 'remark-directive';
@@ -28,6 +27,7 @@ import { validateSourceSnapshot } from '../design/validate.js';
 import { remarkHackmdCompatibility } from '../markdown/hackmd.js';
 import { generateSlug, slugify } from './utils.js';
 import { logger } from './logger.js';
+import { parseFrontMatter, stringifyFrontMatter } from './frontmatter.js';
 import type { ContentSource, Post } from '../types.js';
 import { loadConfig } from './config.js';
 
@@ -380,7 +380,7 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
     logger.info('Writing selected blog posts...');
     for (const post of normalizedPosts) {
       if (!post.included) continue;
-      const fileContent = matter.stringify(post.content, {
+      const fileContent = stringifyFrontMatter(post.content, {
         title: post.title,
         description: post.description,
         date: post.publishedAt,
@@ -394,7 +394,7 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
     }
 
     logger.info('Writing author profile...');
-    const authorContent = matter.stringify(author.bio, {
+    const authorContent = stringifyFrontMatter(author.bio, {
       name: author.name,
     });
     const authorPath = join(stagedContentDir, 'author.md');
@@ -477,7 +477,7 @@ async function prepareDesignAssets(vibelogDir: string): Promise<void> {
   const posts: ResolvablePost[] = [];
   for (const name of await fs.readdir(blogDirectory)) {
     if (!name.endsWith('.md')) continue;
-    const sourcePost = matter(await fs.readFile(join(blogDirectory, name), 'utf8'));
+    const sourcePost = parseFrontMatter(await fs.readFile(join(blogDirectory, name), 'utf8'));
     posts.push({
       slug: name.slice(0, -3),
       publishedAt: new Date(String(sourcePost.data.date)).toISOString(),

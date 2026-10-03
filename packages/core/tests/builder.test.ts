@@ -20,6 +20,33 @@ afterEach(async () => {
 });
 
 describe('DevBuilder content summary', () => {
+  it.each(['post', 'author'] as const)('rejects executable front matter from the %s source', async (target) => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-frontmatter-')); roots.push(root);
+    const content = '---JavaScript\n({ title: "Not data" })\n---\nBody.';
+    const builder = createDevBuilder({ root, contentSource: {
+      name: ContentSourceName.HACKMD,
+      getAuthor: () => Promise.resolve({ name: 'Writer', bio: target === 'author' ? content : 'Public notes' }),
+      getPosts: () => Promise.resolve({ posts: [{ id: 'one', title: 'One', slug: 'one', date: '2026-01-01T00:00:00Z', content: target === 'post' ? content : 'Body.' }] }),
+    } });
+    await builder.prepare({ installDependencies: false });
+    await expect(builder.fetchContent()).rejects.toThrow('JavaScript front matter is not supported');
+  });
+
+  it('rejects executable front matter in an existing source snapshot before Astro runs', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-frontmatter-snapshot-')); roots.push(root);
+    const builder = createDevBuilder({ root, contentSource: {
+      name: ContentSourceName.HACKMD,
+      getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Public notes' }),
+      getPosts: () => Promise.resolve({ posts: [{ id: 'one', title: 'One', slug: 'one', date: '2026-01-01T00:00:00Z', content: 'Body.' }] }),
+    } });
+    await builder.prepare({ installDependencies: false });
+    await builder.fetchContent();
+    await writeFile(join(builder.vibelogDir, 'src', 'content', 'blog', 'one.md'), '---js\n({ date: "2026-01-01" })\n---\nBody.');
+    const timing = vi.fn();
+    await expect(buildFromVibelog({ vibelogDir: builder.vibelogDir, outDir: join(root, 'dist'), site: 'https://writer.example.com', onStageTiming: timing })).rejects.toThrow('JavaScript front matter is not supported');
+    expect(timing).not.toHaveBeenCalledWith('astro', expect.anything());
+  });
+
   it('returns normalized metadata without article bodies and reads the source once', async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-')); roots.push(root);
     const getAuthor = vi.fn(() => Promise.resolve({ name: 'Writer', bio: 'Public notes' }));
