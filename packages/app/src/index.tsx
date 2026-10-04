@@ -63,6 +63,10 @@ export function createApp(options: CreateAppOptions) {
   const auth = createAuth(database, config, options.emailSender); const app = new Hono<AppEnv>();
   app.use('*', requestContext());
   app.use('*', edgeIdentity(config.edgeSharedSecret));
+  for (const path of ['/auth/*', '/api/auth/*']) {
+    app.use(path, async (c, next) => { c.header('Cache-Control', 'private, no-store'); await next(); c.header('Cache-Control', 'private, no-store'); });
+    app.use(path, bodyLimit({ maxSize: 16 * 1024, onError: (c) => jsonError(c, new AppError('payload_too_large', 'Authentication request body exceeds 16 KiB', 413)) }));
+  }
   app.use(`${AGENT_API}/*`, bodyLimit({ maxSize: 64 * 1024, onError: () => Response.json({ error: { code: 'payload_too_large', message: 'Request body exceeds 64 KiB', requestId: randomUUID() } }, { status: 413 }) }));
   app.use('*', async (c, next) => {
     if (blocksRequest(config.maintenanceStage, 'web', c.req.path)) return maintenanceResponse(c.req.method);

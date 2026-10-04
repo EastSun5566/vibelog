@@ -23,6 +23,12 @@ Queue modes are intentionally small:
 
 Every durable mode uses the same operation lease and idempotency rules. See [`.env.example`](../../.env.example) for configuration and the [root README](../../README.md) for commands.
 
+## Browser authentication
+
+Magic links expire after ten minutes and can be used once. Only a hash of the link token is stored. When deploying the hashed-token change, links issued by the older app become invalid; request a new link after deployment. Existing signed-in sessions remain valid, so no data migration or logout is required.
+
+Browser sessions last twelve hours and become eligible for refresh after one hour. Every session read still checks the database, so logout and revocation take effect immediately. Session refresh cookies are forwarded to the browser. Authentication bodies are limited to 16 KiB, and authentication responses and session-dependent pages/APIs use `private, no-store`. Public blog caching is unchanged. Automatic linking of new Google/GitHub accounts requires verified email addresses on both accounts.
+
 ## V2 design cutover
 
 The design converter preserves every revision and rebuilds each current draft from its frozen source. Published artifacts remain unchanged. Run it only in a maintenance window after taking a database backup and stopping all web writes, workers, Cloud Tasks delivery, and scheduled jobs. `--maintenance-mode` is an operator assertion, not an automatic traffic block. Keep writers stopped until the V2-only app is deployed; the old app cannot read converted designs. Do not deploy the V2-only app before conversion.

@@ -3,6 +3,7 @@ import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { magicLink } from 'better-auth/plugins';
+import type { Context } from 'hono';
 import { z } from 'zod';
 import type { AppConfig } from './config.js';
 import type { AppDatabase } from './database.js';
@@ -31,8 +32,8 @@ export function createAuth(database: AppDatabase, config: AppConfig, emailSender
     appName: 'VibeLog', baseURL: config.appOrigin, basePath: '/api/auth', secret: config.betterAuthSecret,
     trustedOrigins: [config.appOrigin], database: drizzleAdapter(database.db, { provider: 'pg', schema: authSchema, transaction: true }),
     socialProviders,
-    account: { accountLinking: { enabled: true, trustedProviders: ['google', 'github'] } },
-    session: { expiresIn: SESSION_TTL_SECONDS, updateAge: 0 },
+    account: { accountLinking: { enabled: true, requireLocalEmailVerified: true } },
+    session: { expiresIn: SESSION_TTL_SECONDS, updateAge: 60 * 60 },
     rateLimit: { enabled: false },
     hooks: { before: createAuthMiddleware(async (ctx) => {
       if (ctx.path !== '/sign-in/magic-link') return;
@@ -48,6 +49,7 @@ export function createAuth(database: AppDatabase, config: AppConfig, emailSender
     advanced: { database: { generateId: 'uuid' }, cookiePrefix: 'vibelog', defaultCookieAttributes: { httpOnly: true, secure: config.secureCookies, sameSite: 'lax', path: '/' } },
     plugins: [magicLink({
       expiresIn: MAGIC_LINK_TTL_SECONDS,
+      storeToken: 'hashed',
       sendMagicLink: async ({ email, token, url }) => {
         await emailSender.sendMagicLink({ to: email, url, expiresAt: new Date(Date.now() + MAGIC_LINK_TTL_SECONDS * 1000), idempotencyKey: magicLinkIdempotencyKey(token) });
       },
@@ -55,8 +57,10 @@ export function createAuth(database: AppDatabase, config: AppConfig, emailSender
   });
 }
 export type AppAuth = ReturnType<typeof createAuth>;
-export async function readSession(c: { req: { raw: Request } }, auth: AppAuth, config: AppConfig): Promise<AppSession | null> {
-  const result = await auth.api.getSession({ headers: c.req.raw.headers });
+export async function readSession(c: Pick<Context, 'req' | 'header'>, auth: AppAuth, config: AppConfig): Promise<AppSession | null> {
+  c.header('Cache-Control', 'private, no-store');
+  const { response: result, headers } = await auth.api.getSession({ headers: c.req.raw.headers, returnHeaders: true });
+  for (const cookie of headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true });
   if (!result) return null;
   return { id: result.session.id, user: { id: result.user.id, email: result.user.email, name: result.user.name }, csrfToken: createHmac('sha256', config.betterAuthSecret).update(`csrf:${result.session.id}`).digest('base64url'), expiresAt: result.session.expiresAt.toISOString() };
 }

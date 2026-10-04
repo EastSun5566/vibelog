@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { S3ArtifactStore } from '../src/adapters/s3-artifact-store.js';
 import { loadAppConfig } from '../src/config.js';
 import { AppDatabase } from '../src/database.js';
@@ -12,9 +12,11 @@ const config = loadAppConfig({
   EMAIL_PROVIDER: 'mailpit', MAILPIT_API_URL: 'http://localhost:8025', EMAIL_FROM: 'login@example.com',
 });
 const database = new AppDatabase(config.databaseUrl);
+const send = vi.fn(() => Promise.resolve());
+const consumeRateLimit = vi.spyOn(database, 'consumeRateLimit');
 const { app } = createApp({
   config, database, artifactStore: new S3ArtifactStore(config.objectStore),
-  emailSender: { sendMagicLink: () => Promise.resolve() }, dispatcher: { dispatch: () => Promise.resolve(0) },
+  emailSender: { sendMagicLink: send }, dispatcher: { dispatch: () => Promise.resolve(0) },
 });
 afterAll(() => database.close());
 
@@ -34,5 +36,33 @@ describe('agent payload limit scope', () => {
     });
     expect(response.status).toBe(413);
     expect(await response.json()).toMatchObject({ error: { code: 'payload_too_large' } });
+  });
+});
+
+describe('authentication request limits', () => {
+  it.each(['/auth/magic-link', '/auth/oauth/google', '/auth/logout', '/api/auth/sign-in/magic-link', '/api/auth/sign-in/social'])('rejects oversized bodies at %s before authentication or email dispatch', async (path) => {
+    const response = await app.request(path, { method: 'POST', body: 'x'.repeat(16 * 1024 + 1), headers: { Host: 'localhost:3000', 'Content-Type': 'application/json', 'Content-Length': String(16 * 1024 + 1) } });
+    expect(response.status).toBe(413);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(await response.json()).toMatchObject({ error: { code: 'payload_too_large' } });
+    expect(consumeRateLimit).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('also limits streamed bodies without Content-Length', async () => {
+    const body = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(8000)); controller.enqueue(new Uint8Array(9000)); controller.close(); } });
+    const request = new Request('http://localhost:3000/api/auth/sign-in/magic-link', { method: 'POST', headers: { Host: 'localhost:3000', 'Content-Type': 'application/json' }, body, duplex: 'half' } as RequestInit);
+    const response = await app.request(request);
+    expect(response.status).toBe(413);
+    expect(consumeRateLimit).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('accepts a body at the boundary for normal auth validation', async () => {
+    const body = JSON.stringify({ email: 'invalid', padding: 'x'.repeat(16 * 1024 - 32) });
+    expect(new TextEncoder().encode(body).byteLength).toBe(16 * 1024);
+    const response = await app.request('/api/auth/sign-in/magic-link', { method: 'POST', body, headers: { Host: 'localhost:3000', 'Content-Type': 'application/json' } });
+    expect(response.status).toBe(400);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
   });
 });
