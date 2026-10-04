@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.11.2](https://github.com/EastSun5566/vibelog/compare/v0.11.1...v0.11.2) (2026-10-04)
+
+### Bug Fixes
+
+* **auth:** harden sign-in and session handling ([#25](https://github.com/EastSun5566/vibelog/issues/25)) ([d52a3df](https://github.com/EastSun5566/vibelog/commit/d52a3df32e3cdd4c6553950e6cfe48f1e124b9b8))
+* **build:** isolate concurrent blog compilation ([#26](https://github.com/EastSun5566/vibelog/issues/26)) ([486d4d8](https://github.com/EastSun5566/vibelog/commit/486d4d8fc71a329ab0eb7ec128c51f01c9ae6c74))
+* **deps:** update HTTP cache semantics ([0ecdfb0](https://github.com/EastSun5566/vibelog/commit/0ecdfb06f9f09c2619afb52ad96b88304879783c))
+* **markdown:** preserve authored content and rendering boundaries ([#27](https://github.com/EastSun5566/vibelog/issues/27)) ([539d4d7](https://github.com/EastSun5566/vibelog/commit/539d4d737604b9d785a241d1d6fc8ec6cd6ae405))
 ## [0.11.1](https://github.com/EastSun5566/vibelog/compare/v0.11.0...v0.11.1) (2026-10-03)
 
 ### Bug Fixes
