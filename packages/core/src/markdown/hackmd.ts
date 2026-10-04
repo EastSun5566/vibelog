@@ -1,4 +1,5 @@
 import type { Blockquote, Code, Paragraph, PhrasingContent, Root, RootContent, Text } from 'mdast';
+import { isDangerousMarkdownUrl } from '../markdown.js';
 
 type CompatibleNode = Root | RootContent | PhrasingContent;
 type CompatibleParent = CompatibleNode & { children: CompatibleNode[] };
@@ -263,6 +264,28 @@ function transformChildren(parent: CompatibleParent, source: string, state: Tran
     const node = parent.children[index];
     if (!node) break;
 
+    if ('url' in node && isDangerousMarkdownUrl(node.url)) node.url = 'about:blank#blocked';
+    if (node.type === 'html') {
+      const literal = textNode(node.value);
+      const flow = ['root', 'blockquote', 'listItem', 'footnoteDefinition', 'containerDirective'].includes(parent.type);
+      parent.children.splice(index, 1, flow ? { type: 'paragraph', children: [literal] } : literal);
+      index += 1;
+      continue;
+    }
+    if (node.type === 'textDirective' || node.type === 'leafDirective'
+      || (node.type === 'containerDirective' && node.name.toLowerCase() !== 'spoiler' && !HACKMD_CALLOUTS.has(node.name.toLowerCase() as CalloutType))) {
+      const start = node.position?.start.offset;
+      const end = node.position?.end.offset;
+      const marker = node.type === 'textDirective' ? ':' : node.type === 'leafDirective' ? '::' : ':::';
+      const value = start !== undefined && end !== undefined && source
+        ? source.slice(start, end)
+        : `${marker}${node.name} ${textFrom(node.children as PhrasingContent[])}`.trim();
+      const literal = textNode(value);
+      parent.children.splice(index, 1, node.type === 'textDirective' ? literal : { type: 'paragraph', children: [literal] });
+      index += 1;
+      continue;
+    }
+
     if (hasChildren(node)) transformChildren(node, source, state);
     if (node.type === 'text') {
       const replacement = transformInlineText(node, source);
@@ -281,18 +304,8 @@ function transformChildren(parent: CompatibleParent, source: string, state: Tran
     }
 
     if (node.type === 'containerDirective') {
-      if (transformContainer(node)) {
-        index += 1;
-      } else {
-        parent.children.splice(index, 1, ...node.children);
-        index += node.children.length;
-      }
-      continue;
-    }
-
-    if (node.type === 'leafDirective' || node.type === 'textDirective') {
-      parent.children.splice(index, 1, ...node.children);
-      index += node.children.length;
+      transformContainer(node);
+      index += 1;
       continue;
     }
 
