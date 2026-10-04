@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import matter from 'gray-matter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildBlog, buildFromVibelog, ContentSourceName, createDevBuilder, DEFAULT_DESIGN_V2, HackMdSource, writeSourceSnapshot } from '../src/index.js';
@@ -126,6 +127,104 @@ describe('DevBuilder content summary', () => {
     expect(hashes[0]).toBe(contentHash('Same Markdown'));
     expect(hashes[1]).toBe(hashes[0]);
     expect(hashes[2]).not.toBe(hashes[0]);
+  });
+
+  it('isolates overlapping builds, failure, cleanup, and retry from another blog', { timeout: 60_000 }, async () => {
+    const cwd = process.cwd();
+    const fixtures = await Promise.all(['alpha', 'bravo'].map(async (name) => {
+      const root = await mkdtemp(join(tmpdir(), `vibelog-concurrent-${name}-`)); roots.push(root);
+      const builder = createDevBuilder({ root, contentSource: {
+        name: ContentSourceName.HACKMD,
+        getAuthor: () => Promise.resolve({ name, bio: `${name} notes` }),
+        getPosts: () => Promise.resolve({ posts: [
+          { id: name, title: `${name} selected`, slug: name, date: '2026-01-01T00:00:00Z', content: `Only ${name} searchable body.` },
+          { id: 'excluded', title: 'Excluded note', slug: 'excluded', date: '2026-01-01T00:00:00Z', content: 'This note must never enter the index.' },
+        ] }),
+      } });
+      await builder.prepare({ installDependencies: false });
+      await builder.fetchContent({ excludedSlugs: ['excluded'] });
+      const ready = join(root, 'ready'); const release = join(root, 'release');
+      // Hold prerendering in both real Astro processes until the test releases them.
+      await writeFile(join(builder.vibelogDir, 'src', 'pages', 'build-barrier.astro'), `---
+import { access, writeFile } from 'node:fs/promises';
+import { setTimeout } from 'node:timers/promises';
+await writeFile(${JSON.stringify(ready)}, 'ready');
+while (!await access(${JSON.stringify(release)}).then(() => true, () => false)) await setTimeout(20);
+---
+<p>Build barrier</p>`);
+      const outDir = join(root, 'dist');
+      await mkdir(outDir); await writeFile(join(outDir, 'index.html'), `${name} previous successful output`);
+      return { name, root, builder, ready, release, outDir };
+    }));
+    const [alpha, bravo] = fixtures;
+    if (!alpha || !bravo) throw new Error('Missing concurrent fixtures');
+    const buildOptions = (fixture: typeof alpha) => ({ vibelogDir: fixture.builder.vibelogDir, outDir: fixture.outDir, site: `https://${fixture.name}.example.com` });
+    const timings = vi.fn<(stage: string, durationMs: number) => void>();
+    const builds = [
+      buildFromVibelog({ ...buildOptions(alpha), searchIdentity: 'alpha', searchCache: { directory: join(alpha.root, 'missing-cache'), identity: 'alpha' } }),
+      buildFromVibelog({ ...buildOptions(bravo), onStageTiming: timings }),
+    ];
+    // Observe both settlements immediately, including the intentionally failed build.
+    const settled = Promise.allSettled(builds);
+    let retry: Promise<void> | undefined;
+    try {
+      await vi.waitFor(async () => {
+        await Promise.all(fixtures.map((fixture) => stat(fixture.ready)));
+      }, { timeout: 25_000, interval: 20 });
+      expect(process.cwd()).toBe(cwd);
+      expect(createDevBuilder({ root: 'relative-project', contentSource: alpha.builder.contentSource }).root).toBe(join(cwd, 'relative-project'));
+      await writeFile(alpha.release, 'go');
+      await expect(builds[0]).rejects.toThrow('Search cache identity or files are invalid');
+      expect(await readFile(join(alpha.outDir, 'index.html'), 'utf8')).toBe('alpha previous successful output');
+      expect((await readdir(alpha.builder.vibelogDir)).filter((name) => name.startsWith('.build-staging-'))).toEqual([]);
+      expect(await readFile(join(bravo.outDir, 'index.html'), 'utf8')).toBe('bravo previous successful output');
+      expect(timings).not.toHaveBeenCalled();
+      retry = buildFromVibelog(buildOptions(alpha));
+      await retry;
+      const assertOwnContent = async (fixture: typeof alpha, other: string) => {
+        const html = await readFile(join(fixture.outDir, 'blog', fixture.name, 'index.html'), 'utf8');
+        expect(html).toContain(`Only ${fixture.name} searchable body.`);
+        expect(html).not.toContain(`Only ${other} searchable body.`);
+        const fragmentDirectory = join(fixture.outDir, 'pagefind', 'fragment');
+        const files = await readdir(fragmentDirectory);
+        expect(files).toHaveLength(1);
+        const fragments = (await Promise.all(files.map(async (file) => gunzipSync(await readFile(join(fragmentDirectory, file))).toString('utf8')))).join('');
+        expect(fragments).toContain(`Only ${fixture.name} searchable body.`);
+        expect(fragments).not.toContain(`Only ${other} searchable body.`);
+        expect(fragments).not.toContain('This note must never enter the index.');
+      };
+      await assertOwnContent(alpha, 'bravo');
+      // Finishing Pagefind and removing one operation's entire work tree must not
+      // stop the other renderer, which is still paused inside Astro.
+      await rm(alpha.root, { recursive: true, force: true });
+      expect(process.cwd()).toBe(cwd);
+      await writeFile(bravo.release, 'go');
+      await builds[1];
+      await assertOwnContent(bravo, 'alpha');
+      expect(timings.mock.calls.map(([stage]) => stage)).toEqual(['astro', 'syntax-css', 'pagefind', 'promote']);
+    } finally {
+      await Promise.all(fixtures.map((fixture) => writeFile(fixture.release, 'go').catch(() => undefined)));
+      await settled;
+      if (retry) await Promise.allSettled([retry]);
+    }
+  });
+
+  it('rejects an interrupted renderer without promoting or leaving staging output', { timeout: 30_000 }, async () => {
+    const cwd = process.cwd();
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-renderer-exit-')); roots.push(root);
+    const builder = createDevBuilder({ root, contentSource: {
+      name: ContentSourceName.HACKMD,
+      getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
+      getPosts: () => Promise.resolve({ posts: [{ id: 'one', title: 'One', slug: 'one', date: '2026-01-01T00:00:00Z', content: 'Body.' }] }),
+    } });
+    await builder.prepare({ installDependencies: false }); await builder.fetchContent();
+    await writeFile(join(builder.vibelogDir, 'src', 'pages', 'crash.astro'), '---\nprocess.kill(process.pid, "SIGKILL");\n---\n<p>Never completes</p>');
+    const outDir = join(root, 'dist'); await mkdir(outDir);
+    await writeFile(join(outDir, 'index.html'), 'Previous successful output');
+    await expect(buildFromVibelog({ vibelogDir: builder.vibelogDir, outDir, site: 'https://writer.example.com' })).rejects.toThrow('Blog renderer exited before completion (SIGKILL)');
+    expect(await readFile(join(outDir, 'index.html'), 'utf8')).toBe('Previous successful output');
+    expect((await readdir(builder.vibelogDir)).filter((name) => name.startsWith('.build-staging-'))).toEqual([]);
+    expect(process.cwd()).toBe(cwd);
   });
 
   it('compiles one frozen source snapshot into three structurally different complete blogs', { timeout: 45_000 }, async () => {

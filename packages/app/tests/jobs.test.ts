@@ -1,5 +1,7 @@
 import { AiProviderRequestError, AiProviderTimeoutError, DEFAULT_DESIGN_V2, buildBlog, structuralBuildIdentity } from '@vibelog/core';
 import type { AiProvider } from '@vibelog/core';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OperationRuntimeConfig } from '../src/config.js';
 import type { AppDatabase, BlogRecord, OperationRecord, ThemeRevisionRecord } from '../src/database.js';
@@ -69,6 +71,64 @@ describe('AI operation execution', () => {
       { sessionId: '11111111-1111-4111-8111-111111111111' },
       { sessionId: '22222222-2222-4222-8222-222222222222' },
     ]);
+  });
+
+  it('keeps concurrent direct-mode operations and their cleanup scoped to each blog', async () => {
+    const fixtures = ['alpha', 'bravo'].map((name) => {
+      const currentBlog = { ...blog, id: name, userId: name, username: name, sourceArtifactId: `source-${name}` };
+      const currentTheme = { ...theme, blogId: name };
+      const currentOperation = { ...operation(name), blogId: name, userId: name };
+      currentOperation.payload.sourceArtifactId = currentBlog.sourceArtifactId;
+      const completeDesignOperation = vi.fn(() => Promise.resolve(currentTheme));
+      const markArtifactCleanup = vi.fn(() => Promise.resolve());
+      const database = {
+        claimOperation: vi.fn(() => Promise.resolve(currentOperation)), getBlog: vi.fn(() => Promise.resolve(currentBlog)),
+        getActiveDesign: vi.fn(() => Promise.resolve(currentTheme)), updateOperationProgress: vi.fn(() => Promise.resolve()),
+        listBuildCacheCandidates: vi.fn(() => Promise.resolve([])), createArtifact: vi.fn(() => Promise.resolve({ id: `candidate-${name}` })),
+        completeDesignOperation, markArtifactCleanup, failOperation: vi.fn(() => Promise.resolve()),
+      } as unknown as AppDatabase;
+      const uploadDirectory = vi.fn(() => Promise.resolve());
+      const artifacts = {
+        materializeArtifact: vi.fn(async (_id: string, directory: string) => { await mkdir(directory, { recursive: true }); await writeFile(join(directory, 'owner.txt'), name); }),
+        uploadDirectory,
+      } as unknown as ArtifactStore;
+      let release!: () => void; let fail!: (error: Error) => void;
+      const gate = new Promise<void>((resolve, reject) => { release = resolve; fail = reject; });
+      return { name, completeDesignOperation, markArtifactCleanup, uploadDirectory, gate, release, fail,
+        executor: new AppOperationExecutor(database, artifacts, config, { aiProvider: () => ({ name: 'test', modelId: 'model', generate: () => Promise.resolve(historicalTheme.config) }) }),
+      };
+    });
+    vi.mocked(buildBlog).mockClear();
+    vi.mocked(buildBlog).mockImplementation((options) => {
+      const fixture = fixtures.find((item) => options.site === `https://${item.name}.vibelog.org`);
+      if (!fixture) throw new Error('Unexpected blog');
+      return fixture.gate;
+    });
+    const executions = fixtures.map((fixture) => fixture.executor.execute(fixture.name));
+    const settled = Promise.allSettled(executions);
+    try {
+      await vi.waitFor(() => { expect(buildBlog).toHaveBeenCalledTimes(2); });
+      const builds = vi.mocked(buildBlog).mock.calls.map(([options]) => options);
+      expect(new Set(builds.map((options) => options.workDir)).size).toBe(2);
+      const alpha = fixtures[0]; const bravo = fixtures[1];
+      const alphaBuild = builds.find((options) => options.site === 'https://alpha.vibelog.org');
+      const bravoBuild = builds.find((options) => options.site === 'https://bravo.vibelog.org');
+      if (!alpha || !bravo || !alphaBuild || !bravoBuild) throw new Error('Missing concurrent operations');
+      alpha.fail(new Error('Renderer failed'));
+      await expect(executions[0]).rejects.toBeInstanceOf(TerminalOperationError);
+      expect(alpha.markArtifactCleanup).toHaveBeenCalledWith('candidate-alpha');
+      expect(alpha.completeDesignOperation).not.toHaveBeenCalled();
+      await expect(stat(dirname(alphaBuild.workDir))).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(await readFile(join(bravoBuild.sourceDir, 'owner.txt'), 'utf8')).toBe('bravo');
+      expect(bravo.markArtifactCleanup).not.toHaveBeenCalled();
+      bravo.release(); await executions[1];
+      expect(bravo.uploadDirectory).toHaveBeenCalledWith('candidate-bravo', bravoBuild.outDir);
+      expect(bravo.completeDesignOperation).toHaveBeenCalledWith(expect.objectContaining({ blogId: 'bravo' }), historicalTheme.config, 'candidate-bravo', expect.anything());
+      await expect(stat(dirname(bravoBuild.workDir))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      for (const fixture of fixtures) fixture.release();
+      await settled;
+    }
   });
 
   it('rejects a stale saved revision before calling the model or creating a draft', async () => {

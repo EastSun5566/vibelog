@@ -21,6 +21,8 @@ Queue modes are intentionally small:
 - `postgres`: durable Compose and self-hosted worker.
 - `cloud-tasks`: managed delivery to the private production worker.
 
+Astro and Pagefind run in a separate child process for each build, with its own working directory and search service. Temporary files are removed only after that process exits; a failed build preserves the previous output. Direct/self-hosted calls can overlap for different blogs. Production admits one request per worker instance to bound build memory; the existing instance and Cloud Tasks limits still apply.
+
 Every durable mode uses the same operation lease and idempotency rules. See [`.env.example`](../../.env.example) for configuration and the [root README](../../README.md) for commands.
 
 ## Browser authentication
