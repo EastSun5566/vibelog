@@ -5,7 +5,8 @@ interface MailpitMessageSummary { id?: string; ID?: string }
 interface MailpitMessage { text?: string; Text?: string }
 
 async function requestMagicLink(page: Page, request: APIRequestContext, mailpitUrl: string, email: string, returnTo = ''): Promise<string> {
-  await page.goto(returnTo ? `/auth/login?returnTo=${encodeURIComponent(returnTo)}` : '/auth/login');
+  const login = await page.goto(returnTo ? `/auth/login?returnTo=${encodeURIComponent(returnTo)}` : '/auth/login');
+  expect(login?.headers()['cache-control']).toBe('private, no-store');
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
   await expect(page.getByLabel('Email')).toHaveCSS('font-size', '16px');
@@ -364,6 +365,7 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   publicUrl.hostname = `alice.${publicUrl.hostname}`;
   publicUrl.pathname = '/';
   const publicBlogResponse = await page.goto(publicUrl.toString());
+  expect(publicBlogResponse?.headers()['cache-control']).toBe('public, no-cache');
   expect(publicBlogResponse?.headers()['content-security-policy']).toContain("script-src 'none'");
   await expect(page.locator('.site-header nav')).toHaveCSS('display', 'flex');
   await expect(page.locator('[data-analytics-loader]')).toHaveCount(0);
