@@ -7,6 +7,7 @@ import matter from 'gray-matter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildBlog, buildFromVibelog, ContentSourceName, createDevBuilder, DEFAULT_DESIGN_V2, HackMdSource, writeSourceSnapshot } from '../src/index.js';
 import type { ContentSource } from '../src/index.js';
+import { parseFrontMatter, stringifyFrontMatter } from '../src/core/frontmatter.js';
 
 const roots: string[] = [];
 const contentHash = (content: string) => createHash('sha256').update(content, 'utf8').digest('hex');
@@ -411,7 +412,7 @@ while (!await access(${JSON.stringify(release)}).then(() => true, () => false)) 
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 16 });
+    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 17 });
     await expect(stat(join(root, '.vibelog', 'src', 'styles', 'global.css'))).rejects.toThrow();
     expect(await readFile(join(root, '.vibelog', 'public', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
   });
@@ -672,6 +673,59 @@ while (!await access(${JSON.stringify(release)}).then(() => true, () => false)) 
     expect(markdown).toContain('Canonical: https://writer.example.com/blog/post/');
   });
 
+  it.each(['live HackMD', 'stored snapshot'] as const)('preserves Markdown and enforces rendering boundaries from %s', { timeout: 25_000 }, async (mode) => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-markdown-fidelity-')); roots.push(root);
+    const content = await readFile(join(import.meta.dirname, 'fixtures', 'content', 'markdown-fidelity.md'), 'utf8');
+    vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith('/info/@writer')) return Promise.resolve(Response.json({ user: { displayName: 'Writer', biography: '' } }));
+      if (url.endsWith('/api/@writer/overview')) return Promise.resolve(Response.json({ notes: [{
+        id: 'fidelity', title: 'Markdown fidelity', content: 'Rendering regression fixture.', tags: [],
+        lastchangeAt: '', publishType: 'view', publishedAt: '2026-01-01T00:00:00Z', permalink: 'fidelity',
+      }] }));
+      if (url.endsWith('/fidelity/download')) return Promise.resolve(new Response(content));
+      return Promise.resolve(new Response(null, { status: 404 }));
+    }));
+    const source = new HackMdSource('writer', { baseUrl: 'http://fixture.test' });
+    const builder = createDevBuilder({ root, contentSource: source });
+    await builder.prepare({ installDependencies: false });
+    const summary = await builder.fetchContent();
+    const sourceDir = join(root, 'source');
+    await writeSourceSnapshot(builder.vibelogDir, sourceDir, summary);
+    if (mode === 'stored snapshot') {
+      const postPath = join(sourceDir, 'content', 'blog', 'fidelity.md');
+      const { data } = parseFrontMatter(await readFile(postPath, 'utf8'));
+      // Old snapshots and non-HackMD sources must be safe without the sync sanitizer.
+      await writeFile(postPath, stringifyFrontMatter(content, data));
+    }
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('Frozen builds must not fetch content'))));
+    const workDir = join(root, 'compile');
+    const outDir = join(workDir, 'dist');
+    await buildBlog({ sourceDir, design: DEFAULT_DESIGN_V2, workDir, outDir, site: 'https://writer.example.com' });
+    const article = await readFile(join(outDir, 'blog', 'fidelity', 'index.html'), 'utf8');
+    expect(article).toContain('prefix:value and scope:unknown remain complete.');
+    expect(article).toContain(':widget[label]{color="blue"}');
+    expect(article).toContain('::widget[Leaf label]{color="blue"}');
+    expect(article).toContain(':::widget[Container label]{color="blue"}');
+    expect(article).toContain('Container body with **original markup**.');
+    expect(article).toMatch(/<code>a (?:&lt;|&#x3C;) b<\/code>/u);
+    const codeBlocks = [...article.matchAll(/<pre\b[^>]*>([^]*?)<\/pre>/gu)].map((match) => (match[1] ?? '').replace(/<[^>]*>/gu, '').replace(/&#x3C;|&lt;/gu, '<').replaceAll('&gt;', '>'));
+    for (const literal of ['<div>tilde code</div>', '<div>long fence code</div>', '<div>indented code</div>', '<div>quoted code</div>', '[code example](javascript:literal)']) {
+      expect(codeBlocks.join('\n')).toContain(literal);
+    }
+    expect(article).not.toContain('<script>alert');
+    expect(article).not.toContain('<img src="x"');
+    expect(article).not.toMatch(/(?:href|src)="(?:javascript|vbscript|data):/iu);
+    expect(article.match(/href="about:blank#blocked[^"<]*"/gu)).toHaveLength(5);
+    expect(article).toContain('src="about:blank#blocked"');
+    expect(article).toContain('href="https://example.com/"');
+    expect(article).toContain('href="mailto:writer@example.com"');
+    expect(article).toContain('href="/blog/other/"');
+    const markdown = await readFile(join(outDir, 'blog', 'fidelity', 'index.md'), 'utf8');
+    expect(markdown).toContain('`a < b`');
+    expect(markdown).toContain('~~~html\n<div>tilde code</div>');
+  });
+
   it('renders common HackMD Markdown without adding client scripts', { timeout: 20_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-hackmd-markdown-')); roots.push(root);
     const content = await readFile(join(import.meta.dirname, 'fixtures', 'content', 'hackmd-compatibility.md'), 'utf8');
@@ -735,7 +789,7 @@ while (!await access(${JSON.stringify(release)}).then(() => true, () => false)) 
     expect(article).not.toMatch(/<p>\[TOC\]<\/p>/u);
     expect(article).toContain('Custom heading');
     expect(article).toContain('Unknown directives keep their content.');
-    expect(article).not.toContain('custom-element');
+    expect(article).toContain(':::custom[Custom heading]');
     expect(article).not.toContain('<script>alert');
     expect(article).toContain('about:blank#blocked-');
     expect(article).not.toContain('pagefind-component-ui.js');

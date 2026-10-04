@@ -384,7 +384,10 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(footerNavigation.getByRole('link', { name: 'llms.txt' })).toHaveAttribute('href', '/llms.txt');
   await page.getByRole('link', { name: 'Hello VibeLog' }).click();
   await expect(page).toHaveURL(/\/blog\/hello-vibelog\/$/u);
-  const highlightedCode = page.locator('pre.astro-code');
+  await expect(page.locator('.prose')).toContainText('Plain prefix:value');
+  await expect(page.locator('.prose p code')).toHaveText('a < b');
+  await expect(page.locator('pre code').filter({ hasText: '<div>literal code</div>' })).toHaveText('<div>literal code</div>');
+  const highlightedCode = page.locator('pre.astro-code').filter({ hasText: 'const greeting = "hello";' });
   await expect(highlightedCode).toHaveCount(1);
   await expect(highlightedCode).not.toHaveAttribute('style');
   await expect(highlightedCode.locator('code span[style]')).toHaveCount(0);

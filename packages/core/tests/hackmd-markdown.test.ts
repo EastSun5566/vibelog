@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { remarkHackmdCompatibility } from '../src/markdown/hackmd.js';
 
 describe('remarkHackmdCompatibility', () => {
-  it('normalizes safe HackMD structures and unwraps unknown directives', () => {
+  it('normalizes safe HackMD structures and preserves unknown directive names and content', () => {
     const tree = {
       type: 'root',
       children: [
@@ -41,7 +41,7 @@ describe('remarkHackmdCompatibility', () => {
       },
     });
     expect(tree.children[1]).not.toHaveProperty('data.hProperties.class', 'untrusted');
-    expect(tree.children[2]).toMatchObject({ type: 'paragraph', children: [{ value: 'Keep me' }] });
+    expect(tree.children[2]).toMatchObject({ type: 'paragraph', children: [{ value: ':::custom-element Keep me' }] });
   });
 
   it('turns GitHub alerts into labelled callouts without changing regular quotes', () => {
