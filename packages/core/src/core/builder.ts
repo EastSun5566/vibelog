@@ -1,19 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join, resolve, dirname, basename, isAbsolute, relative, sep, parse as parsePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
-import { build as astroBuild } from 'astro';
-import mdx from '@astrojs/mdx';
-import * as pagefind from 'pagefind';
-import { unified } from '@astrojs/markdown-remark';
-import sitemap from '@astrojs/sitemap';
+import { execFileSync, fork } from 'node:child_process';
+import type { RenderOptions, RenderMessage } from './render-worker.js';
 import fs from 'fs-extra';
-import rehypeKatex from 'rehype-katex';
-import { defListHastHandlers, remarkDefinitionList } from 'remark-definition-list';
-import remarkDirective from 'remark-directive';
-import remarkGfm from 'remark-gfm';
-import remarkGemoji from 'remark-gemoji';
-import remarkMath from 'remark-math';
 import { z } from 'zod';
 
 import { resolvePostDescription } from '../description.js';
@@ -24,7 +14,6 @@ import { resolveHomeComposition, type ResolvablePost } from '../design/resolve-v
 import { validateBlogDesignSpecV2, type BlogDesignSpecV2 } from '../design/schema-v2.js';
 import type { ContentProfile, SourceSnapshotV1 } from '../design/types.js';
 import { validateSourceSnapshot } from '../design/validate.js';
-import { remarkHackmdCompatibility } from '../markdown/hackmd.js';
 import { generateSlug, slugify } from './utils.js';
 import { logger } from './logger.js';
 import { parseFrontMatter, stringifyFrontMatter } from './frontmatter.js';
@@ -45,53 +34,6 @@ export function structuralBuildIdentity(sourceArtifactId: string, design: BlogDe
   return createHash('sha256').update(JSON.stringify(canonical({ sourceArtifactId, design: validateBlogDesignSpecV2(design), site: new URL(site).origin, templateVersion: TEMPLATE_VERSION, searchSchemaVersion: SEARCH_SCHEMA_VERSION }))).digest('hex');
 }
 
-interface ShikiElement {
-  properties: Record<string, unknown>;
-}
-
-interface ShikiTransformerContext {
-  options: { meta?: { __raw?: string } };
-  addClassToHast(element: ShikiElement, className: string): ShikiElement;
-}
-
-function codeMetadata(raw = ''): { highlights: Set<number>; start: number | undefined; wrap: boolean } {
-  const startMatch = /(?:^|\s)line-start=(\d+)(?:\s|$)/u.exec(raw);
-  const start = startMatch?.[1] ? Number.parseInt(startMatch[1], 10) : undefined;
-  const highlights = new Set<number>();
-  const highlightMatch = /\[([\d,\s-]+)\]/u.exec(raw);
-  if (highlightMatch?.[1]) {
-    for (const range of highlightMatch[1].split(',')) {
-      const [firstRaw, lastRaw] = range.trim().split('-');
-      const first = Number.parseInt(firstRaw ?? '', 10);
-      const last = Number.parseInt(lastRaw ?? firstRaw ?? '', 10);
-      if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || first < 1 || last < first || last - first > 1_000) continue;
-      for (let line = first; line <= last; line += 1) highlights.add(line);
-    }
-  }
-  return {
-    highlights,
-    start: Number.isSafeInteger(start) && (start ?? 0) > 0 ? start : undefined,
-    wrap: /(?:^|\s)wrap-code(?:\s|$)/u.test(raw),
-  };
-}
-
-const codeMetadataTransformer = {
-  name: 'vibelog-code-metadata',
-  pre(this: ShikiTransformerContext, element: ShikiElement) {
-    const metadata = codeMetadata(this.options.meta?.__raw);
-    if (metadata.start !== undefined) {
-      this.addClassToHast(element, 'has-line-numbers');
-      element.properties.dataLineStart = String(metadata.start);
-    }
-    if (metadata.wrap) this.addClassToHast(element, 'wrap-code');
-  },
-  line(this: ShikiTransformerContext, element: ShikiElement, line: number) {
-    const metadata = codeMetadata(this.options.meta?.__raw);
-    const displayLine = (metadata.start ?? 1) + line - 1;
-    if (metadata.start !== undefined) element.properties.dataLineNumber = String(displayLine);
-    if (metadata.highlights.has(displayLine)) this.addClassToHast(element, 'highlighted');
-  },
-};
 const postSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
@@ -157,40 +99,6 @@ function normalizePostTags(posts: z.infer<typeof postSchema>[]): BuildPostTag[][
 function isPathInside(root: string, target: string): boolean {
   const pathFromRoot = relative(root, target);
   return pathFromRoot !== '' && !pathFromRoot.startsWith(`..${sep}`) && pathFromRoot !== '..' && !isAbsolute(pathFromRoot);
-}
-
-async function externalizeShikiStyles(outDir: string): Promise<void> {
-  const styles = new Map<string, string>();
-
-  async function visit(directory: string): Promise<void> {
-    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-      const path = join(directory, entry.name);
-      if (entry.isDirectory()) {
-        await visit(path);
-      } else if (entry.isFile() && entry.name.endsWith('.html')) {
-        const html = await fs.readFile(path, 'utf8');
-        const converted = html.replace(/<pre\b[^>]*\bclass="[^"]*\bastro-code\b[^"]*"[^>]*>[\s\S]*?<\/pre>/g, (block) =>
-          block.replace(/<(?:pre|span)\b[^>]*\bstyle="[^"]*"[^>]*>/g, (tag) => {
-            const style = /\sstyle="([^"]*)"/.exec(tag)?.[1];
-            if (!style) return tag;
-            if (!/^[\s;:#A-Za-z0-9-]+$/.test(style)) throw new Error('Unexpected Shiki style');
-            const className = `syntax-style-${createHash('sha256').update(style).digest('hex').slice(0, 12)}`;
-            styles.set(className, style);
-            const withoutStyle = tag.replace(/\sstyle="[^"]*"/, '');
-            return /\bclass="[^"]*"/.test(withoutStyle)
-              ? withoutStyle.replace(/\bclass="([^"]*)"/, `class="$1 ${className}"`)
-              : withoutStyle.replace(/^<(pre|span)\b/, `<$1 class="${className}"`);
-          }));
-        if (converted !== html) await fs.writeFile(path, converted);
-      }
-    }
-  }
-
-  await visit(outDir);
-  const css = [...styles].sort(([left], [right]) => left.localeCompare(right))
-    .map(([className, style]) => `.${className}{${style}}`)
-    .join('\n');
-  await fs.writeFile(join(outDir, 'syntax.css'), css);
 }
 
 async function findTemplateDir() {
@@ -490,6 +398,31 @@ async function prepareDesignAssets(vibelogDir: string): Promise<void> {
   ));
   await fs.writeFile(join(vibelogDir, 'public', 'design.css'), compileDesignCss(design));
 }
+// Tests import source modules; subprocesses always run the compiled runtime.
+const renderWorkerUrl = new URL('../../dist/core/render-worker.js', import.meta.url);
+async function renderInChild(options: RenderOptions, report: BuildOptions['onStageTiming']): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = fork(renderWorkerUrl, [], { cwd: options.vibelogDir, execArgv: [], stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
+    let failure: Error | undefined;
+    let completed = false;
+    child.on('message', (message: RenderMessage) => {
+      if (message.type === 'timing') {
+        try { report?.(message.stage, message.durationMs); }
+        catch (error) { failure = error instanceof Error ? error : new Error(String(error)); child.kill(); }
+      } else if (message.type === 'error') failure = new Error(message.message);
+      else if (message.type === 'complete') completed = true;
+    });
+    child.on('error', (error) => { failure = error; });
+    // Wait for process exit before the caller removes its temporary directory.
+    child.on('close', (code, signal) => {
+      if (failure) reject(failure);
+      else if (code === 0 && completed) resolve();
+      else reject(new Error(`Blog renderer exited before completion (${signal ?? String(code)})`));
+    });
+    child.send(options, (error) => { if (error) { failure = error; child.kill(); } });
+  });
+}
+
 export async function buildFromVibelog({ vibelogDir, outDir, site, onStageTiming, searchIdentity, searchCache, buildIdentity }: BuildOptions) {
   logger.info('Starting production build...');
   if (searchCache && searchIdentity !== searchCache.identity) throw new Error('Search cache identity does not match build identity');
@@ -524,87 +457,16 @@ export async function buildFromVibelog({ vibelogDir, outDir, site, onStageTiming
   // externalized template dependencies through .vibelog/node_modules.
   const tempOutDir = join(resolvedVibelogDir, `.build-staging-${randomUUID()}`);
   const backupOutDir = `${finalOutDir}.vibelog-backup-${randomUUID()}`;
-  const previousWorkingDirectory = process.cwd();
   try {
-    // Astro writes prerender chunks below process.cwd() when the project lives
-    // elsewhere. Keeping cwd inside the generated project also keeps module
-    // resolution inside the pinned, offline template runtime.
-    process.chdir(resolvedVibelogDir);
-    await timed('astro', onStageTiming, () => astroBuild({
-      root: resolvedVibelogDir,
-      cacheDir: join(resolvedVibelogDir, '.astro'),
-      outDir: tempOutDir,
-      site: siteUrl.href,
-      integrations: [mdx(), sitemap({ filter: (page) => new URL(page).pathname !== '/search/' })],
-      markdown: {
-        shikiConfig: {
-          themes: {
-            light: 'github-light-high-contrast',
-            dark: 'github-dark-high-contrast',
-          },
-          defaultColor: false,
-          transformers: [codeMetadataTransformer],
-        },
-        processor: unified({
-          remarkPlugins: [
-            remarkDirective,
-            remarkHackmdCompatibility,
-            [remarkGfm, { singleTilde: false }],
-            remarkMath,
-            remarkGemoji,
-            remarkDefinitionList,
-          ],
-          rehypePlugins: [[rehypeKatex, {
-            output: 'mathml',
-            strict: 'ignore',
-            throwOnError: false,
-            trust: false,
-          }]],
-          remarkRehype: { handlers: defListHastHandlers },
-        }),
-      },
-      vite: {
-        logLevel: 'warn',
-      },
-    }));
-
-    await timed('syntax-css', onStageTiming, () => externalizeShikiStyles(tempOutDir));
-
-    if (searchCache) {
-      await timed('pagefind', onStageTiming, async () => {
-        const marker = await fs.readJson(join(searchCache.directory, 'search-index.json')).catch(() => null) as { identity?: string } | null;
-        if (marker?.identity !== searchCache.identity || !await fs.exists(join(searchCache.directory, 'pagefind', 'pagefind.js'))) throw new Error('Search cache identity or files are invalid');
-        await fs.copy(join(searchCache.directory, 'pagefind'), join(tempOutDir, 'pagefind'), { overwrite: true });
-      });
-    } else {
-    logger.info('Indexing selected articles with Pagefind...');
-    await timed('pagefind', onStageTiming, async () => {
-    const created = await pagefind.createIndex({ verbose: false });
-    if (!created.index || created.errors.length) {
-      await pagefind.close();
-      throw new Error(`Pagefind could not start indexing: ${created.errors.join('; ') || 'index unavailable'}`);
-    }
-    const { index } = created;
-    try {
-      const added = await index.addDirectory({ path: tempOutDir });
-      if (added.errors.length || added.page_count === 0) {
-        throw new Error(`Pagefind could not index the site: ${added.errors.join('; ') || 'no pages found'}`);
-      }
-      const written = await index.writeFiles({ outputPath: join(tempOutDir, 'pagefind') });
-      if (written.errors.length) throw new Error(`Pagefind could not write its index: ${written.errors.join('; ')}`);
-    } finally {
-      await index.deleteIndex();
-      await pagefind.close();
-    }
-    });
-    }
+    await renderInChild({
+      vibelogDir: resolvedVibelogDir, outDir: tempOutDir, site: siteUrl.href,
+      ...(searchCache ? { searchCache: { ...searchCache, directory: resolve(searchCache.directory) } } : {}),
+    }, onStageTiming);
     if (searchIdentity) await fs.writeJson(join(tempOutDir, 'search-index.json'), { identity: searchIdentity });
     if (buildIdentity) await fs.writeJson(join(tempOutDir, 'build-identity.json'), { identity: buildIdentity });
   } catch (error) {
     await fs.remove(tempOutDir);
     throw error;
-  } finally {
-    process.chdir(previousWorkingDirectory);
   }
 
   await timed('promote', onStageTiming, async () => {

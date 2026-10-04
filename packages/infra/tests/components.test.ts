@@ -82,6 +82,8 @@ describe('Pulumi components', () => {
     const web = services.find((item) => item.name.endsWith('-web')); const worker = services.find((item) => item.name.endsWith('-worker'));
     expect(web).toBeDefined(); expect(worker).toBeDefined();
     if (!web || !worker) throw new Error('Cloud Run services missing');
+    expect(record(worker.inputs.template).maxInstanceRequestConcurrency).toBe(1);
+    expect(record(web.inputs.template).maxInstanceRequestConcurrency).toBeUndefined();
     expect(web.inputs.ingress).toBe('INGRESS_TRAFFIC_ALL'); expect(worker.inputs.ingress).not.toBe('INGRESS_TRAFFIC_ALL');
     for (const service of services) {
       const template = service.inputs.template as { scaling: { minInstanceCount: number; maxInstanceCount: number }; containers: { envs: { name: string; value?: string; valueSource?: unknown }[] }[] };
