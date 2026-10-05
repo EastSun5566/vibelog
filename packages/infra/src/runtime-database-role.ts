@@ -54,6 +54,7 @@ async function assertManaged(client: Client, inputs: RoleInputs): Promise<void> 
 }
 
 async function policyValid(client: Client, inputs: RoleInputs): Promise<boolean> {
+  // Targets PostgreSQL 17, as pinned by ProductionFoundation; MAINTAIN is a PG 17 privilege.
   const status = await roleStatus(client, inputs);
   if (!status?.managed || !status.safe) return false;
   const { rows } = await client.query<{ valid: boolean }>(`
