@@ -8,6 +8,7 @@ import { DatabaseMigration } from './database-migration.js';
 import { EmailFoundation } from './resend-foundation.js';
 import { GcpContainerRuntime } from './gcp-container-runtime.js';
 import { ProductionFoundation } from './production-foundation.js';
+import { securePostgresUrl } from './runtime-database-role.js';
 
 const config = new pulumi.Config('vibelog');
 const phase = config.require('deploymentPhase');
@@ -41,16 +42,7 @@ const email = new EmailFoundation('email', {
   cloudflareProvider: cloudflareDeliveryProvider,
 }, { providers: [cloudflareDeliveryProvider] });
 
-function securePostgresUrl(uri: pulumi.Output<string>): pulumi.Output<string> {
-  return uri.apply((value) => {
-    const url = new URL(value);
-    url.searchParams.set('sslmode', 'verify-full');
-    url.searchParams.set('channel_binding', 'require');
-    return url.toString();
-  });
-}
-
-const databaseUrl = securePostgresUrl(foundation.database.connectionUriPooler);
+const databaseUrl = foundation.runtimeDatabaseUrl;
 const directDatabaseUrl = securePostgresUrl(foundation.database.connectionUri);
 
 function createApplication() {
@@ -69,7 +61,7 @@ function createApplication() {
   const migration = new DatabaseMigration('database-migration', {
     databaseUrl: directDatabaseUrl,
     imageDigest: image.reference,
-  }, { dependsOn: [foundation.database] });
+  }, { dependsOn: [foundation.runtimeRole] });
   const runtime = new GcpContainerRuntime('runtime', {
     project,
     region,

@@ -85,6 +85,16 @@ The deployment smoke also needs permission to create and delete tasks on the ope
 
 The image resource builds from the checked-out source and pushes to public GHCR. Cloud Run and the migration gate consume its immutable digest even though the registry upload tag is mutable.
 
+### Database identities
+
+The Neon owner connection is reserved for migrations and SQL role administration. Foundation creates a protected `vibelog_runtime` role through SQL; Neon API-created roles inherit `neon_superuser` and are unsuitable here. Web and worker share the runtime pooler URL, which is a Pulumi secret. Its random password is generated once and stored in encrypted state, not ESC or source control.
+
+The runtime role can connect, use `public`, read/write application tables, and use sequences. It cannot create schemas, permanent or temporary tables, alter/drop tables, truncate data, assume another role, or read the `drizzle` migration journal. Owner-specific default privileges grant access to future migration tables. The migration resource depends on role setup, so this also works for an empty database.
+
+Role setup revokes database CREATE/TEMP and public-schema CREATE from `PUBLIC`; a role-specific revoke alone cannot deny those shared grants. This is intentional for the dedicated VibeLog database. Owners retain schema administration; do not apply this policy to a shared database without reviewing other clients. An existing same-name role is never adopted, and unexpected memberships or ownership cause a safe failure.
+
+Before the first production rollout, validate SQL role creation and pooler authentication against an isolated Neon branch. Local PostgreSQL tests cover SQL privileges and application behavior, not Neon's managed-role restrictions. Preview should create only the protected runtime role and normally rotate the runtime DATABASE_URL secret version and web/worker revisions; it must not replace the Neon project or other stateful resources. After deployment, smoke-test login, editor and private worker with the new credentials. Keep the direct owner output limited to authorized maintenance/migration workflows. Self-hosted deployments supply their own separate migration and runtime URLs.
+
 ## Failure and recovery rules
 
 - Never bypass Pulumi to update Cloud Run, DNS, R2, Neon, or Resend resources it owns.

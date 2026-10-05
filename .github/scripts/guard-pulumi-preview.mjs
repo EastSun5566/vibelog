@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 
-const statefulType = /(r2Bucket:R2Bucket|artifactregistry\/repository:Repository|secretmanager\/secret:Secret|neon:index\/project:Project|dynamic\/resend:Domain)(?:::|$)/i;
+const statefulType = /(r2Bucket:R2Bucket|artifactregistry\/repository:Repository|secretmanager\/secret:Secret|neon:index\/project:Project|dynamic\/(?:resend:Domain|postgres:RuntimeRole))(?:::|$)/i;
 const publicR2Type = /r2(Custom|Managed)Domain/i;
 const foundationRootType = /::(?:pulumi:pulumi:Stack|pulumi:providers:(?:gcp|cloudflare|neon))::/i;
-const productionFoundationType = /::vibelog:infra:ProductionFoundation(?:\$(?:cloudflare:index\/r2Bucket:R2Bucket|neon:index\/project:Project))?::/i;
+const productionFoundationType = /::vibelog:infra:ProductionFoundation(?:\$(?:cloudflare:index\/r2Bucket:R2Bucket|neon:index\/project:Project|pulumi-nodejs:dynamic\/postgres:RuntimeRole))?::/i;
 const emailFoundationType = /::vibelog:infra:EmailFoundation(?:\$(?:cloudflare:index\/(?:dnsRecord:DnsRecord|emailRoutingAddress:EmailRoutingAddress|emailRoutingDns:EmailRoutingDns)|pulumi-nodejs:dynamic\/resend:(?:Domain|DomainVerification|ApiKey)))?::/i;
 
 /** @param {unknown} value @returns {Record<string, unknown>} */

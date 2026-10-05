@@ -1,6 +1,7 @@
 import * as cloudflare from '@pulumi/cloudflare';
 import * as neon from '@pulumi/neon';
 import * as pulumi from '@pulumi/pulumi';
+import { RuntimeDatabaseRole, runtimeDatabaseUrl, securePostgresUrl } from './runtime-database-role.js';
 
 export interface ProductionFoundationArgs {
   cloudflareAccountId: pulumi.Input<string>;
@@ -16,6 +17,8 @@ export interface ProductionFoundationArgs {
 export class ProductionFoundation extends pulumi.ComponentResource {
   readonly bucket: cloudflare.R2Bucket;
   readonly database: neon.Project;
+  readonly runtimeRole: RuntimeDatabaseRole;
+  readonly runtimeDatabaseUrl: pulumi.Output<string>;
 
   constructor(name: string, args: ProductionFoundationArgs, opts?: pulumi.ComponentResourceOptions) {
     super('vibelog:infra:ProductionFoundation', name, {}, opts);
@@ -48,9 +51,16 @@ export class ProductionFoundation extends pulumi.ComponentResource {
       provider: args.neonProvider,
       protect: true,
     });
+    this.runtimeRole = new RuntimeDatabaseRole(`${name}-runtime-role`, {
+      adminUrl: securePostgresUrl(this.database.connectionUri),
+      projectId: this.database.id,
+      roleName: 'vibelog_runtime',
+    }, { parent: this, dependsOn: this.database });
+    this.runtimeDatabaseUrl = runtimeDatabaseUrl(this.database.connectionUriPooler, 'vibelog_runtime', this.runtimeRole.password);
     this.registerOutputs({
       bucketName: this.bucket.name,
       databaseProjectId: this.database.id,
+      runtimeDatabaseUrl: this.runtimeDatabaseUrl,
     });
   }
 }
