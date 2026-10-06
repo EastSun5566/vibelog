@@ -55,6 +55,7 @@ describe('Pulumi preview safety gate', () => {
       event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation::foundation'),
       event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$cloudflare:index/r2Bucket:R2Bucket::foundation-artifacts'),
       event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$neon:index/project:Project::foundation-database'),
+      event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$pulumi-nodejs:dynamic/postgres:RuntimeRole::foundation-runtime-role'),
       event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:EmailFoundation::email'),
       event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:EmailFoundation$pulumi-nodejs:dynamic/resend:Domain::email-domain'),
       event('create', 'urn:pulumi:prod::vibelog::vibelog:infra:EmailFoundation$cloudflare:index/dnsRecord:DnsRecord::email-resend-dkim'),
@@ -86,6 +87,13 @@ describe('Pulumi preview safety gate', () => {
     expect(findUnsafeChanges(preview, 'foundation')).toEqual([
       'replace of stateful resource: urn:pulumi:prod::vibelog::vibelog:infra:EmailFoundation$pulumi-nodejs:dynamic/resend:Domain::email-domain',
     ]);
+  });
+
+  it('protects the runtime role from deletion/replacement and unrelated foundation roles', () => {
+    const urn = 'urn:pulumi:prod::vibelog::vibelog:infra:ProductionFoundation$pulumi-nodejs:dynamic/postgres:RuntimeRole::foundation-runtime-role';
+    expect(findUnsafeChanges(event('update', urn), 'foundation')).toEqual([]);
+    for (const op of ['delete', 'replace', 'delete-replaced', 'create-replacement']) expect(findUnsafeChanges(event(op, urn)).length).toBeGreaterThan(0);
+    expect(findUnsafeChanges(event('create', 'urn:pulumi:prod::vibelog::pulumi-nodejs:dynamic/postgres:RuntimeRole::other-role'), 'foundation')).toHaveLength(1);
   });
 
   it('rejects application and public resources in foundation mode', () => {

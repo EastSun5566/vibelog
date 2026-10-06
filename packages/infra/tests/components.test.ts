@@ -28,6 +28,7 @@ beforeAll(async () => {
         state.connectionUri = 'postgresql://owner:secret@primary.test/vibelog';
         state.connectionUriPooler = 'postgresql://owner:secret@pooler.test/vibelog';
       }
+      if (args.type === 'pulumi-nodejs:dynamic/postgres:RuntimeRole') Object.assign(state, { password: 'runtime-test-password', policyApplied: true });
       if (args.type === 'docker-build:index:Image') {
         state.digest = 'sha256:abc';
         state.ref = 'ghcr.io/eastsun5566/vibelog-app:pulumi-prod@sha256:abc';
@@ -199,7 +200,7 @@ describe('Pulumi components', () => {
     expect(routingDns?.inputs.zoneId).toBe('zone');
     expect(routingDns?.inputs).not.toHaveProperty('name');
   }, 15_000);
-  it('creates only the protected private R2 bucket and Neon database in the foundation', async () => {
+  it('owns the private R2 bucket, Neon database and restricted SQL runtime role', async () => {
     const childUrns: string[] = [];
     await pulumi.runtime.runInPulumiStack(async () => {
       const cloudflareProvider = new cloudflare.Provider('foundation-cloudflare', { apiToken: pulumi.secret('token') });
@@ -209,7 +210,15 @@ describe('Pulumi components', () => {
         r2BucketName: 'vibelog-prod-artifacts', r2Location: 'apac', neonOrgId: 'org-test', neonRegionId: 'aws-ap-southeast-1',
         neonProjectName: 'vibelog-prod', cloudflareProvider, neonProvider,
       }, { providers: [cloudflareProvider, neonProvider] });
-      childUrns.push(await resolveOutput(foundation.bucket.urn), await resolveOutput(foundation.database.urn));
+      childUrns.push(await resolveOutput(foundation.bucket.urn), await resolveOutput(foundation.database.urn), await resolveOutput(foundation.runtimeRole.urn));
+      expect(await pulumi.isSecret(foundation.runtimeRole.password)).toBe(true);
+      expect(await pulumi.isSecret(foundation.runtimeDatabaseUrl)).toBe(true);
+      const runtimeUrl = new URL(await resolveOutput(foundation.runtimeDatabaseUrl));
+      expect(runtimeUrl.username).toBe('vibelog_runtime');
+      expect(runtimeUrl.password).toBe('runtime-test-password');
+      expect(runtimeUrl.hostname).toBe('pooler.test');
+      expect(runtimeUrl.searchParams.get('sslmode')).toBe('verify-full');
+      expect(runtimeUrl.searchParams.get('channel_binding')).toBe('require');
     });
     const bucket = registrations.find((item) => item.type.includes('r2Bucket:R2Bucket'));
     const database = registrations.find((item) => item.type === 'neon:index/project:Project');
@@ -220,9 +229,17 @@ describe('Pulumi components', () => {
       branch: { name: 'main', databaseName: 'vibelog', roleName: 'vibelog_owner' },
       defaultEndpointSettings: { autoscalingLimitMinCu: 0.25, autoscalingLimitMaxCu: 0.25, suspendTimeoutSeconds: 0 },
     });
-    expect(childUrns).toHaveLength(2);
+    const role = registrations.find((item) => item.type === 'pulumi-nodejs:dynamic/postgres:RuntimeRole');
+    expect(role?.inputs.roleName).toBe('vibelog_runtime');
+    expect(role?.inputs.policyVersion).toBe(1);
+    expect(childUrns).toHaveLength(3);
     expect(childUrns.every((urn) => urn.includes('vibelog:infra:ProductionFoundation$'))).toBe(true);
     expect(readFileSync(fileURLToPath(new URL('../src/production-foundation.ts', import.meta.url)), 'utf8').match(/protect: true/g)).toHaveLength(2);
+    expect(readFileSync(fileURLToPath(new URL('../src/runtime-database-role.ts', import.meta.url)), 'utf8')).toContain('protect: true');
+    const program = readFileSync(fileURLToPath(new URL('../src/index.ts', import.meta.url)), 'utf8');
+    expect(program).toContain('const databaseUrl = foundation.runtimeDatabaseUrl');
+    expect(program).toContain('securePostgresUrl(foundation.database.connectionUri)');
+    expect(program).toContain('dependsOn: [foundation.runtimeRole]');
     expect(registrations.some((item) => /r2(Custom|Managed)Domain/.test(item.type))).toBe(false);
   });
   it('tracks the database migration as a secret local command keyed by image digest', async () => {
