@@ -49,11 +49,11 @@ jobs:
             -f branch=main -f event=push -f head_sha="$DEPLOY_SHA" -F per_page=1 \
             --jq '.workflow_runs[0] | .status == "completed" and .conclusion == "success"')"
           test "$ci_passed" = true
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ env.DEPLOY_SHA }}
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
           cache: pnpm
@@ -61,13 +61,13 @@ jobs:
       - run: pnpm --filter @vibelog/core build
       - run: pnpm --filter @vibelog/app build
       - name: Authenticate with Pulumi Cloud using GitHub OIDC
-        uses: pulumi/auth-actions@v2
+        uses: pulumi/auth-actions@141415910c3beb54e03b48e9057c204c97b956f2 # v2
         with:
           organization: EastSun5566
           requested-token-type: urn:pulumi:token-type:access_token:personal
           scope: user:EastSun5566
       - name: Load short-lived GCP credentials and secrets from ESC
-        uses: pulumi/esc-action@v3
+        uses: pulumi/esc-action@32dda43ffe7a2ab21e6bce11c781b44a3e5623cf # v3
         with:
           environment: EastSun5566/vibelog/prod
       - name: Audit and convert Design V2 while locked
