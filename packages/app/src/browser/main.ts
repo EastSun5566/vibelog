@@ -21,11 +21,15 @@ function initializeEditor(root: ClientRoot = document): void {
 dom.bindGlobalListeners();
 initializeEditor();
 
-const copyButton = document.querySelector<HTMLButtonElement>('[data-copy-agent-prompt]');
-copyButton?.addEventListener('click', () => { void (async () => {
-  const prompt = document.querySelector<HTMLTextAreaElement>('#agent-prompt');
-  const status = document.querySelector<HTMLOutputElement>('[data-agent-copy-status]');
-  if (!prompt || !status) return;
-  try { await navigator.clipboard.writeText(prompt.value); status.textContent = 'Copied. Paste it into your coding agent.'; }
-  catch { prompt.focus(); prompt.select(); status.textContent = 'Select and copy the prompt above.'; }
-})(); });
+document.addEventListener('click', (event) => {
+  if (!(event.target instanceof Element)) return;
+  const entry = event.target.closest('[data-copy-agent-prompt]')?.closest('[data-agent-prompt]');
+  if (!entry) return;
+  void (async () => {
+    const prompt = entry.querySelector<HTMLTextAreaElement>('#agent-prompt');
+    const status = entry.querySelector<HTMLOutputElement>('[data-agent-copy-status]');
+    if (!prompt || !status) return;
+    try { await navigator.clipboard.writeText(prompt.value); status.textContent = 'Copied. Paste it into your coding agent.'; }
+    catch { prompt.focus(); prompt.select(); status.textContent = 'Select and copy the prompt above.'; }
+  })();
+});

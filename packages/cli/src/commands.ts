@@ -3,7 +3,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { AgentClient, CliError } from './client.js';
 import { secureStore, type CredentialStore } from './credentials.js';
 
-export const HELP = `VibeLog CLI 0.1.0 (@vibelog/cli) — draft access only
+export const HELP = `VibeLog CLI 0.2.0 (@vibelog/cli) — draft access only
 Usage: vibelog <command> [options]
   login                 Show a browser approval URL; store the resulting grant securely
   logout                Revoke the grant and remove local credentials

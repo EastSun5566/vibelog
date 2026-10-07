@@ -147,6 +147,10 @@ time { font-variant-numeric: tabular-nums; }
 
 .stack { display: grid; gap: 1rem; }
 .agent-prompt > summary { padding-block: 0.75rem; cursor: pointer; font-weight: 680; }
+.agent-prompt-primary { margin-block-start: 1.5rem; max-width: 43rem; }
+.agent-prompt textarea { field-sizing: fixed; }
+.agent-prompt-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.agent-prompt [data-agent-copy-status]:empty { display: none; }
 .compact-stack { display: grid; gap: 0.6rem; }
 .field { display: grid; gap: 0.38rem; }
 .field > label, .field > span:first-child, .fieldset > legend { color: var(--foreground); font-size: 0.88rem; font-weight: 680; }

@@ -390,13 +390,18 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     const router = agentRoutes(database, { dispatch: () => Promise.resolve(0) }, 'https://vibelog.org', { betterAuthSecret: 'test-secret' });
     const headers = { Authorization: `Bearer ${approved.token}` };
     const context = async () => (await router.request('/context', { headers })).json() as Promise<unknown>;
-    expect(await context()).toMatchObject({ blog: null, sourceReady: false, draftReady: false });
+    const session = await router.request('/session', { headers });
+    expect(session.headers.get('cache-control')).toBe('no-store');
+    expect(await session.json()).toEqual({ permission: 'draft:read-write', expiresAt: approved.expiresAt });
+    expect(await context()).toMatchObject({ blog: null, sourceReady: false, draftReady: false, nextActions: [{ action: 'connect' }] });
     const input = { username: `resume-${id.slice(0, 8)}`, hackmdUsername: 'alice', language: 'en' };
     const { blog, operation } = await database.createBlog(id, input.username, input.hackmdUsername);
-    expect(await context()).toMatchObject({ blog: { state: 'syncing' }, sourceReady: false, draftReady: false, operationId: operation.id });
+    expect(await context()).toMatchObject({ blog: { state: 'syncing' }, sourceReady: false, draftReady: false, operationId: operation.id, nextActions: [{ action: 'wait', operationId: operation.id }] });
+    await database.db.update(operations).set({ status: 'running' }).where(eq(operations.id, operation.id));
+    expect(await context()).toMatchObject({ nextActions: [{ action: 'wait', operationId: operation.id }] });
     await database.db.update(operations).set({ status: 'failed' }).where(eq(operations.id, operation.id));
     await database.db.update(blogs).set({ state: 'failed' }).where(eq(blogs.id, blog.id));
-    expect(await context()).toMatchObject({ blog: { state: 'failed' }, sourceReady: false, draftReady: false, operationId: null });
+    expect(await context()).toMatchObject({ blog: { state: 'failed' }, sourceReady: false, draftReady: false, operationId: null, nextActions: [{ action: 'connect', reason: 'initial_sync_recovery' }] });
     const connect = (body = input) => router.request('/connect', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
     const retry = await connect(); expect(retry.status).toBe(202);
     const accepted = await retry.json() as { operationId: string };
@@ -411,14 +416,19 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     // A later failure must not make the existing draft look like a fresh account.
     await database.db.update(blogs).set({ state: 'failed' }).where(eq(blogs.id, blog.id));
     const readyContext = await context();
-    expect(readyContext).toMatchObject({ blog: { state: 'failed' }, sourceReady: true, draftReady: true, operationId: null });
+    expect(readyContext).toMatchObject({ blog: { state: 'failed' }, sourceReady: true, draftReady: true, operationId: null, nextActions: ['design', 'identity', 'selection', 'sync', 'open_editor'].map((action) => ({ action })) });
     expect(JSON.stringify(readyContext)).not.toContain(source.id); expect(JSON.stringify(readyContext)).not.toContain(draft.id);
     expect(await (await connect()).json()).toEqual({ status: 'unchanged' });
     expect((await connect({ ...input, hackmdUsername: 'other-profile' })).status).toBe(409);
     expect(await database.getActiveOperation(blog.id, id)).toBeNull(); expect(await database.listDesignRevisions(blog.id)).toHaveLength(1);
     expect((await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id)))[0]?.count).toBe(1);
+    for (const partial of [{ sourceArtifactId: source.id, draftArtifactId: null }, { sourceArtifactId: null, draftArtifactId: draft.id }]) {
+      await database.db.update(blogs).set(partial).where(eq(blogs.id, blog.id));
+      expect(await context()).toMatchObject({ nextActions: [{ action: 'open_editor', reason: 'draft_recovery_required' }] });
+    }
+    await database.db.update(blogs).set({ sourceArtifactId: source.id, draftArtifactId: draft.id }).where(eq(blogs.id, blog.id));
     await database.beginBlogDeletion(id);
-    expect(await context()).toMatchObject({ blog: { state: 'deleting' }, sourceReady: true, draftReady: true });
+    expect(await context()).toMatchObject({ blog: { state: 'deleting' }, sourceReady: true, draftReady: true, nextActions: [{ action: 'open_editor', reason: 'deletion_in_progress' }] });
     expect((await connect()).status).toBe(409);
   });
   it('serializes duplicate bootstrap and rejects changed payloads without charging twice', async () => {

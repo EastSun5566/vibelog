@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { DEFAULT_DESIGN_V2, designContractV2 } from '@vibelog/core';
-import { requestHash, validateAgentDesign } from '../src/agent/contracts.js';
+import { agentNextActions, requestHash, validateAgentDesign } from '../src/agent/contracts.js';
 import { agentInstructions, authorizationPage, grantsPage, onboardingPrompt } from '../src/agent/views.js';
 import type { AppSession } from '../src/auth.js';
 import { loadAppConfig } from '../src/config.js';
@@ -27,6 +27,20 @@ describe('agent design contract', () => {
     expect(requestHash('design', [1, 2])).not.toBe(requestHash('design', [2, 1]));
     expect(requestHash('design', {})).not.toBe(requestHash('sync', {}));
   });
+  it('derives bounded next actions without interpreting failure messages or changing the blog', () => {
+    const empty = { state: 'failed' as const, sourceArtifactId: null, draftArtifactId: null };
+    const ready = { ...empty, sourceArtifactId: 'private-source', draftArtifactId: 'private-draft' };
+    expect(agentNextActions(null, null)).toEqual([{ action: 'connect' }]);
+    expect(agentNextActions(empty, 'operation')).toEqual([{ action: 'wait', operationId: 'operation' }]);
+    expect(agentNextActions(empty, null)).toEqual([{ action: 'connect', reason: 'initial_sync_recovery' }]);
+    for (const partial of [{ ...ready, sourceArtifactId: null }, { ...ready, draftArtifactId: null }]) {
+      expect(agentNextActions(partial, null)).toEqual([{ action: 'open_editor', reason: 'draft_recovery_required' }]);
+    }
+    expect(agentNextActions(ready, null)).toEqual(['design', 'identity', 'selection', 'sync', 'open_editor'].map((action) => ({ action })));
+    expect(agentNextActions({ ...ready, state: 'deleting' }, 'operation')).toEqual([{ action: 'open_editor', reason: 'deletion_in_progress' }]);
+    expect(ready).toEqual({ state: 'failed', sourceArtifactId: 'private-source', draftArtifactId: 'private-draft' });
+    expect(JSON.stringify(agentNextActions(ready, null))).not.toContain('private-');
+  });
   it('pins the scoped CLI and keeps publishing human-controlled', () => {
     expect(onboardingPrompt('https://vibelog.org', '0.1.0')).toContain('@vibelog/cli@0.1.0');
     expect(agentInstructions('https://vibelog.org', '0.1.0')).toContain('Do not print');
@@ -38,6 +52,10 @@ describe('agent design contract', () => {
     expect(instructions).toContain('reuse them even when a later operation failed');
     expect(instructions).toContain('Run `sync` only when the human requests');
     expect(instructions).toContain('without asking for an extra');
+    expect(instructions).toContain('not shell commands');
+    expect(instructions).toContain('If an older server omits');
+    expect(instructions).toContain('CLI 0.2.0 and later');
+    expect(instructions).toContain('confirm the draft is ready with no active operation');
     expect(onboardingPrompt('https://vibelog.org', '0.1.0')).toContain('only if I have no blog');
   });
   it('explains the authorization handoff without changing normal email login', async () => {
@@ -76,6 +94,14 @@ describe('agent design contract', () => {
     const html = await (await app.request('/')).text();
     expect(html).toContain('<script type="module" src="/assets/client.js" nonce="test-csp-nonce">');
     expect(html).toContain('nonce="test-csp-nonce" data-analytics-loader');
+  });
+  it('makes the prompt a direct primary entry without removing manual login or no-JS access', async () => {
+    const html = await htmlOf(landingPage(undefined, onboardingPrompt('https://vibelog.org', '0.1.0')));
+    expect(html).toContain('Keep writing in HackMD.'); expect(html).toContain('Publish a real blog.');
+    expect(html).toContain('Copy agent prompt'); expect(html).toContain('Use the editor');
+    expect(html).toContain('href="/auth/login"'); expect(html).toContain('readonly'); expect(html).toContain('@vibelog/cli@0.1.0');
+    expect(html).not.toContain('<details'); expect(html).not.toContain('Start publishing');
+    expect((html.match(/data-copy-agent-prompt/gu) ?? [])).toHaveLength(1);
   });
   it('keeps the onboarding entry disabled unless an explicit stable CLI version is configured', async () => {
     const env = {

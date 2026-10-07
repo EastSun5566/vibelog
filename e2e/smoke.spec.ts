@@ -99,7 +99,8 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   expect(landingResponse?.headers()['content-security-policy']).toContain('https://*.google-analytics.com');
   await expect(page.getByRole('heading', { name: /Keep writing in HackMD/ })).toBeVisible();
   await expect(page.locator('.app-brand img')).toHaveAttribute('src', '/assets/logo.svg');
-  await expect(page.getByRole('link', { name: 'Start publishing' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Copy agent prompt' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Use the editor' })).toHaveAttribute('href', '/auth/login');
   const sourceLink = page.getByRole('link', { name: 'VibeLog source code on GitHub' });
   await expect(sourceLink).toHaveAttribute('href', 'https://github.com/EastSun5566/vibelog');
   await expect(sourceLink).toHaveAttribute('target', '_blank');
@@ -481,6 +482,43 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   expect(searchErrors).toEqual([]);
 });
 
+test('agent primary entry supports copy, fallback, keyboard and no JavaScript', async ({ page, browser }, testInfo) => {
+  await page.addInitScript(() => {
+    const state = window as typeof window & { agentClipboard?: string; agentCopyFails?: boolean };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: (text: string) => { if (state.agentCopyFails) return Promise.reject(new Error('Clipboard denied')); state.agentClipboard = text; return Promise.resolve(); },
+    } });
+  });
+  await page.goto('/');
+  const prompt = page.getByLabel('Agent prompt');
+  const button = page.getByRole('button', { name: 'Copy agent prompt' });
+  await expect(prompt).toBeVisible();
+  await expect(page.locator('details[data-agent-prompt]')).toHaveCount(0);
+  await button.focus(); await page.keyboard.press('Enter');
+  await expect(page.locator('[data-agent-copy-status]')).toHaveText('Copied. Paste it into your coding agent.');
+  expect(await page.evaluate(() => (window as typeof window & { agentClipboard?: string }).agentClipboard)).toBe(await prompt.inputValue());
+  await page.evaluate(() => { (window as typeof window & { agentCopyFails?: boolean }).agentCopyFails = true; });
+  await button.click(); await expect(prompt).toBeFocused();
+  await expect(page.locator('[data-agent-copy-status]')).toHaveText('Select and copy the prompt above.');
+  expect(await prompt.evaluate((node: HTMLTextAreaElement) => node.selectionEnd - node.selectionStart)).toBe((await prompt.inputValue()).length);
+  await page.reload(); await page.getByRole('button', { name: 'Not now', exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 }); await expectNoHorizontalOverflow(page);
+  await expect(prompt).toHaveCSS('font-size', '16px');
+  await page.screenshot({ path: testInfo.outputPath('agent-entry-mobile.png'), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 720 }); await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath('agent-entry-desktop.png'), fullPage: true });
+  await page.evaluate(() => { document.documentElement.style.zoom = '2'; }); await expectNoHorizontalOverflow(page);
+  await expect(button).toBeVisible();
+  const noJs = await browser.newContext({ javaScriptEnabled: false, baseURL: process.env.E2E_APP_ORIGIN });
+  try {
+    const native = await noJs.newPage(); await native.goto('/');
+    await expect(native.getByLabel('Agent prompt')).toBeVisible();
+    await expect(native.getByLabel('Agent prompt')).toContainText('@vibelog/cli@0.1.0');
+    await native.getByRole('link', { name: 'Use the editor' }).click();
+    await expect(native.getByLabel('Email')).toBeVisible();
+  } finally { await noJs.close(); }
+});
+
 test('agent pairing builds only a private draft, then the human publishes', async ({ page, request }, testInfo) => {
   test.setTimeout(240_000);
   const origin = process.env.E2E_APP_ORIGIN;
@@ -537,7 +575,9 @@ test('agent pairing builds only a private draft, then the human publishes', asyn
   expect((await request.post('/api/agent/v1/pairings/token', { data: { deviceCode: pairing.deviceCode } })).status()).toBe(403);
   expect((await page.request.get('/api/agent/v1/context')).status()).toBe(401);
   expect((await request.post('/actions/publish', { headers, data: {}, maxRedirects: 0 })).status()).toBe(302);
-  expect(await (await request.get('/api/agent/v1/context', { headers })).json()).toMatchObject({ blog: null, sourceReady: false, draftReady: false });
+  expect(await (await request.get('/api/agent/v1/context', { headers })).json()).toMatchObject({ blog: null, sourceReady: false, draftReady: false, nextActions: [{ action: 'connect' }] });
+  const session = await (await request.get('/api/agent/v1/session', { headers })).json() as { permission: string; expiresAt: string };
+  expect(session.permission).toBe('draft:read-write'); expect(Date.parse(session.expiresAt)).toBeGreaterThan(Date.now());
   const username = `agent-${String(Date.now())}`;
   const key = `connect-${String(Date.now())}-request`;
   const connect = { username, hackmdUsername: 'alice-hackmd', language: 'en' };
@@ -547,7 +587,7 @@ test('agent pairing builds only a private draft, then the human publishes', asyn
   expect(await replay.json()).toEqual(accepted);
   await expect.poll(async () => (await (await request.get(`/api/agent/v1/operations/${accepted.operationId}`, { headers })).json() as { status: string }).status, { timeout: 90_000, intervals: [5000] }).toBe('succeeded');
   const context = await (await request.get('/api/agent/v1/context', { headers })).json() as { stateVersion: string; design: BlogDesignSpecV2; editorUrl: string };
-  expect(context).toMatchObject({ sourceReady: true, draftReady: true, operationId: null });
+  expect(context).toMatchObject({ sourceReady: true, draftReady: true, operationId: null, nextActions: ['design', 'identity', 'selection', 'sync', 'open_editor'].map((action) => ({ action })) });
   const unchanged = await request.post('/api/agent/v1/connect', { headers: { ...headers, 'Idempotency-Key': `connect-again-${String(Date.now())}` }, data: connect });
   expect(await unchanged.json()).toEqual({ status: 'unchanged' });
   expect(context.editorUrl).toBe(`${origin}/editor`); expect(JSON.stringify(context)).not.toContain('/preview-access/'); expect(JSON.stringify(context)).not.toContain('This article came through');
@@ -561,7 +601,19 @@ test('agent pairing builds only a private draft, then the human publishes', asyn
   expect((await request.get(publicUrl.href)).status()).toBe(404);
   await page.goto(context.editorUrl); await expect(page.getByText('Agent-designed private draft', { exact: true }).first()).toBeVisible();
   await expect(page.locator('iframe[data-preview-url]')).toBeVisible();
+  await expect(page.locator('.controls > details[data-agent-prompt]')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('agent-editor-desktop.png'), fullPage: true });
+  await openDisclosure(page, 'agent');
+  await expect(page.getByLabel('Agent prompt')).toContainText('@vibelog/cli@0.1.0');
   await markPage(page); await expectPartialRefresh(page, page.getByRole('button', { name: 'Publish first release' }));
+  await expect(page.locator('details[data-disclosure-key="agent"]')).toHaveAttribute('open', '');
+  await page.getByRole('button', { name: 'Copy agent prompt' }).click();
+  await expect(page.locator('[data-agent-copy-status]')).toHaveText(/Copied\.|Select and copy/u);
+  await page.setViewportSize({ width: 390, height: 844 }); await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath('agent-editor-mobile.png'), fullPage: true });
+  await page.evaluate(() => { document.documentElement.style.zoom = '2'; }); await expectNoHorizontalOverflow(page);
+  await page.evaluate(() => { document.documentElement.style.zoom = ''; });
+  await page.setViewportSize({ width: 1280, height: 720 });
   expect((await request.get(publicUrl.href)).status()).toBe(200);
   const liveStyleResponse = await request.get(new URL('/design.css', publicUrl).href);
   expect(liveStyleResponse.status()).toBe(200); const liveStyle = await liveStyleResponse.text();
@@ -576,10 +628,10 @@ test('agent pairing builds only a private draft, then the human publishes', asyn
   expect(stale.status()).toBe(409); expect(await stale.json()).toHaveProperty('error.code', 'state_changed');
   await page.goto('/account/agents');
   await page.setViewportSize({ width: 390, height: 844 }); await expectNoHorizontalOverflow(page);
-  const promptSummary = page.locator('summary').filter({ hasText: 'Work with your coding agent' });
+  const promptSummary = page.locator('summary').filter({ hasText: 'Continue with your agent' });
   await promptSummary.focus(); await page.keyboard.press('Enter');
   await expect(page.getByLabel('Agent prompt')).toContainText('Reuse my existing blog and saved design');
-  await page.getByRole('button', { name: 'Copy prompt' }).click();
+  await page.getByRole('button', { name: 'Copy agent prompt' }).click();
   await expect(page.locator('[data-agent-copy-status]')).toHaveText(/Copied\.|Select and copy/u);
   await expectNoHorizontalOverflow(page);
   await page.screenshot({ path: testInfo.outputPath('agent-access-mobile.png'), fullPage: true });

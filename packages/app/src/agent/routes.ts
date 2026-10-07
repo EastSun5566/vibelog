@@ -12,7 +12,7 @@ import { AppDatabase, BlogAddressTakenError, BlogAlreadyExistsError } from '../d
 import { AppError, jsonError } from '../http.js';
 import { operationMessage, operationProgress } from '../operation-status.js';
 import type { OperationDispatcher } from '../ports/operation-queue.js';
-import { AGENT_PERMISSION, stateVersion, validateAgentDesign } from './contracts.js';
+import { AGENT_PERMISSION, agentNextActions, stateVersion, validateAgentDesign } from './contracts.js';
 import { AgentRepository, operationResult } from './repository.js';
 
 const state = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
@@ -22,7 +22,7 @@ const connect = z.object({
   language: blogLanguageSchema.default('en'),
 }).strict();
 const reserved = new Set(['preview', 'www', 'api', 'admin', 'assets']);
-type Variables = AppVariables & { agentUserId: string; agentGrantId: string };
+type Variables = AppVariables & { agentUserId: string; agentGrantId: string; agentExpiresAt: string };
 
 export function agentRoutes(database: AppDatabase, dispatcher: OperationDispatcher, origin: string, config: Pick<AppConfig, 'edgeSharedSecret' | 'betterAuthSecret'>) {
   const app = new Hono<{ Variables: Variables }>();
@@ -63,22 +63,24 @@ export function agentRoutes(database: AppDatabase, dispatcher: OperationDispatch
     if (!authorization?.startsWith('Bearer ')) throw new AppError('agent_unauthorized', 'Sign in with the CLI.', 401);
     const grant = await repo.grant(authorization.slice(7));
     c.set('agentUserId', grant.userId); c.set('agentGrantId', grant.id);
+    c.set('agentExpiresAt', grant.expiresAt.toISOString());
     await repo.limited(`requests:${grant.userId}`, 120, 60);
     await next();
   });
-  app.get('/session', (c) => c.json({ permission: AGENT_PERMISSION }));
+  app.get('/session', (c) => c.json({ permission: AGENT_PERMISSION, expiresAt: c.get('agentExpiresAt') }));
   app.delete('/session', async (c) => { await repo.revoke(c.get('agentUserId'), c.get('agentGrantId')); return c.json({ status: 'revoked' }); });
   app.get('/design/contract', (c) => c.json(designContractV2()));
   app.get('/context', async (c) => c.json(await database.transaction(async (db) => {
     await db.db.select({ id: blogs.id }).from(blogs).where(eq(blogs.userId, c.get('agentUserId'))).for('share');
     const blog = await db.getBlogForUser(c.get('agentUserId'));
-    if (!blog) return { blog: null, sourceReady: false, draftReady: false, editorUrl: new URL('/editor', origin).href };
+    if (!blog) return { blog: null, sourceReady: false, draftReady: false, nextActions: agentNextActions(null, null), editorUrl: new URL('/editor', origin).href };
     const design = await db.getActiveDesign(blog.id);
+    const operationId = (await db.getActiveOperation(blog.id, blog.userId))?.id ?? null;
     return {
       blog: { username: blog.username, hackmdUsername: blog.hackmdUsername, title: blog.title, description: blog.description, language: blog.language, state: blog.state },
       stateVersion: stateVersion(blog), design: design?.config ?? null, profile: blog.contentProfile,
       sourceReady: Boolean(blog.sourceArtifactId), draftReady: Boolean(blog.draftArtifactId),
-      operationId: (await db.getActiveOperation(blog.id, blog.userId))?.id ?? null,
+      operationId, nextActions: agentNextActions(blog, operationId),
       editorUrl: new URL('/editor', origin).href,
     };
   })));

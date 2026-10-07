@@ -57,14 +57,19 @@ export function document(title: string, content: unknown, session?: AppSession, 
   </html>;
 }
 
-export function agentPromptEntry(prompt: string) {
-  return <details class="agent-prompt"><summary>Work with your coding agent</summary>
-    <div class="stack">
-      <p class="field-hint">Set up a blog or update your private draft. You approve access in your browser and publish yourself.</p>
-      <div class="field"><label for="agent-prompt">Agent prompt</label><textarea id="agent-prompt" readonly rows={6}>{prompt}</textarea></div>
-      <button class="btn" data-variant="outline" type="button" data-copy-agent-prompt>Copy prompt</button><output data-agent-copy-status aria-live="polite"></output>
+export function agentPromptEntry(prompt: string, primary = false) {
+  const content = <div class="stack">
+    <p class="field-hint" id="agent-prompt-help">Paste this into your coding agent, approve access in your browser, then review and publish.</p>
+    <div class="field"><label for="agent-prompt">Agent prompt</label><textarea id="agent-prompt" readonly rows={4} aria-describedby="agent-prompt-help">{prompt}</textarea></div>
+    <div class="agent-prompt-actions">
+      <button class="btn" data-variant={primary ? undefined : 'outline'} type="button" data-copy-agent-prompt>Copy agent prompt</button>
+      {primary ? <a class="btn" data-variant="outline" href="/auth/login">Use the editor</a> : null}
     </div>
-  </details>;
+    <output data-agent-copy-status aria-live="polite"></output>
+  </div>;
+  return primary
+    ? <section class="agent-prompt agent-prompt-primary" data-agent-prompt>{content}</section>
+    : <details class="agent-prompt" data-agent-prompt data-disclosure-key="agent"><summary>Continue with your agent</summary>{content}</details>;
 }
 
 export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: string) {
@@ -74,16 +79,13 @@ export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: s
         <p class="auth-kicker">Open beta</p>
         <h1>Keep writing in HackMD.<br/>Publish a real blog.</h1>
         <p class="landing-intro">Your public articles become a searchable blog with RSS, a sitemap, and llms.txt—without changing how you write.</p>
-        <div class="landing-actions">
-          <a class="btn" href="/auth/login">Start publishing</a>
-        </div>
+        {agentPrompt ? agentPromptEntry(agentPrompt, true) : <div class="landing-actions"><a class="btn" href="/auth/login">Start publishing</a></div>}
       </header>
       <ul class="landing-points">
         <li><strong>Built for reading</strong><span>Search, feeds, and article pages are built in.</span></li>
         <li><strong>Designed with AI</strong><span>Shape the layout, type, and colors while the blog's features stay intact.</span></li>
         <li><strong>Publish on your terms</strong><span>Review a private preview, then go live or restore an earlier release.</span></li>
       </ul>
-      {agentPrompt ? agentPromptEntry(agentPrompt) : null}
     </section>
     <footer class="landing-footer">
       <a class="github-link" href="https://github.com/EastSun5566/vibelog" target="_blank" rel="noreferrer" aria-label="VibeLog source code on GitHub" title="VibeLog is open source on GitHub">
@@ -271,6 +273,7 @@ interface EditorPageInput {
   appHostname: string;
   operation?: OperationRecord | null;
   deletionError?: DeletionError;
+  agentPrompt?: string;
 }
 
 const CONTROL_OPTIONS = {
@@ -451,6 +454,7 @@ export function editorPage(input: EditorPageInput) {
     </section>
 
     <section class="controls" aria-label="Blog controls">
+      {input.agentPrompt ? agentPromptEntry(input.agentPrompt) : null}
       <section class="workflow-section" id="content" aria-labelledby="content-title">
         <header class="workflow-heading"><span class="step-number" aria-hidden="true">1</span><div><h2 id="content-title">Content</h2><p>Sync public articles and choose what belongs on your blog.</p></div></header>
         <div class="card workflow-card">
