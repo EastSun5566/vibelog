@@ -67,7 +67,7 @@ time { font-variant-numeric: tabular-nums; }
 .account-nav, .account-nav form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0; }
 .app-main { padding-block-start: 1.5rem; }
 
-.auth-kicker, .workspace-kicker, .preview-label {
+.auth-kicker, .preview-label {
   margin: 0;
   color: var(--muted-foreground);
   font: 700 0.72rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -147,6 +147,8 @@ time { font-variant-numeric: tabular-nums; }
 
 .stack { display: grid; gap: 1rem; }
 .agent-prompt > summary { padding-block: 0.75rem; cursor: pointer; font-weight: 680; }
+/* Let copy fallback focus the prompt immediately after opening it. */
+.agent-prompt::details-content { transition: none; }
 .agent-prompt-primary { margin-block-start: 1.5rem; max-width: 43rem; }
 .agent-prompt textarea { field-sizing: fixed; }
 .agent-prompt-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
@@ -190,15 +192,13 @@ time { font-variant-numeric: tabular-nums; }
 .deletion-action p { margin: 0.25rem 0 0; }
 .workflow-section { display: grid; gap: 0.7rem; scroll-margin-top: 1rem; }
 .workflow-heading { display: grid; grid-template-columns: 1.7rem minmax(0, 1fr); gap: 0.65rem; align-items: start; }
-.workflow-heading h2, .workflow-heading p { margin: 0; }
-.workflow-heading h2 { font-size: 1.15rem; }
-.workflow-heading p { color: var(--muted-foreground); font-size: 0.84rem; }
+.workflow-heading h2 { margin: 0; font-size: 1.15rem; }
 .step-number { display: grid; place-items: center; width: 1.7rem; height: 1.7rem; border: 1px solid var(--border); border-radius: 50%; background: var(--card); color: var(--muted-foreground); font-size: 0.75rem; font-variant-numeric: tabular-nums; font-weight: 750; }
 .workflow-card { overflow: hidden; }
 .workflow-card form { display: grid; gap: 0.8rem; }
 .workflow-card > section { padding: 1rem; }
 .action-row, .theme-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
-.action-row p, .theme-summary p { margin: 0.2rem 0 0; font-size: 0.8rem; }
+.action-row p { margin: 0.2rem 0 0; font-size: 0.8rem; }
 .action-form { flex: 0 1 13rem; }
 .theme-summary { align-items: center; }
 
@@ -225,7 +225,6 @@ time { font-variant-numeric: tabular-nums; }
 .unsaved-note { margin: 0; padding: 0.75rem 1rem; border-top: 1px solid #e8d99e; background: #fffbea; color: #735700; font-size: 0.84rem; font-weight: 680; }
 .studio-primary { display: grid; gap: 0.9rem; padding: 1rem; border-top: 1px solid var(--border); background: #fbfcff; }
 .studio-primary > header { display: grid; gap: 0.2rem; }
-.studio-primary > header p { margin: 0; color: var(--muted-foreground); font-size: 0.82rem; }
 .studio-primary-body { display: grid; gap: 0.8rem; }
 .prompt-starters { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .prompt-chip { min-height: 2.25rem; border-radius: 999px; white-space: normal; text-align: start; }
