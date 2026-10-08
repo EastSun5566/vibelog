@@ -20,7 +20,7 @@ import { parseFrontMatter, stringifyFrontMatter } from './frontmatter.js';
 import type { ContentSource, Post } from '../types.js';
 import { loadConfig } from './config.js';
 
-export const TEMPLATE_VERSION = 17;
+export const TEMPLATE_VERSION = 18;
 export const SEARCH_SCHEMA_VERSION = 3;
 export function searchIndexIdentity(sourceArtifactId: string, site: string): string {
   return createHash('sha256').update(sourceArtifactId).update('\0').update(new URL(site).origin).update('\0').update(String(SEARCH_SCHEMA_VERSION)).digest('hex');

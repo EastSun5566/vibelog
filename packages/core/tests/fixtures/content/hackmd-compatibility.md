@@ -79,6 +79,16 @@ $$
 
 Malformed math stays readable: $\broken{$.
 
+```math
+x = \frac{1}{2}
+```
+
+Untrusted math commands: $\href{https://example.com/math-probe}{probe}$ and $\href{javascript:alert(1)}{probe}$.
+
+$$
+\includegraphics{https://example.com/math-probe.png}
+$$
+
 ```javascript=101
 const answer = 42;
 :::warning

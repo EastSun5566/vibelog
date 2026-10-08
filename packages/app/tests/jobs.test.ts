@@ -159,13 +159,65 @@ describe('AI operation execution', () => {
     const copyArtifact = vi.fn(() => Promise.resolve());
     const putObject = vi.fn(() => Promise.resolve());
     const materializeArtifact = vi.fn();
-    const artifacts = { copyArtifact, putObject, materializeArtifact } as unknown as ArtifactStore;
+    const currentIdentity = structuralBuildIdentity('source', theme.config, 'https://writer.vibelog.org');
+    const readObject = vi.fn(() => Promise.resolve({ body: new Response(JSON.stringify({ identity: currentIdentity })).body }));
+    const artifacts = { copyArtifact, putObject, materializeArtifact, readObject } as unknown as ArtifactStore;
     vi.mocked(buildBlog).mockClear();
     await new AppOperationExecutor(database, artifacts, config).execute(apply.id);
     expect(copyArtifact).toHaveBeenCalledWith('draft', 'css-draft');
     expect(putObject).toHaveBeenCalledWith('css-draft', 'design.css', expect.stringContaining('font'), { contentType: 'text/css; charset=utf-8' });
     expect(materializeArtifact).not.toHaveBeenCalled();
     expect(buildBlog).not.toHaveBeenCalled();
+  });
+
+  it.each(['missing', 'old renderer', 'different source', 'different design', 'malformed', 'unreadable', 'different revision'] as const)(
+    'rebuilds a presentation edit from source when the draft marker is %s', async (marker) => {
+      const next = structuredClone(DEFAULT_DESIGN_V2);
+      next.theme.typography.scale = 'large';
+      const apply = operation('presentation-rebuild'); apply.type = 'apply_design'; apply.payload.design = next;
+      const completeDesignOperation = vi.fn(() => Promise.resolve({ ...theme, config: next }));
+      const database = {
+        claimOperation: vi.fn(() => Promise.resolve(apply)),
+        getBlog: vi.fn(() => Promise.resolve(marker === 'different revision' ? { ...blog, draftDesignRevisionId: 'older' } : blog)),
+        getActiveDesign: vi.fn(() => Promise.resolve(theme)), updateOperationProgress: vi.fn(() => Promise.resolve()),
+        listBuildCacheCandidates: vi.fn(() => Promise.resolve([])), createArtifact: vi.fn(() => Promise.resolve({ id: 'rebuilt-draft' })),
+        completeDesignOperation, markArtifactCleanup: vi.fn(() => Promise.resolve()),
+      } as unknown as AppDatabase;
+      const oldDesign = structuredClone(DEFAULT_DESIGN_V2); oldDesign.theme.typography.scale = 'compact';
+      const identity = marker === 'different source' ? structuralBuildIdentity('previous-source', theme.config, 'https://writer.vibelog.org')
+        : marker === 'different design' ? structuralBuildIdentity('source', oldDesign, 'https://writer.vibelog.org') : 'template-17-identity';
+      const readObject = vi.fn((_id: string, path: string) => {
+        if (marker === 'unreadable') return Promise.reject(new Error('Read unavailable'));
+        return Promise.resolve(path !== 'build-identity.json' || marker === 'missing' ? null
+          : { body: new Response(marker === 'malformed' ? 'invalid json' : JSON.stringify({ identity })).body });
+      });
+      const copyArtifact = vi.fn(); const materializeArtifact = vi.fn(); const uploadDirectory = vi.fn();
+      const artifacts = { readObject, copyArtifact, materializeArtifact, uploadDirectory } as unknown as ArtifactStore;
+      vi.mocked(buildBlog).mockClear();
+      await new AppOperationExecutor(database, artifacts, config).execute(apply.id);
+      expect(copyArtifact).not.toHaveBeenCalled();
+      expect(materializeArtifact).toHaveBeenCalledWith('source', expect.any(String));
+      expect(buildBlog).toHaveBeenCalledWith(expect.objectContaining({ design: next, buildIdentity: structuralBuildIdentity('source', next, 'https://writer.vibelog.org') }));
+      expect(uploadDirectory).toHaveBeenCalledWith('rebuilt-draft', expect.any(String));
+      expect(completeDesignOperation).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('keeps the existing draft if an outdated presentation draft cannot be rebuilt', async () => {
+    const next = structuredClone(DEFAULT_DESIGN_V2); next.theme.typography.scale = 'large';
+    const apply = operation('failed-presentation-rebuild'); apply.type = 'apply_design'; apply.payload.design = next;
+    const completeDesignOperation = vi.fn(); const markArtifactCleanup = vi.fn();
+    const database = {
+      claimOperation: vi.fn(() => Promise.resolve(apply)), getBlog: vi.fn(() => Promise.resolve(blog)), getActiveDesign: vi.fn(() => Promise.resolve(theme)),
+      updateOperationProgress: vi.fn(), listBuildCacheCandidates: vi.fn(() => Promise.resolve([])),
+      createArtifact: vi.fn(() => Promise.resolve({ id: 'failed-draft' })), completeDesignOperation, markArtifactCleanup, failOperation: vi.fn(),
+    } as unknown as AppDatabase;
+    const artifacts = { readObject: vi.fn(() => Promise.resolve(null)), materializeArtifact: vi.fn(), uploadDirectory: vi.fn(), copyArtifact: vi.fn() } as unknown as ArtifactStore;
+    vi.mocked(buildBlog).mockRejectedValueOnce(new Error('Renderer failed'));
+    await expect(new AppOperationExecutor(database, artifacts, config).execute(apply.id)).rejects.toBeInstanceOf(TerminalOperationError);
+    expect(completeDesignOperation).not.toHaveBeenCalled();
+    expect(markArtifactCleanup).toHaveBeenCalledWith('failed-draft');
+    expect(blog.draftArtifactId).toBe('draft');
   });
 
   it('does not create a revision or artifact for an unchanged design', async () => {
