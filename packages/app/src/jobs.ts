@@ -148,9 +148,15 @@ export class AppOperationExecutor implements OperationExecutor {
         const revision = await this.database.completeNoopDesignOperation(operation, { message: 'Design unchanged' });
         return { message: 'Design unchanged', revisionId: revision.id };
       }
-      if (impact === 'presentation') {
-        const draftArtifactId = blog.draftArtifactId;
-        if (!draftArtifactId) throw new Error('Compiled draft not found');
+      let presentationDraft: string | undefined;
+      if (impact === 'presentation' && blog.draftArtifactId && blog.draftDesignRevisionId === active.id) {
+        try {
+          const currentIdentity = structuralBuildIdentity(currentSourceArtifactId, active.config, site);
+          presentationDraft = await findReusableBuild(this.artifacts, [blog.draftArtifactId], currentIdentity);
+        } catch { /* An unreadable marker is a cache miss; rebuild from source. */ }
+      }
+      if (presentationDraft) {
+        const draftArtifactId = presentationDraft;
         const artifact = await this.database.createArtifact(blog.id, 'draft');
         try {
           await this.database.updateOperationProgress(operation, { kind: 'determinate', value: 1, max: 2 }, 'Updating design styles');

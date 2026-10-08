@@ -412,7 +412,7 @@ while (!await access(${JSON.stringify(release)}).then(() => true, () => false)) 
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 17 });
+    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 18 });
     await expect(stat(join(root, '.vibelog', 'src', 'styles', 'global.css'))).rejects.toThrow();
     expect(await readFile(join(root, '.vibelog', 'public', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
   });
@@ -775,6 +775,10 @@ while (!await access(${JSON.stringify(release)}).then(() => true, () => false)) 
     expect(article).toContain('✨');
     expect(article).toContain('<math xmlns="http://www.w3.org/1998/Math/MathML"');
     expect(article).toContain('class="katex-error"');
+    expect(article).toContain('<mfrac>');
+    expect(article).not.toContain('href="https://example.com/math-probe"');
+    expect(article).not.toContain('href="javascript:');
+    expect(article).not.toContain('src="https://example.com/math-probe.png"');
     expect(article).toContain('data-language="javascript"');
     expect(article).toContain('data-line-start="1"');
     expect(article).toContain('data-line-start="3"');
