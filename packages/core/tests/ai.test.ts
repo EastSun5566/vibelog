@@ -1,10 +1,27 @@
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
+import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AiProviderRequestError, AiProviderTimeoutError, FallbackAiProvider, PiAiProvider, createAiProvider } from '../src/adapters/ai/index.js';
 import type { AiProvider } from '../src/types.js';
 import { DEFAULT_DESIGN_V2 } from '../src/design/defaults-v2.js';
+import { designToolV2, refineDesignToolV2 } from '../src/adapters/ai/tool-v2.js';
 
 const input = { blog: { title: 'Blog', description: 'Writing', author: 'Writer' }, contentProfile: { postCount: 5, tagCount: 3, averageLength: 'medium' as const, codeUsage: 'some' as const, imageUsage: 'none' as const, mathUsage: 'none' as const }, currentDesign: DEFAULT_DESIGN_V2, prompt: 'Editorial' };
+function parseRequestBody(options?: RequestInit): unknown {
+  if (typeof options?.body !== 'string') throw new Error('Expected a JSON request body');
+  return JSON.parse(options.body);
+}
+function anthropicToolResponse(design: typeof DEFAULT_DESIGN_V2) {
+  const events = [
+    { type: 'message_start', message: { id: 'test', type: 'message', role: 'assistant', model: 'qwen3.8-flash', content: [], stop_reason: null, usage: { input_tokens: 10, output_tokens: 0 } } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'proposal', name: 'propose_design', input: {} } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(design) } },
+    { type: 'content_block_stop', index: 0 },
+    { type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 10 } },
+    { type: 'message_stop' },
+  ];
+  return new Response(events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } });
+}
 function subject(responses: Parameters<ReturnType<typeof fauxProvider>['setResponses']>[0]) {
   const faux = fauxProvider({ provider: 'test', models: [{ id: 'model' }] });
   const models = createModels(); models.setProvider(faux.provider); faux.setResponses(responses);
@@ -96,9 +113,9 @@ describe('PiAiProvider design proposal', () => {
     await provider.generate(input, { sessionId: 'operation-2' });
 
     expect(complete.mock.calls.map((call) => call[2])).toEqual([
-      expect.objectContaining({ sessionId: 'operation-1', headers: { 'user-agent': 'VibeLog', 'x-opencode-session': 'operation-1' } }),
-      expect.objectContaining({ sessionId: 'operation-1', headers: { 'user-agent': 'VibeLog', 'x-opencode-session': 'operation-1' } }),
-      expect.objectContaining({ sessionId: 'operation-2', headers: { 'user-agent': 'VibeLog', 'x-opencode-session': 'operation-2' } }),
+      expect.objectContaining({ sessionId: 'operation-1', maxRetries: 0, headers: { 'user-agent': 'VibeLog' } }),
+      expect.objectContaining({ sessionId: 'operation-1', maxRetries: 0, headers: { 'user-agent': 'VibeLog' } }),
+      expect.objectContaining({ sessionId: 'operation-2', maxRetries: 0, headers: { 'user-agent': 'VibeLog' } }),
     ]);
     expect(complete.mock.calls.map((call) => JSON.stringify(call[1]))).not.toContainEqual(expect.stringContaining('operation-'));
   });
@@ -112,8 +129,10 @@ describe('PiAiProvider design proposal', () => {
   it('sends the session metadata through the Anthropic transport', async () => {
     vi.stubEnv('OPENCODE_API_KEY', 'test-key');
     let requestHeaders: Headers | undefined;
+    let requestBody: { tools: { name: string; input_schema: unknown }[] } | undefined;
     vi.spyOn(globalThis, 'fetch').mockImplementation((request, options) => {
       requestHeaders = request instanceof Request ? request.headers : new Headers(options?.headers);
+      requestBody = parseRequestBody(options) as typeof requestBody;
       return Promise.resolve(new Response(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'offline test' } }), {
         status: 400,
         headers: { 'content-type': 'application/json' },
@@ -126,6 +145,10 @@ describe('PiAiProvider design proposal', () => {
     expect(failure).toMatchObject({ kind: 'http', retryable: false, status: 400 });
     expect(requestHeaders?.get('x-opencode-session')).toBe('operation-1');
     expect(requestHeaders?.get('user-agent')).toBe('VibeLog');
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    expect(requestBody?.tools.map((tool) => ({ name: tool.name, parameters: tool.input_schema })))
+      .toEqual([designToolV2, refineDesignToolV2].map((tool) => ({ name: tool.name, parameters: tool.parameters }))
+        .map(({ name, parameters }) => ({ name, parameters: { type: 'object', properties: parameters.properties, required: parameters.required } })));
   });
   it.each([404, 408, 409, 429, 500])('classifies OpenCode HTTP %i as retryable', async (status) => {
     vi.stubEnv('OPENCODE_API_KEY', 'test-key');
@@ -137,6 +160,7 @@ describe('PiAiProvider design proposal', () => {
     const failure = await createAiProvider('opencode-go', 'qwen3.8-flash').generate(input, { sessionId: 'operation-1' }).catch((error: unknown) => error);
     expect(failure).toMatchObject({ kind: 'http', retryable: true, status });
     expect((failure as Error).message).not.toContain('not available');
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
   });
   it('classifies network errors as retryable without exposing their details', async () => {
     vi.stubEnv('OPENCODE_API_KEY', 'test-key');
@@ -160,9 +184,11 @@ describe('PiAiProvider design proposal', () => {
     vi.stubEnv('OPENCODE_API_KEY', 'test-key');
     let requestUrl: string | undefined;
     let requestHeaders: Headers | undefined;
+    let requestBody: { tools: { function: { name: string; parameters: unknown } }[] } | undefined;
     vi.spyOn(globalThis, 'fetch').mockImplementation((request, options) => {
       requestUrl = request instanceof Request ? request.url : String(request);
       requestHeaders = request instanceof Request ? request.headers : new Headers(options?.headers);
+      requestBody = parseRequestBody(options) as typeof requestBody;
       return Promise.resolve(new Response(JSON.stringify({ error: { message: 'offline test' } }), {
         status: 400,
         headers: { 'content-type': 'application/json' },
@@ -174,6 +200,54 @@ describe('PiAiProvider design proposal', () => {
     expect(requestUrl).toBe('https://opencode.ai/zen/go/v1/chat/completions');
     expect(requestHeaders?.get('x-opencode-session')).toBe('operation-1');
     expect(requestHeaders?.get('user-agent')).toBe('VibeLog');
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    expect(requestBody?.tools.map((tool) => ({ name: tool.function.name, parameters: tool.function.parameters })))
+      .toEqual([designToolV2, refineDesignToolV2].map((tool) => ({ name: tool.name, parameters: tool.parameters })));
+  });
+  it('keeps the legacy Azure provider name mapped to the current catalog', () => {
+    const [model] = getBuiltinModels('azure');
+    expect(model).toBeDefined();
+    const legacy = createAiProvider('azure-openai-responses', model.id);
+    const current = createAiProvider('azure', model.id);
+    expect(legacy.name).toBe('azure-openai-responses');
+    expect(legacy.model).toEqual(current.model);
+    expect(legacy.model.provider).toBe('azure');
+  });
+  it('keeps the native session header and validated schema during a transport correction', async () => {
+    vi.stubEnv('OPENCODE_API_KEY', 'test-key');
+    const invalid = structuredClone(DEFAULT_DESIGN_V2);
+    invalid.theme.colors.text = invalid.theme.colors.background;
+    const headers: Headers[] = [];
+    const bodies: { tools: { name: string }[] }[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_request, options) => {
+      headers.push(new Headers(options?.headers));
+      bodies.push(parseRequestBody(options) as typeof bodies[number]);
+      return Promise.resolve(anthropicToolResponse(bodies.length === 1 ? invalid : DEFAULT_DESIGN_V2));
+    });
+    await expect(createAiProvider('opencode-go', 'qwen3.8-flash').generate(input, { sessionId: 'correction-session' })).resolves.toEqual(DEFAULT_DESIGN_V2);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(headers.map((header) => header.get('x-opencode-session'))).toEqual(['correction-session', 'correction-session']);
+    expect(bodies.map((body) => body.tools.map((tool) => tool.name))).toEqual([['propose_design', 'refine_design'], ['propose_design']]);
+    expect(JSON.stringify(bodies)).not.toContain('correction-session');
+  });
+  it('keeps native session affinity across both transports without hidden retries', async () => {
+    vi.stubEnv('OPENCODE_API_KEY', 'test-key');
+    const requests: { url: string; session: string | null }[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((request, options) => {
+      const url = request instanceof Request ? request.url : String(request);
+      const headers = request instanceof Request ? request.headers : new Headers(options?.headers);
+      requests.push({ url, session: headers.get('x-opencode-session') });
+      return Promise.resolve(new Response(JSON.stringify({ error: { type: 'api_error', message: 'offline test' } }), {
+        status: requests.length === 1 ? 429 : 400, headers: { 'content-type': 'application/json' },
+      }));
+    });
+    const provider = new FallbackAiProvider('opencode-go', 'qwen3.8-flash', ['glm-5.3-flash']);
+    await expect(provider.generate(input, { sessionId: 'fallback-session' })).rejects.toMatchObject({ status: 400 });
+    expect(requests).toEqual([
+      { url: 'https://opencode.ai/zen/go/v1/messages?beta=true', session: 'fallback-session' },
+      { url: 'https://opencode.ai/zen/go/v1/chat/completions', session: 'fallback-session' },
+    ]);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
   it('aborts a provider that does not respond before the generation deadline', async () => {
     vi.stubEnv('OPENCODE_API_KEY', 'test-key');

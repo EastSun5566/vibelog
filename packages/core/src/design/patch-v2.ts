@@ -1,16 +1,11 @@
 import { normalizeDesignV2 } from './normalize-v2.js';
+import { designPatchesV2Schema } from './patch-schema-v2.js';
 import { validateBlogDesignSpecV2, type BlogDesignSpecV2 } from './schema-v2.js';
 
-const MAX_PATCHES = 16;
 const MAX_PATCH_BYTES = 32 * 1024;
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const ROOT_KEYS = new Set(['theme', 'chrome', 'pages', 'description']);
 const HOME_REGIONS = new Set(['main', 'aside', 'lead', 'rail']);
-
-type Patch =
-  | { op: 'add' | 'replace'; path: string; value: unknown }
-  | { op: 'remove'; path: string }
-  | { op: 'move'; from: string; path: string };
 
 function pointer(input: string): string[] {
   if (!input.startsWith('/')) throw new Error('Patch path must be a JSON pointer');
@@ -80,28 +75,22 @@ function isHomeRegionIndex(segments: string[]): boolean {
   return segments.length === 5 && segments[0] === 'pages' && segments[1] === 'home' && segments[2] === 'regions' && HOME_REGIONS.has(segments[3] ?? '');
 }
 
-function parsePatches(input: unknown): Patch[] {
-  if (!Array.isArray(input) || input.length === 0 || input.length > MAX_PATCHES) throw new Error('Design patch must contain 1–16 operations');
+function parsePatches(input: unknown) {
+  if (!Array.isArray(input)) throw new Error('Design patch must contain 1–16 operations');
   let bytes: number;
   try { bytes = Buffer.byteLength(JSON.stringify(input)); }
   catch { throw new Error('Design patch is not JSON'); }
   if (bytes > MAX_PATCH_BYTES) throw new Error('Design patch exceeds 32 KiB');
-  return input.map((item: unknown, index) => {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`Invalid patch operation ${String(index + 1)}`);
-    const patch = item as Record<string, unknown>;
-    if (typeof patch.path !== 'string') throw new Error(`Invalid patch path at operation ${String(index + 1)}`);
+  const patches = designPatchesV2Schema.parse(input);
+  for (const patch of patches) {
     if (patch.op === 'move') {
-      if (typeof patch.from !== 'string' || Object.keys(patch).some((key) => !['op', 'path', 'from'].includes(key))) throw new Error(`Invalid move operation ${String(index + 1)}`);
       if (!isHomeRegionIndex(pointer(patch.from)) || !isHomeRegionIndex(pointer(patch.path))) throw new Error('Move is limited to homepage region entries');
     } else if (patch.op === 'add' || patch.op === 'replace') {
-      if (!Object.hasOwn(patch, 'value') || Object.keys(patch).some((key) => !['op', 'path', 'value'].includes(key))) throw new Error(`Invalid patch operation ${String(index + 1)}`);
       assertSafeValue(patch.value);
-    } else if (patch.op !== 'remove' || Object.keys(patch).some((key) => !['op', 'path'].includes(key))) {
-      throw new Error(`Invalid patch operation ${String(index + 1)}`);
     }
     pointer(patch.path);
-    return patch as Patch;
-  });
+  }
+  return patches;
 }
 
 export function applyDesignPatchV2(base: BlogDesignSpecV2, input: unknown): BlogDesignSpecV2 {

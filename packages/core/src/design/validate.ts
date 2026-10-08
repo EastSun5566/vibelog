@@ -63,18 +63,18 @@ export const blogDesignSpecV1Schema = z.object({
   description: z.string().trim().min(1).max(240),
 }).strict().superRefine((value, context) => {
   const sectionTypes = value.pages.home.sections.map((section) => section.type);
-  if (new Set(sectionTypes).size !== sectionTypes.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ['pages', 'home', 'sections'], message: 'Homepage section types must be unique' });
-  if (!sectionTypes.some((type) => type === 'featured-posts' || type === 'recent-posts')) context.addIssue({ code: z.ZodIssueCode.custom, path: ['pages', 'home', 'sections'], message: 'Homepage must contain featured or recent posts' });
+  if (new Set(sectionTypes).size !== sectionTypes.length) context.addIssue({ code: 'custom', path: ['pages', 'home', 'sections'], message: 'Homepage section types must be unique' });
+  if (!sectionTypes.some((type) => type === 'featured-posts' || type === 'recent-posts')) context.addIssue({ code: 'custom', path: ['pages', 'home', 'sections'], message: 'Homepage must contain featured or recent posts' });
   const recentSection = value.pages.home.sections.find((section) => section.type === 'recent-posts');
-  if (recentSection?.type === 'recent-posts' && recentSection.variant === 'list' && recentSection.columns !== undefined && recentSection.columns !== 1) context.addIssue({ code: z.ZodIssueCode.custom, path: ['pages', 'home', 'sections'], message: 'Recent list columns must be absent or 1' });
-  if (recentSection?.type === 'recent-posts' && recentSection.variant === 'grid' && recentSection.columns !== 2 && recentSection.columns !== 3) context.addIssue({ code: z.ZodIssueCode.custom, path: ['pages', 'home', 'sections'], message: 'Recent grid columns must be 2 or 3' });
-  if (value.pages.index.layout === 'list' && value.pages.index.columns !== undefined && value.pages.index.columns !== 1) context.addIssue({ code: z.ZodIssueCode.custom, path: ['pages', 'index', 'columns'], message: 'List columns must be absent or 1' });
-  if (value.pages.index.layout === 'grid' && value.pages.index.columns !== 2 && value.pages.index.columns !== 3) context.addIssue({ code: z.ZodIssueCode.custom, path: ['pages', 'index', 'columns'], message: 'Grid columns must be 2 or 3' });
-  if (value.pages.article.toc === 'auto-aside' && value.pages.article.layout !== 'with-aside') context.addIssue({ code: z.ZodIssueCode.custom, path: ['pages', 'article', 'toc'], message: 'Aside TOC requires with-aside article layout' });
+  if (recentSection?.type === 'recent-posts' && recentSection.variant === 'list' && recentSection.columns !== undefined && recentSection.columns !== 1) context.addIssue({ code: 'custom', path: ['pages', 'home', 'sections'], message: 'Recent list columns must be absent or 1' });
+  if (recentSection?.type === 'recent-posts' && recentSection.variant === 'grid' && recentSection.columns !== 2 && recentSection.columns !== 3) context.addIssue({ code: 'custom', path: ['pages', 'home', 'sections'], message: 'Recent grid columns must be 2 or 3' });
+  if (value.pages.index.layout === 'list' && value.pages.index.columns !== undefined && value.pages.index.columns !== 1) context.addIssue({ code: 'custom', path: ['pages', 'index', 'columns'], message: 'List columns must be absent or 1' });
+  if (value.pages.index.layout === 'grid' && value.pages.index.columns !== 2 && value.pages.index.columns !== 3) context.addIssue({ code: 'custom', path: ['pages', 'index', 'columns'], message: 'Grid columns must be 2 or 3' });
+  if (value.pages.article.toc === 'auto-aside' && value.pages.article.layout !== 'with-aside') context.addIssue({ code: 'custom', path: ['pages', 'article', 'toc'], message: 'Aside TOC requires with-aside article layout' });
   const targets = value.styles.rules.map((rule) => rule.target);
-  if (new Set(targets).size !== targets.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ['styles', 'rules'], message: 'Style targets must be unique' });
-  if (contrastRatio(value.theme.colors.text, value.theme.colors.background) < 4.5) context.addIssue({ code: z.ZodIssueCode.custom, path: ['theme', 'colors', 'text'], message: 'Design text does not have enough contrast against the background' });
-  if (contrastRatio(value.theme.colors.accent, value.theme.colors.background) < 4.5) context.addIssue({ code: z.ZodIssueCode.custom, path: ['theme', 'colors', 'accent'], message: 'Design links do not have enough contrast against the background' });
+  if (new Set(targets).size !== targets.length) context.addIssue({ code: 'custom', path: ['styles', 'rules'], message: 'Style targets must be unique' });
+  if (contrastRatio(value.theme.colors.text, value.theme.colors.background) < 4.5) context.addIssue({ code: 'custom', path: ['theme', 'colors', 'text'], message: 'Design text does not have enough contrast against the background' });
+  if (contrastRatio(value.theme.colors.accent, value.theme.colors.background) < 4.5) context.addIssue({ code: 'custom', path: ['theme', 'colors', 'accent'], message: 'Design links do not have enough contrast against the background' });
 });
 
 export const sourceSnapshotV1Schema = z.object({

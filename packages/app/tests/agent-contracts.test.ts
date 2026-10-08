@@ -22,6 +22,19 @@ describe('agent design contract', () => {
     expect(result.valid).toBe(false); expect(JSON.stringify(result)).not.toContain('private-invalid-value');
     if (!result.valid) expect(result.errors).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'version' })]));
   });
+  it('keeps the serialized contract and agent validator compatible with larger article layouts', () => {
+    const design = structuredClone(DEFAULT_DESIGN_V2);
+    design.theme.colors.accent = design.theme.colors.accent.toUpperCase();
+    design.pages.article.modules = Object.fromEntries(Array.from({ length: 9 }, (_, index) => [
+      `metadata-${String(index)}`, { type: 'metadata' as const, variant: 'compact' as const },
+    ]));
+    design.pages.article.regions = { beforeBody: Object.keys(design.pages.article.modules), aside: [], afterBody: [] };
+    expect(validateAgentDesign(design).valid).toBe(true);
+    const contract = JSON.parse(JSON.stringify(designContractV2())) as ReturnType<typeof designContractV2>;
+    expect(contract.schema).toEqual(designContractV2().schema);
+    expect(contract.schema).toHaveProperty('$schema', 'http://json-schema.org/draft-07/schema#');
+    expect(contract.schema).not.toHaveProperty('$defs');
+  });
   it('fingerprints object fields independent of order but preserves array order and action', () => {
     expect(requestHash('design', { a: 1, b: 2 })).toBe(requestHash('design', { b: 2, a: 1 }));
     expect(requestHash('design', [1, 2])).not.toBe(requestHash('design', [2, 1]));
