@@ -10,6 +10,20 @@ HackMD math reaches `packages/core/src/core/render-worker.ts` through the conten
 
 An isolated regression test covers inherited trust and normal rendering. Template version 18 invalidates old build keys, and presentation-only copies require a matching current source/design/renderer identity. Old releases and unchanged-design operations do not rebuild themselves: existing blogs need Sync, preview review and explicit Publish to refresh their rendered output.
 
+Standalone package preparation bundles only the math plugins and patched KaTeX
+into an internal Node 24 ESM module. The package no longer relies on a consumer's
+pnpm overrides: its build inspects esbuild inputs, requires KaTeX 0.18.2, rejects
+external npm imports and ships dependency versions and license notices. The
+isolated math regression is run against the actual bundle, including a clean
+npm tarball installation and the production image. No standalone KaTeX package
+is required in the runtime image; braces must still be absent.
+
+Strict TypeScript consumers need the optional MCP peer referenced by the Google
+SDK declarations exposed through pi-ai. The pack smoke installs that peer only
+for type checking, after verifying the core runtime and static build without it.
+Core does not gain an MCP runtime dependency. This preparation is not an npm
+publication or a claim that all remaining advisories are resolved.
+
 ## #264 — sprintf-js
 
 [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) has no listed patched version as of this review. The runtime dependency chain is `gray-matter → js-yaml 3.15.2 → argparse 1.0.10 → sprintf-js 1.0.3`.

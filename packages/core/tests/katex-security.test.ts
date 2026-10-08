@@ -1,14 +1,23 @@
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 
 describe('KaTeX renderer options', () => {
+  it('verifies the shipped math bundle in an isolated process', () => {
+    const script = readFileSync(new URL('../scripts/math-bundle-smoke.mjs', import.meta.url), 'utf8');
+    const core = new URL('../dist/index.js', import.meta.url).href;
+    expect(execFileSync(process.execPath, ['--input-type=module', '--eval', script, core], { encoding: 'utf8' })).toContain('Embedded KaTeX 0.18.2');
+    expect(Object.hasOwn(Object.prototype, 'trust')).toBe(false);
+  });
+
   it('rejects inherited trust in both dependency paths without polluting the test process', () => {
     const paths = [require.resolve('rehype-katex'), require.resolve('remark-math')];
     const results = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '--eval', String.raw`
       import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
       const results = JSON.parse(process.argv[1]).map((path) => {
         const rendererRequire = createRequire(path);
         const katex = path.includes('rehype-katex') ? rendererRequire('katex')

@@ -19,7 +19,9 @@
         ".github/scripts/check-design-v2-audit.test.mjs",
         "e2e/run-local.mjs",
         "e2e/**/*.spec.ts",
-        ".github/scripts/cli-pack-smoke.mjs"
+        ".github/scripts/cli-pack-smoke.mjs",
+        ".github/scripts/core-pack-smoke.mjs",
+        ".github/scripts/core-pack-consumer.mjs"
       ],
       "project": [
         "vitest.config.ts",
@@ -33,13 +35,15 @@
         "e2e/run-local.mjs",
         "e2e/tsconfig.json",
         "e2e/**/*.ts",
-        ".github/scripts/cli-pack-smoke.mjs"
+        ".github/scripts/cli-pack-smoke.mjs",
+        ".github/scripts/core-pack-smoke.mjs",
+        ".github/scripts/core-pack-consumer.mjs"
       ],
       "ignoreBinaries": ["pulumi"]
     },
     "packages/core": {
-      "entry": ["src/index.ts", "tests/**/*.test.ts"],
-      "project": ["src/**/*.ts", "tests/**/*.ts"],
+      "entry": ["src/index.ts", "tests/**/*.test.ts", "scripts/build-math.mjs", "scripts/math-bundle-smoke.mjs"],
+      "project": ["src/**/*.ts", "tests/**/*.ts", "scripts/build-math.mjs", "scripts/math-bundle-smoke.mjs"],
       "ignoreDependencies": ["@astrojs/rss"]
     },
     "packages/app": {

@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 const port = Number(process.env.PORT ?? 34123);
 const image = process.env.VIBELOG_APP_IMAGE;
@@ -55,23 +56,11 @@ if (docker(['image', 'inspect', image, '--format', '{{json .Config.Cmd}}']) !== 
 docker(['run', '--rm', '--network', 'none', '--entrypoint', 'node', image, '--input-type=module', '--eval', `
   import assert from 'node:assert/strict';
   import { readdirSync } from 'node:fs';
-  import { createRequire } from 'node:module';
   import { join } from 'node:path';
   const packages = readdirSync(join(process.cwd(), 'node_modules/.pnpm'));
   assert(!packages.some((name) => name.startsWith('braces@')), 'Build-only braces shipped in runtime');
-  const mathPackages = packages.filter((name) => name.startsWith('katex@'));
-  assert(mathPackages.length > 0, 'KaTeX missing from runtime');
-  for (const name of mathPackages) assert.equal(name, 'katex@0.18.2');
-  const coreRequire = createRequire(import.meta.resolve('@vibelog/core'));
-  const rehypeRequire = createRequire(coreRequire.resolve('rehype-katex'));
-  const remarkRequire = createRequire(coreRequire.resolve('remark-math'));
-  const micromarkRequire = createRequire(remarkRequire.resolve('micromark-extension-math'));
-  for (const require of [rehypeRequire, micromarkRequire]) {
-    const katex = require('katex');
-    assert.equal(katex.version, '0.18.2');
-    assert(katex.renderToString('E = mc^2', { output: 'mathml', trust: false }).includes('<math'));
-  }
 `]);
+docker(['run', '--rm', '--network', 'none', '--entrypoint', 'node', image, '--input-type=module', '--eval', readFileSync(new URL('../../packages/core/scripts/math-bundle-smoke.mjs', import.meta.url), 'utf8')]);
 const volumes = docker(['image', 'inspect', image, '--format', '{{json .Config.Volumes}}']);
 if (volumes !== 'null' && volumes.includes('/data')) throw new Error('Image declares a persistent /data volume');
 if (docker(['compose', 'exec', '-T', 'web', 'node', '-p', 'process.getuid()']) === '0') {
