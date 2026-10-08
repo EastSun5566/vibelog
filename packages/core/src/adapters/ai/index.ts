@@ -19,6 +19,7 @@ const OLLAMA_PROVIDER = 'ollama';
 const OLLAMA_BASE_URL = 'http://localhost:11434/v1';
 const KEYLESS_OLLAMA_TRANSPORT_KEY = 'ollama-local';
 const OPENCODE_PROVIDERS = new Set(['opencode', 'opencode-go']);
+const LEGACY_AZURE_PROVIDER = 'azure-openai-responses';
 const VIBELOG_USER_AGENT = 'VibeLog';
 const AI_GENERATION_TIMEOUT_MS = 120_000;
 const AI_FALLBACK_CANDIDATE_TIMEOUT_MS = 45_000;
@@ -26,9 +27,7 @@ function keylessOpenAICompletionsApi(): ProviderStreams {
   const api = openAICompletionsApi();
   const options = (input?: SimpleStreamOptions): SimpleStreamOptions => ({
     ...input,
-    // pi-ai 0.80.7 requires a non-empty key to construct its OpenAI client,
-    // even for keyless local providers. Keep that compatibility value inside
-    // the transport and explicitly omit the corresponding HTTP auth header.
+    // OpenAI transport needs a key even for local providers; never send it to Ollama.
     apiKey: input?.apiKey ?? KEYLESS_OLLAMA_TRANSPORT_KEY,
     headers: { ...input?.headers, authorization: null },
   });
@@ -43,6 +42,7 @@ function createOllamaProvider(modelId: string) {
   const model: Model<'openai-completions'> = { id: modelId, name: `${modelId} (Ollama)`, api: 'openai-completions', provider: OLLAMA_PROVIDER, baseUrl, reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128_000, maxTokens: 32_000, compat: { supportsDeveloperRole: false, supportsReasoningEffort: false } };
   return createProvider({ id: OLLAMA_PROVIDER, name: 'Ollama', baseUrl, auth: { apiKey: { name: 'Ollama', resolve: () => Promise.resolve({ auth: {} }) } }, models: [model], api: keylessOpenAICompletionsApi() });
 }
+function providerId(provider: string): string { return provider === LEGACY_AZURE_PROVIDER ? 'azure' : provider; }
 function defaultModels(provider: string, modelId: string): MutableModels {
   const models = provider === OLLAMA_PROVIDER ? createModels() : builtinModels();
   if (provider === OLLAMA_PROVIDER) models.setProvider(createOllamaProvider(modelId));
@@ -85,7 +85,7 @@ export class AiProviderRequestError extends Error {
 export class AiProviderTimeoutError extends AiProviderRequestError {
   constructor(options?: ErrorOptions) { super('AI provider request timed out', { ...options, kind: 'timeout', retryable: true }); this.name = 'AiProviderTimeoutError'; }
 }
-export function getAiProviderNames(): string[] { return [...getBuiltinProviders(), OLLAMA_PROVIDER]; }
+export function getAiProviderNames(): string[] { return [...getBuiltinProviders(), LEGACY_AZURE_PROVIDER, OLLAMA_PROVIDER]; }
 
 class AiDesignValidationError extends Error {
   constructor(message: string, readonly selectedTool?: typeof DESIGN_TOOL_NAME | typeof REFINE_TOOL_NAME, options?: ErrorOptions) {
@@ -144,7 +144,7 @@ export class PiAiProvider implements AiProvider {
   readonly model: Model<Api>;
   constructor(readonly name: string, readonly modelId: string, private readonly models: Models = defaultModels(name, modelId)) {
     if (!getAiProviderNames().includes(name) && !models.getProvider(name)) throw new Error(`Unsupported AI provider: ${name}`);
-    const model = models.getModel(name, modelId);
+    const model = models.getModel(providerId(name), modelId);
     if (!model) throw new Error(`Unknown AI model: ${name}@${modelId}`);
     this.model = model;
     logger.info(`AI provider: ${name} (${modelId})`);
@@ -162,7 +162,7 @@ export class PiAiProvider implements AiProvider {
       response = await this.models.complete(this.model, context, {
         temperature: 0.2, signal,
         env: requestEnv(this.name),
-        ...(openCode ? { fetch: requestMetadataFetch(requestMetadata), maxRetries: 0, sessionId, headers: { 'user-agent': VIBELOG_USER_AGENT, 'x-opencode-session': sessionId } } : {}),
+        ...(openCode ? { fetch: requestMetadataFetch(requestMetadata), maxRetries: 0, sessionId, headers: { 'user-agent': VIBELOG_USER_AGENT } } : {}),
       });
     } catch (error) {
       throw providerRequestError(error, requestMetadata, signal);

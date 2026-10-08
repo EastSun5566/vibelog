@@ -65,20 +65,20 @@ const noteSchema = z.object({
   publishType: z.string(),
   publishedAt: z.string().nullish().transform((value) => value ?? ''),
   permalink: z.string().nullish().transform((value) => value ?? undefined),
-}).passthrough();
-const overviewSchema = z.object({ notes: z.array(noteSchema) }).passthrough();
+}).loose();
+const overviewSchema = z.object({ notes: z.array(noteSchema) }).loose();
 const personSchema = z.object({
   displayName: z.string().nullish(),
   biography: z.string().nullish(),
-}).passthrough();
+}).loose();
 const teamSchema = z.object({
   name: z.string().nullish(),
   description: z.string().nullish(),
-}).passthrough();
+}).loose();
 const profileSchema = z.object({
   user: personSchema.nullish(),
   team: teamSchema.nullish(),
-}).passthrough().refine((value) => Boolean(value.user ?? value.team));
+}).loose().refine((value) => Boolean(value.user ?? value.team));
 
 type RequestResource = 'profile' | 'overview' | 'article';
 interface LimitedText { text: string; bytes: number }

@@ -2,7 +2,9 @@ import { z } from 'zod';
 
 import { contrastRatio } from './color.js';
 
-const hexColor = z.string().regex(/^#[0-9a-f]{6}$/i);
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+const MIN_HOME_SECTIONS = 1;
+const MAX_HOME_SECTIONS = 8;
 const oneToThree = z.union([z.literal(1), z.literal(2), z.literal(3)]);
 const nodeId = z.string().regex(/^[a-z][a-z0-9-]{0,47}$/).refine(
   (value) => !['constructor', 'prototype', '__proto__'].includes(value),
@@ -64,14 +66,10 @@ const author = z.object({
   presentation: presentationSpecSchema.optional(),
 }).strict();
 const homeSection = z.discriminatedUnion('type', [intro, posts, topics, author]);
-const sections = z.record(homeSection).superRefine((value, context) => {
+const sections = z.record(nodeId, homeSection).superRefine((value, context) => {
   const ids = Object.keys(value);
-  if (ids.length < 1 || ids.length > 8) context.addIssue({ code: 'custom', message: 'Homepage needs 1–8 sections' });
-  for (const id of ids) {
-    const result = nodeId.safeParse(id);
-    if (!result.success) context.addIssue({ code: 'custom', path: [id], message: 'Invalid design node ID' });
-  }
-});
+  if (ids.length < MIN_HOME_SECTIONS || ids.length > MAX_HOME_SECTIONS) context.addIssue({ code: 'custom', message: 'Homepage needs 1–8 sections' });
+}).meta({ minProperties: MIN_HOME_SECTIONS, maxProperties: MAX_HOME_SECTIONS });
 
 const stack = z.object({
   layout: z.literal('stack'), sections,
@@ -160,15 +158,12 @@ const articleModule = z.discriminatedUnion('type', [
 const article = z.object({
   layout: z.enum(['reading', 'wide', 'with-aside']),
   header: z.object({ variant: z.enum(['simple', 'editorial']), presentation: presentationSpecSchema.optional() }).strict(),
-  modules: z.record(articleModule),
+  modules: z.record(nodeId, articleModule),
   regions: z.object({ beforeBody: z.array(nodeId), aside: z.array(nodeId), afterBody: z.array(nodeId) }).strict(),
   prose: z.object({ codeBlock: z.enum(['plain', 'panel']), presentation: presentationSpecSchema.optional() }).strict(),
   presentation: presentationSpecSchema.optional(),
 }).strict().superRefine((value, context) => {
   const ids = Object.keys(value.modules);
-  for (const id of ids) {
-    if (!nodeId.safeParse(id).success) context.addIssue({ code: 'custom', path: ['modules', id], message: 'Invalid design node ID' });
-  }
   const used = Object.values(value.regions).flat();
   if (new Set(used).size !== used.length || used.length !== ids.length || used.some((id) => !Object.hasOwn(value.modules, id))) {
     context.addIssue({ code: 'custom', path: ['regions'], message: 'Each article module must appear exactly once in a region' });
