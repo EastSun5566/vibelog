@@ -58,14 +58,16 @@ export function document(title: string, content: unknown, session?: AppSession, 
 }
 
 export function agentPromptEntry(prompt: string, primary = false) {
+  const promptField = <div class="field"><label for="agent-prompt">Agent prompt</label><textarea id="agent-prompt" readonly rows={4} aria-describedby="agent-prompt-help">{prompt}</textarea></div>;
   const content = <div class="stack">
     <p class="field-hint" id="agent-prompt-help">Paste this into your coding agent, approve access in your browser, then review and publish.</p>
-    <div class="field"><label for="agent-prompt">Agent prompt</label><textarea id="agent-prompt" readonly rows={4} aria-describedby="agent-prompt-help">{prompt}</textarea></div>
+    {primary ? null : promptField}
     <div class="agent-prompt-actions">
       <button class="btn" data-variant={primary ? undefined : 'outline'} type="button" data-copy-agent-prompt>Copy agent prompt</button>
       {primary ? <a class="btn" data-variant="outline" href="/auth/login">Use the editor</a> : null}
     </div>
     <output data-agent-copy-status aria-live="polite"></output>
+    {primary ? <details class="agent-prompt"><summary>View prompt</summary>{promptField}</details> : null}
   </div>;
   return primary
     ? <section class="agent-prompt agent-prompt-primary" data-agent-prompt>{content}</section>
@@ -82,9 +84,9 @@ export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: s
         {agentPrompt ? agentPromptEntry(agentPrompt, true) : <div class="landing-actions"><a class="btn" href="/auth/login">Start publishing</a></div>}
       </header>
       <ul class="landing-points">
-        <li><strong>Built for reading</strong><span>Search, feeds, and article pages are built in.</span></li>
-        <li><strong>Designed with AI</strong><span>Shape the layout, type, and colors while the blog's features stay intact.</span></li>
-        <li><strong>Publish on your terms</strong><span>Review a private preview, then go live or restore an earlier release.</span></li>
+        <li><strong>Design with AI</strong><span>Make the layout, type, and colors your own.</span></li>
+        <li><strong>Review privately</strong><span>Try changes in your draft before going live.</span></li>
+        <li><strong>Publish when ready</strong><span>You decide what readers see and when.</span></li>
       </ul>
     </section>
     <footer class="landing-footer">
@@ -131,26 +133,23 @@ export function guidePage(session?: AppSession, analytics?: AnalyticsDocumentCon
       <a class="btn" href={session ? '/editor' : '/auth/login'}>{session ? 'Open your editor' : 'Start publishing'}</a>
     </header>
     <section aria-labelledby="first-release">
-      <h2 id="first-release">Publish your first release</h2>
+      <h2 id="first-release">Get started</h2>
       <ol>
-        <li>Connect a public HackMD profile and choose a blog address.</li>
+        <li>Copy the <a href="/">agent prompt</a> or <a href={session ? '/editor' : '/auth/login'}>use the editor</a>. Connect a public HackMD profile and choose a blog address.</li>
         <li>Choose articles, set the blog details, and review the private preview.</li>
         <li>Generate a design with AI or fine-tune it, then publish when the draft is ready.</li>
       </ol>
-      <p>Only public, published HackMD notes are imported. A failed sync never replaces the last working draft or live release.</p>
+      <p>Only public, published HackMD notes are imported.</p>
     </section>
     <section aria-labelledby="updates">
-      <h2 id="updates">Update and restore safely</h2>
-      <p>Syncing rebuilds only the draft. Publishing is always explicit, and release history lets you restore an earlier live version without changing your draft.</p>
+      <h2 id="updates">Update and publish</h2>
+      <p>Sync to refresh articles in your private draft, then publish from the editor. A failed sync keeps your last working draft and live site unchanged. Release history lets you restore an earlier live version without changing the draft.</p>
     </section>
     <section aria-labelledby="blog-features">
-      <h2 id="blog-features">A complete blog from your articles</h2>
-      <p>Every build includes article search, RSS, a sitemap, and llms.txt. Readers can browse your posts; other tools can discover them through predictable URLs and per-post Markdown.</p>
-    </section>
-    <section aria-labelledby="ai-privacy">
-      <h2 id="ai-privacy">AI design and privacy</h2>
-      <p>AI chooses the layout, typography, colors, and spacing in a Presentation IR—a design specification that VibeLog validates before building. The site structure and features stay consistent while you make the look your own.</p>
-      <p>AI receives only your blog identity, content profile, current design, and prompt. Article bodies are never sent to the AI provider.</p>
+      <h2 id="blog-features">Design and built-in features</h2>
+      <p>Every blog includes search, RSS, a sitemap, llms.txt, and per-post Markdown.</p>
+      <p>AI proposes layout, typography, colors, and spacing through Presentation IR, a design specification that VibeLog validates and builds. Article routes, search, and feeds are built by VibeLog, not generated by the model.</p>
+      <p>Hosted AI receives blog details, a content profile, your saved design, and prompt—not article bodies.</p>
     </section>
   </article>, session, false, analytics);
 }
@@ -428,7 +427,6 @@ export function editorPage(input: EditorPageInput) {
   return document('Edit blog', <><p class="visually-hidden" aria-live="polite" data-page-status></p><div class="editor" data-editor-root>
     <header class="workspace-summary">
       <div>
-        <p class="workspace-kicker">Publishing workspace</p>
         <div class="workspace-title-row">
           <h1 class="workspace-title">{blog.title ?? blog.username}</h1>
           <span class="badge" data-variant={publication.variant}>{publication.label}</span>
@@ -443,7 +441,7 @@ export function editorPage(input: EditorPageInput) {
 
     <section class="preview-panel" aria-label="Blog preview">
       <div class="preview-heading">
-        <div><p class="preview-label">Draft preview</p><small class="muted">Design controls update this preview. Content changes require a sync.</small></div>
+        <div><p class="preview-label">Draft preview</p><small class="muted">Design changes preview here; sync to update articles.</small></div>
         <span class="preview-address">{blog.username}.{input.appHostname}</span>
       </div>
       <div class="preview-frame">
@@ -456,7 +454,7 @@ export function editorPage(input: EditorPageInput) {
     <section class="controls" aria-label="Blog controls">
       {input.agentPrompt ? agentPromptEntry(input.agentPrompt) : null}
       <section class="workflow-section" id="content" aria-labelledby="content-title">
-        <header class="workflow-heading"><span class="step-number" aria-hidden="true">1</span><div><h2 id="content-title">Content</h2><p>Sync public articles and choose what belongs on your blog.</p></div></header>
+        <header class="workflow-heading"><span class="step-number" aria-hidden="true">1</span><div><h2 id="content-title">Content</h2></div></header>
         <div class="card workflow-card">
           <section class="action-row">
             <div><strong>HackMD source</strong><p class="muted">{blog.lastSyncedAt ? <>Last synced <time datetime={blog.lastSyncedAt}>{new Date(blog.lastSyncedAt).toLocaleString('en')}</time></> : 'No successful sync yet.'}</p></div>
@@ -491,7 +489,7 @@ export function editorPage(input: EditorPageInput) {
                   </span>
                 </label>)}
               </fieldset> : <p class="muted">This sync contains no articles.</p>}
-              <p class="field-hint">New public articles are included by default. Your live site changes only when you publish.</p>
+              <p class="field-hint">New public articles are included by default.</p>
               <button class="btn" type="submit" disabled={busy || blog.contentManifest.length === 0} data-focus-key="selection">Save article selection</button>
               <OperationOutput operation={selectionOperation}/>
             </form></div>
@@ -522,18 +520,18 @@ export function editorPage(input: EditorPageInput) {
       </section>
 
       <section class="workflow-section" id="appearance" aria-labelledby="appearance-title">
-        <header class="workflow-heading"><span class="step-number" aria-hidden="true">2</span><div><h2 id="appearance-title">Design</h2><p>Shape the pages while VibeLog keeps every blog feature working.</p></div></header>
+        <header class="workflow-heading"><span class="step-number" aria-hidden="true">2</span><div><h2 id="appearance-title">Design</h2></div></header>
         <div class="card workflow-card">
-          <section class="theme-summary"><div><strong>{activeDesign.description}</strong><p class="muted">Current draft design</p></div><span class="badge" data-variant="neutral">{SOURCE_LABEL[activeDesign.source]}</span></section>
+          <section class="theme-summary"><div><strong>{activeDesign.description}</strong></div><span class="badge" data-variant="neutral">{SOURCE_LABEL[activeDesign.source]}</span></section>
           <form method="post" action="/actions/design/apply" data-operation data-editor-submit data-mixed-actions data-theme-studio>
             <input type="hidden" name="csrfToken" value={input.session.csrfToken}/>
             <input type="hidden" name="previewToken" value={input.previewToken}/>
             <PreviewPathInput value={input.previewPath}/>
 
             <section class="studio-primary">
-              <header><strong>Generate with AI</strong><p>Start with a direction or write your own.</p></header>
+              <header><strong>Generate with AI</strong></header>
               <div class="studio-primary-body">
-                <div class="field"><label for="prompt">Describe the reading experience</label><textarea id="prompt" name="prompt" required minlength={1} maxlength={1000} placeholder="A restrained independent magazine for long articles" aria-describedby="prompt-help"></textarea><p id="prompt-help">AI starts from your saved design. Save Fine-tune changes first. It sees blog details and a content profile, never article bodies.</p></div>
+                <div class="field"><label for="prompt">Describe the reading experience</label><textarea id="prompt" name="prompt" required minlength={1} maxlength={1000} placeholder="A restrained independent magazine for long articles" aria-describedby="prompt-help"></textarea><p id="prompt-help">Starts from your saved design.</p></div>
                 <div class="prompt-starters" aria-label="Prompt starters">
                   {['A restrained independent magazine', 'Make long articles easier to read', 'Keep it minimal but add personality', 'A dark design for night reading'].map((prompt) => <button class="btn prompt-chip" data-variant="outline" data-size="compact" type="button" data-prompt-starter={prompt}>{prompt}</button>)}
                 </div>
@@ -631,7 +629,7 @@ export function editorPage(input: EditorPageInput) {
       </section>
 
       <section class="workflow-section" id="publish" aria-labelledby="publish-title">
-        <header class="workflow-heading"><span class="step-number" aria-hidden="true">3</span><div><h2 id="publish-title">Publish</h2><p>Review the draft changes, then decide when they go live.</p></div></header>
+        <header class="workflow-heading"><span class="step-number" aria-hidden="true">3</span><div><h2 id="publish-title">Publish</h2></div></header>
         <div class="card workflow-card publish-card">
           <section><PublicationSummary blog={blog} activeDesign={activeDesign} published={published} liveDesign={liveDesign} hasChanges={hasChanges}/>
             <form class="stack" method="post" action="/actions/publish" data-operation>
