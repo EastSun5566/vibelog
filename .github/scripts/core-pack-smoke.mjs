@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const directory = await mkdtemp(join(tmpdir(), 'vibelog-core-pack-'));
@@ -10,8 +10,8 @@ const env = { ...process.env };
 delete env.NODE_PATH;
 const run = (command, args, options = {}) => execFileSync(command, args, { cwd: directory, env, stdio: 'inherit', timeout: 300_000, ...options });
 try {
-  execFileSync('pnpm', ['--filter', '@vibelog/core', 'pack', '--pack-destination', directory], { stdio: 'inherit' });
-  const archive = (await readdir(directory)).find((name) => name.endsWith('.tgz'));
+  if (!process.argv[2]) execFileSync('pnpm', ['--filter', '@vibelog/core', 'pack', '--pack-destination', directory], { stdio: 'inherit' });
+  const archive = process.argv[2] ? resolve(process.argv[2]) : (await readdir(directory)).find((name) => name.endsWith('.tgz'));
   assert(archive, 'Core tarball is missing');
   const entries = run('tar', ['-tf', archive], { encoding: 'utf8', stdio: 'pipe' }).trim().split('\n');
   for (const entry of entries) {
@@ -20,9 +20,12 @@ try {
   }
   for (const file of ['dist/index.js', 'dist/index.d.ts', 'dist/migration-v1.js', 'dist/core/render-worker.js', 'dist/core/math-plugins.js', 'dist/core/math-plugins.json', 'dist/THIRD_PARTY_NOTICES.txt', 'template/package.json', 'template/src/pages/index.astro', 'LICENSE']) assert(entries.includes(`package/${file}`), `Missing packed asset: ${file}`);
   await writeFile(join(directory, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
-  run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', join(directory, archive)]);
+  run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', resolve(directory, archive)]);
   const core = join(directory, 'node_modules/@vibelog/core');
   const pkg = JSON.parse(await readFile(join(core, 'package.json'), 'utf8'));
+  assert.equal(pkg.name, '@vibelog/core');
+  assert.notEqual(pkg.private, true);
+  assert.deepEqual(pkg.publishConfig, { access: 'public', tag: 'beta', registry: 'https://registry.npmjs.org' });
   assert.deepEqual(Object.keys(pkg.exports), ['.', './migration-v1']);
   assert(!pkg.dependencies['remark-math'] && !pkg.dependencies['rehype-katex']);
   assert(!JSON.stringify(pkg.dependencies).includes('workspace:'));

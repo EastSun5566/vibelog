@@ -21,7 +21,8 @@
         "e2e/**/*.spec.ts",
         ".github/scripts/cli-pack-smoke.mjs",
         ".github/scripts/core-pack-smoke.mjs",
-        ".github/scripts/core-pack-consumer.mjs"
+        ".github/scripts/core-pack-consumer.mjs",
+        ".github/scripts/check-core-release.mjs"
       ],
       "project": [
         "vitest.config.ts",
@@ -37,7 +38,8 @@
         "e2e/**/*.ts",
         ".github/scripts/cli-pack-smoke.mjs",
         ".github/scripts/core-pack-smoke.mjs",
-        ".github/scripts/core-pack-consumer.mjs"
+        ".github/scripts/core-pack-consumer.mjs",
+        ".github/scripts/check-core-release.mjs"
       ],
       "ignoreBinaries": ["pulumi"]
     },
