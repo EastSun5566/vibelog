@@ -606,6 +606,8 @@ test('agent pairing builds only a private draft, then the human publishes', asyn
   await expect(page.getByRole('heading', { name: 'Draft access approved' })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('agent-approved-desktop.png'), fullPage: true });
   await page.reload(); await expect(page.getByRole('heading', { name: 'Draft access approved' })).toBeVisible();
+  // Browser approval can finish before the CLI's persisted first-poll deadline.
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, (started.state.pairing?.nextPollAt ?? 0) - Date.now())));
   const resumed = await runCliProcess(['login', '--no-wait', '--origin', origin], started.state);
   expect(resumed.exitCode).toBe(0); expect(resumed.output).toEqual([expect.objectContaining({ status: 'authorized' })]);
   expect(resumed.state.pairing).toBeNull();
