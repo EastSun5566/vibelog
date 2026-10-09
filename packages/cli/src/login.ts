@@ -3,6 +3,10 @@ import { parsePairing, type PendingPairing } from './credentials.js';
 
 export async function login(client: AgentClient, noWait: boolean, write: (value: unknown) => void, pause: (ms: number) => Promise<void>, now: () => number): Promise<number> {
   const { store } = client;
+  const revoke = async (token: unknown) => {
+    if (typeof token !== 'string' || !token) return;
+    await client.fetcher(`${client.origin}/api/agent/v1/session`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` }, redirect: 'error', signal: AbortSignal.timeout(30_000) }).catch(() => undefined);
+  };
   const storageError = () => new CliError('secure_storage_unavailable', 'Enable your OS credential store before signing in.');
   await store.check().catch(() => { throw storageError(); });
   const credentials = await store.get().catch(() => { throw storageError(); });
@@ -31,6 +35,7 @@ export async function login(client: AgentClient, noWait: boolean, write: (value:
     try { pairing = parsePairing(result, client.origin); }
     catch { throw new CliError('invalid_response', 'Invalid pairing response.'); }
     pairing.expiresAt = new Date(Math.min(now() + 600_000, Date.parse(pairing.expiresAt))).toISOString();
+    pairing.nextPollAt = now() + 5000;
     await store.setPairing(pairing).catch(() => { throw storageError(); });
     if (Date.parse(pairing.expiresAt) <= now()) await expired();
     if (noWait) { approval(pairing); return 0; }
@@ -60,16 +65,22 @@ export async function login(client: AgentClient, noWait: boolean, write: (value:
       throw error;
     }
     if (result.status === 'approved') {
-      if (typeof result.token !== 'string' || !result.token || typeof result.expiresAt !== 'string' || !Number.isFinite(Date.parse(result.expiresAt)) || Date.parse(result.expiresAt) <= now()) throw new CliError('invalid_response', 'Invalid authorization response.');
+      if (typeof result.token !== 'string' || !result.token || typeof result.expiresAt !== 'string' || !Number.isFinite(Date.parse(result.expiresAt)) || Date.parse(result.expiresAt) <= now()) {
+        await revoke(result.token);
+        throw new CliError('invalid_response', 'Invalid authorization response.');
+      }
       try { await store.set({ token: result.token, expiresAt: result.expiresAt }); }
       catch {
-        await client.fetcher(`${client.origin}/api/agent/v1/session`, { method: 'DELETE', headers: { Authorization: `Bearer ${result.token}` }, redirect: 'error', signal: AbortSignal.timeout(30_000) }).catch(() => undefined);
+        await revoke(result.token);
         throw new CliError('secure_storage_unavailable', 'Could not save authorization. Revoke any remaining access in the browser, then sign in again.');
       }
       await store.deletePairing().catch(() => { throw storageError(); });
       write({ status: 'authorized', expiresAt: result.expiresAt, permission: 'draft:read-write' }); return 0;
     }
     if (result.status !== 'pending') throw new CliError('invalid_response', 'Invalid authorization response.');
+    // The server starts its polling interval while handling this request, not before it.
+    pairing.nextPollAt = now() + 5000;
+    await store.setPairing(pairing).catch(() => { throw storageError(); });
     if (noWait) { approval(pairing); return 0; }
   }
   return expired();

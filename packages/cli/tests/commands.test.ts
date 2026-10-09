@@ -52,6 +52,26 @@ describe('draft-only CLI', () => {
     expect(vi.mocked(credentials.set)).toHaveBeenCalledWith({ token: 'private-grant', expiresAt: '2099-01-01' });
     expect(JSON.stringify(write.mock.calls)).not.toContain('private-grant'); expect(JSON.stringify(write.mock.calls)).not.toContain(pairingResponse.deviceCode);
   });
+  it('waits after creation and pending responses even when the transport has latency', async () => {
+    const credentials = store(false); const polls: number[] = []; const delays: number[] = []; let time = 0;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((url) => {
+      time += 200;
+      if (url === 'https://vibelog.org/api/agent/v1/pairings') return Promise.resolve(Response.json(pairingResponse));
+      polls.push(time);
+      return Promise.resolve(Response.json(polls.length === 1 ? { status: 'pending' } : { status: 'approved', token: 'private-grant', expiresAt: '2099-01-01' }));
+    });
+    expect(await run(['login'], { store: credentials, fetcher, write: vi.fn(), now: () => time, sleep: (ms) => { time += ms; delays.push(ms); return Promise.resolve(); } })).toBe(0);
+    expect(delays).toEqual([5000, 5000]); expect(polls).toEqual([5400, 10_600]);
+  });
+  it('revokes an approved grant when its expiry is invalid without saving or printing it', async () => {
+    const credentials = store(false); const write = vi.fn(); await credentials.setPairing(pairingResponse);
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ status: 'approved', token: 'private-grant', expiresAt: 'not-a-date' }))
+      .mockRejectedValueOnce(new Error('revoke interrupted'));
+    await expect(run(['login', '--no-wait'], { store: credentials, fetcher, write })).rejects.toMatchObject({ code: 'invalid_response' });
+    expect(fetcher.mock.calls[1]?.[0]).toBe('https://vibelog.org/api/agent/v1/session');
+    expect(fetcher.mock.calls[1]?.[1]).toMatchObject({ method: 'DELETE', redirect: 'error', headers: { Authorization: 'Bearer private-grant' } });
+    expect(credentials.set).not.toHaveBeenCalled(); expect(await credentials.getPairing()).not.toBeNull(); expect(write).not.toHaveBeenCalled();
+  });
   it('starts immediately, resumes the same pairing across invocations and only clears it after saving the grant', async () => {
     const credentials = store(false); const write = vi.fn(); const pause = vi.fn(); let time = 0;
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(pairingResponse))
@@ -60,12 +80,15 @@ describe('draft-only CLI', () => {
     const runtime = { store: credentials, fetcher, write, sleep: pause, now: () => time };
     expect(await run(['login', '--no-wait'], runtime)).toBe(0);
     expect(fetcher).toHaveBeenCalledTimes(1); expect(pause).not.toHaveBeenCalled();
-    expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'approval_required', expiresAt: '1970-01-01T00:10:00.000Z' }));
+    expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'approval_required', expiresAt: '1970-01-01T00:10:00.000Z', retryAfterSeconds: 5 }));
+    expect(await run(['login', '--no-wait'], runtime)).toBe(0);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    time = 5000;
     expect(await run(['login', '--no-wait'], runtime)).toBe(0);
     expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'approval_required', retryAfterSeconds: 5 }));
     // A rapid rerun respects the persisted polling interval without another request.
     expect(await run(['login', '--no-wait'], runtime)).toBe(0); expect(fetcher).toHaveBeenCalledTimes(2);
-    time = 5000;
+    time = 10_000;
     expect(await run(['login', '--no-wait'], runtime)).toBe(0);
     expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'authorized' }));
     expect(await credentials.getPairing()).toBeNull(); expect(pause).not.toHaveBeenCalled();
