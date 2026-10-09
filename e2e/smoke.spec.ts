@@ -1,5 +1,20 @@
 import type { BlogDesignSpecV2 } from '@vibelog/core';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { fork } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import type { CliProcessResult, CliProcessState } from './cli-process.js';
+
+async function runCliProcess(args: string[], state: CliProcessState = { credentials: null, pairing: null }): Promise<CliProcessResult> {
+  return new Promise((resolve, reject) => {
+    const child = fork(fileURLToPath(new URL('./cli-process.ts', import.meta.url)), { execArgv: [], stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+    const timeout = setTimeout(() => { child.kill(); reject(new Error('CLI test process timed out.')); }, 40_000);
+    let result: CliProcessResult | undefined;
+    child.once('error', () => { clearTimeout(timeout); reject(new Error('CLI test process failed.')); });
+    child.once('message', (value: CliProcessResult) => { result = value; });
+    child.once('exit', (code) => { clearTimeout(timeout); if (code === 0 && result) resolve(result); else reject(new Error('CLI test process failed.')); });
+    child.send({ args, state });
+  });
+}
 
 interface MailpitMessageSummary { id?: string; ID?: string }
 interface MailpitMessage { text?: string; Text?: string }
@@ -551,9 +566,11 @@ test('agent pairing builds only a private draft, then the human publishes', asyn
   const mailpitUrl = process.env.E2E_MAILPIT_URL;
   if (!origin || !mailpitUrl) throw new Error('E2E origins are required');
   const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
-  const pairingResponse = await request.post('/api/agent/v1/pairings', { data: {} });
-  expect(pairingResponse.status()).toBe(201);
-  const pairing = await pairingResponse.json() as { authorizationUrl: string; userCode: string; deviceCode: string };
+  const started = await runCliProcess(['login', '--no-wait', '--origin', origin]);
+  expect(started.exitCode).toBe(0);
+  const approval = started.output[0] as { status: string; authorizationUrl: string; userCode: string };
+  expect(approval.status).toBe('approval_required');
+  const pairing = approval;
   await page.goto(pairing.authorizationUrl); await expect(page).toHaveURL(/\/auth\/login\?returnTo=/u);
   await expect(page.getByText('Sign in first, then approve your agent’s access to your private draft.')).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 }); await expectNoHorizontalOverflow(page);
@@ -589,16 +606,22 @@ test('agent pairing builds only a private draft, then the human publishes', asyn
   await expect(page.getByRole('heading', { name: 'Draft access approved' })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('agent-approved-desktop.png'), fullPage: true });
   await page.reload(); await expect(page.getByRole('heading', { name: 'Draft access approved' })).toBeVisible();
-  const tokenResponse = await request.post('/api/agent/v1/pairings/token', { data: { deviceCode: pairing.deviceCode } });
-  expect(tokenResponse.ok()).toBe(true);
-  const credentials = await tokenResponse.json() as { token: string; expiresAt: string };
+  // Browser approval can finish before the CLI's persisted first-poll deadline.
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, (started.state.pairing?.nextPollAt ?? 0) - Date.now())));
+  const resumed = await runCliProcess(['login', '--no-wait', '--origin', origin], started.state);
+  expect(resumed.exitCode).toBe(0); expect(resumed.output).toEqual([expect.objectContaining({ status: 'authorized' })]);
+  expect(resumed.state.pairing).toBeNull();
+  const credentials = resumed.state.credentials; if (!credentials) throw new Error('Missing test authorization');
+  expect(JSON.stringify([...started.output, ...resumed.output])).not.toContain(credentials.token);
+  const privateDeviceCode = started.state.pairing?.deviceCode; if (!privateDeviceCode) throw new Error('Missing test pairing');
+  expect(JSON.stringify([...started.output, ...resumed.output])).not.toContain(privateDeviceCode);
   const headers = { authorization: `Bearer ${credentials.token}` };
   await page.reload(); await expect(page.getByRole('heading', { name: 'Agent connected' })).toBeVisible();
   const unrelatedPairing = await request.post('/api/agent/v1/pairings', { data: {} });
   const denied = await unrelatedPairing.json() as { authorizationUrl: string; userCode: string };
   await page.goto(denied.authorizationUrl); await page.getByRole('button', { name: 'Deny', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
-  expect((await request.post('/api/agent/v1/pairings/token', { data: { deviceCode: pairing.deviceCode } })).status()).toBe(403);
+  expect((await request.post('/api/agent/v1/pairings/token', { data: { deviceCode: privateDeviceCode } })).status()).toBe(403);
   expect((await page.request.get('/api/agent/v1/context')).status()).toBe(401);
   expect((await request.post('/actions/publish', { headers, data: {}, maxRedirects: 0 })).status()).toBe(302);
   expect(await (await request.get('/api/agent/v1/context', { headers })).json()).toMatchObject({ blog: null, sourceReady: false, draftReady: false, nextActions: [{ action: 'connect' }] });
@@ -606,10 +629,28 @@ test('agent pairing builds only a private draft, then the human publishes', asyn
   expect(session.permission).toBe('draft:read-write'); expect(Date.parse(session.expiresAt)).toBeGreaterThan(Date.now());
   const username = `agent-${String(Date.now())}`;
   const key = `connect-${String(Date.now())}-request`;
+  const failedSetup = await request.post('/api/agent/v1/connect', { headers: { ...headers, 'Idempotency-Key': `wrong-profile-${String(Date.now())}` }, data: { username: `wrong-${String(Date.now())}`, hackmdUsername: 'missing-public-profile', language: 'en' } });
+  expect(failedSetup.status()).toBe(202);
+  const failedWork = await failedSetup.json() as { operationId: string };
+  await expect.poll(async () => (await (await request.get(`/api/agent/v1/operations/${failedWork.operationId}`, { headers })).json() as { status: string }).status, { timeout: 30_000, intervals: [1000] }).toBe('failed');
+  const failedContext = await (await request.get('/api/agent/v1/context', { headers })).json() as { stateVersion: string };
+  await page.goto('/onboarding');
+  await expect(page.getByLabel('Blog address')).toBeEditable();
+  await expect(page.locator('input[name="stateVersion"]')).toHaveValue(failedContext.stateVersion);
+  await page.setViewportSize({ width: 390, height: 844 }); await expectNoHorizontalOverflow(page);
+  await page.getByLabel('Blog address').focus(); await expect(page.getByLabel('Blog address')).toBeFocused();
+  await page.getByLabel('Blog address').fill('alice');
+  await page.getByLabel('HackMD username').fill('alice-hackmd');
+  await page.getByRole('button', { name: 'Retry sync', exact: true }).click();
+  await expect(page.locator('[data-blog-address-error]')).toHaveText('That blog address is already taken. Choose another one.');
+  await expect(page.getByLabel('Blog address')).toHaveValue('alice');
+  expect(await (await request.get('/api/agent/v1/context', { headers })).json()).toMatchObject({ stateVersion: failedContext.stateVersion, sourceReady: false, draftReady: false, operationId: null });
+  await page.setViewportSize({ width: 1280, height: 720 });
   const connect = { username, hackmdUsername: 'alice-hackmd', language: 'en' };
-  const result = await request.post('/api/agent/v1/connect', { headers: { ...headers, 'Idempotency-Key': key }, data: connect });
+  const recovery = { ...connect, stateVersion: failedContext.stateVersion };
+  const result = await request.post('/api/agent/v1/connect', { headers: { ...headers, 'Idempotency-Key': key }, data: recovery });
   expect(result.status()).toBe(202); const accepted = await result.json() as { operationId: string };
-  const replay = await request.post('/api/agent/v1/connect', { headers: { ...headers, 'Idempotency-Key': key }, data: connect });
+  const replay = await request.post('/api/agent/v1/connect', { headers: { ...headers, 'Idempotency-Key': key }, data: recovery });
   expect(await replay.json()).toEqual(accepted);
   await expect.poll(async () => (await (await request.get(`/api/agent/v1/operations/${accepted.operationId}`, { headers })).json() as { status: string }).status, { timeout: 90_000, intervals: [5000] }).toBe('succeeded');
   const context = await (await request.get('/api/agent/v1/context', { headers })).json() as { stateVersion: string; design: BlogDesignSpecV2; editorUrl: string };

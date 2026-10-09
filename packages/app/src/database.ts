@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
@@ -35,6 +35,18 @@ export interface TransientCleanupResult { previewSessions: number; operations: n
 export class AiQuotaExceededError extends Error { constructor(readonly retryAfter: number) { super('AI daily quota exceeded'); this.name = 'AiQuotaExceededError'; } }
 export class BlogAddressTakenError extends Error { constructor(readonly username: string) { super(`Blog address is already taken: ${username}`); this.name = 'BlogAddressTakenError'; } }
 export class BlogAlreadyExistsError extends Error { constructor() { super('A blog is already connected'); this.name = 'BlogAlreadyExistsError'; } }
+export class BlogConnectionConflictError extends Error {
+  constructor(readonly code: 'source_locked' | 'state_changed' | 'operation_in_progress' | 'deletion_in_progress') {
+    super({ source_locked: 'The connected profile and address cannot change after a successful sync.', state_changed: 'The blog changed. Refresh its context before retrying.', operation_in_progress: 'Wait for the current operation before retrying.', deletion_in_progress: 'Finish deleting the blog first.' }[code]);
+    this.name = 'BlogConnectionConflictError';
+  }
+}
+export function canRecoverInitialSync(blog: Pick<BlogRecord, 'state' | 'contentVersion' | 'sourceArtifactId' | 'draftArtifactId'>): boolean {
+  return blog.state !== 'deleting' && blog.contentVersion === 0 && !blog.sourceArtifactId && !blog.draftArtifactId;
+}
+export function blogStateVersion(blog: BlogRecord): string {
+  return createHash('sha256').update(JSON.stringify([blog.id, blog.sourceArtifactId, blog.draftArtifactId, blog.draftDesignRevisionId, blog.contentVersion, blog.state, blog.username, blog.hackmdUsername, blog.language, blog.updatedAt])).digest('base64url');
+}
 
 export const MAX_OPERATION_ATTEMPTS = 3;
 const OPERATION_LEASE_SECONDS = 35 * 60;
@@ -63,6 +75,10 @@ function quotaWindow(at: Date): { date: string; retryAfter: number } { const nex
 function newOperation(userId: string, blogId: string, type: OperationType, payload: Record<string, unknown>) {
   const timestamp = new Date();
   return { id: randomUUID(), userId, blogId, type, status: 'queued' as const, payload, result: null, errorMessage: null, attempts: 0, lockedAt: null, leaseExpiresAt: null, createdAt: timestamp, updatedAt: timestamp };
+}
+function hasBlogAddressConflict(error: unknown): boolean {
+  const cause = error instanceof Error && error.cause ? error.cause : error;
+  return Boolean(cause && typeof cause === 'object' && 'code' in cause && cause.code === '23505' && 'constraint' in cause && cause.constraint === 'blogs_username_unique');
 }
 function operationMessage(operationId: string): OperationMessage { return { version: 1, operationId, traceId: randomUUID(), createdAt: new Date().toISOString() }; }
 async function insertOutbox(tx: NodePgDatabase<typeof schema>, operationId: string): Promise<void> {
@@ -119,16 +135,27 @@ export class AppDatabase {
   async getBlogForUser(userId: string): Promise<BlogRecord | null> { const [row] = await this.db.select().from(schema.blogs).where(eq(schema.blogs.userId, userId)); return row ? mapBlog(row) : null; }
   async getBlog(id: string): Promise<BlogRecord | null> { const [row] = await this.db.select().from(schema.blogs).where(eq(schema.blogs.id, id)); return row ? mapBlog(row) : null; }
   async getBlogByUsername(username: string): Promise<BlogRecord | null> { const [row] = await this.db.select().from(schema.blogs).where(eq(schema.blogs.username, username)); return row ? mapBlog(row) : null; }
-  async retryInitialSync(userId: string, hackmdUsername: string, language: string): Promise<OperationRecord> {
+  async retryInitialSync(userId: string, input: { username: string; hackmdUsername: string; language: string; stateVersion?: string }): Promise<OperationRecord> {
     return this.db.transaction(async (tx) => {
-      const [blog] = await tx.select().from(schema.blogs).where(eq(schema.blogs.userId, userId));
+      await tx.select({ id: schema.user.id }).from(schema.user).where(eq(schema.user.id, userId)).for('no key update');
+      const [row] = await tx.select().from(schema.blogs).where(eq(schema.blogs.userId, userId)).for('update');
+      const blog = row ? mapBlog(row) : null;
       if (!blog) throw new Error('Blog not found');
-      if (blog.draftArtifactId) throw new Error('Blog already has synced content');
+      if (blog.state === 'deleting') throw new BlogConnectionConflictError('deletion_in_progress');
+      const [release] = await tx.select({ id: schema.publishedReleases.id }).from(schema.publishedReleases).where(eq(schema.publishedReleases.blogId, blog.id)).limit(1);
+      if (!canRecoverInitialSync(blog) || release) throw new BlogConnectionConflictError('source_locked');
       const [active] = await tx.select({ id: schema.operations.id }).from(schema.operations).where(and(eq(schema.operations.blogId, blog.id), inArray(schema.operations.status, ['queued', 'running'])));
-      if (active) throw new Error('Blog already has an active operation');
+      if (active) throw new BlogConnectionConflictError('operation_in_progress');
+      const changed = input.username !== blog.username || input.hackmdUsername !== blog.hackmdUsername || input.language !== blog.language;
+      if ((changed || input.stateVersion !== undefined) && input.stateVersion !== blogStateVersion(blog)) throw new BlogConnectionConflictError('state_changed');
       const op = newOperation(userId, blog.id, 'sync', { intent: 'content', excludedSlugs: [] });
-      await tx.update(schema.blogs).set({ hackmdUsername, language, state: 'syncing', lastError: null, updatedAt: new Date() }).where(eq(schema.blogs.id, blog.id));
-      const [row] = await tx.insert(schema.operations).values(op).returning(); await insertOutbox(tx, row.id); return mapOperation(row);
+      try {
+        await tx.update(schema.blogs).set({ username: input.username, hackmdUsername: input.hackmdUsername, language: input.language, state: 'syncing', lastError: null, updatedAt: new Date() }).where(eq(schema.blogs.id, blog.id));
+      } catch (error) {
+        if (hasBlogAddressConflict(error)) throw new BlogAddressTakenError(input.username);
+        throw error;
+      }
+      const [operation] = await tx.insert(schema.operations).values(op).returning(); await insertOutbox(tx, operation.id); return mapOperation(operation);
     });
   }
   async createArtifact(blogId: string, kind: 'source' | 'draft' | 'release', id = randomUUID()): Promise<ArtifactRecord> {

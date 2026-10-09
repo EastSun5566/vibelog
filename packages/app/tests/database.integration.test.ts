@@ -18,7 +18,7 @@ import { agentRoutes } from '../src/agent/routes.js';
 import { jsonError, requestContext } from '../src/http.js';
 import { agentDailyUsage, agentGrants, agentPairings, agentRequests } from '../src/schema.js';
 import { handleOperationTask } from '../src/adapters/cloud-tasks-transport.js';
-import { aiDailyUsage, blogs, operationOutbox, operations, previewSessions, rateLimit, user } from '../src/schema.js';
+import { aiDailyUsage, blogs, operationOutbox, operations, previewSessions, publishedReleases, rateLimit, user } from '../src/schema.js';
 
 const url = process.env.TEST_DATABASE_URL;
 describe.skipIf(!url)('PostgreSQL operation repository', () => {
@@ -467,7 +467,7 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     expect(await database.db.select().from(agentRequests).where(eq(agentRequests.userId, id))).toHaveLength(1);
     expect((await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id)))[0]?.count).toBe(1);
   });
-  it('returns a source conflict instead of 500 when first-time browser bootstrap wins', async () => {
+  it('returns an operation conflict instead of 500 when first-time browser bootstrap wins', async () => {
     const id = await owner(); const approved = await grant(id); const username = `browser-wins-${id.slice(0, 8)}`;
     let markLocked: ((pid: number) => void) | undefined; let releaseBrowser: (() => void) | undefined;
     const locked = new Promise<number>((resolve) => { markLocked = resolve; });
@@ -492,10 +492,79 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     } finally { releaseBrowser?.(); }
     const [created, result] = await Promise.all([browser, response]);
     expect(waiting).toBe(true); expect(result.status).toBe(409);
-    expect(await result.json()).toMatchObject({ error: { code: 'source_locked' } });
+    expect(await result.json()).toMatchObject({ error: { code: 'operation_in_progress' } });
     expect((await database.getBlogForUser(id))?.id).toBe(created.blog.id);
     expect(await database.db.select().from(agentRequests).where(eq(agentRequests.userId, id))).toHaveLength(0);
     expect(await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id))).toHaveLength(0);
+  });
+  it('corrects a failed first sync atomically, rejects stale requests and replays the original operation', async () => {
+    const id = await owner(); const approved = await grant(id);
+    const { blog, operation } = await database.createBlog(id, `wrong-${id.slice(0, 8)}`, 'wrong-profile');
+    await database.db.update(operations).set({ status: 'failed' }).where(eq(operations.id, operation.id));
+    await database.db.update(blogs).set({ state: 'failed' }).where(eq(blogs.id, blog.id));
+    const router = agentRoutes(database, { dispatch: () => Promise.resolve(0) }, 'https://vibelog.org', { betterAuthSecret: 'test-secret' });
+    const headers = { Authorization: `Bearer ${approved.token}`, 'Content-Type': 'application/json' };
+    const initial = await database.getBlog(blog.id); if (!initial) throw new Error('Missing blog');
+    const input = { username: `fixed-${id.slice(0, 8)}`, hackmdUsername: 'alice', language: 'zh-Hant', stateVersion: stateVersion(initial) };
+    const connect = (key: string, body: unknown) => router.request('/connect', { method: 'POST', headers: { ...headers, 'Idempotency-Key': key }, body: JSON.stringify(body) });
+    const missing = await connect(randomUUID(), { ...input, stateVersion: undefined });
+    expect(missing.status).toBe(409); expect(await missing.json()).toHaveProperty('error.code', 'state_changed');
+    expect(await database.getBlog(blog.id)).toEqual(initial);
+    const key = randomUUID(); const result = await connect(key, input);
+    expect(result.status).toBe(202); const accepted = await result.json() as { operationId: string };
+    expect(await (await connect(key, input)).json()).toEqual(accepted);
+    expect(await database.getBlog(blog.id)).toMatchObject({ username: input.username, hackmdUsername: 'alice', language: 'zh-Hant', state: 'syncing', contentVersion: 0 });
+    expect((await database.listPendingOutbox()).filter((event) => event.operationId === accepted.operationId)).toHaveLength(1);
+    expect(await database.listDesignRevisions(blog.id)).toHaveLength(1);
+    expect((await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id)))[0]?.count).toBe(1);
+    await database.db.update(operations).set({ status: 'failed' }).where(eq(operations.id, accepted.operationId));
+    await database.db.update(blogs).set({ state: 'failed' }).where(eq(blogs.id, blog.id));
+    const stale = await connect(randomUUID(), { ...input, username: initial.username, hackmdUsername: initial.hackmdUsername, language: initial.language });
+    expect(stale.status).toBe(409); expect(await stale.json()).toHaveProperty('error.code', 'state_changed');
+    expect((await database.getBlog(blog.id))?.username).toBe(input.username);
+    expect(await database.db.select().from(agentRequests).where(eq(agentRequests.userId, id))).toHaveLength(1);
+  });
+  it('rolls back address collisions without work or quota and serializes browser/agent corrections', async () => {
+    const id = await owner(); const other = await owner(); const approved = await grant(id);
+    const { blog, operation } = await database.createBlog(id, `repair-${id.slice(0, 8)}`, 'wrong-profile');
+    const taken = `taken-${other.slice(0, 8)}`; await database.createBlog(other, taken, 'alice');
+    await database.db.update(operations).set({ status: 'failed' }).where(eq(operations.id, operation.id));
+    await database.db.update(blogs).set({ state: 'failed' }).where(eq(blogs.id, blog.id));
+    const initial = await database.getBlog(blog.id); if (!initial) throw new Error('Missing blog');
+    const input = { username: taken, hackmdUsername: 'alice', language: 'en', stateVersion: stateVersion(initial) };
+    const router = agentRoutes(database, { dispatch: () => Promise.resolve(0) }, 'https://vibelog.org', { betterAuthSecret: 'test-secret' });
+    const headers = { Authorization: `Bearer ${approved.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() };
+    const collision = await router.request('/connect', { method: 'POST', headers, body: JSON.stringify(input) });
+    expect(collision.status).toBe(409); expect(await collision.json()).toHaveProperty('error.code', 'blog_address_taken');
+    expect(await database.getBlog(blog.id)).toEqual(initial);
+    expect(await database.getActiveOperation(blog.id, id)).toBeNull();
+    expect(await database.db.select().from(agentRequests).where(eq(agentRequests.userId, id))).toHaveLength(0);
+    expect(await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id))).toHaveLength(0);
+    const corrected = { ...input, username: `correct-${id.slice(0, 8)}` };
+    const [browser, agent] = await Promise.all([
+      database.retryInitialSync(id, corrected).then((value) => value, (error: unknown) => error),
+      router.request('/connect', { method: 'POST', headers: { ...headers, 'Idempotency-Key': randomUUID() }, body: JSON.stringify(corrected) }),
+    ]);
+    expect((await database.db.select().from(operations).where(and(eq(operations.blogId, blog.id), eq(operations.status, 'queued'))))).toHaveLength(1);
+    expect((browser instanceof Error ? 0 : 1) + (agent.status === 202 ? 1 : 0)).toBe(1);
+    if (agent.status !== 202) { expect(agent.status).toBe(409); expect(await agent.json()).toHaveProperty('error.code', 'operation_in_progress'); }
+  });
+  it('refuses recovery of a previously successful, partially ready, published or deleting blog', async () => {
+    const id = await owner(); const { blog, operation } = await database.createBlog(id, `locked-${id.slice(0, 8)}`, 'alice');
+    await database.db.update(operations).set({ status: 'failed' }).where(eq(operations.id, operation.id));
+    const input = { username: blog.username, hackmdUsername: 'other-profile', language: 'en' };
+    for (const condition of [{ state: 'failed' as const, contentVersion: 1 }, { contentVersion: 0, sourceArtifactId: randomUUID() }, { sourceArtifactId: null, draftArtifactId: randomUUID() }, { draftArtifactId: null, state: 'deleting' as const }]) {
+      await database.db.update(blogs).set(condition).where(eq(blogs.id, blog.id));
+      const current = await database.getBlog(blog.id); if (!current) throw new Error('Missing blog');
+      await expect(database.retryInitialSync(id, { ...input, stateVersion: stateVersion(current) })).rejects.toMatchObject({ code: current.state === 'deleting' ? 'deletion_in_progress' : 'source_locked' });
+    }
+    await database.db.update(blogs).set({ state: 'failed', contentVersion: 0, sourceArtifactId: null, draftArtifactId: null }).where(eq(blogs.id, blog.id));
+    const artifact = await database.createArtifact(blog.id, 'release');
+    const design = await database.getActiveDesign(blog.id); if (!design) throw new Error('Missing design');
+    await database.db.insert(publishedReleases).values({ id: randomUUID(), blogId: blog.id, themeRevisionId: design.id, contentVersion: 0, artifactId: artifact.id, active: false });
+    const current = await database.getBlog(blog.id); if (!current) throw new Error('Missing blog');
+    await expect(database.retryInitialSync(id, { ...input, stateVersion: stateVersion(current) })).rejects.toMatchObject({ code: 'source_locked' });
+    expect(await database.getActiveOperation(blog.id, id)).toBeNull();
   });
   it('cooperates with concurrent browser admission without blocking its user foreign key', async () => {
     const id = await owner(); const { blog, operation } = await database.createBlog(id, `concurrent-${id.slice(0, 8)}`, 'alice');

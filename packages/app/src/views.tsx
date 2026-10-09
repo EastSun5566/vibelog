@@ -1,6 +1,7 @@
 import type { AppSession } from './auth.js';
 import type { BlogDesignSpecV2, PresentationSpec } from '@vibelog/core';
 import type { BlogRecord, DesignRevisionRecord, OperationRecord, PublishedReleaseRecord, SyncedPostSummary } from './database.js';
+import { blogStateVersion, canRecoverInitialSync } from './database.js';
 import { syncOperationIntent } from './blog-sync.js';
 import { operationLabel, operationMessage, operationProgress } from './operation-status.js';
 import { editorUrlWithPreviewPath } from './preview-path.js';
@@ -233,7 +234,8 @@ export function onboardingPage(session: AppSession, blog: BlogRecord | null, ope
     {failed ? <div id="hackmd-error" class="alert" data-variant="destructive" role="alert"><section>{failed}</section></div> : null}
     <form class="stack" method="post" action="/actions/blog/connect" data-operation data-success-url="/editor" aria-busy={busy ? 'true' : undefined}>
       <input type="hidden" name="csrfToken" value={session.csrfToken}/>
-      <div class="field"><label for="username">Blog address</label><input id="username" name="username" required minlength={3} maxlength={32} pattern={'[a-z0-9](?:[a-z0-9\\-]{1,30}[a-z0-9])'} value={blog?.username ?? ''} readonly={Boolean(blog)} autocomplete="off" autocapitalize="none" spellcheck={false} data-blog-handle aria-errormessage="blog-address-error"/><span id="blog-address-error" class="inline-error" data-blog-address-error hidden></span><p>Your site will be <strong data-blog-hostname data-host-suffix={appHostname}>{blog?.username ?? 'your-name'}.{appHostname}</strong>.</p></div>
+      {blog ? <input type="hidden" name="stateVersion" value={blogStateVersion(blog)}/> : null}
+      <div class="field"><label for="username">Blog address</label><input id="username" name="username" required minlength={3} maxlength={32} pattern={'[a-z0-9](?:[a-z0-9\\-]{1,30}[a-z0-9])'} value={blog?.username ?? ''} readonly={Boolean(blog && (!canRecoverInitialSync(blog) || busy))} autocomplete="off" autocapitalize="none" spellcheck={false} data-blog-handle aria-errormessage="blog-address-error"/><span id="blog-address-error" class="inline-error" data-blog-address-error hidden></span><p>Your site will be <strong data-blog-hostname data-host-suffix={appHostname}>{blog?.username ?? 'your-name'}.{appHostname}</strong>.</p></div>
       <div class="field"><label for="hackmdUsername">HackMD username</label><input
         id="hackmdUsername"
         name="hackmdUsername"

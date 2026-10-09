@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { blogDesignSpecV2Schema, normalizeDesignV2 } from '@vibelog/core';
 import type { BlogRecord } from '../database.js';
+import { canRecoverInitialSync } from '../database.js';
+export { blogStateVersion as stateVersion } from '../database.js';
 
 export const AGENT_API = '/api/agent/v1';
 export const AGENT_TOKEN_SECONDS = 12 * 60 * 60;
@@ -13,17 +15,13 @@ export type AgentNextAction =
   | { action: 'design' | 'identity' | 'selection' | 'sync' }
   | { action: 'open_editor'; reason?: 'deletion_in_progress' | 'draft_recovery_required' };
 
-export function agentNextActions(blog: Pick<BlogRecord, 'state' | 'sourceArtifactId' | 'draftArtifactId'> | null, operationId: string | null): AgentNextAction[] {
+export function agentNextActions(blog: Pick<BlogRecord, 'state' | 'sourceArtifactId' | 'draftArtifactId' | 'contentVersion'> | null, operationId: string | null): AgentNextAction[] {
   if (!blog) return [{ action: 'connect' }];
   if (blog.state === 'deleting') return [{ action: 'open_editor', reason: 'deletion_in_progress' }];
   if (operationId) return [{ action: 'wait', operationId }];
-  if (!blog.sourceArtifactId && !blog.draftArtifactId) return [{ action: 'connect', reason: 'initial_sync_recovery' }];
+  if (canRecoverInitialSync(blog)) return [{ action: 'connect', reason: 'initial_sync_recovery' }];
   if (!blog.sourceArtifactId || !blog.draftArtifactId) return [{ action: 'open_editor', reason: 'draft_recovery_required' }];
   return [{ action: 'design' }, { action: 'identity' }, { action: 'selection' }, { action: 'sync' }, { action: 'open_editor' }];
-}
-
-export function stateVersion(blog: BlogRecord): string {
-  return createHash('sha256').update(JSON.stringify([blog.id, blog.sourceArtifactId, blog.draftArtifactId, blog.draftDesignRevisionId, blog.contentVersion, blog.state])).digest('base64url');
 }
 
 function canonical(value: unknown): unknown {

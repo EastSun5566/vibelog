@@ -14,7 +14,7 @@ import { findArtifactObject } from './artifact-serving.js';
 import { createAuth, emailRateLimitKey, readSession, type AppVariables } from './auth.js';
 import { blogIdentitySchema, blogLanguageSchema } from './blog-sync.js';
 import { loadAppConfig, type AppConfig } from './config.js';
-import { AiQuotaExceededError, AppDatabase, BlogAddressTakenError, BlogAlreadyExistsError, type BlogRecord, type OperationRecord, type OperationType } from './database.js';
+import { AiQuotaExceededError, AppDatabase, BlogAddressTakenError, BlogAlreadyExistsError, BlogConnectionConflictError, type BlogRecord, type OperationRecord, type OperationType } from './database.js';
 import { AppError, assertCsrfToken, assertMutationOrigin, jsonError, requestContext } from './http.js';
 import type { OperationDispatcher } from './ports/operation-queue.js';
 import { operationMessage, operationProgress } from './operation-status.js';
@@ -220,10 +220,12 @@ export function createApp(options: CreateAppOptions) {
     const body = await mutationBody(c); const input = z.object({ username: handleInput, hackmdUsername: hackmdInput.shape.hackmdUsername, language: blogLanguageSchema }).safeParse({ username: formValue(body, 'username'), hackmdUsername: formValue(body, 'hackmdUsername'), language: formValue(body, 'language') });
     if (!input.success || RESERVED.has(input.data.username)) throw new AppError('invalid_blog_source', 'Check the blog handle, HackMD username, and language.', 400);
     const session = c.get('session'); const blog = await database.getBlogForUser(session.user.id); if (blog?.draftArtifactId) throw new AppError('source_locked', 'The HackMD source cannot change after the first successful sync.', 409);
+    if (!blog && formValue(body, 'stateVersion')) throw new AppError('state_changed', 'The blog changed. Refresh before connecting.', 409);
     let operation: OperationRecord;
     try {
-      operation = blog ? await database.retryInitialSync(session.user.id, input.data.hackmdUsername, input.data.language) : (await database.createBlog(session.user.id, input.data.username, input.data.hackmdUsername, input.data.language)).operation;
+      operation = blog ? await database.retryInitialSync(session.user.id, { ...input.data, stateVersion: formValue(body, 'stateVersion') }) : (await database.createBlog(session.user.id, input.data.username, input.data.hackmdUsername, input.data.language)).operation;
     } catch (error) {
+      if (error instanceof BlogConnectionConflictError) throw new AppError(error.code, error.message, 409);
       if (error instanceof BlogAddressTakenError) throw new AppError('blog_address_taken', 'That blog address is already taken. Choose another one.', 409);
       if (error instanceof BlogAlreadyExistsError) throw new AppError('blog_already_connected', 'A blog was connected by another request. Refresh to continue.', 409);
       throw error;
