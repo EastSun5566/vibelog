@@ -41,8 +41,10 @@ Core uses the independent `core-v<version>` tag and
 [`core-release.yml`](https://github.com/EastSun5566/vibelog/blob/main/.github/workflows/core-release.yml).
 It does not deploy production, publish the CLI, or create a monorepo release.
 
-After the workflow is merged, configure a trusted publisher for **`@vibelog/core`**
-in its npm package settings (the CLI's configuration is separate):
+After the workflow is merged and shortly before the approved first release,
+configure a trusted publisher for **`@vibelog/core`** in its npm package settings
+(the CLI's configuration is separate). The first successful publish must occur
+within two days; otherwise delete the expired connection and create a new one:
 
 - Organization or user: `EastSun5566`
 - Repository: `vibelog`
@@ -51,6 +53,9 @@ in its npm package settings (the CLI's configuration is separate):
 - Allow direct `npm publish`; no `npm dist-tag` permission is needed.
 
 Use GitHub-hosted runners and OIDC; do not add an npm token to GitHub secrets.
+After verifying the first OIDC publish, set **Publishing access** to
+**Require two-factor authentication and disallow tokens**. This blocks traditional
+token publishing without affecting the trusted publisher.
 The workflow requires the tagged commit to be on `main` with successful CI for
 that exact SHA. Only after checking that gate and obtaining release approval,
 create and push an annotated `core-v0.11.2` tag. Do not use `v0.11.2`, which belongs
