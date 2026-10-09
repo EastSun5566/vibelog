@@ -1,7 +1,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { checkCoreRelease } from '../../../.github/scripts/check-core-release.mjs';
-import { waitForCoreRelease } from '../../../.github/scripts/wait-core-release.mjs';
+import { createHash } from 'node:crypto';
+import { checkNpmRelease, verifyNpmRelease, npmJson } from '../../../.github/scripts/npm-release.mjs';
+import { waitForNpmRelease } from '../../../.github/scripts/wait-npm-release.mjs';
 
 const workflows = new URL('../../../.github/workflows/', import.meta.url);
 describe('pull-request credential boundary', () => {
@@ -21,33 +22,66 @@ describe('pull-request credential boundary', () => {
   });
 });
 
-describe('independent core publishing boundary', () => {
-  const pkg = { name: '@vibelog/core', version: '1.2.3', publishConfig: { access: 'public', tag: 'beta', registry: 'https://registry.npmjs.org' } };
-  it('accepts only the matching core tag and public beta configuration', () => {
-    expect(() => { checkCoreRelease(`core-v${pkg.version}`, pkg); }).not.toThrow();
-    for (const tag of [`v${pkg.version}`, `cli-v${pkg.version}`, 'core-v99.0.0', `core-v${pkg.version}-beta.1`, 'core-v01.2.3', '']) {
-      expect(() => { checkCoreRelease(tag, pkg); }).toThrow();
+describe('shared npm publishing boundary', () => {
+  it.each([['core', 'beta'], ['cli', 'latest']])('accepts only the matching %s tag and publishing configuration', (slug, distTag) => {
+    const pkg = { name: `@vibelog/${slug}`, version: '1.2.3', publishConfig: { access: 'public', tag: distTag, registry: 'https://registry.npmjs.org' } };
+    expect(checkNpmRelease(slug, `${slug}-v${pkg.version}`, pkg)).toEqual({ name: pkg.name, version: pkg.version, distTag });
+    for (const tag of [`v${pkg.version}`, 'core-v99.0.0', `${slug}-v${pkg.version}-beta.1`, `${slug}-v01.2.3`, '']) {
+      expect(() => checkNpmRelease(slug, tag, pkg)).toThrow();
     }
-    expect(() => { checkCoreRelease(`core-v${pkg.version}`, { ...pkg, private: true }); }).toThrow();
-    expect(() => { checkCoreRelease(`core-v${pkg.version}`, { ...pkg, name: '@vibelog/cli' }); }).toThrow();
-    expect(() => { checkCoreRelease(`core-v${pkg.version}`, { ...pkg, publishConfig: { ...pkg.publishConfig, tag: 'latest' } }); }).toThrow();
+    expect(() => checkNpmRelease(slug, `${slug}-v${pkg.version}`, { ...pkg, private: true })).toThrow();
+    expect(() => checkNpmRelease(slug, `${slug}-v${pkg.version}`, { ...pkg, name: '@vibelog/app' })).toThrow();
+    expect(() => checkNpmRelease(slug, `${slug}-v${pkg.version}`, { ...pkg, publishConfig: { ...pkg.publishConfig, tag: 'next' } })).toThrow();
+    expect(() => checkNpmRelease('app', 'app-v1.2.3', pkg)).toThrow();
+    expect(() => checkNpmRelease(slug, `${slug === 'core' ? 'cli' : 'core'}-v1.2.3`, pkg)).toThrow();
   });
-  it('gates publishing on exact-SHA CI and uses OIDC without npm token secrets', () => {
-    const workflow = readFileSync(new URL('core-release.yml', workflows), 'utf8');
-    expect(workflow).toContain('tags: ["core-v*.*.*"]');
-    expect(workflow).toContain('environment: npm');
-    expect(workflow).toContain('git merge-base --is-ancestor "$GITHUB_SHA" origin/main');
-    expect(workflow).toContain('-f head_sha="$GITHUB_SHA"');
-    expect(workflow).toContain('test "$passed" = true');
-    expect(workflow).toContain('id-token: write');
-    expect(workflow).toContain('--tag beta --access public --provenance --ignore-scripts');
-    expect(workflow).toContain('node .github/scripts/wait-core-release.mjs');
-    expect(workflow).toContain('cmp "$CORE_TARBALL" "$downloaded"');
-    expect(workflow).not.toMatch(/secrets\.|NODE_AUTH_TOKEN|NPM_TOKEN|packages: write|contents: write|workflow_dispatch|pull_request|pulumi/u);
+
+  it('uses the same OIDC flow while preserving trusted publisher workflow names', () => {
+    const action = readFileSync(new URL('../actions/npm-release/action.yml', workflows), 'utf8');
+    for (const slug of ['core', 'cli']) {
+      const workflow = readFileSync(new URL(`${slug}-release.yml`, workflows), 'utf8');
+      expect(workflow).toContain(`tags: ["${slug}-v*.*.*"]`);
+      expect(workflow).toContain('environment: npm');
+      expect(workflow).toContain('id-token: write');
+      expect(workflow).toContain('uses: ./.github/actions/npm-release');
+      expect(workflow).toContain(`package: ${slug}`);
+      expect(workflow).not.toMatch(/secrets\.|NODE_AUTH_TOKEN|NPM_TOKEN|packages: write|contents: write|workflow_dispatch|pull_request|pulumi/u);
+    }
+    expect(action).toContain('git merge-base --is-ancestor "$GITHUB_SHA" origin/main');
+    expect(action).toContain('-f head_sha="$GITHUB_SHA"');
+    expect(action).toContain('test "$passed" = true');
+    expect(action).toContain('--tag "$RELEASE_DIST_TAG" --access public --provenance --ignore-scripts');
+    expect(action).toContain('node .github/scripts/wait-npm-release.mjs');
+    expect(action).toContain('cmp "$RELEASE_TARBALL" "$downloaded"');
+    expect(action).not.toMatch(/secrets\.|NODE_AUTH_TOKEN|NPM_TOKEN|pulumi/u);
+    expect(action.match(/npm publish/g)).toHaveLength(2); // One dry-run and one publication; never retry publish.
   });
 });
 
-describe('published core registry readiness', () => {
+describe('published tarball verification', () => {
+  const archive = Buffer.from('tested tarball');
+  const dist = { integrity: `sha512-${createHash('sha512').update(archive).digest('base64')}`, attestations: { provenance: {} } };
+  it.each([['core', 'beta'], ['cli', 'latest']])('verifies %s and preserves all other dist-tags', (slug, distTag) => {
+    const release = { name: `@vibelog/${slug}`, version: '1.2.3', distTag };
+    const before = { latest: '1.0.0', beta: '1.1.0', legacy: '0.1.0' };
+    const tags = { ...before, [distTag]: release.version };
+    expect(() => { verifyNpmRelease(release, before, dist, tags, archive); }).not.toThrow();
+    expect(() => { verifyNpmRelease(release, before, dist, { ...tags, [distTag]: '1.2.2' }, archive); }).toThrow();
+    expect(() => { verifyNpmRelease(release, before, dist, { ...tags, legacy: '9.0.0' }, archive); }).toThrow();
+    expect(() => { verifyNpmRelease(release, before, dist, { ...tags, next: release.version }, archive); }).toThrow();
+    expect(() => { verifyNpmRelease(release, {}, dist, { [distTag]: release.version }, archive); }).not.toThrow();
+    expect(() => { verifyNpmRelease(release, before, dist, tags, Buffer.from('different tarball')); }).toThrow();
+    expect(() => { verifyNpmRelease(release, before, { integrity: dist.integrity }, tags, archive); }).toThrow();
+  });
+  it('accepts npm object and singleton-array metadata without silently picking multiple results', () => {
+    expect(npmJson(dist)).toEqual(dist);
+    expect(npmJson([dist])).toEqual(dist);
+    expect(() => { npmJson([]); }).toThrow();
+    expect(() => { npmJson([dist, dist]); }).toThrow();
+  });
+});
+
+describe('published npm registry readiness', () => {
   const version = '1.2.3';
   const ready = { 'dist-tags': { beta: version }, versions: { [version]: { dist: { integrity: 'sha512-tested', attestations: { provenance: {} } } } } };
   const response = (data) => new Response(JSON.stringify(data));
@@ -56,7 +90,7 @@ describe('published core registry readiness', () => {
   it('accepts a release that is immediately available', async () => {
     const fetch = vi.fn().mockResolvedValue(response(ready));
     vi.stubGlobal('fetch', fetch);
-    await waitForCoreRelease(version);
+    await waitForNpmRelease('@vibelog/core', version, 'beta');
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
@@ -67,27 +101,34 @@ describe('published core registry readiness', () => {
       .mockResolvedValueOnce(response({ ...ready, versions: { [version]: { dist: { integrity: 'sha512-tested' } } } }))
       .mockResolvedValueOnce(response(ready));
     vi.stubGlobal('fetch', fetch);
-    await waitForCoreRelease(version, { intervalMs: 1 });
+    await waitForNpmRelease('@vibelog/core', version, 'beta', { intervalMs: 1 });
     expect(fetch).toHaveBeenCalledTimes(4);
     expect(fetch).toHaveBeenCalledWith('https://registry.npmjs.org/@vibelog%2fcore', expect.objectContaining({ headers: { 'cache-control': 'no-cache' } }));
   });
 
+  it('waits for the CLI latest channel using the same readiness logic', async () => {
+    const fetch = vi.fn().mockResolvedValue(response({ ...ready, 'dist-tags': { latest: version } }));
+    vi.stubGlobal('fetch', fetch);
+    await waitForNpmRelease('@vibelog/cli', version, 'latest');
+    expect(fetch).toHaveBeenCalledWith('https://registry.npmjs.org/@vibelog%2fcli', expect.anything());
+  });
+
   it('stops when the release never becomes available', async () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(response({ versions: {} }))));
-    await expect(waitForCoreRelease(version, { timeoutMs: 20, intervalMs: 1 })).rejects.toThrow('Timed out waiting');
+    await expect(waitForNpmRelease('@vibelog/core', version, 'beta', { timeoutMs: 20, intervalMs: 1 })).rejects.toThrow('Timed out waiting');
   });
 
   it.each([401, 500])('does not hide HTTP %s errors', async (status) => {
     const fetch = vi.fn().mockResolvedValue(new Response('', { status }));
     vi.stubGlobal('fetch', fetch);
-    await expect(waitForCoreRelease(version)).rejects.toThrow(`HTTP ${String(status)}`);
+    await expect(waitForNpmRelease('@vibelog/core', version, 'beta')).rejects.toThrow(`HTTP ${String(status)}`);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it('does not hide network errors', async () => {
     const fetch = vi.fn().mockRejectedValue(new TypeError('Network unavailable'));
     vi.stubGlobal('fetch', fetch);
-    await expect(waitForCoreRelease(version)).rejects.toThrow('Network unavailable');
+    await expect(waitForNpmRelease('@vibelog/core', version, 'beta')).rejects.toThrow('Network unavailable');
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

@@ -19,78 +19,10 @@ jobs:
       contents: read
       actions: read
       id-token: write
-    env:
-      REGISTRY: https://registry.npmjs.org
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: ./.github/actions/npm-release
         with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
-          package-manager-cache: false
-      - name: Check core version and main ancestry
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          node .github/scripts/check-core-release.mjs
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-      - name: Require successful exact-SHA CI
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          passed="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" -f branch=main -f event=push -f head_sha="$GITHUB_SHA" -F per_page=100 --jq ".workflow_runs | any(.head_sha == \"${GITHUB_SHA}\" and .status == \"completed\" and .conclusion == \"success\")")"
-          test "$passed" = true
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @vibelog/core build
-      - name: Pack once and test the release tarball
-        run: |
-          mkdir -p "$RUNNER_TEMP/core-release"
-          pnpm --filter @vibelog/core pack --pack-destination "$RUNNER_TEMP/core-release"
-          version="$(node -p 'require("./packages/core/package.json").version')"
-          tarball="$RUNNER_TEMP/core-release/vibelog-core-$version.tgz"
-          echo "CORE_VERSION=$version" >> "$GITHUB_ENV"
-          echo "CORE_TARBALL=$tarball" >> "$GITHUB_ENV"
-          node .github/scripts/core-pack-smoke.mjs "$tarball"
-      - name: Check npm support and preserve latest
-        run: |
-          node --input-type=module <<'NODE'
-          import assert from 'node:assert/strict';
-          import { execFileSync } from 'node:child_process';
-          const [major, minor, patch] = execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim().split('.').map(Number);
-          assert(major > 11 || major === 11 && (minor > 5 || minor === 5 && patch >= 1), 'Trusted publishing requires npm >=11.5.1');
-          NODE
-          npm view @vibelog/core dist-tags.latest --json --workspaces=false --registry="$REGISTRY" > "$RUNNER_TEMP/core-latest.json"
-          npm publish "$CORE_TARBALL" --dry-run --tag beta --access public --ignore-scripts --registry="$REGISTRY"
-      - name: Publish the tested tarball using npm trusted publishing
-        working-directory: packages/core
-        run: npm publish "$CORE_TARBALL" --tag beta --access public --provenance --ignore-scripts --registry="$REGISTRY"
-      - name: Verify registry metadata and the published tarball
-        run: |
-          node .github/scripts/wait-core-release.mjs
-          npm view "@vibelog/core@$CORE_VERSION" dist --json --workspaces=false --registry="$REGISTRY" > "$RUNNER_TEMP/core-dist.json"
-          npm view @vibelog/core dist-tags --json --workspaces=false --registry="$REGISTRY" > "$RUNNER_TEMP/core-tags.json"
-          node --input-type=module <<'NODE'
-          import assert from 'node:assert/strict';
-          import { createHash } from 'node:crypto';
-          import { readFileSync } from 'node:fs';
-          const json = name => {
-            const value = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/${name}.json`, 'utf8'));
-            if (!Array.isArray(value)) return value;
-            assert.equal(value.length, 1, 'Expected exactly one npm package result');
-            return value[0];
-          };
-          const dist = json('core-dist'), tags = json('core-tags');
-          assert.equal(tags.beta, process.env.CORE_VERSION);
-          assert.equal(tags.latest, json('core-latest'), 'Legacy latest must not change');
-          assert.equal(dist.integrity, `sha512-${createHash('sha512').update(readFileSync(process.env.CORE_TARBALL)).digest('base64')}`);
-          assert(dist.attestations?.provenance, 'Published package must have npm provenance');
-          NODE
-          mkdir -p "$RUNNER_TEMP/core-registry"
-          npm pack "@vibelog/core@$CORE_VERSION" --ignore-scripts --workspaces=false --registry="$REGISTRY" --pack-destination "$RUNNER_TEMP/core-registry"
-          downloaded="$RUNNER_TEMP/core-registry/vibelog-core-$CORE_VERSION.tgz"
-          cmp "$CORE_TARBALL" "$downloaded"
-          node .github/scripts/core-pack-smoke.mjs "$downloaded"
+          package: core
