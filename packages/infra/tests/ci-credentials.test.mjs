@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { checkCoreRelease } from '../../../.github/scripts/check-core-release.mjs';
+import { waitForCoreRelease } from '../../../.github/scripts/wait-core-release.mjs';
 
 const workflows = new URL('../../../.github/workflows/', import.meta.url);
 describe('pull-request credential boundary', () => {
@@ -40,7 +41,53 @@ describe('independent core publishing boundary', () => {
     expect(workflow).toContain('test "$passed" = true');
     expect(workflow).toContain('id-token: write');
     expect(workflow).toContain('--tag beta --access public --provenance --ignore-scripts');
+    expect(workflow).toContain('node .github/scripts/wait-core-release.mjs');
     expect(workflow).toContain('cmp "$CORE_TARBALL" "$downloaded"');
     expect(workflow).not.toMatch(/secrets\.|NODE_AUTH_TOKEN|NPM_TOKEN|packages: write|contents: write|workflow_dispatch|pull_request|pulumi/u);
+  });
+});
+
+describe('published core registry readiness', () => {
+  const version = '1.2.3';
+  const ready = { 'dist-tags': { beta: version }, versions: { [version]: { dist: { integrity: 'sha512-tested', attestations: { provenance: {} } } } } };
+  const response = (data) => new Response(JSON.stringify(data));
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('accepts a release that is immediately available', async () => {
+    const fetch = vi.fn().mockResolvedValue(response(ready));
+    vi.stubGlobal('fetch', fetch);
+    await waitForCoreRelease(version);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits through temporary 404s and incomplete metadata without publishing again', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response('', { status: 404 }))
+      .mockResolvedValueOnce(response({ ...ready, 'dist-tags': { beta: '1.2.2' } }))
+      .mockResolvedValueOnce(response({ ...ready, versions: { [version]: { dist: { integrity: 'sha512-tested' } } } }))
+      .mockResolvedValueOnce(response(ready));
+    vi.stubGlobal('fetch', fetch);
+    await waitForCoreRelease(version, { intervalMs: 1 });
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch).toHaveBeenCalledWith('https://registry.npmjs.org/@vibelog%2fcore', expect.objectContaining({ headers: { 'cache-control': 'no-cache' } }));
+  });
+
+  it('stops when the release never becomes available', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(response({ versions: {} }))));
+    await expect(waitForCoreRelease(version, { timeoutMs: 20, intervalMs: 1 })).rejects.toThrow('Timed out waiting');
+  });
+
+  it.each([401, 500])('does not hide HTTP %s errors', async (status) => {
+    const fetch = vi.fn().mockResolvedValue(new Response('', { status }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(waitForCoreRelease(version)).rejects.toThrow(`HTTP ${String(status)}`);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not hide network errors', async () => {
+    const fetch = vi.fn().mockRejectedValue(new TypeError('Network unavailable'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(waitForCoreRelease(version)).rejects.toThrow('Network unavailable');
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
