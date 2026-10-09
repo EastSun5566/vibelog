@@ -1,7 +1,11 @@
 {
   "name": "@vibelog/core",
   "version": "0.11.2",
-  "private": true,
+  "publishConfig": {
+    "access": "public",
+    "tag": "beta",
+    "registry": "https://registry.npmjs.org"
+  },
   "description": "Bring your own content with some vibes ✨ - Core library",
   "repository": {
     "type": "git",

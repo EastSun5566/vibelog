@@ -9,8 +9,9 @@ For agent onboarding to hosted VibeLog, use **`@vibelog/cli`**, not core.
 
 ## Package status
 
-This workspace is **0.11.2 and private**. It is release preparation, not a
-published npm update. Node.js **24 or later** is required.
+The release target is **0.11.2 on `beta`**. Preparing the workflow does not
+publish it; the npm tags below were checked before this release. Node.js **24 or
+later** is required.
 
 The npm dist-tags checked on 2026-10-09 still expose older APIs:
 
@@ -29,6 +30,10 @@ pnpm --filter @vibelog/core pack --pack-destination /tmp
 # In a separate Node 24 ESM project:
 npm install /tmp/vibelog-core-0.11.2.tgz
 ```
+
+After the release succeeds, install `@vibelog/core@0.11.2` explicitly, or use
+`@vibelog/core@beta`. The older `latest` tag is preserved for existing consumers;
+this release requires the API migration below.
 
 ## Validate a design and compile CSS
 
