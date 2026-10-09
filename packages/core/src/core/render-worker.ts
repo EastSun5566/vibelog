@@ -5,15 +5,14 @@ import mdx from '@astrojs/mdx';
 import * as pagefind from 'pagefind';
 import { unified } from '@astrojs/markdown-remark';
 import sitemap from '@astrojs/sitemap';
-import rehypeKatex from 'rehype-katex';
 import { defListHastHandlers, remarkDefinitionList } from 'remark-definition-list';
 import remarkDirective from 'remark-directive';
 import remarkGfm from 'remark-gfm';
 import remarkGemoji from 'remark-gemoji';
-import remarkMath from 'remark-math';
 import { remarkHackmdCompatibility } from '../markdown/hackmd.js';
 import fs from 'fs-extra';
 import { logger } from './logger.js';
+import { rehypeKatex, remarkMath } from './math-plugins.js';
 import type { BuildStage, BuildOptions } from './builder.js';
 
 export interface RenderOptions {
