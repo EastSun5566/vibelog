@@ -8,7 +8,7 @@ import { analyzeDesignImpact, designContractV2 } from '@vibelog/core';
 import type { AppVariables } from '../auth.js';
 import type { AppConfig } from '../config.js';
 import { blogIdentitySchema, blogLanguageSchema } from '../blog-sync.js';
-import { AppDatabase, BlogAddressTakenError, BlogAlreadyExistsError } from '../database.js';
+import { AppDatabase, BlogAddressTakenError, BlogAlreadyExistsError, BlogConnectionConflictError } from '../database.js';
 import { AppError, jsonError } from '../http.js';
 import { operationMessage, operationProgress } from '../operation-status.js';
 import type { OperationDispatcher } from '../ports/operation-queue.js';
@@ -20,6 +20,7 @@ const connect = z.object({
   username: z.string().trim().toLowerCase().min(3).max(32).regex(/^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/u),
   hackmdUsername: z.string().trim().min(1).max(100).regex(/^[\p{L}\p{N}_.-]+$/u),
   language: blogLanguageSchema.default('en'),
+  stateVersion: state.optional(),
 }).strict();
 const reserved = new Set(['preview', 'www', 'api', 'admin', 'assets']);
 type Variables = AppVariables & { agentUserId: string; agentGrantId: string; agentExpiresAt: string };
@@ -28,6 +29,8 @@ export function agentRoutes(database: AppDatabase, dispatcher: OperationDispatch
   const app = new Hono<{ Variables: Variables }>();
   const repo = new AgentRepository(database);
   app.onError((error, c) => {
+    if (error instanceof BlogConnectionConflictError) return jsonError(c, new AppError(error.code, error.message, 409));
+    if (error instanceof BlogAddressTakenError) return jsonError(c, new AppError('blog_address_taken', 'That blog address is already taken.', 409));
     if (error instanceof AppError) return jsonError(c, error);
     // Database errors can contain SQL parameters; never log external design payloads.
     console.error('agent_request_failed', { requestId: c.get('requestId') });
@@ -125,12 +128,11 @@ export function agentRoutes(database: AppDatabase, dispatcher: OperationDispatch
         if (action === 'connect') {
           const input = connect.parse(body);
           if (reserved.has(input.username)) throw new AppError('invalid_blog_address', 'Choose another blog address.', 400);
+          if (!blog && input.stateVersion !== undefined) throw new AppError('state_changed', 'The blog changed. Read the context again.', 409);
           if (blog) {
-            if (blog.username !== input.username || blog.hackmdUsername !== input.hackmdUsername || blog.language !== input.language) throw new AppError('source_locked', 'Use the connected profile and blog address.', 409);
-            if (blog.draftArtifactId) return { status: 'unchanged' };
-            const active = await db.getActiveOperation(blog.id, blog.userId);
-            if (active) throw new AppError('operation_in_progress', 'Wait for the current operation.', 409);
-            return operationResult(await db.retryInitialSync(blog.userId, input.hackmdUsername, input.language));
+            const same = blog.username === input.username && blog.hackmdUsername === input.hackmdUsername && blog.language === input.language;
+            if (same && blog.draftArtifactId) return { status: 'unchanged' };
+            return operationResult(await db.retryInitialSync(blog.userId, input));
           }
           try { return operationResult((await db.createBlog(c.get('agentUserId'), input.username, input.hackmdUsername, input.language)).operation); }
           catch (error) {

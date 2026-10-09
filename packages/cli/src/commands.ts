@@ -2,10 +2,12 @@ import { readFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { AgentClient, CliError } from './client.js';
 import { secureStore, type CredentialStore } from './credentials.js';
+import { login } from './login.js';
 
-export const HELP = `VibeLog CLI 0.2.0 (@vibelog/cli) — draft access only
+export const HELP = `VibeLog CLI 0.3.0 (@vibelog/cli) — draft access only
 Usage: vibelog <command> [options]
   login                 Show a browser approval URL; store the resulting grant securely
+  login --no-wait       Start or resume approval without waiting; run again after approving
   logout                Revoke the grant and remove local credentials
   status                Check authorization
   context               Read draft state, saved design and content profile
@@ -23,8 +25,10 @@ export async function run(args: string[], runtime: Runtime = {}): Promise<number
   const write = runtime.write ?? ((value) => { process.stdout.write(`${typeof value === 'string' ? value : JSON.stringify(value)}\n`); });
   if (!args.length || args.includes('--help')) { write(HELP); return 0; }
   const [command, ...rest] = args; const flags: Record<string, string> = {}; const positional: string[] = [];
+  let noWait = false;
   for (let i = 0; i < rest.length; i++) {
     const item = rest[i];
+    if (item === '--no-wait') { if (command !== 'login' || noWait) throw new CliError('invalid_arguments', 'Use --no-wait once, with login only.'); noWait = true; continue; }
     if (!item.startsWith('--')) { positional.push(item); continue; }
     if (!['--origin', '--file', '--request-key', '--offset'].includes(item) || !rest[i + 1] || rest[i + 1].startsWith('--') || flags[item]) throw new CliError('invalid_arguments', 'Unknown, repeated or incomplete option. Run --help.');
     flags[item] = rest[++i];
@@ -37,31 +41,11 @@ export async function run(args: string[], runtime: Runtime = {}): Promise<number
   const store = runtime.store ?? await secureStore(origin.origin).catch(() => { throw new CliError('secure_storage_unavailable', 'OS secure storage is required; no file fallback is supported.'); });
   const client = new AgentClient(origin.origin, store, runtime.fetcher);
   const pause = runtime.sleep ?? sleep; const now = runtime.now ?? Date.now;
-  if (command === 'login') {
-    await store.check().catch(() => { throw new CliError('secure_storage_unavailable', 'Enable your OS credential store before signing in.'); });
-    const pairing = await client.request('/pairings', 'POST', {}, undefined, true);
-    if (typeof pairing.deviceCode !== 'string' || typeof pairing.userCode !== 'string' || typeof pairing.authorizationUrl !== 'string' || typeof pairing.expiresAt !== 'string') throw new CliError('invalid_response', 'Invalid pairing response.');
-    const url = new URL(pairing.authorizationUrl);
-    if (url.origin !== origin.origin || url.pathname !== '/agent/authorize') throw new CliError('invalid_response', 'Untrusted authorization URL.');
-    write({ status: 'approval_required', authorizationUrl: url.href, userCode: pairing.userCode, permission: 'draft:read-write' });
-    const end = Math.min(now() + 600_000, new Date(pairing.expiresAt).getTime());
-    while (now() < end) {
-      await pause(5000);
-      let result;
-      try { result = await client.request('/pairings/token', 'POST', { deviceCode: pairing.deviceCode }, undefined, true); }
-      catch (error) { if (error instanceof CliError && ['slow_down', 'rate_limited'].includes(error.code)) continue; throw error; }
-      if (result.status !== 'approved') continue;
-      if (typeof result.token !== 'string' || typeof result.expiresAt !== 'string') throw new CliError('invalid_response', 'Invalid authorization response.');
-      try { await store.set({ token: result.token, expiresAt: result.expiresAt }); }
-      catch { await client.fetcher(`${origin.origin}/api/agent/v1/session`, { method: 'DELETE', headers: { Authorization: `Bearer ${result.token}` }, redirect: 'error', signal: AbortSignal.timeout(30_000) }).catch(() => undefined); throw new CliError('secure_storage_unavailable', 'Could not save authorization. Revoke any remaining access in the browser.'); }
-      write({ status: 'authorized', expiresAt: result.expiresAt, permission: 'draft:read-write' }); return 0;
-    }
-    throw new CliError('pairing_expired', 'Approval expired. Run login again.');
-  }
+  if (command === 'login') return login(client, noWait, write, pause, now);
   if (command === 'logout') {
     try { await client.request('/session', 'DELETE'); }
     catch (error) { if (!(error instanceof CliError) || !['agent_unauthorized', 'login_required'].includes(error.code)) throw error; }
-    await store.delete(); write({ status: 'revoked' }); return 0;
+    await store.delete(); await store.deletePairing(); write({ status: 'revoked' }); return 0;
   }
   if (command === 'wait') { if (positional.length !== 1) throw new CliError('invalid_arguments', 'Supply one operation ID.'); const result = await client.wait(positional[0], pause, now); write(result); return result.status === 'failed' ? 1 : 0; }
   if (['status', 'context', 'contract', 'posts'].includes(command)) {

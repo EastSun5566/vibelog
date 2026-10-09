@@ -41,7 +41,7 @@ describe('agent design contract', () => {
     expect(requestHash('design', {})).not.toBe(requestHash('sync', {}));
   });
   it('derives bounded next actions without interpreting failure messages or changing the blog', () => {
-    const empty = { state: 'failed' as const, sourceArtifactId: null, draftArtifactId: null };
+    const empty = { state: 'failed' as const, sourceArtifactId: null, draftArtifactId: null, contentVersion: 0 };
     const ready = { ...empty, sourceArtifactId: 'private-source', draftArtifactId: 'private-draft' };
     expect(agentNextActions(null, null)).toEqual([{ action: 'connect' }]);
     expect(agentNextActions(empty, 'operation')).toEqual([{ action: 'wait', operationId: 'operation' }]);
@@ -51,7 +51,8 @@ describe('agent design contract', () => {
     }
     expect(agentNextActions(ready, null)).toEqual(['design', 'identity', 'selection', 'sync', 'open_editor'].map((action) => ({ action })));
     expect(agentNextActions({ ...ready, state: 'deleting' }, 'operation')).toEqual([{ action: 'open_editor', reason: 'deletion_in_progress' }]);
-    expect(ready).toEqual({ state: 'failed', sourceArtifactId: 'private-source', draftArtifactId: 'private-draft' });
+    expect(ready).toEqual({ state: 'failed', sourceArtifactId: 'private-source', draftArtifactId: 'private-draft', contentVersion: 0 });
+    expect(agentNextActions({ ...empty, contentVersion: 1 }, null)).toEqual([{ action: 'open_editor', reason: 'draft_recovery_required' }]);
     expect(JSON.stringify(agentNextActions(ready, null))).not.toContain('private-');
   });
   it('pins the scoped CLI and keeps publishing human-controlled', () => {
@@ -80,6 +81,16 @@ describe('agent design contract', () => {
     expect(await htmlOf(loginPage({ github: false, google: false }))).toContain('We’ll email you a one-time sign-in link.');
     expect(await htmlOf(loginPage({ ...input, returnTo: 'https://example.com' }))).not.toContain('Sign in first, then approve');
   });
+  it('only instructs a published compatible CLI to resume without waiting and never guesses setup identity', () => {
+    for (const version of ['0.1.0', '0.2.0']) expect(agentInstructions('https://vibelog.org', version)).not.toContain('--no-wait');
+    for (const version of ['0.3.0', '0.4.0', '1.0.0']) {
+      const text = agentInstructions('https://vibelog.org', version);
+      expect(text).toContain('same `login --no-wait`'); expect(text).toContain('nohup');
+      expect(text).toContain('Never guess profile or address'); expect(text).toContain('their corrected username');
+      expect(text).toContain('latest stateVersion'); expect(text).toContain('Do not create a replacement operation');
+    }
+    expect(onboardingPrompt('https://vibelog.org', '0.3.0')).toContain('Never guess');
+  });
   it.each([
     ['pending', 'Authorize your agent'], ['approved', 'Draft access approved'], ['consumed', 'Agent connected'],
     ['denied', 'Access denied'], ['expired', 'Request expired'],
@@ -90,6 +101,7 @@ describe('agent design contract', () => {
       expect(html).toContain('Use a different account'); expect(html).toContain('action="/auth/logout"');
       expect(html).toContain('value="/agent/authorize?code=AABBCCDDEE"'); expect(html).toContain('value="csrf-test"');
     } else expect(html).not.toContain('action="/agent/authorize"');
+    if (status === 'approved') { expect(html).toContain('finish connecting'); expect(html).not.toContain('detects approval automatically'); }
   });
   it('does not claim unavailable requests were approved and shares the prompt with signed-in users', async () => {
     const unavailable = await htmlOf(authorizationPage(session, null));

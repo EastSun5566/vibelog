@@ -11,7 +11,7 @@ function recoveryFor(code: string, status?: number): Recovery {
   if (code === 'secure_storage_unavailable') return { action: 'check_secure_storage' };
   if (['state_changed', 'operation_in_progress', 'blog_already_connected', 'blog_not_found', 'draft_not_ready', 'source_locked'].includes(code)) return { action: 'read_context' };
   if (code === 'deletion_in_progress') return { action: 'open_editor' };
-  if (code === 'pairing_expired') return { action: 'restart_login' };
+  if (code === 'pairing_expired' || code === 'pairing_denied') return { action: 'restart_login' };
   if (status === 429) return { action: 'wait_retry_after' };
   return { action: status && status >= 500 ? 'check_service' : 'check_request' };
 }

@@ -1,6 +1,6 @@
 {
   "name": "@vibelog/cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Draft-only VibeLog onboarding for coding agents",
   "type": "module",
   "bin": { "vibelog": "dist/main.js" },
