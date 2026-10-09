@@ -35,41 +35,6 @@ After the release succeeds, install `@vibelog/core@0.11.2` explicitly, or use
 `@vibelog/core@beta`. The older `latest` tag is preserved for existing consumers;
 this release requires the API migration below.
 
-## Maintainer release gate
-
-Core uses the independent `core-v<version>` tag and
-[`core-release.yml`](https://github.com/EastSun5566/vibelog/blob/main/.github/workflows/core-release.yml).
-It does not deploy production, publish the CLI, or create a monorepo release.
-
-After the workflow is merged and shortly before the approved first release,
-configure a trusted publisher for **`@vibelog/core`** in its npm package settings
-(the CLI's configuration is separate). The first successful publish must occur
-within two days; otherwise delete the expired connection and create a new one:
-
-- Organization or user: `EastSun5566`
-- Repository: `vibelog`
-- Workflow filename: `core-release.yml`
-- Environment: `npm`
-- Allow direct `npm publish`; no `npm dist-tag` permission is needed.
-
-Use GitHub-hosted runners and OIDC; do not add an npm token to GitHub secrets.
-After verifying the first OIDC publish, set **Publishing access** to
-**Require two-factor authentication and disallow tokens**. This blocks traditional
-token publishing without affecting the trusted publisher.
-The workflow requires the tagged commit to be on `main` with successful CI for
-that exact SHA. Only after checking that gate and obtaining release approval,
-create and push an annotated `core-v0.11.2` tag. Do not use `v0.11.2`, which belongs
-to the application release workflow.
-
-The workflow builds and packs once, tests that tarball in an isolated npm
-project, dry-runs it, and publishes the same bytes to `beta` with provenance.
-It then downloads the published tarball, compares its integrity, verifies that
-`latest` is unchanged, and repeats the standalone smoke. A version cannot be
-republished: if a post-publish check fails, verify the existing version rather
-than moving the public tag or publishing different bytes under that version.
-
-See the official [trusted publisher setup](https://docs.npmjs.com/trusted-publishers).
-
 ## Validate a design and compile CSS
 
 Save as `design.mjs` and run `node design.mjs`:
