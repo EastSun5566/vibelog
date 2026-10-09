@@ -8,7 +8,7 @@
   "license": "MIT",
   "repository": { "type": "git", "url": "git+https://github.com/EastSun5566/vibelog.git", "directory": "packages/cli" },
   "engines": { "node": ">=24.0.0" },
-  "publishConfig": { "access": "public" },
+  "publishConfig": { "access": "public", "tag": "latest", "registry": "https://registry.npmjs.org" },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",

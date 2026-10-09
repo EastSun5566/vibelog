@@ -1,15 +1,15 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import assert from 'node:assert/strict';
 
 const directory = await mkdtemp(join(tmpdir(), 'vibelog-cli-pack-'));
 try {
-  execFileSync('pnpm', ['--filter', '@vibelog/cli', 'pack', '--pack-destination', directory], { stdio: 'inherit' });
-  const file = (await readdir(directory)).find((name) => name.endsWith('.tgz'));
-  assert(file, 'CLI tarball is missing');
-  execFileSync('npm', ['install', '--prefix', directory, '--ignore-scripts', '--no-audit', '--no-fund', join(directory, file)], { stdio: 'inherit' });
+  if (!process.argv[2]) execFileSync('pnpm', ['--filter', '@vibelog/cli', 'pack', '--pack-destination', directory], { stdio: 'inherit' });
+  const archive = process.argv[2] ? resolve(process.argv[2]) : join(directory, (await readdir(directory)).find((name) => name.endsWith('.tgz')) ?? '');
+  assert(archive.endsWith('.tgz'), 'CLI tarball is missing');
+  execFileSync('npm', ['install', '--prefix', directory, '--ignore-scripts', '--no-audit', '--no-fund', archive], { stdio: 'inherit' });
   const pkg = JSON.parse(await readFile(join(directory, 'node_modules/@vibelog/cli/package.json'), 'utf8'));
   assert.equal(pkg.name, '@vibelog/cli');
   const binary = join(directory, 'node_modules/@vibelog/cli/dist/main.js');
