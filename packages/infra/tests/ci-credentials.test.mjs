@@ -68,6 +68,8 @@ describe('published tarball verification', () => {
     expect(() => { verifyNpmRelease(release, before, dist, tags, archive); }).not.toThrow();
     expect(() => { verifyNpmRelease(release, before, dist, { ...tags, [distTag]: '1.2.2' }, archive); }).toThrow();
     expect(() => { verifyNpmRelease(release, before, dist, { ...tags, legacy: '9.0.0' }, archive); }).toThrow();
+    expect(() => { verifyNpmRelease(release, before, dist, { ...tags, next: release.version }, archive); }).toThrow();
+    expect(() => { verifyNpmRelease(release, {}, dist, { [distTag]: release.version }, archive); }).not.toThrow();
     expect(() => { verifyNpmRelease(release, before, dist, tags, Buffer.from('different tarball')); }).toThrow();
     expect(() => { verifyNpmRelease(release, before, { integrity: dist.integrity }, tags, archive); }).toThrow();
   });

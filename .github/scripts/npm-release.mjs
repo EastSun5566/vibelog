@@ -19,6 +19,7 @@ export function checkNpmRelease(slug, tag, pkg) {
 
 export function verifyNpmRelease(release, before, dist, tags, archive) {
   assert.equal(tags[release.distTag], release.version);
+  assert.deepEqual(Object.keys(tags).sort(), [...new Set([...Object.keys(before), release.distTag])].sort(), 'Only the release dist-tag may be added');
   for (const [tag, version] of Object.entries(before)) {
     if (tag !== release.distTag) assert.equal(tags[tag], version, `Existing ${tag} must not change`);
   }
