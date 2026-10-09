@@ -70,6 +70,7 @@ jobs:
         run: npm publish "$CORE_TARBALL" --tag beta --access public --provenance --ignore-scripts --registry="$REGISTRY"
       - name: Verify registry metadata and the published tarball
         run: |
+          node .github/scripts/wait-core-release.mjs
           npm view "@vibelog/core@$CORE_VERSION" dist --json --workspaces=false --registry="$REGISTRY" > "$RUNNER_TEMP/core-dist.json"
           npm view @vibelog/core dist-tags --json --workspaces=false --registry="$REGISTRY" > "$RUNNER_TEMP/core-tags.json"
           node --input-type=module <<'NODE'
