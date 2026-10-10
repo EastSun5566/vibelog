@@ -200,6 +200,7 @@ export function createApp(options: CreateAppOptions) {
       return await dispatchAndRedirect(c, operation, editorUrlWithPreviewPath(previewPath));
     } catch (error) {
       if (error instanceof AiQuotaExceededError) throw new AppError('ai_quota_exceeded', 'Today’s AI design quota is exhausted.', 429, { 'Retry-After': String(error.retryAfter) });
+      if (error instanceof BlogConnectionConflictError) throw new AppError(error.code === 'draft_not_ready' ? 'preview_not_ready' : error.code, error.message, 409);
       const known: Record<string, [string, string, number]> = {
         'Nothing to publish': ['nothing_to_publish', 'There are no unpublished changes.', 409], 'Nothing to update': ['nothing_to_update', 'The blog details are unchanged.', 409],
         'Nothing to update article selection': ['nothing_to_update', 'The article selection is unchanged.', 409], 'No articles selected': ['no_articles_selected', 'Select at least one article.', 400],

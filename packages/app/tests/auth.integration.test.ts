@@ -7,9 +7,10 @@ import { emailRateLimitKey } from '../src/auth.js';
 import { loadAppConfig } from '../src/config.js';
 import { AppDatabase } from '../src/database.js';
 import { createApp } from '../src/index.js';
+import { hashToken } from '../src/security/crypto.js';
 import { S3ArtifactStore } from '../src/adapters/s3-artifact-store.js';
 import type { TransactionalEmailSender } from '../src/ports/transactional-email.js';
-import { account, rateLimit, session, user, verification } from '../src/schema.js';
+import { account, blogs, rateLimit, session, user, verification } from '../src/schema.js';
 
 const url = process.env.TEST_DATABASE_URL;
 describe.skipIf(!url)('browser authentication', () => {
@@ -94,6 +95,30 @@ describe.skipIf(!url)('browser authentication', () => {
       expect(response.headers.getSetCookie().join(';')).not.toContain('vibelog.session_token=');
       expect(await database.db.select().from(user).where(eq(user.email, address))).toHaveLength(0);
     }
+  });
+
+  it.each(['draft_not_ready', 'operation_in_progress'] as const)('returns a friendly 409 for browser publishing with %s', async (conflict) => {
+    const address = email(); const { cookie } = await signIn(address);
+    const info = await (await app.request('/api/session', { headers: { ...headers, Cookie: cookie } })).json() as { user: { id: string }; csrfToken: string };
+    const { blog, operation } = await database.createBlog(info.user.id, `browser-${info.user.id.slice(0, 8)}`, 'writer');
+    const lease = await database.claimOperation(operation.id); const design = await database.getActiveDesign(blog.id);
+    if (!lease || !design) throw new Error('Missing test sync or design');
+    const source = await database.createArtifact(blog.id, 'source'); const draft = await database.createArtifact(blog.id, 'draft');
+    await database.completeSyncOperation(lease, {
+      title: 'Writer', description: '', author: 'Writer', sourceArtifactId: source.id, draftArtifactId: draft.id, designRevisionId: design.id,
+      contentProfile: { postCount: 0, tagCount: 0, averageLength: 'short', codeUsage: 'none', imageUsage: 'none', mathUsage: 'none' },
+    }, {});
+    const previewToken = randomUUID();
+    await database.createPreviewSession(hashToken(previewToken), info.user.id, blog.id, '2099-01-01', design.config);
+    if (conflict === 'draft_not_ready') await database.db.update(blogs).set({ draftDesignRevisionId: null }).where(eq(blogs.id, blog.id));
+    else await database.createSyncOperation(info.user.id, blog.id, {});
+    const response = await app.request('/actions/publish', {
+      method: 'POST', headers: { ...headers, Cookie: cookie, Accept: 'application/json' },
+      body: new URLSearchParams({ csrfToken: info.csrfToken, previewToken }),
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toHaveProperty('error.code', conflict === 'draft_not_ready' ? 'preview_not_ready' : conflict);
+    expect(await database.getActiveRelease(blog.id)).toBeNull();
   });
 
   it('refreshes an aged session and forwards its cookie, without rewriting fresh sessions', async () => {
