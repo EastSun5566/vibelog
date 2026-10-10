@@ -126,12 +126,14 @@ export const aiDailyUsage = pgTable('ai_daily_usage', {
 export const authSchema = { user, session, account, verification, rateLimit };
 
 export const agentPairings = pgTable('agent_pairings', {
+  canPublish: boolean('can_publish').notNull().default(false),
   id: uuid('id').primaryKey(), deviceHash: text('device_hash').notNull().unique(), userCode: text('user_code').notNull().unique(),
   userId: uuid('user_id').references(() => user.id, { onDelete: 'cascade' }),
   status: text('status', { enum: ['pending', 'approved', 'denied', 'consumed'] }).notNull().default('pending'),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(), ...timestamps,
 });
 export const agentGrants = pgTable('agent_grants', {
+  canPublish: boolean('can_publish').notNull().default(false),
   id: uuid('id').primaryKey(), userId: uuid('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   tokenHash: text('token_hash').notNull().unique(), expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   revokedAt: timestamp('revoked_at', { withTimezone: true }), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

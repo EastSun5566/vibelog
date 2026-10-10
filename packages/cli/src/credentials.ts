@@ -1,5 +1,5 @@
 export interface Credentials { token: string; expiresAt: string }
-export interface PendingPairing { deviceCode: string; userCode: string; authorizationUrl: string; expiresAt: string; nextPollAt?: number }
+export interface PendingPairing { deviceCode: string; userCode: string; authorizationUrl: string; expiresAt: string; nextPollAt?: number; canPublish?: boolean }
 export interface CredentialStore {
   get(): Promise<Credentials | null>;
   set: (credentials: Credentials) => Promise<void>;
@@ -19,7 +19,9 @@ export function parsePairing(value: unknown, origin: string): PendingPairing {
   if (url.origin !== origin || url.username || url.password || url.pathname !== '/agent/authorize' || url.search !== `?code=${value.userCode}` || url.hash) throw new Error('Untrusted authorization URL');
   const nextPollAt = 'nextPollAt' in value ? value.nextPollAt : undefined;
   if (nextPollAt !== undefined && (typeof nextPollAt !== 'number' || !Number.isFinite(nextPollAt) || nextPollAt < 0)) throw new Error('Invalid polling time');
-  return { deviceCode: value.deviceCode, userCode: value.userCode, authorizationUrl: url.href, expiresAt: value.expiresAt, nextPollAt };
+  const canPublish = 'canPublish' in value ? value.canPublish : false;
+  if (typeof canPublish !== 'boolean') throw new Error('Invalid permission');
+  return { canPublish, deviceCode: value.deviceCode, userCode: value.userCode, authorizationUrl: url.href, expiresAt: value.expiresAt, nextPollAt };
 }
 
 export async function secureStore(origin: string): Promise<CredentialStore> {

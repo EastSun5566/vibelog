@@ -85,7 +85,7 @@ describe('agent design contract', () => {
     for (const version of ['0.1.0', '0.2.0']) expect(agentInstructions('https://vibelog.org', version)).not.toContain('--no-wait');
     for (const version of ['0.3.0', '0.4.0', '1.0.0']) {
       const text = agentInstructions('https://vibelog.org', version);
-      expect(text).toContain('same `login --no-wait`'); expect(text).toContain('nohup');
+      expect(text).toContain(version === '0.3.0' ? 'same `login --no-wait`' : 'same `login --no-wait --allow-publish`'); expect(text).toContain('nohup');
       expect(text).toContain('Never guess profile or address'); expect(text).toContain('their corrected username');
       expect(text).toContain('latest stateVersion'); expect(text).toContain('Do not create a replacement operation');
     }
@@ -95,13 +95,23 @@ describe('agent design contract', () => {
     ['pending', 'Authorize your agent'], ['approved', 'Draft access approved'], ['consumed', 'Agent connected'],
     ['denied', 'Access denied'], ['expired', 'Request expired'],
   ] as const)('renders real %s authorization state', async (status, title) => {
-    const html = await htmlOf(authorizationPage(session, { userCode: 'AABBCCDDEE', status }));
+    const html = await htmlOf(authorizationPage(session, { canPublish: false, userCode: 'AABBCCDDEE', status }));
     expect(html).toContain(`<h1>${title}</h1>`); expect(html).toContain('writer@example.com');
     if (status === 'pending') {
       expect(html).toContain('Use a different account'); expect(html).toContain('action="/auth/logout"');
       expect(html).toContain('value="/agent/authorize?code=AABBCCDDEE"'); expect(html).toContain('value="csrf-test"');
     } else expect(html).not.toContain('action="/agent/authorize"');
     if (status === 'approved') { expect(html).toContain('finish connecting'); expect(html).not.toContain('detects approval automatically'); }
+  });
+  it('shows publishing consent only for the saved pairing scope and gates instructions by CLI version', async () => {
+    const html = await htmlOf(authorizationPage(session, { userCode: 'AABBCCDDEE', status: 'pending', canPublish: true }));
+    expect(html).toContain('Authorize draft and publishing access'); expect(html).toContain('Ask it explicitly before publishing');
+    expect(html).not.toContain('name="canPublish"');
+    expect(await htmlOf(authorizationPage(session, { userCode: 'AABBCCDDEE', status: 'approved', canPublish: true }))).toContain('Draft and publishing access approved');
+    const current = agentInstructions('https://vibelog.org', '0.4.0');
+    for (const text of ['postCounts.selected', 'publicUrl is null', 'preserve page structure', 'Publish only on an explicit request', 'not proof of a human request', 'Do not retry with new keys']) expect(current).toContain(text);
+    expect(current).not.toContain('Never attempt publish');
+    expect(agentInstructions('https://vibelog.org', '0.3.0')).not.toContain('--allow-publish');
   });
   it('does not claim unavailable requests were approved and shares the prompt with signed-in users', async () => {
     const unavailable = await htmlOf(authorizationPage(session, null));

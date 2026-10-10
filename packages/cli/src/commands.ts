@@ -4,36 +4,39 @@ import { AgentClient, CliError } from './client.js';
 import { secureStore, type CredentialStore } from './credentials.js';
 import { login } from './login.js';
 
-export const HELP = `VibeLog CLI 0.3.0 (@vibelog/cli) — draft access only
+export const HELP = `VibeLog CLI 0.4.0 (@vibelog/cli) — private drafts and optional publishing
 Usage: vibelog <command> [options]
   login                 Show a browser approval URL; store the resulting grant securely
   login --no-wait       Start or resume approval without waiting; run again after approving
+  login --no-wait --allow-publish
+                        Request browser-approved draft and publishing access
   logout                Revoke the grant and remove local credentials
   status                Check authorization
   context               Read draft state, saved design and content profile
   contract              Read the IR v2 schema, rules and valid example
   posts --offset N      Read article summaries, 50 per page
   validate --file PATH  Validate {"design": ...}; use --file - for stdin
-  connect|sync|identity|selection|design --file PATH --request-key UUID
+  connect|sync|identity|selection|design|publish --file PATH --request-key UUID
                         Submit JSON; reuse key and exact input on an uncertain outcome
   wait OPERATION_UUID   Poll for up to 10 minutes; pending can be resumed
 Options: --origin https://vibelog.org (or a local http origin), --help
-Output is JSON. Tokens are never printed. Publishing stays in the browser.`;
+Output is JSON. Tokens are never printed. Publish requires browser-approved permission and an explicit request from the human.`;
 
 interface Runtime { store?: CredentialStore; fetcher?: typeof fetch; input?: () => Promise<string>; write?: (value: unknown) => void; sleep?: (ms: number) => Promise<void>; now?: () => number }
 export async function run(args: string[], runtime: Runtime = {}): Promise<number> {
   const write = runtime.write ?? ((value) => { process.stdout.write(`${typeof value === 'string' ? value : JSON.stringify(value)}\n`); });
   if (!args.length || args.includes('--help')) { write(HELP); return 0; }
   const [command, ...rest] = args; const flags: Record<string, string> = {}; const positional: string[] = [];
-  let noWait = false;
+  let noWait = false; let allowPublish = false;
   for (let i = 0; i < rest.length; i++) {
     const item = rest[i];
+    if (item === '--allow-publish') { if (command !== 'login' || allowPublish) throw new CliError('invalid_arguments', 'Use --allow-publish once, with login only.'); allowPublish = true; continue; }
     if (item === '--no-wait') { if (command !== 'login' || noWait) throw new CliError('invalid_arguments', 'Use --no-wait once, with login only.'); noWait = true; continue; }
     if (!item.startsWith('--')) { positional.push(item); continue; }
     if (!['--origin', '--file', '--request-key', '--offset'].includes(item) || !rest[i + 1] || rest[i + 1].startsWith('--') || flags[item]) throw new CliError('invalid_arguments', 'Unknown, repeated or incomplete option. Run --help.');
     flags[item] = rest[++i];
   }
-  const allowed = new Set(['login', 'logout', 'status', 'context', 'contract', 'posts', 'validate', 'connect', 'sync', 'identity', 'selection', 'design', 'wait']);
+  const allowed = new Set(['login', 'logout', 'status', 'context', 'contract', 'posts', 'validate', 'connect', 'sync', 'identity', 'selection', 'design', 'publish', 'wait']);
   if (!allowed.has(command)) throw new CliError('unknown_command', 'Unknown command. Run --help.');
   if (command !== 'wait' && positional.length) throw new CliError('invalid_arguments', 'Unexpected arguments. Run --help.');
   const origin = new URL(flags['--origin'] ?? 'https://vibelog.org');
@@ -41,7 +44,7 @@ export async function run(args: string[], runtime: Runtime = {}): Promise<number
   const store = runtime.store ?? await secureStore(origin.origin).catch(() => { throw new CliError('secure_storage_unavailable', 'OS secure storage is required; no file fallback is supported.'); });
   const client = new AgentClient(origin.origin, store, runtime.fetcher);
   const pause = runtime.sleep ?? sleep; const now = runtime.now ?? Date.now;
-  if (command === 'login') return login(client, noWait, write, pause, now);
+  if (command === 'login') return login(client, noWait, write, pause, now, allowPublish);
   if (command === 'logout') {
     try { await client.request('/session', 'DELETE'); }
     catch (error) { if (!(error instanceof CliError) || !['agent_unauthorized', 'login_required'].includes(error.code)) throw error; }

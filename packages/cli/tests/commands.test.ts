@@ -15,7 +15,7 @@ const store = (authorized = true): CredentialStore => {
   };
 };
 const pairingResponse = { deviceCode: 'd'.repeat(43), userCode: 'AABBCCDD00', authorizationUrl: 'https://vibelog.org/agent/authorize?code=AABBCCDD00', expiresAt: '2099-01-01' };
-describe('draft-only CLI', () => {
+describe('agent CLI', () => {
   it('help names the public scoped package without loading credentials', async () => {
     const write = vi.fn(); await run(['--help'], { write }); expect(write).toHaveBeenCalledWith(expect.stringContaining('@vibelog/cli'));
   });
@@ -155,6 +155,67 @@ describe('draft-only CLI', () => {
     expect(write).toHaveBeenCalledWith(expect.objectContaining({ status: 'authorized' })); expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls[0]?.[0]).toBe('https://vibelog.org/api/agent/v1/session'); expect(await credentials.getPairing()).toBeNull();
   });
+  it('upgrades only after a new approval and safely saved grant, without exposing credentials', async () => {
+    const credentials = store(); let time = 0; const write = vi.fn();
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ expiresAt: '2099-01-01', canPublish: false }))
+      .mockResolvedValueOnce(Response.json({ ...pairingResponse, canPublish: true }))
+      .mockResolvedValueOnce(Response.json({ expiresAt: '2099-01-01', canPublish: false }))
+      .mockResolvedValueOnce(Response.json({ status: 'approved', token: 'new-publish-grant', expiresAt: '2099-01-01', canPublish: true }))
+      .mockResolvedValueOnce(Response.json({ status: 'revoked' }));
+    const runtime = { store: credentials, fetcher, write, now: () => time };
+    await run(['login', '--no-wait', '--allow-publish'], runtime);
+    expect(await credentials.get()).toHaveProperty('token', 'private-test-grant');
+    expect(await credentials.getPairing()).toHaveProperty('canPublish', true);
+    expect(fetcher.mock.calls[1]?.[1]?.body).toBe(JSON.stringify({ canPublish: true }));
+    time = 5000;
+    await run(['login', '--no-wait', '--allow-publish'], runtime);
+    expect(await credentials.get()).toHaveProperty('token', 'new-publish-grant'); expect(await credentials.getPairing()).toBeNull();
+    expect(fetcher.mock.calls[4]?.[1]).toMatchObject({ method: 'DELETE', headers: { Authorization: 'Bearer private-test-grant' } });
+    expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'authorized', canPublish: true }));
+    expect(JSON.stringify(write.mock.calls)).not.toContain('new-publish-grant'); expect(JSON.stringify(write.mock.calls)).not.toContain(pairingResponse.deviceCode);
+  });
+  it.each(['pairing_denied', 'pairing_expired'])('keeps old draft access when an upgrade is %s', async (code) => {
+    const credentials = store(); await credentials.setPairing({ ...pairingResponse, canPublish: true });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ canPublish: false, expiresAt: '2099-01-01' }))
+      .mockResolvedValueOnce(Response.json({ error: { code, message: 'Unavailable.' } }, { status: code === 'pairing_expired' ? 410 : 403 }));
+    await expect(run(['login', '--no-wait', '--allow-publish'], { store: credentials, fetcher })).rejects.toMatchObject({ code });
+    expect(await credentials.get()).toHaveProperty('token', 'private-test-grant'); expect(await credentials.getPairing()).toBeNull();
+  });
+  it('keeps old access if upgraded grant storage fails and revokes only the new grant', async () => {
+    const credentials = store(); await credentials.setPairing({ ...pairingResponse, canPublish: true });
+    credentials.set = () => Promise.reject(new Error('locked'));
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ expiresAt: '2099-01-01', canPublish: false }))
+      .mockResolvedValueOnce(Response.json({ status: 'approved', token: 'new-publish-grant', expiresAt: '2099-01-01', canPublish: true }))
+      .mockResolvedValueOnce(Response.json({ status: 'revoked' }));
+    await expect(run(['login', '--no-wait', '--allow-publish'], { store: credentials, fetcher })).rejects.toMatchObject({ code: 'secure_storage_unavailable' });
+    expect(await credentials.get()).toHaveProperty('token', 'private-test-grant'); expect(await credentials.getPairing()).not.toBeNull();
+    expect(fetcher.mock.calls[2]?.[1]).toMatchObject({ headers: { Authorization: 'Bearer new-publish-grant' } });
+  });
+  it.each([false, true])('does not silently replace a pending pairing with scope %s', async (canPublish) => {
+    const credentials = store(); await credentials.setPairing({ ...pairingResponse, canPublish }); const fetcher = vi.fn<typeof fetch>();
+    await expect(run(['login', '--no-wait', ...(canPublish ? [] : ['--allow-publish'])], { store: credentials, fetcher })).rejects.toMatchObject({ code: 'pairing_permission_conflict' });
+    expect(fetcher).not.toHaveBeenCalled(); expect(await credentials.get()).not.toBeNull(); expect(await credentials.getPairing()).toHaveProperty('canPublish', canPublish);
+  });
+  it('rejects missing or mismatched server publishing permission without saving a grant', async () => {
+    const credentials = store(false); const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(pairingResponse));
+    await expect(run(['login', '--no-wait', '--allow-publish'], { store: credentials, fetcher })).rejects.toMatchObject({ code: 'publish_permission_unavailable' });
+    expect(await credentials.getPairing()).toBeNull();
+    await credentials.setPairing({ ...pairingResponse, canPublish: true });
+    fetcher.mockResolvedValueOnce(Response.json({ status: 'approved', token: 'bad-scope', expiresAt: '2099-01-01', canPublish: false }));
+    await expect(run(['login', '--no-wait', '--allow-publish'], { store: credentials, fetcher })).rejects.toMatchObject({ code: 'invalid_response' });
+    expect(credentials.set).not.toHaveBeenCalled();
+    await expect(run(['status', '--allow-publish'], { store: credentials })).rejects.toMatchObject({ code: 'invalid_arguments' });
+  });
+  it('publishes with stable stdin input/key and exposes a fixed scope-recovery hint', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ status: 'accepted', operationId: 'op' }));
+    await run(['publish', '--file', '-', '--request-key', 'publish-request-123456'], { store: store(), fetcher, write: vi.fn(), input: () => Promise.resolve('{"stateVersion":"state"}') });
+    expect(fetcher.mock.calls[0]?.[0]).toBe('https://vibelog.org/api/agent/v1/publish');
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('Idempotency-Key')).toBe('publish-request-123456');
+    fetcher.mockResolvedValue(Response.json({ error: { code: 'publish_permission_required', message: 'Approve first.' } }, { status: 403 }));
+    await expect(new AgentClient('https://vibelog.org', store(), fetcher).request('/publish', 'POST', {}, 'publish-request-123456')).rejects.toMatchObject({ status: 403, recovery: { action: 'request_publish_access' } });
+  });
   it('logout revokes a saved grant and removes both local entries', async () => {
     const credentials = store(); await credentials.setPairing(pairingResponse);
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ status: 'revoked' }));
@@ -244,7 +305,7 @@ describe('draft-only CLI', () => {
     fetcher.mockResolvedValue(Response.json({ status: 'succeeded' })); expect(await client.wait(id, () => Promise.resolve(), () => time)).toMatchObject({ status: 'succeeded' });
   });
   it('rejects publishing and credential arguments', async () => {
-    await expect(run(['publish'], { store: store() })).rejects.toMatchObject({ code: 'unknown_command' });
+    await expect(run(['publish'], { store: store() })).rejects.toMatchObject({ code: 'invalid_arguments' });
     await expect(run(['status', '--token', 'secret'], { store: store() })).rejects.toMatchObject({ code: 'invalid_arguments' });
   });
   it('returns a nonzero status for invalid designs', async () => {

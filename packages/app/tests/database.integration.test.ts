@@ -13,6 +13,7 @@ import { loadWorkerConfig } from '../src/config.js';
 import { smokeWorker } from '../scripts/worker-smoke.js';
 import { CloudTasksRequestVerifier } from '../src/adapters/cloud-tasks-request-verifier.js';
 import { AgentRepository, operationResult } from '../src/agent/repository.js';
+import { createReleaseSnapshot } from '../src/publication-diff.js';
 import { stateVersion } from '../src/agent/contracts.js';
 import { agentRoutes } from '../src/agent/routes.js';
 import { jsonError, requestContext } from '../src/http.js';
@@ -297,8 +298,8 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     await database.close();
   });
   async function owner() { const id = randomUUID(); ids.push(id); await database.db.insert(user).values({ id, name: 'Agent owner', email: `${id}@example.com` }); return id; }
-  async function grant(id: string) {
-    const pairing = await repository.createPairing(); await repository.approve(id, pairing.userCode, true);
+  async function grant(id: string, canPublish = false) {
+    const pairing = await repository.createPairing(canPublish); await repository.approve(id, pairing.userCode, true);
     const result = await repository.redeem(pairing.deviceCode); if (result.status !== 'approved') throw new Error('Expected approval'); return { pairing, ...result };
   }
   it('limits an anonymous client before shared pairing/poll budgets and isolates another client', async () => {
@@ -392,7 +393,7 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     const context = async () => (await router.request('/context', { headers })).json() as Promise<unknown>;
     const session = await router.request('/session', { headers });
     expect(session.headers.get('cache-control')).toBe('no-store');
-    expect(await session.json()).toEqual({ permission: 'draft:read-write', expiresAt: approved.expiresAt });
+    expect(await session.json()).toEqual({ permission: 'draft:read-write', expiresAt: approved.expiresAt, canPublish: false });
     expect(await context()).toMatchObject({ blog: null, sourceReady: false, draftReady: false, nextActions: [{ action: 'connect' }] });
     const input = { username: `resume-${id.slice(0, 8)}`, hackmdUsername: 'alice', language: 'en' };
     const { blog, operation } = await database.createBlog(id, input.username, input.hackmdUsername);
@@ -651,6 +652,100 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     expect(await database.listDesignRevisions(blog.id)).toHaveLength(1);
     expect((await database.getBlog(blog.id))?.draftArtifactId).toBe(draft.id);
   });
+  async function publishFixture() {
+    const id = await owner(); const approved = await grant(id, true); const draftOnly = await grant(id);
+    const { blog, operation } = await database.createBlog(id, `publish-${id.slice(0, 8)}`, 'alice');
+    const lease = await database.claimOperation(operation.id); if (!lease) throw new Error('Missing sync claim');
+    const initial = await database.getActiveDesign(blog.id); if (!initial) throw new Error('Missing design');
+    const source = await database.createArtifact(blog.id, 'source'); const draft = await database.createArtifact(blog.id, 'draft');
+    await database.completeSyncOperation(lease, {
+      title: 'Writer', description: '', author: 'Writer', sourceArtifactId: source.id, draftArtifactId: draft.id, designRevisionId: initial.id,
+      contentProfile: { postCount: 2, tagCount: 0, averageLength: 'short', codeUsage: 'none', imageUsage: 'none', mathUsage: 'none' },
+      contentManifest: [{ title: 'Included', slug: 'included', publishedAt: '2026-01-01', included: true, tags: [] }, { title: 'Excluded', slug: 'excluded', publishedAt: '2026-01-01', included: false, tags: [] }],
+    }, {});
+    const router = agentRoutes(database, { dispatch: () => Promise.resolve(0) }, 'https://vibelog.org', { betterAuthSecret: 'test' });
+    const read = async () => { const result = await database.getBlog(blog.id); if (!result) throw new Error('Missing blog'); return result; };
+    const headers = { Authorization: `Bearer ${approved.token}` };
+    const context = async (): Promise<unknown> => (await router.request('/context', { headers })).json();
+    const publish = (body: unknown, key = randomUUID(), token = approved.token) => router.request('/publish', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) });
+    const finish = async (operationId: string) => {
+      const claim = await database.claimOperation(operationId); if (!claim) throw new Error('Missing publish claim');
+      const artifact = await database.createArtifact(blog.id, 'release');
+      return database.completePublishOperation(claim, artifact.id, createReleaseSnapshot(await read()), { message: 'Site published' });
+    };
+    return { id, blog, initial, draftOnly, approved, read, context, publish, finish, router };
+  }
+  it('reports exact counts and publication state, replays publish and never charges build quota', async () => {
+    const f = await publishFixture();
+    expect(await f.context()).toMatchObject({ canPublish: true, publication: { status: 'not_published', publicUrl: null }, postCounts: { total: 2, selected: 1 } });
+    const body = { stateVersion: stateVersion(await f.read()) }; const key = randomUUID();
+    const denied = await f.publish(body, key, f.draftOnly.token);
+    expect(denied.status).toBe(403); expect(await denied.json()).toHaveProperty('error.code', 'publish_permission_required');
+    expect(await database.getActiveOperation(f.blog.id, f.id)).toBeNull();
+    const responses = await Promise.all([f.publish(body, key), f.publish(body, key)]);
+    expect(responses.map((response) => response.status)).toEqual([202, 202]);
+    const result = await responses[0].json() as { operationId: string }; expect(await responses[1].json()).toEqual(result);
+    expect((await f.publish({ stateVersion: 'x'.repeat(43) }, key)).status).toBe(409);
+    expect((await f.publish(body, key, f.draftOnly.token)).status).toBe(403);
+    expect(await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, f.id))).toHaveLength(0);
+    await f.finish(result.operationId);
+    expect(await f.context()).toHaveProperty('publication', { status: 'current', publicUrl: `https://${f.blog.username}.vibelog.org/` });
+    expect(await (await f.publish(body)).json()).toEqual({ status: 'unchanged' });
+    expect(await (await f.publish(body, key)).json()).toEqual(result);
+    expect(await database.listReleases(f.blog.id)).toHaveLength(1);
+    await database.db.update(blogs).set({ contentVersion: 2 }).where(eq(blogs.id, f.blog.id));
+    expect(await f.context()).toHaveProperty('publication.status', 'changes_pending');
+    const stale = await f.publish(body); expect(stale.status).toBe(409); expect(await stale.json()).toHaveProperty('error.code', 'state_changed');
+    const republish = await (await f.publish({ stateVersion: stateVersion(await f.read()) })).json() as { operationId: string };
+    await f.finish(republish.operationId); expect(await f.context()).toHaveProperty('publication.status', 'current');
+    expect(await database.listReleases(f.blog.id)).toHaveLength(2);
+  });
+  it('rejects incomplete/deleting drafts and active work, preserving the live release on worker failure', async () => {
+    const f = await publishFixture();
+    const result = await (await f.publish({ stateVersion: stateVersion(await f.read()) })).json() as { operationId: string };
+    const live = await f.finish(result.operationId);
+    await database.db.update(blogs).set({ contentVersion: 2 }).where(eq(blogs.id, f.blog.id));
+    const next = await (await f.publish({ stateVersion: stateVersion(await f.read()) })).json() as { operationId: string };
+    const active = await f.publish({ stateVersion: stateVersion(await f.read()) }); expect(await active.json()).toHaveProperty('error.code', 'operation_in_progress');
+    const lease = await database.claimOperation(next.operationId); if (!lease) throw new Error('Missing claim');
+    await database.failOperation(lease, 'Synthetic publish failure');
+    expect((await database.getActiveRelease(f.blog.id))?.id).toBe(live.id); expect(await f.context()).toHaveProperty('publication.status', 'changes_pending');
+    await database.db.update(blogs).set({ draftDesignRevisionId: null }).where(eq(blogs.id, f.blog.id));
+    const incomplete = await f.publish({ stateVersion: stateVersion(await f.read()) }); expect(incomplete.status).toBe(409); expect(await incomplete.json()).toHaveProperty('error.code', 'draft_not_ready');
+    await database.db.update(blogs).set({ state: 'deleting' }).where(eq(blogs.id, f.blog.id));
+    expect(await (await f.publish({ stateVersion: stateVersion(await f.read()) })).json()).toHaveProperty('error.code', 'deletion_in_progress');
+    expect((await database.getActiveRelease(f.blog.id))?.id).toBe(live.id);
+  });
+  it('serializes browser and agent publish and retains browser unsaved-preview protection', async () => {
+    const f = await publishFixture(); const tokenHash = randomUUID();
+    await database.createPreviewSession(tokenHash, f.id, f.blog.id, '2099-01-01', { ...f.initial.config, description: 'Unsaved preview' });
+    await expect(database.createPublishOperation(f.id, f.blog.id, tokenHash)).rejects.toThrow('Preview has unsaved design changes');
+    expect(await database.getActiveOperation(f.blog.id, f.id)).toBeNull();
+    const clean = randomUUID(); await database.createPreviewSession(clean, f.id, f.blog.id, '2099-01-01', f.initial.config);
+    const [agent, browser] = await Promise.allSettled([f.publish({ stateVersion: stateVersion(await f.read()) }), database.createPublishOperation(f.id, f.blog.id, clean)]);
+    const agentSucceeded = agent.status === 'fulfilled' && agent.value.status === 202;
+    expect(Number(agentSucceeded) + Number(browser.status === 'fulfilled')).toBe(1);
+    const queued = await database.db.select().from(operations).where(and(eq(operations.blogId, f.blog.id), eq(operations.type, 'publish')));
+    expect(queued).toHaveLength(1);
+  });
+  it('keeps old grants draft-only and derives publishing scope only from the saved pairing', async () => {
+    const id = await owner(); const old = await grant(id); const pairing = await repository.createPairing(true);
+    expect((await repository.grant(old.token)).canPublish).toBe(false);
+    expect(await repository.authorization(id, pairing.userCode)).toMatchObject({ status: 'pending', canPublish: true });
+    await repository.approve(id, pairing.userCode, true);
+    const upgraded = await repository.redeem(pairing.deviceCode); if (upgraded.status !== 'approved') throw new Error('Missing grant');
+    expect((await repository.grant(upgraded.token)).canPublish).toBe(true);
+    expect((await repository.grant(old.token)).canPublish).toBe(false);
+    const other = await owner(); expect(await repository.authorization(other, pairing.userCode)).toBeNull();
+    await repository.revoke(other, (await repository.grant(upgraded.token)).id); expect((await repository.grant(upgraded.token)).canPublish).toBe(true);
+    await repository.revoke(id, (await repository.grant(upgraded.token)).id); await expect(repository.grant(upgraded.token)).rejects.toMatchObject({ code: 'agent_unauthorized' });
+    const denied = await repository.createPairing(true); await repository.approve(id, denied.userCode, false);
+    await expect(repository.redeem(denied.deviceCode)).rejects.toMatchObject({ code: 'pairing_denied' });
+    const expired = await repository.createPairing(true);
+    await database.db.update(agentPairings).set({ expiresAt: new Date('2000-01-01') }).where(eq(agentPairings.userCode, expired.userCode));
+    await expect(repository.redeem(expired.deviceCode)).rejects.toMatchObject({ code: 'pairing_expired' });
+    expect((await repository.grant(old.token)).canPublish).toBe(false);
+  });
   it('agent router returns JSON for auth/ownership errors and cannot publish or call hosted AI', async () => {
     const id = await owner(); const other = await owner(); const approved = await grant(id);
     const { operation } = await database.createBlog(other, `other-${other.slice(0, 8)}`, 'alice');
@@ -659,7 +754,7 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     const headers = { Authorization: `Bearer ${approved.token}` };
     expect((await router.request('/context')).status).toBe(401);
     const foreign = await router.request(`/operations/${operation.id}`, { headers }); expect(foreign.status).toBe(404); expect(await foreign.json()).toHaveProperty('error.code', 'operation_not_found');
-    for (const path of ['/publish', '/generate', '/export', '/delete', '/releases/restore']) expect((await router.request(path, { method: 'POST', headers })).status).toBe(404);
+    for (const path of ['/generate', '/export', '/delete', '/releases/restore']) expect((await router.request(path, { method: 'POST', headers })).status).toBe(404);
     const context = await router.request('/context', { headers }); expect(context.headers.get('cache-control')).toBe('no-store'); expect(await context.json()).toMatchObject({ blog: null, editorUrl: 'https://vibelog.org/editor' });
     await repository.revoke(id, (await repository.grant(approved.token)).id); expect((await router.request('/context', { headers })).status).toBe(401);
   });

@@ -36,8 +36,8 @@ export class AiQuotaExceededError extends Error { constructor(readonly retryAfte
 export class BlogAddressTakenError extends Error { constructor(readonly username: string) { super(`Blog address is already taken: ${username}`); this.name = 'BlogAddressTakenError'; } }
 export class BlogAlreadyExistsError extends Error { constructor() { super('A blog is already connected'); this.name = 'BlogAlreadyExistsError'; } }
 export class BlogConnectionConflictError extends Error {
-  constructor(readonly code: 'source_locked' | 'state_changed' | 'operation_in_progress' | 'deletion_in_progress') {
-    super({ source_locked: 'The connected profile and address cannot change after a successful sync.', state_changed: 'The blog changed. Refresh its context before retrying.', operation_in_progress: 'Wait for the current operation before retrying.', deletion_in_progress: 'Finish deleting the blog first.' }[code]);
+  constructor(readonly code: 'source_locked' | 'state_changed' | 'operation_in_progress' | 'deletion_in_progress' | 'draft_not_ready') {
+    super({ draft_not_ready: 'Sync and compile the saved draft before publishing.', source_locked: 'The connected profile and address cannot change after a successful sync.', state_changed: 'The blog changed. Refresh its context before retrying.', operation_in_progress: 'Wait for the current operation before retrying.', deletion_in_progress: 'Finish deleting the blog first.' }[code]);
     this.name = 'BlogConnectionConflictError';
   }
 }
@@ -267,13 +267,30 @@ export class AppDatabase {
     return this.createOperation(userId, blogId, 'sync', { ...parsed, excludedSlugs, previewPath: typeof payload.previewPath === 'string' ? payload.previewPath : '/' });
   }
   async createPublishOperation(userId: string, blogId: string, previewTokenHash: string, previewPath = '/'): Promise<OperationRecord> {
-    const blog = await this.getBlog(blogId); if (!blog || blog.userId !== userId || !blog.sourceArtifactId || !blog.draftArtifactId || !blog.draftDesignRevisionId) throw new Error('Blog has no compiled draft. Sync the content first.');
-    const theme = await this.getActiveDesign(blogId); if (!theme) throw new Error('Active design not found');
-    const preview = await this.getPreviewSession(previewTokenHash); if (!preview || preview.userId !== userId || preview.blogId !== blogId) throw new Error('Preview session expired or invalid');
-    if (preview.designConfig && JSON.stringify(preview.designConfig) !== JSON.stringify(theme.config)) throw new Error('Preview has unsaved design changes');
-    if (blog.draftDesignRevisionId !== theme.id) throw new Error('Active design has not been compiled');
-    const release = await this.getActiveRelease(blogId); if (release?.contentVersion === blog.contentVersion && release.themeRevisionId === theme.id) throw new Error('Nothing to publish');
-    return this.createOperation(userId, blogId, 'publish', { contentVersion: blog.contentVersion, designRevisionId: theme.id, draftArtifactId: blog.draftArtifactId, previewPath });
+    return this.transaction(async (db) => {
+      await db.db.select({ id: schema.blogs.id }).from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId))).for('update');
+      const theme = await db.getActiveDesign(blogId); if (!theme) throw new Error('Active design not found');
+      const preview = await db.getPreviewSession(previewTokenHash); if (!preview || preview.userId !== userId || preview.blogId !== blogId) throw new Error('Preview session expired or invalid');
+      if (preview.designConfig && JSON.stringify(preview.designConfig) !== JSON.stringify(theme.config)) throw new Error('Preview has unsaved design changes');
+      const operation = await db.createSavedDraftPublishOperation(userId, blogId, previewPath);
+      if (!operation) throw new Error('Nothing to publish');
+      return operation;
+    });
+  }
+  /** Publish only the saved, compiled draft; browser callers separately validate their preview. */
+  async createSavedDraftPublishOperation(userId: string, blogId: string, previewPath = '/'): Promise<OperationRecord | null> {
+    return this.transaction(async (db) => {
+      await db.db.select({ id: schema.blogs.id }).from(schema.blogs).where(and(eq(schema.blogs.id, blogId), eq(schema.blogs.userId, userId))).for('update');
+      const blog = await db.getBlog(blogId);
+      if (!blog || blog.userId !== userId || !blog.sourceArtifactId || !blog.draftArtifactId || !blog.draftDesignRevisionId) throw new BlogConnectionConflictError('draft_not_ready');
+      if (blog.state === 'deleting') throw new BlogConnectionConflictError('deletion_in_progress');
+      if (await db.getActiveOperation(blogId, userId)) throw new BlogConnectionConflictError('operation_in_progress');
+      const theme = await db.getActiveDesign(blogId);
+      if (!theme || blog.draftDesignRevisionId !== theme.id) throw new BlogConnectionConflictError('draft_not_ready');
+      const release = await db.getActiveRelease(blogId);
+      if (release?.contentVersion === blog.contentVersion && release.themeRevisionId === theme.id) return null;
+      return db.createOperation(userId, blogId, 'publish', { contentVersion: blog.contentVersion, designRevisionId: theme.id, draftArtifactId: blog.draftArtifactId, previewPath });
+    });
   }
   async createDesignOperation(userId: string, blogId: string, prompt: string, expectedRevisionId: string, limits: AiQuotaLimits, previewPath = '/'): Promise<OperationRecord> {
     const at = limits.at ?? new Date(); const window = quotaWindow(at);

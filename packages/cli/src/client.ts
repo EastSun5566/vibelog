@@ -1,12 +1,13 @@
 import type { CredentialStore } from './credentials.js';
 
 interface Recovery {
-  action: 'login' | 'read_context' | 'check_secure_storage' | 'wait_retry_after' | 'retry_same_request' | 'retry_read' | 'resume_wait' | 'open_editor' | 'check_request' | 'check_service' | 'restart_login';
+  action: 'request_publish_access' | 'login' | 'read_context' | 'check_secure_storage' | 'wait_retry_after' | 'retry_same_request' | 'retry_read' | 'resume_wait' | 'open_editor' | 'check_request' | 'check_service' | 'restart_login';
   operationId?: string;
 }
 interface ErrorMetadata { status?: number; requestId?: string; retryAfterSeconds?: number; recovery?: Recovery }
 
 function recoveryFor(code: string, status?: number): Recovery {
+  if (code === 'publish_permission_required') return { action: 'request_publish_access' };
   if (code === 'login_required' || code === 'agent_unauthorized') return { action: 'login' };
   if (code === 'secure_storage_unavailable') return { action: 'check_secure_storage' };
   if (['state_changed', 'operation_in_progress', 'blog_already_connected', 'blog_not_found', 'draft_not_ready', 'source_locked'].includes(code)) return { action: 'read_context' };
