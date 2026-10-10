@@ -15,7 +15,7 @@ config:
     - glm-5.3-flash
   vibelog:aiApiKeyEnv: OPENCODE_API_KEY
   vibelog:googleAnalyticsMeasurementId: G-51Q2T27PWS
-  vibelog:agentCliVersion: 0.3.0
+  vibelog:agentCliVersion: 0.4.0
   vibelog:r2Location: apac
   vibelog:neonOrgId: org-solitary-cake-20442223
   vibelog:neonRegionId: aws-ap-southeast-1
