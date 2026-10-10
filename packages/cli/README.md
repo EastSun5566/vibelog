@@ -3,17 +3,17 @@
 Set up or update a VibeLog **private draft** from your coding agent. Publishing is optional and requires explicit browser-approved permission and a request from the human. Requires Node 24+ and macOS Keychain, Windows Credential Manager, or Linux Secret Service. There is no file-based credential fallback.
 
 ```sh
-npx --yes @vibelog/cli@0.3.0 --help
-npx --yes @vibelog/cli@0.3.0 status
+npx --yes @vibelog/cli@0.4.0 --help
+npx --yes @vibelog/cli@0.4.0 status
 ```
 
 For local development, use `pnpm --filter @vibelog/cli build` and `node packages/cli/dist/main.js` from this repository. The server must support the agent API before using the CLI against it.
 
-This source prepares **0.4.0**. Keep using the website's published, pinned version until the separate npm release gate completes; publishing commands require 0.4.0 and the compatible API.
+Publishing commands require **0.4.0** and a compatible API. The website's prompt uses the production-pinned CLI version.
 
 Reuse valid authorization. Run `login` only when `status` reports `login_required` or `agent_unauthorized`, or for an explicit publishing-permission upgrade; network and secure-storage errors should be resolved without creating another login.
 
-In 0.3.0, agents use `login --no-wait`: it prints an approval URL, code and expiry, **never a token or device code**, and returns immediately with `approval_required` (exit 0). Sign in with the intended account, confirm the code in the browser, and approve draft access. Return to your agent; it runs the same command again to finish connecting and receive `authorized`. The pending request is stored in OS secure storage, separate from your grant and isolated by service origin. Do not start another login process or use `nohup` to wait. Some harnesses need human input to resume; explain that limitation without asking for an extra “Done”.
+Agents use `login --no-wait`: it prints an approval URL, code and expiry, **never a token or device code**, and returns immediately with `approval_required` (exit 0). Sign in with the intended account, confirm the code in the browser, and approve draft access. Return to your agent; it runs the same command again to finish connecting and receive `authorized`. The pending request is stored in OS secure storage, separate from your grant and isolated by service origin. Do not start another login process or use `nohup` to wait. Some harnesses need human input to resume; explain that limitation without asking for an extra “Done”.
 
 `login` without the flag still waits, and now reuses the pending request after interruption. Approval expires after ten minutes; denied/expired requests report an error and are cleared, so the next explicit login can start a new request. Network/storage errors retain recovery state, and `Retry-After` is respected. A pending response can include `retryAfterSeconds`; wait before checking again, and never ask someone who already approved to approve twice. If redemption completed but the process crashed before saving the token, start a new login; this is not an exactly-once recovery protocol. Use only one login process per origin at a time.
 
@@ -92,4 +92,4 @@ Only publish after the human explicitly asks, never as a consequence of setup or
 
 CLI versions are independent of the app. Its first npm publish is a separate, human-approved gate: verify scope permissions, test the packed package, then publish it as public. Once the package exists, configure an npm trusted publisher for this repository's `cli-release.yml`, environment `npm`, and GitHub-hosted runner. Later versions use annotated `cli-vX.Y.Z` tags and the dedicated workflow, requiring successful CI for that exact main SHA. No long-lived npm token is stored in GitHub.
 
-Only after the pinned package can be installed anonymously and the API is deployed, set Pulumi's optional `vibelog:agentCliVersion` to `0.1.0` (or `VIBELOG_AGENT_CLI_VERSION=0.1.0` on a self-hosted web process) to enable the homepage prompt and `/agent-setup/prompt.md`. Leave it unset before that gate. Do not enable an untested version or couple CLI publication to production deployment.
+Only after the pinned package can be installed anonymously and the API is deployed, set Pulumi's optional `vibelog:agentCliVersion` to `0.4.0` (or `VIBELOG_AGENT_CLI_VERSION=0.4.0` on a self-hosted web process) to enable the homepage prompt and `/agent-setup/prompt.md`. Leave it unset before that gate. Do not enable an untested version or couple CLI publication to production deployment.
