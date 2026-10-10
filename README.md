@@ -57,7 +57,7 @@ The monorepo is split by responsibility:
 
 ## Deployment
 
-Copy the agent setup prompt from [vibelog.org](https://vibelog.org) to let your coding agent build a private draft through [`@vibelog/cli`](packages/cli/README.md). Browser approval grants access for 12 hours. Login is draft-only by default; compatible CLI versions can request publishing access separately. Agents must wait for your explicit publish request and only share a live URL after publication succeeds.
+Copy the agent setup prompt from [vibelog.org](https://vibelog.org) to let your coding agent build a private draft through [`@vibelog/cli`](packages/cli/README.md). Browser approval grants access for 12 hours. CLI 0.5 requests draft and publishing access together by default, with a draft-only option; CLI 0.4 requests publishing access separately. The browser always shows the requested permissions. Agents must wait for your explicit publish request and only share a live URL after publication succeeds.
 
 Local development uses Compose. The cloud `prod` stack uses Neon PostgreSQL, Cloudflare R2 and Workers, GCP Cloud Run and Cloud Tasks, and Resend.
 

@@ -43,7 +43,7 @@ export class AgentClient {
     if (key) headers.set('Idempotency-Key', key);
     if (!anonymous) {
       const credentials = await this.store.get().catch(() => { throw new CliError('secure_storage_unavailable', 'OS secure storage is required; no file fallback is supported.'); });
-      if (!credentials) throw new CliError('login_required', 'Run login first.');
+      if (!credentials) throw new CliError('login_required', 'Run login --no-wait for browser-approved draft and publishing access, or add --draft-only for private drafts only.');
       headers.set('Authorization', `Bearer ${credentials.token}`);
     }
     let response: Response;

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { runInNewContext } from 'node:vm';
+import { readFile } from 'node:fs/promises';
 import { Hono } from 'hono';
 import { DEFAULT_DESIGN_V2, designContractV2 } from '@vibelog/core';
 import { agentNextActions, requestHash, validateAgentDesign } from '../src/agent/contracts.js';
@@ -83,13 +85,41 @@ describe('agent design contract', () => {
   });
   it('only instructs a published compatible CLI to resume without waiting and never guesses setup identity', () => {
     for (const version of ['0.1.0', '0.2.0']) expect(agentInstructions('https://vibelog.org', version)).not.toContain('--no-wait');
-    for (const version of ['0.3.0', '0.4.0', '1.0.0']) {
+    for (const version of ['0.3.0', '0.4.0', '0.5.0', '1.0.0']) {
       const text = agentInstructions('https://vibelog.org', version);
-      expect(text).toContain(version === '0.3.0' ? 'same `login --no-wait`' : 'same `login --no-wait --allow-publish`'); expect(text).toContain('nohup');
+      expect(text).toContain(version !== '0.4.0' ? 'same `login --no-wait`' : 'same `login --no-wait --allow-publish`'); expect(text).toContain('nohup');
       expect(text).toContain('Never guess profile or address'); expect(text).toContain('their corrected username');
       expect(text).toContain('latest stateVersion'); expect(text).toContain('Do not create a replacement operation');
     }
     expect(onboardingPrompt('https://vibelog.org', '0.3.0')).toContain('Never guess');
+  });
+  it('gates combined approval and immediate preview handoff by pinned version', () => {
+    const text = agentInstructions('https://vibelog.org', '0.5.0');
+    for (const part of ['canPublish false', 'at the start', 'same `login --no-wait`', '--draft-only',
+      'original pending scope', 'Finish that request first', 'after every successful connect, sync or design',
+      'clickable `editorUrl`', 'postCounts.selected / postCounts.total', "human's language", '2–3 actual changes',
+      'without an extra confirmation round', 'contract example is bare IR', 'Never describe pending or failed work as success']) {
+      expect(text.toLowerCase()).toContain(part.toLowerCase());
+    }
+    expect(text).not.toContain('run login --no-wait --allow-publish and obtain');
+    expect(agentInstructions('https://vibelog.org', '0.4.0')).not.toContain('--draft-only');
+    expect(agentInstructions('https://vibelog.org', '0.4.0')).toContain('same `login --no-wait --allow-publish`');
+    const prompt = onboardingPrompt('https://vibelog.org', '0.5.0');
+    expect(prompt).toContain('Upgrade an existing draft-only grant'); expect(prompt).toContain('editorUrl');
+    expect(onboardingPrompt('https://vibelog.org', '0.4.0')).not.toContain('Upgrade an existing draft-only grant');
+  });
+  it('uses executable matching request envelopes in public instructions and the CLI README', async () => {
+    const texts = [agentInstructions('https://vibelog.org', '0.4.0'), agentInstructions('https://vibelog.org', '0.5.0'),
+      await readFile(new URL('../../cli/README.md', import.meta.url), 'utf8')];
+    for (const text of texts) {
+      const code = /```js\n([\s\S]*?)\n```/u.exec(text)?.[1];
+      if (!code) throw new Error('Missing executable request examples');
+      const design = designContractV2().example;
+      const bodies = runInNewContext(`${code}; ({ validationInput, submissionInput })`, { design, context: { stateVersion: 'current-state' } }) as { validationInput: string; submissionInput: string };
+      const validation = JSON.parse(bodies.validationInput) as { design: unknown };
+      expect(Object.keys(validation)).toEqual(['design']); expect(validateAgentDesign(validation.design).valid).toBe(true);
+      expect(JSON.parse(bodies.submissionInput)).toEqual({ stateVersion: 'current-state', design });
+    }
   });
   it.each([
     ['pending', 'Authorize your agent'], ['approved', 'Draft access approved'], ['consumed', 'Agent connected'],

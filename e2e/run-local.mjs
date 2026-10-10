@@ -16,7 +16,7 @@ const environment = {
   APP_ORIGIN: appOrigin,
   HACKMD_BASE_URL: 'http://hackmd-fixture:4400',
   GOOGLE_ANALYTICS_MEASUREMENT_ID: 'G-TEST123',
-  VIBELOG_AGENT_CLI_VERSION: '0.1.0',
+  VIBELOG_AGENT_CLI_VERSION: '0.5.0',
   PORT: String(appPort),
   POSTGRES_PORT: String(postgresPort),
   S3MOCK_PORT: String(s3mockPort),
