@@ -342,6 +342,23 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     expect((await router.request('/pairings', { method: 'POST', headers: { 'cf-connecting-ip': '192.0.2.100', 'x-vibelog-client-key': 'b'.repeat(43) } }, env)).status).toBe(429);
     expect((await router.request('/pairings', { method: 'POST' }, { incoming: { socket: { remoteAddress: '127.0.0.2' } } })).status).toBe(201);
   });
+  it('keeps omitted pairing permission draft-only and accepts documented design envelopes', async () => {
+    const router = agentRoutes(database, { dispatch: () => Promise.resolve(0) }, 'http://localhost', { betterAuthSecret: randomUUID() });
+    router.onError((error, c) => jsonError(c, error));
+    const created = await router.request('/pairings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, { incoming: { socket: { remoteAddress: '127.0.0.8' } } });
+    expect(created.status).toBe(201);
+    const pairing = await created.json() as { deviceCode: string; userCode: string; canPublish: boolean };
+    expect(pairing.canPublish).toBe(false);
+    const id = await owner(); await repository.approve(id, pairing.userCode, true);
+    const approved = await repository.redeem(pairing.deviceCode);
+    if (approved.status !== 'approved') throw new Error('Expected approval');
+    expect(approved.canPublish).toBe(false);
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${approved.token}` };
+    const design = DEFAULT_DESIGN_V2;
+    expect((await router.request('/design/validate', { method: 'POST', headers, body: JSON.stringify(design) })).status).toBe(400);
+    const valid = await router.request('/design/validate', { method: 'POST', headers, body: JSON.stringify({ design }) });
+    expect(valid.status).toBe(200); expect(await valid.json()).toMatchObject({ valid: true });
+  });
   it('requires explicit approval and redeems a hash-only grant exactly once', async () => {
     const id = await owner(); const pairing = await repository.createPairing();
     await expect(repository.redeem(pairing.deviceCode)).rejects.toMatchObject({ code: 'slow_down' });

@@ -4,12 +4,13 @@ import { AgentClient, CliError } from './client.js';
 import { secureStore, type CredentialStore } from './credentials.js';
 import { login } from './login.js';
 
-export const HELP = `VibeLog CLI 0.4.0 (@vibelog/cli) — private drafts and optional publishing
+export const HELP = `VibeLog CLI 0.5.0 (@vibelog/cli) — private drafts and human-requested publishing
 Usage: vibelog <command> [options]
-  login                 Show a browser approval URL; store the resulting grant securely
+  login                 Request browser-approved draft and publishing access
   login --no-wait       Start or resume approval without waiting; run again after approving
-  login --no-wait --allow-publish
-                        Request browser-approved draft and publishing access
+  login --no-wait --draft-only
+                        Request draft access without publishing permission
+  --allow-publish       Login-only compatibility alias for publishing access
   logout                Revoke the grant and remove local credentials
   status                Check authorization
   context               Read draft state, saved design and content profile
@@ -27,10 +28,13 @@ export async function run(args: string[], runtime: Runtime = {}): Promise<number
   const write = runtime.write ?? ((value) => { process.stdout.write(`${typeof value === 'string' ? value : JSON.stringify(value)}\n`); });
   if (!args.length || args.includes('--help')) { write(HELP); return 0; }
   const [command, ...rest] = args; const flags: Record<string, string> = {}; const positional: string[] = [];
-  let noWait = false; let allowPublish = false;
+  let noWait = false; let requestedPublish: boolean | undefined;
   for (let i = 0; i < rest.length; i++) {
     const item = rest[i];
-    if (item === '--allow-publish') { if (command !== 'login' || allowPublish) throw new CliError('invalid_arguments', 'Use --allow-publish once, with login only.'); allowPublish = true; continue; }
+    if (item === '--allow-publish' || item === '--draft-only') {
+      if (command !== 'login' || requestedPublish !== undefined) throw new CliError('invalid_arguments', 'Use one permission flag once, with login only.');
+      requestedPublish = item === '--allow-publish'; continue;
+    }
     if (item === '--no-wait') { if (command !== 'login' || noWait) throw new CliError('invalid_arguments', 'Use --no-wait once, with login only.'); noWait = true; continue; }
     if (!item.startsWith('--')) { positional.push(item); continue; }
     if (!['--origin', '--file', '--request-key', '--offset'].includes(item) || !rest[i + 1] || rest[i + 1].startsWith('--') || flags[item]) throw new CliError('invalid_arguments', 'Unknown, repeated or incomplete option. Run --help.');
@@ -44,7 +48,7 @@ export async function run(args: string[], runtime: Runtime = {}): Promise<number
   const store = runtime.store ?? await secureStore(origin.origin).catch(() => { throw new CliError('secure_storage_unavailable', 'OS secure storage is required; no file fallback is supported.'); });
   const client = new AgentClient(origin.origin, store, runtime.fetcher);
   const pause = runtime.sleep ?? sleep; const now = runtime.now ?? Date.now;
-  if (command === 'login') return login(client, noWait, write, pause, now, allowPublish);
+  if (command === 'login') return login(client, noWait, write, pause, now, requestedPublish);
   if (command === 'logout') {
     try { await client.request('/session', 'DELETE'); }
     catch (error) { if (!(error instanceof CliError) || !['agent_unauthorized', 'login_required'].includes(error.code)) throw error; }

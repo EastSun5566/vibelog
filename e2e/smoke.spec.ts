@@ -554,7 +554,7 @@ test('agent primary entry supports copy, fallback, keyboard and no JavaScript', 
     const nativeSummary = native.locator('summary').filter({ hasText: 'View prompt' });
     await nativeSummary.focus(); await native.keyboard.press('Enter');
     await expect(native.getByLabel('Agent prompt')).toBeVisible();
-    await expect(native.getByLabel('Agent prompt')).toContainText('@vibelog/cli@0.1.0');
+    await expect(native.getByLabel('Agent prompt')).toContainText('@vibelog/cli@0.5.0');
     await native.getByRole('link', { name: 'Use the editor' }).click();
     await expect(native.getByLabel('Email')).toBeVisible();
   } finally { await noJs.close(); }
@@ -566,7 +566,7 @@ test('agent draft access supports human publish and explicit publishing upgrade'
   const mailpitUrl = process.env.E2E_MAILPIT_URL;
   if (!origin || !mailpitUrl) throw new Error('E2E origins are required');
   const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
-  const started = await runCliProcess(['login', '--no-wait', '--origin', origin]);
+  const started = await runCliProcess(['login', '--no-wait', '--draft-only', '--origin', origin]);
   expect(started.exitCode).toBe(0);
   const approval = started.output[0] as { status: string; authorizationUrl: string; userCode: string };
   expect(approval.status).toBe('approval_required');
@@ -609,7 +609,7 @@ test('agent draft access supports human publish and explicit publishing upgrade'
   await page.reload(); await expect(page.getByRole('heading', { name: 'Draft access approved' })).toBeVisible();
   // Browser approval can finish before the CLI's persisted first-poll deadline.
   await new Promise((resolve) => setTimeout(resolve, Math.max(0, (started.state.pairing?.nextPollAt ?? 0) - Date.now())));
-  const resumed = await runCliProcess(['login', '--no-wait', '--origin', origin], started.state);
+  const resumed = await runCliProcess(['login', '--no-wait', '--draft-only', '--origin', origin], started.state);
   expect(resumed.exitCode).toBe(0); expect(resumed.output).toEqual([expect.objectContaining({ status: 'authorized' })]);
   expect(resumed.state.pairing).toBeNull();
   const credentials = resumed.state.credentials; if (!credentials) throw new Error('Missing test authorization');
@@ -673,7 +673,7 @@ test('agent draft access supports human publish and explicit publishing upgrade'
   await expect(page.locator('.controls [data-agent-prompt] details')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('agent-editor-desktop.png'), fullPage: true });
   await openDisclosure(page, 'agent');
-  await expect(page.getByLabel('Agent prompt')).toContainText('@vibelog/cli@0.1.0');
+  await expect(page.getByLabel('Agent prompt')).toContainText('@vibelog/cli@0.5.0');
   await markPage(page); await expectPartialRefresh(page, page.getByRole('button', { name: 'Publish first release' }));
   await expect(page.locator('details[data-disclosure-key="agent"]')).toHaveAttribute('open', '');
   await page.getByRole('button', { name: 'Copy agent prompt' }).click();
@@ -765,21 +765,25 @@ test('browser-approved agent publishes its first release through the CLI', async
   const origin = process.env.E2E_APP_ORIGIN; const mailpit = process.env.E2E_MAILPIT_URL;
   if (!origin || !mailpit) throw new Error('Missing E2E origins');
   const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
-  const started = await runCliProcess(['login', '--no-wait', '--allow-publish', '--origin', origin]);
+  const started = await runCliProcess(['login', '--no-wait', '--origin', origin]);
   expect(started.exitCode).toBe(0);
   const approval = started.output[0] as { authorizationUrl: string; userCode: string };
   const email = `publisher-${String(Date.now())}@example.com`;
   const link = await requestMagicLink(page, request, mailpit, email, `/agent/authorize?code=${approval.userCode}`);
   await page.goto(link); await page.getByRole('button', { name: 'Authorize draft and publishing access', exact: true }).click();
   await new Promise((resolve) => setTimeout(resolve, Math.max(0, (started.state.pairing?.nextPollAt ?? 0) - Date.now())));
-  const authorized = await runCliProcess(['login', '--no-wait', '--allow-publish', '--origin', origin], started.state);
+  const authorized = await runCliProcess(['login', '--no-wait', '--origin', origin], started.state);
   expect(authorized.exitCode).toBe(0); expect(authorized.output[0]).toMatchObject({ status: 'authorized', canPublish: true });
   const cli = (args: string[], input?: unknown) => runCliProcess([...args, '--origin', origin], authorized.state, input === undefined ? undefined : JSON.stringify(input));
   const username = `publisher-${String(Date.now())}`;
   const connected = await cli(['connect', '--file', '-', '--request-key', `connect-${String(Date.now())}`], { username, hackmdUsername: 'alice-hackmd', language: 'en' });
   expect(connected.exitCode).toBe(0); const connect = connected.output[0] as { operationId: string };
   expect((await cli(['wait', connect.operationId])).output[0]).toMatchObject({ status: 'succeeded' });
-  const before = (await cli(['context'])).output[0] as { stateVersion: string; design: BlogDesignSpecV2 };
+  const before = (await cli(['context'])).output[0] as { stateVersion: string; design: BlogDesignSpecV2; editorUrl: string };
+  await page.goto(before.editorUrl); await expect(page.locator('[data-editor-root]')).toBeVisible();
+  const reused = await cli(['login', '--no-wait']);
+  expect(reused.output[0]).toMatchObject({ status: 'authorized', canPublish: true });
+  expect(reused.state.pairing).toBeNull(); expect(reused.state.credentials).toEqual(authorized.state.credentials);
   expect(before).toMatchObject({ publication: { status: 'not_published', publicUrl: null }, postCounts: { total: 2, selected: 2 } });
   const publicUrl = new URL(origin); publicUrl.hostname = `${username}.${publicUrl.hostname}`;
   expect((await request.get(publicUrl.href)).status()).toBe(404);

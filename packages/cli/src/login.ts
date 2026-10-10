@@ -1,7 +1,7 @@
 import { AgentClient, CliError } from './client.js';
 import { parsePairing, type PendingPairing } from './credentials.js';
 
-export async function login(client: AgentClient, noWait: boolean, write: (value: unknown) => void, pause: (ms: number) => Promise<void>, now: () => number, allowPublish = false): Promise<number> {
+export async function login(client: AgentClient, noWait: boolean, write: (value: unknown) => void, pause: (ms: number) => Promise<void>, now: () => number, requestedPublish?: boolean): Promise<number> {
   const { store } = client;
   const revoke = async (token: unknown) => {
     if (typeof token !== 'string' || !token) return;
@@ -11,12 +11,13 @@ export async function login(client: AgentClient, noWait: boolean, write: (value:
   await store.check().catch(() => { throw storageError(); });
   const credentials = await store.get().catch(() => { throw storageError(); });
   let pairing = await store.getPairing().catch(() => { throw storageError(); });
-  if (pairing && Boolean(pairing.canPublish) !== allowPublish) throw new CliError('pairing_permission_conflict', 'A login with different permissions is pending. Finish it with its original flags, or explicitly logout before starting another.');
+  if (pairing && requestedPublish !== undefined && Boolean(pairing.canPublish) !== requestedPublish) throw new CliError('pairing_permission_conflict', 'A login with different permissions is pending. Finish it without permission flags, or explicitly logout before starting another.');
+  // Resume the original scope first, including draft-only pairings from older CLIs.
+  const allowPublish = requestedPublish ?? (pairing ? Boolean(pairing.canPublish) : true);
   if (credentials) {
     try {
       const session = await client.request('/session');
-      if (!allowPublish || session.canPublish === true) {
-        await store.deletePairing().catch(() => { throw storageError(); });
+      if (!pairing && (session.canPublish === true) === allowPublish) {
         write({ status: 'authorized', expiresAt: session.expiresAt, permission: 'draft:read-write', canPublish: session.canPublish === true }); return 0;
       }
     } catch (error) {
@@ -37,7 +38,7 @@ export async function login(client: AgentClient, noWait: boolean, write: (value:
     const result = await client.request('/pairings', 'POST', { canPublish: allowPublish }, undefined, true);
     try { pairing = parsePairing(result, client.origin); }
     catch { throw new CliError('invalid_response', 'Invalid pairing response.'); }
-    if (Boolean(pairing.canPublish) !== allowPublish) throw new CliError('publish_permission_unavailable', 'The service does not support the requested publishing permission. Keep existing access and use the editor.');
+    if (Boolean(pairing.canPublish) !== allowPublish) throw new CliError('publish_permission_unavailable', 'The service does not support the requested permission. Keep existing access; use login --no-wait --draft-only for private drafts on older services.');
     pairing.expiresAt = new Date(Math.min(now() + 600_000, Date.parse(pairing.expiresAt))).toISOString();
     pairing.nextPollAt = now() + 5000;
     await store.setPairing(pairing).catch(() => { throw storageError(); });
