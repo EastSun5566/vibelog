@@ -3,13 +3,13 @@
 Set up or update a VibeLog **private draft** from your coding agent. Publishing is optional and requires explicit browser-approved permission and a request from the human. Requires Node 24+ and macOS Keychain, Windows Credential Manager, or Linux Secret Service. There is no file-based credential fallback.
 
 ```sh
-npx --yes @vibelog/cli@0.4.0 --help
-npx --yes @vibelog/cli@0.4.0 status
+npx --yes @vibelog/cli@0.5.0 --help
+npx --yes @vibelog/cli@0.5.0 status
 ```
 
 For local development, use `pnpm --filter @vibelog/cli build` and `node packages/cli/dist/main.js` from this repository. The server must support the agent API before using the CLI against it.
 
-This source prepares **0.5.0**; the install examples remain on published **0.4.0** until release. Publishing commands require 0.4.0+ and a compatible API. The website's prompt uses the production-pinned CLI version.
+The install examples use published **0.5.0**. Publishing commands require 0.4.0+ and a compatible API. The website's prompt uses the production-pinned CLI version.
 
 Reuse valid authorization. At the start of the main flow, request a publishing upgrade if valid access is draft-only; explain that new browser approval is needed. For explicitly draft-only work, keep the limited grant. Otherwise run `login` only when `status` reports `login_required` or `agent_unauthorized`; network and secure-storage errors should be resolved without creating another login.
 
@@ -101,4 +101,4 @@ Only publish after the human explicitly asks, never as a consequence of setup or
 
 CLI versions are independent of the app. Its first npm publish is a separate, human-approved gate: verify scope permissions, test the packed package, then publish it as public. Once the package exists, configure an npm trusted publisher for this repository's `cli-release.yml`, environment `npm`, and GitHub-hosted runner. Later versions use annotated `cli-vX.Y.Z` tags and the dedicated workflow, requiring successful CI for that exact main SHA. No long-lived npm token is stored in GitHub.
 
-Only after the pinned package can be installed anonymously and the API is deployed, set Pulumi's optional `vibelog:agentCliVersion` to `0.4.0` (or `VIBELOG_AGENT_CLI_VERSION=0.4.0` on a self-hosted web process) to enable the homepage prompt and `/agent-setup/prompt.md`. Leave it unset before that gate. Do not enable an untested version or couple CLI publication to production deployment.
+Only after the pinned package can be installed anonymously and the API is deployed, set Pulumi's optional `vibelog:agentCliVersion` to `0.5.0` (or `VIBELOG_AGENT_CLI_VERSION=0.5.0` on a self-hosted web process) to enable the homepage prompt and `/agent-setup/prompt.md`. Leave it unset before that gate. Do not enable an untested version or couple CLI publication to production deployment.
