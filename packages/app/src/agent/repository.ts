@@ -9,6 +9,7 @@ import { AGENT_TOKEN_SECONDS, PAIRING_SECONDS, requestHash, stateVersion } from 
 type Grant = typeof schema.agentGrants.$inferSelect;
 export interface AgentAuthorization {
   userCode: string;
+  canPublish: boolean;
   status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired';
 }
 export interface AgentResult { operationId?: string; status: string; [key: string]: unknown }
@@ -19,19 +20,19 @@ export class AgentRepository {
   async limited(key: string, limit: number, seconds: number): Promise<void> {
     if (!await this.database.consumeRateLimit(`agent:${key}`, limit, seconds)) throw new AppError('rate_limited', 'Please wait before trying again.', 429, { 'Retry-After': String(seconds) });
   }
-  async createPairing() {
+  async createPairing(canPublish = false) {
     await this.limited('pairing:global', 100, 3600);
     const deviceCode = randomToken();
     const userCode = randomBytes(5).toString('hex').toUpperCase();
     const expiresAt = new Date(Date.now() + PAIRING_SECONDS * 1000);
-    await this.database.db.insert(schema.agentPairings).values({ id: randomUUID(), deviceHash: hashToken(deviceCode), userCode, expiresAt });
-    return { deviceCode, userCode, expiresAt: expiresAt.toISOString(), interval: 5 };
+    await this.database.db.insert(schema.agentPairings).values({ id: randomUUID(), deviceHash: hashToken(deviceCode), userCode, expiresAt, canPublish });
+    return { deviceCode, userCode, expiresAt: expiresAt.toISOString(), interval: 5, canPublish };
   }
   async authorization(userId: string, userCode: string): Promise<AgentAuthorization | null> {
-    const [row] = await this.database.db.select({ userCode: schema.agentPairings.userCode, status: schema.agentPairings.status, expiresAt: schema.agentPairings.expiresAt })
+    const [row] = await this.database.db.select({ userCode: schema.agentPairings.userCode, canPublish: schema.agentPairings.canPublish, status: schema.agentPairings.status, expiresAt: schema.agentPairings.expiresAt })
       .from(schema.agentPairings).where(and(eq(schema.agentPairings.userCode, userCode), or(eq(schema.agentPairings.status, 'pending'), eq(schema.agentPairings.userId, userId))));
     if (!row) return null;
-    return { userCode: row.userCode, status: (row.status === 'pending' || row.status === 'approved') && row.expiresAt <= new Date() ? 'expired' : row.status };
+    return { userCode: row.userCode, canPublish: row.canPublish, status: (row.status === 'pending' || row.status === 'approved') && row.expiresAt <= new Date() ? 'expired' : row.status };
   }
   async approve(userId: string, userCode: string, approved: boolean): Promise<void> {
     await this.limited(`approve:${userId}`, 20, 3600);
@@ -54,9 +55,9 @@ export class AgentRepository {
       await new AgentRepository(db).limited('poll:global', 600, 60);
       const token = `vl_agent_${randomToken()}`;
       const expiresAt = new Date(Date.now() + AGENT_TOKEN_SECONDS * 1000);
-      await tx.insert(schema.agentGrants).values({ id: randomUUID(), userId: row.userId, tokenHash: hashToken(token), expiresAt });
+      await tx.insert(schema.agentGrants).values({ id: randomUUID(), userId: row.userId, tokenHash: hashToken(token), expiresAt, canPublish: row.canPublish });
       await tx.update(schema.agentPairings).set({ status: 'consumed', updatedAt: new Date() }).where(eq(schema.agentPairings.id, row.id));
-      return { status: 'approved' as const, token, expiresAt: expiresAt.toISOString() };
+      return { status: 'approved' as const, token, expiresAt: expiresAt.toISOString(), canPublish: row.canPublish };
     });
   }
   async grant(token: string): Promise<Grant> {
@@ -66,7 +67,7 @@ export class AgentRepository {
     return row;
   }
   async grants(userId: string) {
-    return this.database.db.select({ id: schema.agentGrants.id, createdAt: schema.agentGrants.createdAt, expiresAt: schema.agentGrants.expiresAt }).from(schema.agentGrants)
+    return this.database.db.select({ id: schema.agentGrants.id, canPublish: schema.agentGrants.canPublish, createdAt: schema.agentGrants.createdAt, expiresAt: schema.agentGrants.expiresAt }).from(schema.agentGrants)
       .where(and(eq(schema.agentGrants.userId, userId), gt(schema.agentGrants.expiresAt, new Date()), isNull(schema.agentGrants.revokedAt)));
   }
   async revoke(userId: string, id: string): Promise<void> {
@@ -92,7 +93,7 @@ export class AgentRepository {
         if (await db.getActiveOperation(blog.id, userId)) throw new AppError('operation_in_progress', 'Wait for the current operation.', 409);
       }
       const response = await work(db, blog);
-      if (response.operationId) {
+      if (response.operationId && action !== 'publish') {
         // Shared global quota row is locked by the upsert; quota and operation roll back together.
         const at = new Date(); const date = at.toISOString().slice(0, 10);
         for (const [subject, limit] of [[userId, 10], ['*', 50]] as const) {

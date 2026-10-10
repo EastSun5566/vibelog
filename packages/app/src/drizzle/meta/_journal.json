@@ -29,6 +29,13 @@
       "when": 1790955593436,
       "tag": "0003_spotty_ben_grimm",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791632138778,
+      "tag": "0004_agent_publish_permissions",
+      "breakpoints": true
     }
   ]
 }

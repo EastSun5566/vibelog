@@ -15,6 +15,8 @@ try {
   const binary = join(directory, 'node_modules/@vibelog/cli/dist/main.js');
   const help = execFileSync('node', [binary, '--help'], { encoding: 'utf8' });
   assert(help.includes('@vibelog/cli'));
+  assert(help.includes(`VibeLog CLI ${pkg.version}`));
+  assert(help.includes('--allow-publish') && help.includes('|publish --file'));
   assert(!JSON.stringify(pkg.dependencies).includes('workspace:'));
   console.log('Packed @vibelog/cli installation and help passed.');
 } finally { await rm(directory, { recursive: true, force: true }); }

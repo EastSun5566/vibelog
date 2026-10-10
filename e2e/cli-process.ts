@@ -7,7 +7,7 @@ export interface CliProcessState { credentials: Credentials | null; pairing: Pen
 export interface CliProcessResult { state: CliProcessState; output: unknown[]; exitCode: number }
 
 // Tests inject an in-memory keyring over IPC; secrets never go to stdout or fixture files.
-async function execute({ args, state }: { args: string[]; state: CliProcessState }) {
+async function execute({ args, state, input }: { args: string[]; state: CliProcessState; input?: string }) {
   const output: unknown[] = [];
   let exitCode = 1;
   try {
@@ -19,8 +19,8 @@ async function execute({ args, state }: { args: string[]; state: CliProcessState
       setPairing: (pairing) => { state.pairing = pairing; return Promise.resolve(); },
       deletePairing: () => { state.pairing = null; return Promise.resolve(); },
     };
-    exitCode = await run(args, { store, write: (value) => { output.push(value); } });
+    exitCode = await run(args, { store, input: () => Promise.resolve(input ?? ''), write: (value) => { output.push(value); } });
   } catch (error) { output.push({ error: { code: error instanceof CliError ? error.code : 'cli_error' } }); }
   process.send?.({ state, output, exitCode } satisfies CliProcessResult, () => { process.disconnect(); });
 }
-process.once('message', (message: { args: string[]; state: CliProcessState }) => { void execute(message); });
+process.once('message', (message: { args: string[]; state: CliProcessState; input?: string }) => { void execute(message); });

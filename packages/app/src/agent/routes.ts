@@ -23,7 +23,7 @@ const connect = z.object({
   stateVersion: state.optional(),
 }).strict();
 const reserved = new Set(['preview', 'www', 'api', 'admin', 'assets']);
-type Variables = AppVariables & { agentUserId: string; agentGrantId: string; agentExpiresAt: string };
+type Variables = AppVariables & { agentUserId: string; agentGrantId: string; agentExpiresAt: string; agentCanPublish: boolean };
 
 export function agentRoutes(database: AppDatabase, dispatcher: OperationDispatcher, origin: string, config: Pick<AppConfig, 'edgeSharedSecret' | 'betterAuthSecret'>) {
   const app = new Hono<{ Variables: Variables }>();
@@ -53,7 +53,12 @@ export function agentRoutes(database: AppDatabase, dispatcher: OperationDispatch
     await next();
   });
   app.post('/pairings', async (c) => {
-    const pairing = await repo.createPairing();
+    const text = await c.req.text();
+    let raw: unknown;
+    try { raw = text ? JSON.parse(text) : {}; } catch { throw new AppError('invalid_pairing', 'Submit a valid permission request.', 400); }
+    const input = z.object({ canPublish: z.boolean().default(false) }).strict().safeParse(raw);
+    if (!input.success) throw new AppError('invalid_pairing', 'Submit a valid permission request.', 400);
+    const pairing = await repo.createPairing(input.data.canPublish);
     return c.json({ ...pairing, authorizationUrl: new URL(`/agent/authorize?code=${pairing.userCode}`, origin).href, permission: AGENT_PERMISSION }, 201);
   });
   app.post('/pairings/token', async (c) => {
@@ -66,21 +71,26 @@ export function agentRoutes(database: AppDatabase, dispatcher: OperationDispatch
     if (!authorization?.startsWith('Bearer ')) throw new AppError('agent_unauthorized', 'Sign in with the CLI.', 401);
     const grant = await repo.grant(authorization.slice(7));
     c.set('agentUserId', grant.userId); c.set('agentGrantId', grant.id);
-    c.set('agentExpiresAt', grant.expiresAt.toISOString());
+    c.set('agentExpiresAt', grant.expiresAt.toISOString()); c.set('agentCanPublish', grant.canPublish);
     await repo.limited(`requests:${grant.userId}`, 120, 60);
     await next();
   });
-  app.get('/session', (c) => c.json({ permission: AGENT_PERMISSION, expiresAt: c.get('agentExpiresAt') }));
+  app.get('/session', (c) => c.json({ permission: AGENT_PERMISSION, expiresAt: c.get('agentExpiresAt'), canPublish: c.get('agentCanPublish') }));
   app.delete('/session', async (c) => { await repo.revoke(c.get('agentUserId'), c.get('agentGrantId')); return c.json({ status: 'revoked' }); });
   app.get('/design/contract', (c) => c.json(designContractV2()));
   app.get('/context', async (c) => c.json(await database.transaction(async (db) => {
     await db.db.select({ id: blogs.id }).from(blogs).where(eq(blogs.userId, c.get('agentUserId'))).for('share');
     const blog = await db.getBlogForUser(c.get('agentUserId'));
-    if (!blog) return { blog: null, sourceReady: false, draftReady: false, nextActions: agentNextActions(null, null), editorUrl: new URL('/editor', origin).href };
+    if (!blog) return { blog: null, canPublish: c.get('agentCanPublish'), publication: { status: 'not_published', publicUrl: null }, postCounts: { total: 0, selected: 0 }, sourceReady: false, draftReady: false, nextActions: agentNextActions(null, null), editorUrl: new URL('/editor', origin).href };
     const design = await db.getActiveDesign(blog.id);
+    const release = await db.getActiveRelease(blog.id);
+    const publicUrl = new URL(origin); publicUrl.hostname = `${blog.username}.${publicUrl.hostname}`;
     const operationId = (await db.getActiveOperation(blog.id, blog.userId))?.id ?? null;
     return {
       blog: { username: blog.username, hackmdUsername: blog.hackmdUsername, title: blog.title, description: blog.description, language: blog.language, state: blog.state },
+      canPublish: c.get('agentCanPublish'),
+      publication: { status: !release ? 'not_published' : release.contentVersion === blog.contentVersion && release.themeRevisionId === design?.id ? 'current' : 'changes_pending', publicUrl: release ? publicUrl.href : null },
+      postCounts: { total: blog.contentManifest?.length ?? 0, selected: blog.contentManifest?.filter((post) => post.included).length ?? 0 },
       stateVersion: stateVersion(blog), design: design?.config ?? null, profile: blog.contentProfile,
       sourceReady: Boolean(blog.sourceArtifactId), draftReady: Boolean(blog.draftArtifactId),
       operationId, nextActions: agentNextActions(blog, operationId),
@@ -106,8 +116,9 @@ export function agentRoutes(database: AppDatabase, dispatcher: OperationDispatch
     const result = validateAgentDesign(input.data.design);
     return c.json(result, result.valid ? 200 : 422);
   });
-  for (const action of ['connect', 'sync', 'identity', 'selection', 'design'] as const) {
+  for (const action of ['connect', 'sync', 'identity', 'selection', 'design', 'publish'] as const) {
     app.post(`/${action}`, async (c) => {
+      if (action === 'publish' && !c.get('agentCanPublish')) throw new AppError('publish_permission_required', 'Approve publishing access in the browser first.', 403);
       if (!c.req.header('content-type')?.startsWith('application/json')) throw new AppError('invalid_content_type', 'Use application/json.', 415);
       const key = c.req.header('idempotency-key');
       if (!key || !/^[A-Za-z0-9_-]{16,128}$/u.test(key)) throw new AppError('invalid_request_key', 'Supply a stable Idempotency-Key of 16–128 characters.', 400);
@@ -140,6 +151,10 @@ export function agentRoutes(database: AppDatabase, dispatcher: OperationDispatch
             if (error instanceof BlogAlreadyExistsError) throw new AppError('blog_already_connected', 'A blog was connected by another request. Read the context again.', 409);
             throw error;
           }
+        }
+        if (action === 'publish' && blog) {
+          const operation = await db.createSavedDraftPublishOperation(blog.userId, blog.id);
+          return operation ? operationResult(operation) : { status: 'unchanged' };
         }
         if (!blog?.sourceArtifactId) throw new AppError('draft_not_ready', 'Finish connecting and syncing first.', 409);
         if (action === 'design' && design) {

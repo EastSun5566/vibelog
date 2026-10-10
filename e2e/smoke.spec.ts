@@ -4,7 +4,7 @@ import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import type { CliProcessResult, CliProcessState } from './cli-process.js';
 
-async function runCliProcess(args: string[], state: CliProcessState = { credentials: null, pairing: null }): Promise<CliProcessResult> {
+async function runCliProcess(args: string[], state: CliProcessState = { credentials: null, pairing: null }, input?: string): Promise<CliProcessResult> {
   return new Promise((resolve, reject) => {
     const child = fork(fileURLToPath(new URL('./cli-process.ts', import.meta.url)), { execArgv: [], stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
     const timeout = setTimeout(() => { child.kill(); reject(new Error('CLI test process timed out.')); }, 40_000);
@@ -12,7 +12,7 @@ async function runCliProcess(args: string[], state: CliProcessState = { credenti
     child.once('error', () => { clearTimeout(timeout); reject(new Error('CLI test process failed.')); });
     child.once('message', (value: CliProcessResult) => { result = value; });
     child.once('exit', (code) => { clearTimeout(timeout); if (code === 0 && result) resolve(result); else reject(new Error('CLI test process failed.')); });
-    child.send({ args, state });
+    child.send({ args, state, input });
   });
 }
 
@@ -560,7 +560,7 @@ test('agent primary entry supports copy, fallback, keyboard and no JavaScript', 
   } finally { await noJs.close(); }
 });
 
-test('agent pairing builds only a private draft, then the human publishes', async ({ page, request }, testInfo) => {
+test('agent draft access supports human publish and explicit publishing upgrade', async ({ page, request }, testInfo) => {
   test.setTimeout(240_000);
   const origin = process.env.E2E_APP_ORIGIN;
   const mailpitUrl = process.env.E2E_MAILPIT_URL;
@@ -601,6 +601,7 @@ test('agent pairing builds only a private draft, then the human publishes', asyn
   await page.setViewportSize({ width: 1280, height: 720 });
   expect((await page.request.post('/agent/authorize', { headers: { origin }, form: { code: pairing.userCode, decision: 'approve', csrfToken: 'invalid' }, maxRedirects: 0 })).status()).toBe(403);
   expect((await page.request.post('/auth/logout', { headers: { origin }, form: { csrfToken: 'invalid', returnTo }, maxRedirects: 0 })).status()).toBe(403);
+  await form.evaluate((node) => { const input = document.createElement('input'); input.type = 'hidden'; input.name = 'canPublish'; input.value = 'true'; node.append(input); });
   await page.getByRole('button', { name: 'Authorize draft access' }).click();
   await expect(page).toHaveURL(returnTo);
   await expect(page.getByRole('heading', { name: 'Draft access approved' })).toBeVisible();
@@ -626,7 +627,7 @@ test('agent pairing builds only a private draft, then the human publishes', asyn
   expect((await request.post('/actions/publish', { headers, data: {}, maxRedirects: 0 })).status()).toBe(302);
   expect(await (await request.get('/api/agent/v1/context', { headers })).json()).toMatchObject({ blog: null, sourceReady: false, draftReady: false, nextActions: [{ action: 'connect' }] });
   const session = await (await request.get('/api/agent/v1/session', { headers })).json() as { permission: string; expiresAt: string };
-  expect(session.permission).toBe('draft:read-write'); expect(Date.parse(session.expiresAt)).toBeGreaterThan(Date.now());
+  expect(session).toHaveProperty('canPublish', false); expect(session.permission).toBe('draft:read-write'); expect(Date.parse(session.expiresAt)).toBeGreaterThan(Date.now());
   const username = `agent-${String(Date.now())}`;
   const key = `connect-${String(Date.now())}-request`;
   const failedSetup = await request.post('/api/agent/v1/connect', { headers: { ...headers, 'Idempotency-Key': `wrong-profile-${String(Date.now())}` }, data: { username: `wrong-${String(Date.now())}`, hackmdUsername: 'missing-public-profile', language: 'en' } });
@@ -654,7 +655,7 @@ test('agent pairing builds only a private draft, then the human publishes', asyn
   expect(await replay.json()).toEqual(accepted);
   await expect.poll(async () => (await (await request.get(`/api/agent/v1/operations/${accepted.operationId}`, { headers })).json() as { status: string }).status, { timeout: 90_000, intervals: [5000] }).toBe('succeeded');
   const context = await (await request.get('/api/agent/v1/context', { headers })).json() as { stateVersion: string; design: BlogDesignSpecV2; editorUrl: string };
-  expect(context).toMatchObject({ sourceReady: true, draftReady: true, operationId: null, nextActions: ['design', 'identity', 'selection', 'sync', 'open_editor'].map((action) => ({ action })) });
+  expect(context).toMatchObject({ publication: { status: 'not_published', publicUrl: null }, postCounts: { total: 2, selected: 2 }, sourceReady: true, draftReady: true, operationId: null, nextActions: ['design', 'identity', 'selection', 'sync', 'open_editor'].map((action) => ({ action })) });
   const unchanged = await request.post('/api/agent/v1/connect', { headers: { ...headers, 'Idempotency-Key': `connect-again-${String(Date.now())}` }, data: connect });
   expect(await unchanged.json()).toEqual({ status: 'unchanged' });
   expect(context.editorUrl).toBe(`${origin}/editor`); expect(JSON.stringify(context)).not.toContain('/preview-access/'); expect(JSON.stringify(context)).not.toContain('This article came through');
@@ -663,7 +664,7 @@ test('agent pairing builds only a private draft, then the human publishes', asyn
   const submit = await request.post('/api/agent/v1/design', { headers: { ...headers, 'Idempotency-Key': `design-${String(Date.now())}-request` }, data: { stateVersion: context.stateVersion, design } });
   expect(submit.status()).toBe(202); const operation = await submit.json() as { operationId: string };
   await expect.poll(async () => (await (await request.get(`/api/agent/v1/operations/${operation.operationId}`, { headers })).json() as { status: string }).status, { timeout: 90_000, intervals: [5000] }).toBe('succeeded');
-  expect((await request.post('/api/agent/v1/publish', { headers, data: {} })).status()).toBe(404);
+  expect((await request.post('/api/agent/v1/publish', { headers, data: {} })).status()).toBe(403);
   const publicUrl = new URL(origin); publicUrl.hostname = `${username}.${publicUrl.hostname}`;
   expect((await request.get(publicUrl.href)).status()).toBe(404);
   await page.goto(context.editorUrl); await expect(page.getByText('Agent-designed private draft', { exact: true }).first()).toBeVisible();
@@ -694,6 +695,39 @@ test('agent pairing builds only a private draft, then the human publishes', asyn
   await page.goto('/editor'); await expect(page.getByText('Updated existing private draft', { exact: true }).first()).toBeVisible();
   const stale = await request.post('/api/agent/v1/design', { headers: { ...headers, 'Idempotency-Key': `stale-design-${String(Date.now())}` }, data: { stateVersion: current.stateVersion, design } });
   expect(stale.status()).toBe(409); expect(await stale.json()).toHaveProperty('error.code', 'state_changed');
+  const beforePublish: unknown = await (await request.get('/api/agent/v1/context', { headers })).json();
+  expect(beforePublish).toMatchObject({ canPublish: false, postCounts: { total: 2, selected: 2 }, publication: { status: 'changes_pending', publicUrl: publicUrl.href } });
+  const upgrade = await runCliProcess(['login', '--no-wait', '--allow-publish', '--origin', origin], resumed.state);
+  expect(upgrade.exitCode).toBe(0); expect(upgrade.state.credentials).toEqual(resumed.state.credentials);
+  const publishApproval = upgrade.output[0] as { authorizationUrl: string; canPublish: boolean };
+  expect(publishApproval.canPublish).toBe(true);
+  await page.goto(publishApproval.authorizationUrl);
+  await page.setViewportSize({ width: 390, height: 844 }); await expectNoHorizontalOverflow(page);
+  const approvePublish = page.getByRole('button', { name: 'Authorize draft and publishing access', exact: true });
+  await approvePublish.focus(); await expect(approvePublish).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath('agent-publish-consent-mobile.png'), fullPage: true });
+  await page.evaluate(() => { document.documentElement.style.zoom = '2'; }); await expectNoHorizontalOverflow(page);
+  await page.evaluate(() => { document.documentElement.style.zoom = ''; });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.screenshot({ path: testInfo.outputPath('agent-publish-consent-desktop.png'), fullPage: true });
+  await approvePublish.click(); await expect(page.getByRole('heading', { name: 'Draft and publishing access approved' })).toBeVisible();
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, (upgrade.state.pairing?.nextPollAt ?? 0) - Date.now())));
+  const publisher = await runCliProcess(['login', '--no-wait', '--allow-publish', '--origin', origin], upgrade.state);
+  expect(publisher.exitCode).toBe(0); expect(publisher.output[0]).toMatchObject({ status: 'authorized', canPublish: true });
+  const publishCredentials = publisher.state.credentials; if (!publishCredentials) throw new Error('Missing publish authorization');
+  expect((await request.get('/api/agent/v1/context', { headers })).status()).toBe(401);
+  headers.authorization = `Bearer ${publishCredentials.token}`;
+  const fresh = await (await request.get('/api/agent/v1/context', { headers })).json() as { stateVersion: string };
+  const publishKey = `agent-publish-${String(Date.now())}`;
+  const publishBody = { stateVersion: fresh.stateVersion };
+  const published = await request.post('/api/agent/v1/publish', { headers: { ...headers, 'Idempotency-Key': publishKey }, data: publishBody });
+  expect(published.status()).toBe(202); const publishing = await published.json() as { operationId: string };
+  expect(await (await request.post('/api/agent/v1/publish', { headers: { ...headers, 'Idempotency-Key': publishKey }, data: publishBody })).json()).toEqual(publishing);
+  await expect.poll(async () => (await (await request.get(`/api/agent/v1/operations/${publishing.operationId}`, { headers })).json() as { status: string }).status, { timeout: 30_000, intervals: [1000] }).toBe('succeeded');
+  expect(await (await request.get('/api/agent/v1/context', { headers })).json()).toHaveProperty('publication', { status: 'current', publicUrl: publicUrl.href });
+  for (const path of ['/', '/blog/hello-vibelog/', '/search/', '/rss.xml', '/llms.txt']) expect((await request.get(new URL(path, publicUrl).href)).status()).toBe(200);
+  expect(await (await request.get(new URL('/design.css', publicUrl).href)).text()).not.toBe(liveStyle);
+  expect(await (await request.post('/api/agent/v1/publish', { headers: { ...headers, 'Idempotency-Key': `publish-noop-${String(Date.now())}` }, data: publishBody })).json()).toEqual({ status: 'unchanged' });
   await page.goto('/account/agents');
   await page.setViewportSize({ width: 390, height: 844 }); await expectNoHorizontalOverflow(page);
   const promptSummary = page.locator('summary').filter({ hasText: 'Continue with your agent' });
@@ -723,4 +757,46 @@ test('agent pairing builds only a private draft, then the human publishes', asyn
   const logout = await page.request.post('/auth/logout', { headers: { origin }, form: { csrfToken: logoutToken, returnTo: 'https://example.com' }, maxRedirects: 0 });
   expect(logout.status()).toBe(303); expect(logout.headers().location).toBe('/auth/login');
   expect(csrf).toBeTruthy(); expect(errors).toEqual([]);
+});
+
+
+test('browser-approved agent publishes its first release through the CLI', async ({ page, request }) => {
+  test.setTimeout(180_000);
+  const origin = process.env.E2E_APP_ORIGIN; const mailpit = process.env.E2E_MAILPIT_URL;
+  if (!origin || !mailpit) throw new Error('Missing E2E origins');
+  const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
+  const started = await runCliProcess(['login', '--no-wait', '--allow-publish', '--origin', origin]);
+  expect(started.exitCode).toBe(0);
+  const approval = started.output[0] as { authorizationUrl: string; userCode: string };
+  const email = `publisher-${String(Date.now())}@example.com`;
+  const link = await requestMagicLink(page, request, mailpit, email, `/agent/authorize?code=${approval.userCode}`);
+  await page.goto(link); await page.getByRole('button', { name: 'Authorize draft and publishing access', exact: true }).click();
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, (started.state.pairing?.nextPollAt ?? 0) - Date.now())));
+  const authorized = await runCliProcess(['login', '--no-wait', '--allow-publish', '--origin', origin], started.state);
+  expect(authorized.exitCode).toBe(0); expect(authorized.output[0]).toMatchObject({ status: 'authorized', canPublish: true });
+  const cli = (args: string[], input?: unknown) => runCliProcess([...args, '--origin', origin], authorized.state, input === undefined ? undefined : JSON.stringify(input));
+  const username = `publisher-${String(Date.now())}`;
+  const connected = await cli(['connect', '--file', '-', '--request-key', `connect-${String(Date.now())}`], { username, hackmdUsername: 'alice-hackmd', language: 'en' });
+  expect(connected.exitCode).toBe(0); const connect = connected.output[0] as { operationId: string };
+  expect((await cli(['wait', connect.operationId])).output[0]).toMatchObject({ status: 'succeeded' });
+  const before = (await cli(['context'])).output[0] as { stateVersion: string; design: BlogDesignSpecV2 };
+  expect(before).toMatchObject({ publication: { status: 'not_published', publicUrl: null }, postCounts: { total: 2, selected: 2 } });
+  const publicUrl = new URL(origin); publicUrl.hostname = `${username}.${publicUrl.hostname}`;
+  expect((await request.get(publicUrl.href)).status()).toBe(404);
+  const design = { ...before.design, description: 'First agent-published design', theme: { ...before.design.theme, typography: { ...before.design.theme.typography, bodyFont: 'system-mono' } } };
+  expect((await cli(['validate', '--file', '-'], { design })).output[0]).toMatchObject({ valid: true });
+  const submitted = await cli(['design', '--file', '-', '--request-key', `design-${String(Date.now())}`], { stateVersion: before.stateVersion, design });
+  expect(submitted.exitCode).toBe(0); const build = submitted.output[0] as { operationId: string };
+  expect((await cli(['wait', build.operationId])).output[0]).toMatchObject({ status: 'succeeded' });
+  const draft = (await cli(['context'])).output[0] as { stateVersion: string };
+  expect(draft).toMatchObject({ publication: { status: 'not_published', publicUrl: null } });
+  const published = await cli(['publish', '--file', '-', '--request-key', `publish-${String(Date.now())}`], { stateVersion: draft.stateVersion });
+  expect(published.exitCode).toBe(0); const release = published.output[0] as { operationId: string };
+  expect((await cli(['wait', release.operationId])).output[0]).toMatchObject({ status: 'succeeded' });
+  expect((await cli(['context'])).output[0]).toMatchObject({ publication: { status: 'current', publicUrl: publicUrl.href } });
+  for (const path of ['/', '/blog/hello-vibelog/', '/search/', '/rss.xml', '/llms.txt']) expect((await request.get(new URL(path, publicUrl).href)).status()).toBe(200);
+  expect(JSON.stringify([started.output, authorized.output, connected.output, submitted.output, published.output])).not.toContain(authorized.state.credentials?.token);
+  await page.goto('/editor'); await openDisclosure(page, 'danger-zone');
+  await page.getByLabel(`Type ${email} to confirm`).fill(email); await page.getByRole('button', { name: 'Delete account' }).click();
+  await expect(page).toHaveURL(/\/auth\/login\?deleted=1$/u); expect(errors).toEqual([]);
 });
