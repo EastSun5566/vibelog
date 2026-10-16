@@ -282,7 +282,7 @@ describe('HackMdSource', () => {
 
     const body = 'x'.repeat(2 * 1024 * 1024);
     vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => Promise.resolve(fetchUrl(input).endsWith('/overview')
-      ? overview(Array.from({ length: 65 }, (_, index) => note(String(index))))
+      ? overview(Array.from({ length: 33 }, (_, index) => note(String(index))))
       : new Response(body))));
     await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({ code: 'sync_too_large' });
   });
@@ -302,13 +302,13 @@ describe('HackMdSource', () => {
     expect(fetchMock.mock.calls.some(([input]) => fetchUrl(input).endsWith('/private/download'))).toBe(false);
   });
 
-  it('accepts 128 MiB of aggregate Markdown without truncation', async () => {
+  it('accepts 64 MiB of aggregate Markdown without truncation', async () => {
     const body = 'x'.repeat(2 * 1024 * 1024);
     vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => Promise.resolve(fetchUrl(input).endsWith('/overview')
-      ? overview(Array.from({ length: 64 }, (_, index) => note(String(index))))
+      ? overview(Array.from({ length: 32 }, (_, index) => note(String(index))))
       : new Response(body))));
     const result = await new HackMdSource('writer').getPosts();
-    expect(result.posts).toHaveLength(64);
+    expect(result.posts).toHaveLength(32);
     expect(result.posts.every((post) => post.content.length === body.length)).toBe(true);
   });
 

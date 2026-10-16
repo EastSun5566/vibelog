@@ -381,7 +381,7 @@ describe('AI operation execution', () => {
 
   it.each([
     ['too_many_articles', '1,000'], ['article_too_large', '2 MiB'],
-    ['sync_too_large', '128 MiB'], ['metadata_too_large', 'metadata'],
+    ['sync_too_large', '64 MiB'], ['metadata_too_large', 'metadata'],
     ['incomplete_overview', 'incomplete article list'],
   ] as const)('explains the %s sync limit without exposing external content', (code, message) => {
     const result = operationPublicError('sync', new HackMdSourceError(code, 'private source text'));
@@ -391,7 +391,7 @@ describe('AI operation execution', () => {
   });
 
   it.each([
-    ['sync_too_large', '128 MiB'], ['incomplete_overview', 'incomplete article list'],
+    ['sync_too_large', '64 MiB'], ['incomplete_overview', 'incomplete article list'],
   ] as const)('keeps the current draft and release when importing fails with %s', async (code, publicMessage) => {
     const sync = { ...operation('sync-limit'), type: 'sync' as const, payload: { intent: 'content' } };
     const completeSyncOperation = vi.fn();

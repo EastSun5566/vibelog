@@ -97,7 +97,7 @@ content, replace the synthetic `contentSource` with
 `new HackMdSource('your-public-username')` imported from `@vibelog/core`.
 
 HackMD imports support up to **1,000 public published articles**, **2 MiB of
-Markdown per article**, **128 MiB total Markdown** and **8 MiB of overview data**.
+Markdown per article**, **64 MiB total Markdown** and **8 MiB of overview data**.
 Profile metadata is limited to 256 KiB. Downloads use four concurrent requests;
 images remain external and are not part of the Markdown byte budget. Limits
 apply to the profile's published articles before article selection. Imports do
