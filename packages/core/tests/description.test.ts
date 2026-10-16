@@ -3,9 +3,12 @@ import { extractPostDescription, resolvePostDescription } from '../src/descripti
 
 describe('extractPostDescription', () => {
   it('keeps readable inline text without Markdown syntax or link destinations', () => {
-    const markdown = '這是 **可靠的**摘要，with [連結文字](https://example.com/private) and `inlineCode`。';
+    const markdown =
+      '這是 **可靠的**摘要，with [連結文字](https://example.com/private) and `inlineCode`。';
 
-    expect(extractPostDescription(markdown, 'Fallback')).toBe('這是 可靠的摘要，with 連結文字 and inlineCode。');
+    expect(extractPostDescription(markdown, 'Fallback')).toBe(
+      '這是 可靠的摘要，with 連結文字 and inlineCode。',
+    );
   });
 
   it('skips non-paragraph blocks and images before the first useful root paragraph', () => {
@@ -27,14 +30,27 @@ describe('extractPostDescription', () => {
       'First **real** paragraph with [safe label](https://example.com/hidden).',
     ].join('\n');
 
-    expect(extractPostDescription(markdown, 'Fallback')).toBe('First real paragraph with safe label.');
-    expect(extractPostDescription('&lt;div&gt;Escaped raw HTML&lt;/div&gt;\n\nUseful after escaped HTML.', 'Fallback')).toBe('Useful after escaped HTML.');
-    expect(extractPostDescription('Useful &lt;span&gt;inline&lt;/span&gt; text.', 'Fallback')).toBe('Useful inline text.');
+    expect(extractPostDescription(markdown, 'Fallback')).toBe(
+      'First real paragraph with safe label.',
+    );
+    expect(
+      extractPostDescription(
+        '&lt;div&gt;Escaped raw HTML&lt;/div&gt;\n\nUseful after escaped HTML.',
+        'Fallback',
+      ),
+    ).toBe('Useful after escaped HTML.');
+    expect(extractPostDescription('Useful &lt;span&gt;inline&lt;/span&gt; text.', 'Fallback')).toBe(
+      'Useful inline text.',
+    );
   });
 
   it('skips a standalone HackMD table-of-contents marker', () => {
-    expect(extractPostDescription('[TOC]\n\nThe article introduction.', 'Fallback')).toBe('The article introduction.');
-    expect(extractPostDescription('An inline [TOC] reference.', 'Fallback')).toBe('An inline [TOC] reference.');
+    expect(extractPostDescription('[TOC]\n\nThe article introduction.', 'Fallback')).toBe(
+      'The article introduction.',
+    );
+    expect(extractPostDescription('An inline [TOC] reference.', 'Fallback')).toBe(
+      'An inline [TOC] reference.',
+    );
   });
 
   it('ignores URL-only links and continues to the next paragraph', () => {
@@ -47,11 +63,15 @@ describe('extractPostDescription', () => {
     const markdown = '![alt](https://example.com/image.png)\n\n```js\nconst value = 1;\n```';
 
     expect(extractPostDescription(markdown, '  Image-only   article  ')).toBe('Image-only article');
-    expect(extractPostDescription(null as unknown as string, 'Parser failure')).toBe('Parser failure');
+    expect(extractPostDescription(null as unknown as string, 'Parser failure')).toBe(
+      'Parser failure',
+    );
   });
 
   it('normalizes whitespace and truncates at 160 Unicode code points', () => {
-    expect(extractPostDescription('第一行  \n第二行\t with   spaces', 'Fallback')).toBe('第一行 第二行 with spaces');
+    expect(extractPostDescription('第一行  \n第二行\t with   spaces', 'Fallback')).toBe(
+      '第一行 第二行 with spaces',
+    );
 
     const exact = `${'文'.repeat(158)}😀Z`;
     const long = `${exact}extra`;
@@ -63,13 +83,19 @@ describe('extractPostDescription', () => {
   });
 
   it('prefers a cleaned HackMD overview summary and falls back safely', () => {
-    expect(resolvePostDescription(
-      'An **overview** with [readable text](https://example.com/private).',
+    expect(
+      resolvePostDescription(
+        'An **overview** with [readable text](https://example.com/private).',
+        'The article introduction.',
+        'Fallback',
+      ),
+    ).toBe('An overview with readable text.');
+    expect(resolvePostDescription('   ', 'The article introduction.', 'Fallback')).toBe(
       'The article introduction.',
-      'Fallback',
-    )).toBe('An overview with readable text.');
-    expect(resolvePostDescription('   ', 'The article introduction.', 'Fallback')).toBe('The article introduction.');
-    expect(resolvePostDescription(undefined, '# Heading only', '  Fallback   title ')).toBe('Fallback title');
+    );
+    expect(resolvePostDescription(undefined, '# Heading only', '  Fallback   title ')).toBe(
+      'Fallback title',
+    );
 
     const long = `${'文'.repeat(160)}extra`;
     expect(resolvePostDescription(long, 'Article body', 'Fallback')).toBe(`${'文'.repeat(159)}…`);

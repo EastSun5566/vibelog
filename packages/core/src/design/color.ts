@@ -6,7 +6,8 @@ function channel(value: string): number {
 }
 
 export function contrastRatio(foreground: string, background: string): number {
-  if (!HEX.test(foreground) || !HEX.test(background)) throw new Error('Contrast colors must be six-digit hex values');
+  if (!HEX.test(foreground) || !HEX.test(background))
+    throw new Error('Contrast colors must be six-digit hex values');
   const luminance = (color: string) => {
     const red = channel(color.slice(1, 3));
     const green = channel(color.slice(3, 5));

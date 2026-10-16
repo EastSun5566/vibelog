@@ -3,10 +3,14 @@ import { blocksRequest, maintenanceResponse } from '../src/maintenance.js';
 
 describe('maintenance gate', () => {
   it.each([
-    ['normal', 'web', '/', false], ['normal', 'worker', '/tasks/operations', false],
-    ['draining', 'web', '/', true], ['draining', 'worker', '/tasks/operations', false],
-    ['locked', 'web', '/editor', true], ['locked', 'worker', '/tasks/maintenance', true],
-    ['locked', 'web', '/health', false], ['locked', 'worker', '/health', false],
+    ['normal', 'web', '/', false],
+    ['normal', 'worker', '/tasks/operations', false],
+    ['draining', 'web', '/', true],
+    ['draining', 'worker', '/tasks/operations', false],
+    ['locked', 'web', '/editor', true],
+    ['locked', 'worker', '/tasks/maintenance', true],
+    ['locked', 'web', '/health', false],
+    ['locked', 'worker', '/health', false],
   ] as const)('%s %s %s blocked=%s', (stage, service, path, blocked) => {
     expect(blocksRequest(stage, service, path)).toBe(blocked);
   });

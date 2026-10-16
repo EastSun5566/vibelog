@@ -15,12 +15,22 @@ function proposal(update?: (design: BlogDesignSpecV2) => void) {
 function home(count: number) {
   return proposal((design) => {
     const ids = Array.from({ length: count }, (_, index) => `posts-${String(index)}`);
-    design.pages.home.sections = Object.fromEntries(ids.map((id) => [id, { type: 'posts', variant: 'list', source: { strategy: 'latest' }, limit: 5 }]));
+    design.pages.home.sections = Object.fromEntries(
+      ids.map((id) => [
+        id,
+        { type: 'posts', variant: 'list', source: { strategy: 'latest' }, limit: 5 },
+      ]),
+    );
     design.pages.home.regions.main = ids;
   });
 }
 function checkTool(arguments_: unknown): unknown {
-  return validateToolCall([designToolV2], { type: 'toolCall', id: 'test', name: designToolV2.name, arguments: arguments_ as BlogDesignSpecV2 });
+  return validateToolCall([designToolV2], {
+    type: 'toolCall',
+    id: 'test',
+    name: designToolV2.name,
+    arguments: arguments_ as BlogDesignSpecV2,
+  });
 }
 
 describe('shared IR v2 structural contract', () => {
@@ -40,21 +50,50 @@ describe('shared IR v2 structural contract', () => {
 
   it.each([
     ['default', proposal()],
-    ['uppercase HEX', proposal((design) => { design.theme.colors.surface = '#F7F7F5'; })],
-    ['optional presentation', proposal((design) => { design.pages.home.presentation = { spacing: 'spacious' }; })],
-    ['sidebar homepage', proposal((design) => {
-      design.pages.home = { ...design.pages.home, layout: 'sidebar', regions: { main: ['recent'], aside: ['intro'] } };
-    })],
-    ['magazine homepage', proposal((design) => {
-      design.pages.home = { ...design.pages.home, layout: 'magazine', regions: { lead: ['intro'], main: ['recent'], rail: [] } };
-    })],
+    [
+      'uppercase HEX',
+      proposal((design) => {
+        design.theme.colors.surface = '#F7F7F5';
+      }),
+    ],
+    [
+      'optional presentation',
+      proposal((design) => {
+        design.pages.home.presentation = { spacing: 'spacious' };
+      }),
+    ],
+    [
+      'sidebar homepage',
+      proposal((design) => {
+        design.pages.home = {
+          ...design.pages.home,
+          layout: 'sidebar',
+          regions: { main: ['recent'], aside: ['intro'] },
+        };
+      }),
+    ],
+    [
+      'magazine homepage',
+      proposal((design) => {
+        design.pages.home = {
+          ...design.pages.home,
+          layout: 'magazine',
+          regions: { lead: ['intro'], main: ['recent'], rail: [] },
+        };
+      }),
+    ],
     ['one homepage section', home(1)],
     ['eight homepage sections', home(8)],
-    ['nine article modules', proposal((design) => {
-      const ids = Array.from({ length: 9 }, (_, index) => `metadata-${String(index)}`);
-      design.pages.article.modules = Object.fromEntries(ids.map((id) => [id, { type: 'metadata', variant: 'compact' }]));
-      design.pages.article.regions = { beforeBody: ids, aside: [], afterBody: [] };
-    })],
+    [
+      'nine article modules',
+      proposal((design) => {
+        const ids = Array.from({ length: 9 }, (_, index) => `metadata-${String(index)}`);
+        design.pages.article.modules = Object.fromEntries(
+          ids.map((id) => [id, { type: 'metadata', variant: 'compact' }]),
+        );
+        design.pages.article.regions = { beforeBody: ids, aside: [], afterBody: [] };
+      }),
+    ],
   ])('accepts %s in runtime and tool validation', (_name, input) => {
     expect(blogDesignSpecV2Schema.safeParse(input).success).toBe(true);
     expect(checkTool(input)).toEqual(input);
@@ -62,57 +101,136 @@ describe('shared IR v2 structural contract', () => {
 
   it.each([
     ['wrong version', { ...DEFAULT_DESIGN_V2, version: 3 }],
-    ['missing required field', proposal((design) => { Reflect.deleteProperty(design.theme, 'motif'); })],
-    ['unsupported variant', proposal((design) => { Reflect.set(design.pages.article.header, 'variant', 'invented'); })],
-    ['unknown nested property', proposal((design) => { Reflect.set(design.theme.colors, 'css', 'private-invalid-value'); })],
-    ['invalid HEX', proposal((design) => { design.theme.colors.surface = '#fff'; })],
+    [
+      'missing required field',
+      proposal((design) => {
+        Reflect.deleteProperty(design.theme, 'motif');
+      }),
+    ],
+    [
+      'unsupported variant',
+      proposal((design) => {
+        Reflect.set(design.pages.article.header, 'variant', 'invented');
+      }),
+    ],
+    [
+      'unknown nested property',
+      proposal((design) => {
+        Reflect.set(design.theme.colors, 'css', 'private-invalid-value');
+      }),
+    ],
+    [
+      'invalid HEX',
+      proposal((design) => {
+        design.theme.colors.surface = '#fff';
+      }),
+    ],
     ['zero homepage sections', home(0)],
     ['nine homepage sections', home(9)],
   ])('rejects %s in runtime and tool validation', (_name, input) => {
     expect(blogDesignSpecV2Schema.safeParse(input).success).toBe(false);
-    expect(() => { checkTool(input); }).toThrow();
+    expect(() => {
+      checkTool(input);
+    }).toThrow();
   });
 
   it.each([
-    ['blank description', proposal((design) => { design.description = '   '; })],
-    ['reserved ID', proposal((design) => {
-      design.pages.article.modules = Object.fromEntries([['constructor', { type: 'metadata', variant: 'compact' } as const]]);
-      design.pages.article.regions = { beforeBody: ['constructor'], aside: [], afterBody: [] };
-    })],
-    ['unknown reference', proposal((design) => { design.pages.home.regions.main[0] = 'missing'; })],
-    ['duplicate placement', proposal((design) => { design.pages.home.regions.main.push('intro'); })],
-    ['exclusion cycle', proposal((design) => {
-      design.pages.home.sections.recent = { type: 'posts', variant: 'list', source: { strategy: 'latest' }, limit: 5, exclude: { sections: ['recent'] } };
-    })],
-    ['module placement', proposal((design) => {
-      design.pages.article.regions.beforeBody.push('navigation');
-      design.pages.article.regions.afterBody = [];
-    })],
-    ['low contrast', proposal((design) => { design.theme.colors.text = design.theme.colors.background; })],
+    [
+      'blank description',
+      proposal((design) => {
+        design.description = '   ';
+      }),
+    ],
+    [
+      'reserved ID',
+      proposal((design) => {
+        design.pages.article.modules = Object.fromEntries([
+          ['constructor', { type: 'metadata', variant: 'compact' } as const],
+        ]);
+        design.pages.article.regions = { beforeBody: ['constructor'], aside: [], afterBody: [] };
+      }),
+    ],
+    [
+      'unknown reference',
+      proposal((design) => {
+        design.pages.home.regions.main[0] = 'missing';
+      }),
+    ],
+    [
+      'duplicate placement',
+      proposal((design) => {
+        design.pages.home.regions.main.push('intro');
+      }),
+    ],
+    [
+      'exclusion cycle',
+      proposal((design) => {
+        design.pages.home.sections.recent = {
+          type: 'posts',
+          variant: 'list',
+          source: { strategy: 'latest' },
+          limit: 5,
+          exclude: { sections: ['recent'] },
+        };
+      }),
+    ],
+    [
+      'module placement',
+      proposal((design) => {
+        design.pages.article.regions.beforeBody.push('navigation');
+        design.pages.article.regions.afterBody = [];
+      }),
+    ],
+    [
+      'low contrast',
+      proposal((design) => {
+        design.theme.colors.text = design.theme.colors.background;
+      }),
+    ],
   ])('keeps %s enforced by runtime refinements', (_name, input) => {
-    expect(() => { checkTool(input); }).not.toThrow();
+    expect(() => {
+      checkTool(input);
+    }).not.toThrow();
     expect(blogDesignSpecV2Schema.safeParse(input).success).toBe(false);
   });
 
-  it.each([
-    [{ op: 'add', path: '/pages/home/presentation', value: { spacing: 'spacious' } }],
-    [{ op: 'replace', path: '/description', value: 'Updated' }],
-    [{ op: 'remove', path: '/pages/home/presentation' }],
-    [{ op: 'move', from: '/pages/home/regions/main/0', path: '/pages/home/regions/main/1' }],
-  ].map((patches) => ({ patches })))('shares patch structure for operation %#', ({ patches }) => {
+  it.each(
+    [
+      [{ op: 'add', path: '/pages/home/presentation', value: { spacing: 'spacious' } }],
+      [{ op: 'replace', path: '/description', value: 'Updated' }],
+      [{ op: 'remove', path: '/pages/home/presentation' }],
+      [{ op: 'move', from: '/pages/home/regions/main/0', path: '/pages/home/regions/main/1' }],
+    ].map((patches) => ({ patches })),
+  )('shares patch structure for operation %#', ({ patches }) => {
     expect(designPatchesV2Schema.safeParse(patches).success).toBe(true);
-    expect(validateToolCall([refineDesignToolV2], { type: 'toolCall', id: 'patch', name: refineDesignToolV2.name, arguments: { patches } })).toEqual({ patches });
+    expect(
+      validateToolCall([refineDesignToolV2], {
+        type: 'toolCall',
+        id: 'patch',
+        name: refineDesignToolV2.name,
+        arguments: { patches },
+      }),
+    ).toEqual({ patches });
   });
 
-  it.each([
-    [],
-    Array.from({ length: 17 }, () => ({ op: 'remove', path: '/description' })),
-    [{ op: 'replace', path: '/description' }],
-    [{ op: 'move', path: '/description' }],
-    [{ op: 'remove', path: '/description', value: 'extra' }],
-    [{ op: 'copy', from: '/description', path: '/description' }],
-  ].map((patches) => ({ patches })))('rejects malformed patch structure %# in both validators', ({ patches }) => {
+  it.each(
+    [
+      [],
+      Array.from({ length: 17 }, () => ({ op: 'remove', path: '/description' })),
+      [{ op: 'replace', path: '/description' }],
+      [{ op: 'move', path: '/description' }],
+      [{ op: 'remove', path: '/description', value: 'extra' }],
+      [{ op: 'copy', from: '/description', path: '/description' }],
+    ].map((patches) => ({ patches })),
+  )('rejects malformed patch structure %# in both validators', ({ patches }) => {
     expect(designPatchesV2Schema.safeParse(patches).success).toBe(false);
-    expect(() => { validateToolCall([refineDesignToolV2], { type: 'toolCall', id: 'patch', name: refineDesignToolV2.name, arguments: { patches } }); }).toThrow();
+    expect(() => {
+      validateToolCall([refineDesignToolV2], {
+        type: 'toolCall',
+        id: 'patch',
+        name: refineDesignToolV2.name,
+        arguments: { patches },
+      });
+    }).toThrow();
   });
 });

@@ -2,7 +2,8 @@ import type { BlogDesignSpecV2, PresentationSpec } from './schema-v2.js';
 import { normalizeDesignV2 } from './normalize-v2.js';
 
 const FONT = {
-  'system-sans': 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  'system-sans':
+    'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   'system-serif': 'ui-serif, Georgia, Cambria, "Times New Roman", serif',
   'system-mono': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
 } as const;
@@ -10,8 +11,18 @@ const SCALE = { compact: '15px', comfortable: '16px', large: '18px' } as const;
 const WIDTH = { narrow: '42rem', medium: '52rem', wide: '66rem' } as const;
 const SPACE = { compact: '1rem', comfortable: '1.5rem' } as const;
 const RADIUS = { none: '0', soft: '0.5rem', round: '1rem' } as const;
-const NODE_WIDTH = { reading: '42rem', content: 'var(--theme-content-width)', full: '100%' } as const;
-const NODE_SPACE = { none: '0', tight: '.5rem', normal: '1rem', relaxed: '1.5rem', spacious: '2.5rem' } as const;
+const NODE_WIDTH = {
+  reading: '42rem',
+  content: 'var(--theme-content-width)',
+  full: '100%',
+} as const;
+const NODE_SPACE = {
+  none: '0',
+  tight: '.5rem',
+  normal: '1rem',
+  relaxed: '1.5rem',
+  spacious: '2.5rem',
+} as const;
 const NODE_DENSITY = { compact: '.5rem', comfortable: '1rem', relaxed: '1.5rem' } as const;
 
 function presentationCss(selector: string, presentation: PresentationSpec | undefined): string {
@@ -19,14 +30,17 @@ function presentationCss(selector: string, presentation: PresentationSpec | unde
   const declarations = [
     presentation.width && `max-width:${NODE_WIDTH[presentation.width]}`,
     presentation.align && `text-align:${presentation.align}`,
-    presentation.surface && `background:${presentation.surface === 'plain' ? 'transparent' : presentation.surface === 'soft' ? 'var(--theme-surface)' : 'color-mix(in srgb,var(--theme-surface) 70%,var(--theme-accent))'}`,
+    presentation.surface &&
+      `background:${presentation.surface === 'plain' ? 'transparent' : presentation.surface === 'soft' ? 'var(--theme-surface)' : 'color-mix(in srgb,var(--theme-surface) 70%,var(--theme-accent))'}`,
     presentation.density && `padding:${NODE_DENSITY[presentation.density]}`,
     presentation.spacing && `margin-block:${NODE_SPACE[presentation.spacing]}`,
-    presentation.frame && `border:${presentation.frame === 'none' ? '0' : presentation.frame === 'strong' ? '2px solid var(--theme-border)' : '1px solid var(--theme-border)'}`,
+    presentation.frame &&
+      `border:${presentation.frame === 'none' ? '0' : presentation.frame === 'strong' ? '2px solid var(--theme-border)' : '1px solid var(--theme-border)'}`,
   ].filter(Boolean);
   const rules = declarations.length ? [`${selector}{${declarations.join(';')}}`] : [];
   if (presentation.emphasis) {
-    const weight = presentation.emphasis === 'strong' ? 800 : presentation.emphasis === 'subtle' ? 500 : 700;
+    const weight =
+      presentation.emphasis === 'strong' ? 800 : presentation.emphasis === 'subtle' ? 500 : 700;
     rules.push(`${selector} :is(h1,h2,h3){font-weight:${String(weight)}}`);
   }
   return rules.join('\n');
@@ -57,29 +71,60 @@ export function compileDesignCss(input: BlogDesignSpecV2): string {
   ];
   switch (theme.motif) {
     case 'editorial':
-      rules.push('h1,h2,h3{letter-spacing:-.045em}.site-header{border-bottom:3px double var(--theme-border)}');
+      rules.push(
+        'h1,h2,h3{letter-spacing:-.045em}.site-header{border-bottom:3px double var(--theme-border)}',
+      );
       break;
     case 'notebook':
-      rules.push('body.page-home{background-image:linear-gradient(to bottom,transparent 18rem,var(--theme-background) 36rem),linear-gradient(color-mix(in srgb,var(--theme-border) 15%,transparent) 1px,transparent 1px);background-repeat:no-repeat,repeat;background-size:100% 100%,100% 1.75rem}');
+      rules.push(
+        'body.page-home{background-image:linear-gradient(to bottom,transparent 18rem,var(--theme-background) 36rem),linear-gradient(color-mix(in srgb,var(--theme-border) 15%,transparent) 1px,transparent 1px);background-repeat:no-repeat,repeat;background-size:100% 100%,100% 1.75rem}',
+      );
       break;
     default:
       break;
   }
   const homeSelector = (id: string): string => `body.page-home [data-design-node="${id}"]`;
   const articleSelector = (id: string): string => `.blog-post [data-design-node="${id}"]`;
-  rules.push(presentationCss('[data-design-role="site-header"]', design.chrome.header.presentation));
-  rules.push(presentationCss('[data-design-role="site-footer"]', design.chrome.footer.presentation));
-  rules.push(presentationCss('body.page-home [data-design-role="home-root"]', design.pages.home.presentation));
+  rules.push(
+    presentationCss('[data-design-role="site-header"]', design.chrome.header.presentation),
+  );
+  rules.push(
+    presentationCss('[data-design-role="site-footer"]', design.chrome.footer.presentation),
+  );
+  rules.push(
+    presentationCss(
+      'body.page-home [data-design-role="home-root"]',
+      design.pages.home.presentation,
+    ),
+  );
   for (const id of Object.keys(design.pages.home.sections).sort()) {
     rules.push(presentationCss(homeSelector(id), design.pages.home.sections[id]?.presentation));
   }
-  rules.push(presentationCss('.blog-index[data-design-role="index-root"]', design.pages.index.presentation));
-  rules.push(presentationCss('.blog-index [data-design-role="index-item"]', design.pages.index.item.presentation));
-  rules.push(presentationCss('.blog-post[data-design-role="article-root"]', design.pages.article.presentation));
-  rules.push(presentationCss(articleSelector('article-header'), design.pages.article.header.presentation));
-  rules.push(presentationCss(articleSelector('article-prose'), design.pages.article.prose.presentation));
+  rules.push(
+    presentationCss('.blog-index[data-design-role="index-root"]', design.pages.index.presentation),
+  );
+  rules.push(
+    presentationCss(
+      '.blog-index [data-design-role="index-item"]',
+      design.pages.index.item.presentation,
+    ),
+  );
+  rules.push(
+    presentationCss(
+      '.blog-post[data-design-role="article-root"]',
+      design.pages.article.presentation,
+    ),
+  );
+  rules.push(
+    presentationCss(articleSelector('article-header'), design.pages.article.header.presentation),
+  );
+  rules.push(
+    presentationCss(articleSelector('article-prose'), design.pages.article.prose.presentation),
+  );
   for (const id of Object.keys(design.pages.article.modules).sort()) {
-    rules.push(presentationCss(articleSelector(id), design.pages.article.modules[id]?.presentation));
+    rules.push(
+      presentationCss(articleSelector(id), design.pages.article.modules[id]?.presentation),
+    );
   }
   return `${rules.filter(Boolean).join('\n')}\n`;
 }

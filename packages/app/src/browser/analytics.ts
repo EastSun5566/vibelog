@@ -13,7 +13,15 @@ const allow = document.querySelector<HTMLButtonElement>('[data-analytics-allow]'
 const deny = document.querySelector<HTMLButtonElement>('[data-analytics-deny]');
 const measurementId = loader?.dataset.measurementId;
 
-if (loader && banner && settings && allow && deny && measurementId && /^G-[A-Z0-9]+$/u.test(measurementId)) {
+if (
+  loader &&
+  banner &&
+  settings &&
+  allow &&
+  deny &&
+  measurementId &&
+  /^G-[A-Z0-9]+$/u.test(measurementId)
+) {
   const analyticsWindow = window as unknown as AnalyticsWindow & Record<string, unknown>;
   let started = false;
 

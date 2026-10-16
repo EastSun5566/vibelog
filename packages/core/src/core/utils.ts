@@ -1,7 +1,9 @@
 import { randomBytes } from 'node:crypto';
 
 export function generateSlug(length = 8): string {
-  return randomBytes(Math.ceil(length / 2)).toString('hex').slice(0, length);
+  return randomBytes(Math.ceil(length / 2))
+    .toString('hex')
+    .slice(0, length);
 }
 
 export function slugify(text: string): string {

@@ -38,10 +38,13 @@ function dataFor(node: CompatibleNode): HastData {
 }
 
 function textFrom(children: PhrasingContent[]): string {
-  return children.map((child) => {
-    if ('value' in child && typeof child.value === 'string') return child.value;
-    return hasChildren(child) ? textFrom(child.children as PhrasingContent[]) : '';
-  }).join('').trim();
+  return children
+    .map((child) => {
+      if ('value' in child && typeof child.value === 'string') return child.value;
+      return hasChildren(child) ? textFrom(child.children as PhrasingContent[]) : '';
+    })
+    .join('')
+    .trim();
 }
 
 function titleParagraph(title: string, className: string, hName = 'p'): Paragraph {
@@ -55,11 +58,18 @@ function titleParagraph(title: string, className: string, hName = 'p'): Paragrap
   };
 }
 
-function directiveTitle(node: Extract<RootContent, { type: 'containerDirective' }>, fallback: string): string {
+function directiveTitle(
+  node: Extract<RootContent, { type: 'containerDirective' }>,
+  fallback: string,
+): string {
   const explicitTitle = (node.data as HastData | undefined)?.hackmdTitle?.trim();
   if (explicitTitle) return explicitTitle;
   const firstChild = node.children[0];
-  if (firstChild?.type !== 'paragraph' || !(firstChild.data as HastData | undefined)?.directiveLabel) return fallback;
+  if (
+    firstChild?.type !== 'paragraph' ||
+    !(firstChild.data as HastData | undefined)?.directiveLabel
+  )
+    return fallback;
   node.children.shift();
   return textFrom(firstChild.children) || fallback;
 }
@@ -130,7 +140,7 @@ function normalizeCodeLanguage(node: Code, state: TransformState): void {
   const match = /^([a-z][a-z0-9+#.-]*)(?:=(\d+|\+)?)$/iu.exec(node.lang);
   if (!match?.[1]) return;
   node.lang = match[1];
-  const start = match[2] === '+' ? state.nextCodeLine ?? 1 : Number.parseInt(match[2] || '1', 10);
+  const start = match[2] === '+' ? (state.nextCodeLine ?? 1) : Number.parseInt(match[2] || '1', 10);
   addCodeMeta(node, `line-start=${String(start)}`);
   state.nextCodeLine = start + node.value.split(/\r?\n/u).length;
 }
@@ -147,7 +157,8 @@ function inlineElement(hName: string, children: PhrasingContent[]): PhrasingCont
   };
 }
 
-const INLINE_EXTENSION = /==([^=\n]+)==|\+\+([^+\n]+)\+\+|(?<!~)~([^~\n]+)~(?!~)|(?<!\^)\^([^^\n]+)\^(?!\^)|\{([^{}|\n]+)\|([^{}|\n]+)\}/gu;
+const INLINE_EXTENSION =
+  /==([^=\n]+)==|\+\+([^+\n]+)\+\+|(?<!~)~([^~\n]+)~(?!~)|(?<!\^)\^([^^\n]+)\^(?!\^)|\{([^{}|\n]+)\|([^{}|\n]+)\}/gu;
 
 function transformInlineText(node: Text, source: string): PhrasingContent[] {
   if (!/[=+~^{}|]/u.test(node.value)) return [node];
@@ -155,7 +166,8 @@ function transformInlineText(node: Text, source: string): PhrasingContent[] {
   const end = node.position?.end.offset;
   // Markdown escapes and entities change the source slice. Leaving the whole
   // node alone preserves the author's literal input rather than guessing.
-  if (source && start !== undefined && end !== undefined && source.slice(start, end) !== node.value) return [node];
+  if (source && start !== undefined && end !== undefined && source.slice(start, end) !== node.value)
+    return [node];
 
   const output: PhrasingContent[] = [];
   let cursor = 0;
@@ -170,12 +182,14 @@ function transformInlineText(node: Text, source: string): PhrasingContent[] {
     else if (match[3]) output.push(inlineElement('sub', [textNode(content)]));
     else if (match[4]) output.push(inlineElement('sup', [textNode(content)]));
     else if (match[5] && match[6]) {
-      output.push(inlineElement('ruby', [
-        textNode(match[5]),
-        inlineElement('rp', [textNode('(')]),
-        inlineElement('rt', [textNode(match[6])]),
-        inlineElement('rp', [textNode(')')]),
-      ]));
+      output.push(
+        inlineElement('ruby', [
+          textNode(match[5]),
+          inlineElement('rp', [textNode('(')]),
+          inlineElement('rt', [textNode(match[6])]),
+          inlineElement('rp', [textNode(')')]),
+        ]),
+      );
     }
     cursor = index + full.length;
   }
@@ -185,7 +199,8 @@ function transformInlineText(node: Text, source: string): PhrasingContent[] {
 }
 
 function paragraphText(node: CompatibleNode): string | undefined {
-  if (node.type !== 'paragraph' || node.children.length !== 1 || node.children[0]?.type !== 'text') return undefined;
+  if (node.type !== 'paragraph' || node.children.length !== 1 || node.children[0]?.type !== 'text')
+    return undefined;
   return node.children[0].value;
 }
 
@@ -213,11 +228,17 @@ function normalizeSpaceSpoilers(parent: CompatibleParent): void {
     const opening = paragraphText(parent.children[index] as CompatibleNode);
     const openingMatch = opening ? parseSpaceSpoiler(opening) : null;
     if (openingMatch) {
-      const closingIndex = parent.children.findIndex((candidate, candidateIndex) =>
-        candidateIndex > index && paragraphText(candidate)?.trim() === ':::');
+      const closingIndex = parent.children.findIndex(
+        (candidate, candidateIndex) =>
+          candidateIndex > index && paragraphText(candidate)?.trim() === ':::',
+      );
       if (closingIndex > index) {
         const body = parent.children.slice(index + 1, closingIndex) as RootContent[];
-        parent.children.splice(index, closingIndex - index + 1, spoilerNode(openingMatch.title, body, openingMatch.open));
+        parent.children.splice(
+          index,
+          closingIndex - index + 1,
+          spoilerNode(openingMatch.title, body, openingMatch.open),
+        );
         index += 1;
         continue;
       }
@@ -241,8 +262,18 @@ function normalizeSpaceSpoilers(parent: CompatibleParent): void {
             children[0] = textNode(firstText);
             children[children.length - 1] = textNode(lastText);
           }
-          const content = children.filter((child) => child.type !== 'text' || child.value.length > 0);
-          parent.children.splice(index, 1, spoilerNode(compactMatch.title, [{ type: 'paragraph', children: content }], compactMatch.open));
+          const content = children.filter(
+            (child) => child.type !== 'text' || child.value.length > 0,
+          );
+          parent.children.splice(
+            index,
+            1,
+            spoilerNode(
+              compactMatch.title,
+              [{ type: 'paragraph', children: content }],
+              compactMatch.open,
+            ),
+          );
         }
       }
     }
@@ -251,10 +282,12 @@ function normalizeSpaceSpoilers(parent: CompatibleParent): void {
 }
 
 function isStandaloneToc(node: CompatibleNode): node is Paragraph {
-  return node.type === 'paragraph'
-    && node.children.length === 1
-    && node.children[0]?.type === 'text'
-    && node.children[0].value.trim().toUpperCase() === '[TOC]';
+  return (
+    node.type === 'paragraph' &&
+    node.children.length === 1 &&
+    node.children[0]?.type === 'text' &&
+    node.children[0].value.trim().toUpperCase() === '[TOC]'
+  );
 }
 
 function transformChildren(parent: CompatibleParent, source: string, state: TransformState): void {
@@ -267,21 +300,38 @@ function transformChildren(parent: CompatibleParent, source: string, state: Tran
     if ('url' in node && isDangerousMarkdownUrl(node.url)) node.url = 'about:blank#blocked';
     if (node.type === 'html') {
       const literal = textNode(node.value);
-      const flow = ['root', 'blockquote', 'listItem', 'footnoteDefinition', 'containerDirective'].includes(parent.type);
+      const flow = [
+        'root',
+        'blockquote',
+        'listItem',
+        'footnoteDefinition',
+        'containerDirective',
+      ].includes(parent.type);
       parent.children.splice(index, 1, flow ? { type: 'paragraph', children: [literal] } : literal);
       index += 1;
       continue;
     }
-    if (node.type === 'textDirective' || node.type === 'leafDirective'
-      || (node.type === 'containerDirective' && node.name.toLowerCase() !== 'spoiler' && !HACKMD_CALLOUTS.has(node.name.toLowerCase() as CalloutType))) {
+    if (
+      node.type === 'textDirective' ||
+      node.type === 'leafDirective' ||
+      (node.type === 'containerDirective' &&
+        node.name.toLowerCase() !== 'spoiler' &&
+        !HACKMD_CALLOUTS.has(node.name.toLowerCase() as CalloutType))
+    ) {
       const start = node.position?.start.offset;
       const end = node.position?.end.offset;
-      const marker = node.type === 'textDirective' ? ':' : node.type === 'leafDirective' ? '::' : ':::';
-      const value = start !== undefined && end !== undefined && source
-        ? source.slice(start, end)
-        : `${marker}${node.name} ${textFrom(node.children as PhrasingContent[])}`.trim();
+      const marker =
+        node.type === 'textDirective' ? ':' : node.type === 'leafDirective' ? '::' : ':::';
+      const value =
+        start !== undefined && end !== undefined && source
+          ? source.slice(start, end)
+          : `${marker}${node.name} ${textFrom(node.children as PhrasingContent[])}`.trim();
       const literal = textNode(value);
-      parent.children.splice(index, 1, node.type === 'textDirective' ? literal : { type: 'paragraph', children: [literal] });
+      parent.children.splice(
+        index,
+        1,
+        node.type === 'textDirective' ? literal : { type: 'paragraph', children: [literal] },
+      );
       index += 1;
       continue;
     }
@@ -315,6 +365,10 @@ function transformChildren(parent: CompatibleParent, source: string, state: Tran
 
 export function remarkHackmdCompatibility() {
   return (tree: Root, file?: { value?: unknown }) => {
-    transformChildren(tree as CompatibleParent, typeof file?.value === 'string' ? file.value : '', {});
+    transformChildren(
+      tree as CompatibleParent,
+      typeof file?.value === 'string' ? file.value : '',
+      {},
+    );
   };
 }

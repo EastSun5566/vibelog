@@ -47,13 +47,17 @@ function arraysEqual(left: string[], right: string[]): boolean {
 }
 
 function postChanged(draft: SyncedPostSummary, live: SyncedPostSummary): boolean {
-  const contentChanged = Boolean(draft.contentHash && live.contentHash && draft.contentHash !== live.contentHash);
-  return draft.title !== live.title
-    || (draft.description ?? null) !== (live.description ?? null)
-    || draft.publishedAt !== live.publishedAt
-    || (draft.updatedAt ?? null) !== (live.updatedAt ?? null)
-    || !arraysEqual(normalizedTags(draft), normalizedTags(live))
-    || contentChanged;
+  const contentChanged = Boolean(
+    draft.contentHash && live.contentHash && draft.contentHash !== live.contentHash,
+  );
+  return (
+    draft.title !== live.title ||
+    (draft.description ?? null) !== (live.description ?? null) ||
+    draft.publishedAt !== live.publishedAt ||
+    (draft.updatedAt ?? null) !== (live.updatedAt ?? null) ||
+    !arraysEqual(normalizedTags(draft), normalizedTags(live)) ||
+    contentChanged
+  );
 }
 
 export function calculatePublicationDiff(
@@ -92,10 +96,14 @@ export function calculatePublicationDiff(
   });
   const identityChanges: IdentityChange[] = [];
   if (draftSnapshot.site.title !== liveRelease.snapshot.site.title) identityChanges.push('title');
-  if (draftSnapshot.site.description !== liveRelease.snapshot.site.description) identityChanges.push('description');
-  if (draftSnapshot.site.author !== liveRelease.snapshot.site.author) identityChanges.push('author');
-  if (draftSnapshot.site.language !== liveRelease.snapshot.site.language) identityChanges.push('language');
-  const hasSemanticContentChange = added.length > 0 || updated.length > 0 || removed.length > 0 || identityChanges.length > 0;
+  if (draftSnapshot.site.description !== liveRelease.snapshot.site.description)
+    identityChanges.push('description');
+  if (draftSnapshot.site.author !== liveRelease.snapshot.site.author)
+    identityChanges.push('author');
+  if (draftSnapshot.site.language !== liveRelease.snapshot.site.language)
+    identityChanges.push('language');
+  const hasSemanticContentChange =
+    added.length > 0 || updated.length > 0 || removed.length > 0 || identityChanges.length > 0;
 
   return {
     mode: 'tracked',

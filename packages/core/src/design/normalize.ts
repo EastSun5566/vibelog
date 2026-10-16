@@ -15,7 +15,10 @@ export function normalizeDesignDecoration(design: BlogDesignSpecV1): BlogDesignS
     if (rule.target === 'site.footer') {
       delete declarations.border;
     }
-    if (rule.target === 'site.header' && (design.theme.motif === 'editorial' || design.chrome.header.variant === 'masthead')) {
+    if (
+      rule.target === 'site.header' &&
+      (design.theme.motif === 'editorial' || design.chrome.header.variant === 'masthead')
+    ) {
       delete declarations.border;
     }
     if (rule.target === 'article.header' && design.pages.article.header === 'editorial') {

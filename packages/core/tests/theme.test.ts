@@ -10,7 +10,20 @@ describe('theme contract', () => {
       const theme = { ...DEFAULT_THEME, preset };
       const css = renderThemeCss(theme);
       expect(css).toBe(renderThemeCss(theme));
-      for (const token of ['background', 'surface', 'text', 'muted', 'accent', 'border', 'body-font', 'heading-font', 'font-size', 'content-width', 'space', 'radius']) {
+      for (const token of [
+        'background',
+        'surface',
+        'text',
+        'muted',
+        'accent',
+        'border',
+        'body-font',
+        'heading-font',
+        'font-size',
+        'content-width',
+        'space',
+        'radius',
+      ]) {
         expect(css).toContain(`--theme-${token}:`);
       }
       expect(css.slice(css.indexOf(`/* Preset: ${preset} */`))).toMatchSnapshot();
@@ -25,8 +38,19 @@ describe('theme contract', () => {
       '../template/src/components/TagList.astro',
       '../template/src/components/TableOfContents.astro',
       '../template/src/layouts/BlogPostV2.astro',
-    ].map((path) => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n');
-    for (const selector of ['.site-header', '.site-footer', '.blog-list-item', '.blog-post', '.prose', '.tag-link', '.table-of-contents', '.article-back-to-start']) {
+    ]
+      .map((path) => readFileSync(new URL(path, import.meta.url), 'utf8'))
+      .join('\n');
+    for (const selector of [
+      '.site-header',
+      '.site-footer',
+      '.blog-list-item',
+      '.blog-post',
+      '.prose',
+      '.tag-link',
+      '.table-of-contents',
+      '.article-back-to-start',
+    ]) {
       expect(css).toContain(selector);
       expect(template).toContain(selector.slice(1));
     }
@@ -35,8 +59,18 @@ describe('theme contract', () => {
   });
   it('rejects unknown fields, unsafe values, and insufficient contrast', () => {
     expect(() => validateThemeConfig({ ...DEFAULT_THEME, css: 'body{}' })).toThrow('unknown');
-    expect(() => validateThemeConfig({ ...DEFAULT_THEME, colors: { ...DEFAULT_THEME.colors, accent: 'url(https://example.com)' } })).toThrow('accent');
-    expect(() => validateThemeConfig({ ...DEFAULT_THEME, colors: { ...DEFAULT_THEME.colors, text: '#eeeeee' } })).toThrow('contrast');
+    expect(() =>
+      validateThemeConfig({
+        ...DEFAULT_THEME,
+        colors: { ...DEFAULT_THEME.colors, accent: 'url(https://example.com)' },
+      }),
+    ).toThrow('accent');
+    expect(() =>
+      validateThemeConfig({
+        ...DEFAULT_THEME,
+        colors: { ...DEFAULT_THEME.colors, text: '#eeeeee' },
+      }),
+    ).toThrow('contrast');
   });
   it('supports a monospaced body for terminal themes', () => {
     const theme = validateThemeConfig({ ...DEFAULT_THEME, bodyFont: 'system-mono' });
@@ -46,8 +80,12 @@ describe('theme contract', () => {
   it('selects Shiki token colors by theme appearance without changing code block shape', () => {
     const light = renderThemeCss(DEFAULT_THEME);
     const dark = renderThemeCss({ ...DEFAULT_THEME, appearance: 'dark' });
-    expect(light).toContain('color: var(--shiki-light) !important; background-color: var(--shiki-light-bg) !important;');
-    expect(dark).toContain('color: var(--shiki-dark) !important; background-color: var(--shiki-dark-bg) !important;');
+    expect(light).toContain(
+      'color: var(--shiki-light) !important; background-color: var(--shiki-light-bg) !important;',
+    );
+    expect(dark).toContain(
+      'color: var(--shiki-dark) !important; background-color: var(--shiki-dark-bg) !important;',
+    );
     for (const appearance of ['light', 'dark'] as const) {
       for (const codeBlockStyle of ['plain', 'panel'] as const) {
         const css = renderThemeCss({ ...DEFAULT_THEME, appearance, codeBlockStyle });
@@ -57,17 +95,53 @@ describe('theme contract', () => {
     }
   });
   it('normalizes complete legacy themes and rejects partial V2 themes', () => {
-    const { headerStyle: _header, postListStyle: _list, codeBlockStyle: _code, ...legacy } = DEFAULT_THEME;
-    expect(validateThemeConfig(legacy)).toMatchObject({ headerStyle: 'compact', postListStyle: 'divided', codeBlockStyle: 'plain' });
-    expect(validateThemeConfig({ ...legacy, preset: 'editorial' })).toMatchObject({ headerStyle: 'centered', postListStyle: 'numbered', codeBlockStyle: 'panel' });
-    expect(validateThemeConfig({ ...legacy, preset: 'notebook' })).toMatchObject({ headerStyle: 'compact', postListStyle: 'cards', codeBlockStyle: 'panel' });
+    const {
+      headerStyle: _header,
+      postListStyle: _list,
+      codeBlockStyle: _code,
+      ...legacy
+    } = DEFAULT_THEME;
+    expect(validateThemeConfig(legacy)).toMatchObject({
+      headerStyle: 'compact',
+      postListStyle: 'divided',
+      codeBlockStyle: 'plain',
+    });
+    expect(validateThemeConfig({ ...legacy, preset: 'editorial' })).toMatchObject({
+      headerStyle: 'centered',
+      postListStyle: 'numbered',
+      codeBlockStyle: 'panel',
+    });
+    expect(validateThemeConfig({ ...legacy, preset: 'notebook' })).toMatchObject({
+      headerStyle: 'compact',
+      postListStyle: 'cards',
+      codeBlockStyle: 'panel',
+    });
     expect(() => validateThemeConfig({ ...legacy, headerStyle: 'compact' })).toThrow('incomplete');
   });
   it('renders every V2 presentation variant deterministically', () => {
     const variants = [
-      ['headerStyle', [['compact', 'Header: compact'], ['centered', 'Header: centered']]],
-      ['postListStyle', [['divided', 'Post list: divided'], ['cards', 'Post list: cards'], ['numbered', 'Post list: numbered']]],
-      ['codeBlockStyle', [['plain', 'Code blocks: plain'], ['panel', 'Code blocks: panel']]],
+      [
+        'headerStyle',
+        [
+          ['compact', 'Header: compact'],
+          ['centered', 'Header: centered'],
+        ],
+      ],
+      [
+        'postListStyle',
+        [
+          ['divided', 'Post list: divided'],
+          ['cards', 'Post list: cards'],
+          ['numbered', 'Post list: numbered'],
+        ],
+      ],
+      [
+        'codeBlockStyle',
+        [
+          ['plain', 'Code blocks: plain'],
+          ['panel', 'Code blocks: panel'],
+        ],
+      ],
     ] as const;
     for (const [field, values] of variants) {
       for (const [value, marker] of values) {
@@ -78,5 +152,7 @@ describe('theme contract', () => {
       }
     }
   });
-  it('calculates WCAG contrast ratios', () => { expect(contrastRatio('#000000', '#ffffff')).toBe(21); });
+  it('calculates WCAG contrast ratios', () => {
+    expect(contrastRatio('#000000', '#ffffff')).toBe(21);
+  });
 });

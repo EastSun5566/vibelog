@@ -1,10 +1,23 @@
-import { AiProviderRequestError, AiProviderTimeoutError, ContentSourceName, DEFAULT_DESIGN_V2, HackMdSourceError, buildBlog, structuralBuildIdentity } from '@vibelog/core';
+import {
+  AiProviderRequestError,
+  AiProviderTimeoutError,
+  ContentSourceName,
+  DEFAULT_DESIGN_V2,
+  HackMdSourceError,
+  buildBlog,
+  structuralBuildIdentity,
+} from '@vibelog/core';
 import type { AiProvider } from '@vibelog/core';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OperationRuntimeConfig } from '../src/config.js';
-import type { AppDatabase, BlogRecord, OperationRecord, ThemeRevisionRecord } from '../src/database.js';
+import type {
+  AppDatabase,
+  BlogRecord,
+  OperationRecord,
+  ThemeRevisionRecord,
+} from '../src/database.js';
 import { AppOperationExecutor, TerminalOperationError, operationPublicError } from '../src/jobs.js';
 import type { ArtifactStore } from '../src/ports/artifact-store.js';
 
@@ -15,32 +28,98 @@ vi.mock('@vibelog/core', async (importOriginal) => {
 
 const now = '2026-09-10T00:00:00.000Z';
 const operation = (id: string): OperationRecord => ({
-  id, userId: 'user', blogId: 'blog', type: 'generate_design', status: 'running',
-  payload: { prompt: 'Quiet editorial design', baseDesign: DEFAULT_DESIGN_V2, baseRevisionId: 'theme', sourceArtifactId: 'source', draftArtifactId: 'draft', draftDesignRevisionId: 'theme', contentVersion: 1 }, result: null,
-  errorMessage: null, attempts: 1, lockedAt: now, leaseExpiresAt: now, createdAt: now, updatedAt: now,
+  id,
+  userId: 'user',
+  blogId: 'blog',
+  type: 'generate_design',
+  status: 'running',
+  payload: {
+    prompt: 'Quiet editorial design',
+    baseDesign: DEFAULT_DESIGN_V2,
+    baseRevisionId: 'theme',
+    sourceArtifactId: 'source',
+    draftArtifactId: 'draft',
+    draftDesignRevisionId: 'theme',
+    contentVersion: 1,
+  },
+  result: null,
+  errorMessage: null,
+  attempts: 1,
+  lockedAt: now,
+  leaseExpiresAt: now,
+  createdAt: now,
+  updatedAt: now,
 });
 const blog: BlogRecord = {
-  id: 'blog', userId: 'user', username: 'writer', hackmdUsername: 'writer', title: 'Writer', description: null,
-  author: null, language: 'en', state: 'ready', lastError: null, sourceArtifactId: 'source', draftArtifactId: 'draft', draftDesignRevisionId: 'theme', contentVersion: 1,
-  contentProfile: { postCount: 3, tagCount: 2, averageLength: 'medium', codeUsage: 'some', imageUsage: 'none', mathUsage: 'none' },
-  contentManifest: [], lastSyncedAt: now, createdAt: now, updatedAt: now,
+  id: 'blog',
+  userId: 'user',
+  username: 'writer',
+  hackmdUsername: 'writer',
+  title: 'Writer',
+  description: null,
+  author: null,
+  language: 'en',
+  state: 'ready',
+  lastError: null,
+  sourceArtifactId: 'source',
+  draftArtifactId: 'draft',
+  draftDesignRevisionId: 'theme',
+  contentVersion: 1,
+  contentProfile: {
+    postCount: 3,
+    tagCount: 2,
+    averageLength: 'medium',
+    codeUsage: 'some',
+    imageUsage: 'none',
+    mathUsage: 'none',
+  },
+  contentManifest: [],
+  lastSyncedAt: now,
+  createdAt: now,
+  updatedAt: now,
 };
 const theme: ThemeRevisionRecord = {
-  id: 'theme', blogId: blog.id, config: DEFAULT_DESIGN_V2, prompt: null, description: DEFAULT_DESIGN_V2.description,
-  source: 'system', active: true, createdAt: now,
+  id: 'theme',
+  blogId: blog.id,
+  config: DEFAULT_DESIGN_V2,
+  prompt: null,
+  description: DEFAULT_DESIGN_V2.description,
+  source: 'system',
+  active: true,
+  createdAt: now,
 };
 const historicalTheme: ThemeRevisionRecord = {
   ...theme,
   id: 'historical-design',
-  config: { ...DEFAULT_DESIGN_V2, pages: { ...DEFAULT_DESIGN_V2.pages, index: { ...DEFAULT_DESIGN_V2.pages.index, layout: 'grid', columns: 2 } } },
+  config: {
+    ...DEFAULT_DESIGN_V2,
+    pages: {
+      ...DEFAULT_DESIGN_V2.pages,
+      index: { ...DEFAULT_DESIGN_V2.pages.index, layout: 'grid', columns: 2 },
+    },
+  },
   active: false,
   source: 'manual',
 };
 const config: OperationRuntimeConfig = {
-  appOrigin: 'https://vibelog.org', appHostname: 'vibelog.org', databaseUrl: 'postgresql://unused',
+  appOrigin: 'https://vibelog.org',
+  appHostname: 'vibelog.org',
+  databaseUrl: 'postgresql://unused',
   maintenanceStage: 'normal',
-  objectStore: { endpoint: 'https://unused.example.com', region: 'auto', bucket: 'unused', accessKeyId: 'unused', secretAccessKey: 'unused', forcePathStyle: false },
-  queueMode: 'direct', operationPollIntervalMs: 1000, hackmdBaseUrl: 'https://hackmd.io', aiProvider: 'opencode-go', aiModel: 'qwen3.8-flash', aiFallbackModels: ['glm-5.3-flash'],
+  objectStore: {
+    endpoint: 'https://unused.example.com',
+    region: 'auto',
+    bucket: 'unused',
+    accessKeyId: 'unused',
+    secretAccessKey: 'unused',
+    forcePathStyle: false,
+  },
+  queueMode: 'direct',
+  operationPollIntervalMs: 1000,
+  hackmdBaseUrl: 'https://hackmd.io',
+  aiProvider: 'opencode-go',
+  aiModel: 'qwen3.8-flash',
+  aiFallbackModels: ['glm-5.3-flash'],
 };
 
 describe('AI operation execution', () => {
@@ -61,8 +140,13 @@ describe('AI operation execution', () => {
       completeDesignOperation: vi.fn(() => Promise.resolve(theme)),
       markArtifactCleanup: vi.fn(() => Promise.resolve()),
     } as unknown as AppDatabase;
-    const artifacts = { materializeArtifact: vi.fn(), uploadDirectory: vi.fn() } as unknown as ArtifactStore;
-    const executor = new AppOperationExecutor(database, artifacts, config, { aiProvider: () => aiProvider });
+    const artifacts = {
+      materializeArtifact: vi.fn(),
+      uploadDirectory: vi.fn(),
+    } as unknown as ArtifactStore;
+    const executor = new AppOperationExecutor(database, artifacts, config, {
+      aiProvider: () => aiProvider,
+    });
 
     await executor.execute('11111111-1111-4111-8111-111111111111');
     await executor.execute('22222222-2222-4222-8222-222222222222');
@@ -75,27 +159,58 @@ describe('AI operation execution', () => {
 
   it('keeps concurrent direct-mode operations and their cleanup scoped to each blog', async () => {
     const fixtures = ['alpha', 'bravo'].map((name) => {
-      const currentBlog = { ...blog, id: name, userId: name, username: name, sourceArtifactId: `source-${name}` };
+      const currentBlog = {
+        ...blog,
+        id: name,
+        userId: name,
+        username: name,
+        sourceArtifactId: `source-${name}`,
+      };
       const currentTheme = { ...theme, blogId: name };
       const currentOperation = { ...operation(name), blogId: name, userId: name };
       currentOperation.payload.sourceArtifactId = currentBlog.sourceArtifactId;
       const completeDesignOperation = vi.fn(() => Promise.resolve(currentTheme));
       const markArtifactCleanup = vi.fn(() => Promise.resolve());
       const database = {
-        claimOperation: vi.fn(() => Promise.resolve(currentOperation)), getBlog: vi.fn(() => Promise.resolve(currentBlog)),
-        getActiveDesign: vi.fn(() => Promise.resolve(currentTheme)), updateOperationProgress: vi.fn(() => Promise.resolve()),
-        listBuildCacheCandidates: vi.fn(() => Promise.resolve([])), createArtifact: vi.fn(() => Promise.resolve({ id: `candidate-${name}` })),
-        completeDesignOperation, markArtifactCleanup, failOperation: vi.fn(() => Promise.resolve()),
+        claimOperation: vi.fn(() => Promise.resolve(currentOperation)),
+        getBlog: vi.fn(() => Promise.resolve(currentBlog)),
+        getActiveDesign: vi.fn(() => Promise.resolve(currentTheme)),
+        updateOperationProgress: vi.fn(() => Promise.resolve()),
+        listBuildCacheCandidates: vi.fn(() => Promise.resolve([])),
+        createArtifact: vi.fn(() => Promise.resolve({ id: `candidate-${name}` })),
+        completeDesignOperation,
+        markArtifactCleanup,
+        failOperation: vi.fn(() => Promise.resolve()),
       } as unknown as AppDatabase;
       const uploadDirectory = vi.fn(() => Promise.resolve());
       const artifacts = {
-        materializeArtifact: vi.fn(async (_id: string, directory: string) => { await mkdir(directory, { recursive: true }); await writeFile(join(directory, 'owner.txt'), name); }),
+        materializeArtifact: vi.fn(async (_id: string, directory: string) => {
+          await mkdir(directory, { recursive: true });
+          await writeFile(join(directory, 'owner.txt'), name);
+        }),
         uploadDirectory,
       } as unknown as ArtifactStore;
-      let release!: () => void; let fail!: (error: Error) => void;
-      const gate = new Promise<void>((resolve, reject) => { release = resolve; fail = reject; });
-      return { name, completeDesignOperation, markArtifactCleanup, uploadDirectory, gate, release, fail,
-        executor: new AppOperationExecutor(database, artifacts, config, { aiProvider: () => ({ name: 'test', modelId: 'model', generate: () => Promise.resolve(historicalTheme.config) }) }),
+      let release!: () => void;
+      let fail!: (error: Error) => void;
+      const gate = new Promise<void>((resolve, reject) => {
+        release = resolve;
+        fail = reject;
+      });
+      return {
+        name,
+        completeDesignOperation,
+        markArtifactCleanup,
+        uploadDirectory,
+        gate,
+        release,
+        fail,
+        executor: new AppOperationExecutor(database, artifacts, config, {
+          aiProvider: () => ({
+            name: 'test',
+            modelId: 'model',
+            generate: () => Promise.resolve(historicalTheme.config),
+          }),
+        }),
       };
     });
     vi.mocked(buildBlog).mockClear();
@@ -107,13 +222,17 @@ describe('AI operation execution', () => {
     const executions = fixtures.map((fixture) => fixture.executor.execute(fixture.name));
     const settled = Promise.allSettled(executions);
     try {
-      await vi.waitFor(() => { expect(buildBlog).toHaveBeenCalledTimes(2); });
+      await vi.waitFor(() => {
+        expect(buildBlog).toHaveBeenCalledTimes(2);
+      });
       const builds = vi.mocked(buildBlog).mock.calls.map(([options]) => options);
       expect(new Set(builds.map((options) => options.workDir)).size).toBe(2);
-      const alpha = fixtures[0]; const bravo = fixtures[1];
+      const alpha = fixtures[0];
+      const bravo = fixtures[1];
       const alphaBuild = builds.find((options) => options.site === 'https://alpha.vibelog.org');
       const bravoBuild = builds.find((options) => options.site === 'https://bravo.vibelog.org');
-      if (!alpha || !bravo || !alphaBuild || !bravoBuild) throw new Error('Missing concurrent operations');
+      if (!alpha || !bravo || !alphaBuild || !bravoBuild)
+        throw new Error('Missing concurrent operations');
       alpha.fail(new Error('Renderer failed'));
       await expect(executions[0]).rejects.toBeInstanceOf(TerminalOperationError);
       expect(alpha.markArtifactCleanup).toHaveBeenCalledWith('candidate-alpha');
@@ -121,9 +240,15 @@ describe('AI operation execution', () => {
       await expect(stat(dirname(alphaBuild.workDir))).rejects.toMatchObject({ code: 'ENOENT' });
       expect(await readFile(join(bravoBuild.sourceDir, 'owner.txt'), 'utf8')).toBe('bravo');
       expect(bravo.markArtifactCleanup).not.toHaveBeenCalled();
-      bravo.release(); await executions[1];
+      bravo.release();
+      await executions[1];
       expect(bravo.uploadDirectory).toHaveBeenCalledWith('candidate-bravo', bravoBuild.outDir);
-      expect(bravo.completeDesignOperation).toHaveBeenCalledWith(expect.objectContaining({ blogId: 'bravo' }), historicalTheme.config, 'candidate-bravo', expect.anything());
+      expect(bravo.completeDesignOperation).toHaveBeenCalledWith(
+        expect.objectContaining({ blogId: 'bravo' }),
+        historicalTheme.config,
+        'candidate-bravo',
+        expect.anything(),
+      );
       await expect(stat(dirname(bravoBuild.workDir))).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
       for (const fixture of fixtures) fixture.release();
@@ -137,84 +262,176 @@ describe('AI operation execution', () => {
     const stale = operation('88888888-8888-4888-8888-888888888888');
     stale.payload.baseRevisionId = 'older-design';
     const database = {
-      claimOperation: vi.fn(() => Promise.resolve(stale)), getBlog: vi.fn(() => Promise.resolve(blog)),
-      getActiveDesign: vi.fn(() => Promise.resolve(theme)), updateOperationProgress: vi.fn(() => Promise.resolve()),
-      createArtifact, failOperation: vi.fn(() => Promise.resolve()),
+      claimOperation: vi.fn(() => Promise.resolve(stale)),
+      getBlog: vi.fn(() => Promise.resolve(blog)),
+      getActiveDesign: vi.fn(() => Promise.resolve(theme)),
+      updateOperationProgress: vi.fn(() => Promise.resolve()),
+      createArtifact,
+      failOperation: vi.fn(() => Promise.resolve()),
     } as unknown as AppDatabase;
-    await expect(new AppOperationExecutor(database, {} as ArtifactStore, config, { aiProvider: () => ({ name: 'test', modelId: 'model', generate }) }).execute(stale.id)).rejects.toBeInstanceOf(TerminalOperationError);
+    await expect(
+      new AppOperationExecutor(database, {} as ArtifactStore, config, {
+        aiProvider: () => ({ name: 'test', modelId: 'model', generate }),
+      }).execute(stale.id),
+    ).rejects.toBeInstanceOf(TerminalOperationError);
     expect(generate).not.toHaveBeenCalled();
     expect(createArtifact).not.toHaveBeenCalled();
   });
 
   it('changes only design.css for a presentation edit', async () => {
-    const next = { ...DEFAULT_DESIGN_V2, theme: { ...DEFAULT_DESIGN_V2.theme, typography: { ...DEFAULT_DESIGN_V2.theme.typography, scale: 'large' as const } } };
+    const next = {
+      ...DEFAULT_DESIGN_V2,
+      theme: {
+        ...DEFAULT_DESIGN_V2.theme,
+        typography: { ...DEFAULT_DESIGN_V2.theme.typography, scale: 'large' as const },
+      },
+    };
     const apply = operation('55555555-5555-4555-8555-555555555555');
-    apply.type = 'apply_design'; apply.payload.design = next;
+    apply.type = 'apply_design';
+    apply.payload.design = next;
     const database = {
-      claimOperation: vi.fn(() => Promise.resolve(apply)), getBlog: vi.fn(() => Promise.resolve(blog)),
-      getActiveDesign: vi.fn(() => Promise.resolve(theme)), updateOperationProgress: vi.fn(() => Promise.resolve()),
-      createArtifact: vi.fn(() => Promise.resolve({ id: 'css-draft' })), completeDesignOperation: vi.fn(() => Promise.resolve({ ...theme, config: next })),
+      claimOperation: vi.fn(() => Promise.resolve(apply)),
+      getBlog: vi.fn(() => Promise.resolve(blog)),
+      getActiveDesign: vi.fn(() => Promise.resolve(theme)),
+      updateOperationProgress: vi.fn(() => Promise.resolve()),
+      createArtifact: vi.fn(() => Promise.resolve({ id: 'css-draft' })),
+      completeDesignOperation: vi.fn(() => Promise.resolve({ ...theme, config: next })),
       markArtifactCleanup: vi.fn(() => Promise.resolve()),
     } as unknown as AppDatabase;
     const copyArtifact = vi.fn(() => Promise.resolve());
     const putObject = vi.fn(() => Promise.resolve());
     const materializeArtifact = vi.fn();
-    const currentIdentity = structuralBuildIdentity('source', theme.config, 'https://writer.vibelog.org');
-    const readObject = vi.fn(() => Promise.resolve({ body: new Response(JSON.stringify({ identity: currentIdentity })).body }));
-    const artifacts = { copyArtifact, putObject, materializeArtifact, readObject } as unknown as ArtifactStore;
+    const currentIdentity = structuralBuildIdentity(
+      'source',
+      theme.config,
+      'https://writer.vibelog.org',
+    );
+    const readObject = vi.fn(() =>
+      Promise.resolve({ body: new Response(JSON.stringify({ identity: currentIdentity })).body }),
+    );
+    const artifacts = {
+      copyArtifact,
+      putObject,
+      materializeArtifact,
+      readObject,
+    } as unknown as ArtifactStore;
     vi.mocked(buildBlog).mockClear();
     await new AppOperationExecutor(database, artifacts, config).execute(apply.id);
     expect(copyArtifact).toHaveBeenCalledWith('draft', 'css-draft');
-    expect(putObject).toHaveBeenCalledWith('css-draft', 'design.css', expect.stringContaining('font'), { contentType: 'text/css; charset=utf-8' });
+    expect(putObject).toHaveBeenCalledWith(
+      'css-draft',
+      'design.css',
+      expect.stringContaining('font'),
+      { contentType: 'text/css; charset=utf-8' },
+    );
     expect(materializeArtifact).not.toHaveBeenCalled();
     expect(buildBlog).not.toHaveBeenCalled();
   });
 
-  it.each(['missing', 'old renderer', 'different source', 'different design', 'malformed', 'unreadable', 'different revision'] as const)(
-    'rebuilds a presentation edit from source when the draft marker is %s', async (marker) => {
+  it.each([
+    'missing',
+    'old renderer',
+    'different source',
+    'different design',
+    'malformed',
+    'unreadable',
+    'different revision',
+  ] as const)(
+    'rebuilds a presentation edit from source when the draft marker is %s',
+    async (marker) => {
       const next = structuredClone(DEFAULT_DESIGN_V2);
       next.theme.typography.scale = 'large';
-      const apply = operation('presentation-rebuild'); apply.type = 'apply_design'; apply.payload.design = next;
+      const apply = operation('presentation-rebuild');
+      apply.type = 'apply_design';
+      apply.payload.design = next;
       const completeDesignOperation = vi.fn(() => Promise.resolve({ ...theme, config: next }));
       const database = {
         claimOperation: vi.fn(() => Promise.resolve(apply)),
-        getBlog: vi.fn(() => Promise.resolve(marker === 'different revision' ? { ...blog, draftDesignRevisionId: 'older' } : blog)),
-        getActiveDesign: vi.fn(() => Promise.resolve(theme)), updateOperationProgress: vi.fn(() => Promise.resolve()),
-        listBuildCacheCandidates: vi.fn(() => Promise.resolve([])), createArtifact: vi.fn(() => Promise.resolve({ id: 'rebuilt-draft' })),
-        completeDesignOperation, markArtifactCleanup: vi.fn(() => Promise.resolve()),
+        getBlog: vi.fn(() =>
+          Promise.resolve(
+            marker === 'different revision' ? { ...blog, draftDesignRevisionId: 'older' } : blog,
+          ),
+        ),
+        getActiveDesign: vi.fn(() => Promise.resolve(theme)),
+        updateOperationProgress: vi.fn(() => Promise.resolve()),
+        listBuildCacheCandidates: vi.fn(() => Promise.resolve([])),
+        createArtifact: vi.fn(() => Promise.resolve({ id: 'rebuilt-draft' })),
+        completeDesignOperation,
+        markArtifactCleanup: vi.fn(() => Promise.resolve()),
       } as unknown as AppDatabase;
-      const oldDesign = structuredClone(DEFAULT_DESIGN_V2); oldDesign.theme.typography.scale = 'compact';
-      const identity = marker === 'different source' ? structuralBuildIdentity('previous-source', theme.config, 'https://writer.vibelog.org')
-        : marker === 'different design' ? structuralBuildIdentity('source', oldDesign, 'https://writer.vibelog.org') : 'template-17-identity';
+      const oldDesign = structuredClone(DEFAULT_DESIGN_V2);
+      oldDesign.theme.typography.scale = 'compact';
+      const identity =
+        marker === 'different source'
+          ? structuralBuildIdentity('previous-source', theme.config, 'https://writer.vibelog.org')
+          : marker === 'different design'
+            ? structuralBuildIdentity('source', oldDesign, 'https://writer.vibelog.org')
+            : 'template-17-identity';
       const readObject = vi.fn((_id: string, path: string) => {
         if (marker === 'unreadable') return Promise.reject(new Error('Read unavailable'));
-        return Promise.resolve(path !== 'build-identity.json' || marker === 'missing' ? null
-          : { body: new Response(marker === 'malformed' ? 'invalid json' : JSON.stringify({ identity })).body });
+        return Promise.resolve(
+          path !== 'build-identity.json' || marker === 'missing'
+            ? null
+            : {
+                body: new Response(
+                  marker === 'malformed' ? 'invalid json' : JSON.stringify({ identity }),
+                ).body,
+              },
+        );
       });
-      const copyArtifact = vi.fn(); const materializeArtifact = vi.fn(); const uploadDirectory = vi.fn();
-      const artifacts = { readObject, copyArtifact, materializeArtifact, uploadDirectory } as unknown as ArtifactStore;
+      const copyArtifact = vi.fn();
+      const materializeArtifact = vi.fn();
+      const uploadDirectory = vi.fn();
+      const artifacts = {
+        readObject,
+        copyArtifact,
+        materializeArtifact,
+        uploadDirectory,
+      } as unknown as ArtifactStore;
       vi.mocked(buildBlog).mockClear();
       await new AppOperationExecutor(database, artifacts, config).execute(apply.id);
       expect(copyArtifact).not.toHaveBeenCalled();
       expect(materializeArtifact).toHaveBeenCalledWith('source', expect.any(String));
-      expect(buildBlog).toHaveBeenCalledWith(expect.objectContaining({ design: next, buildIdentity: structuralBuildIdentity('source', next, 'https://writer.vibelog.org') }));
+      expect(buildBlog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          design: next,
+          buildIdentity: structuralBuildIdentity('source', next, 'https://writer.vibelog.org'),
+        }),
+      );
       expect(uploadDirectory).toHaveBeenCalledWith('rebuilt-draft', expect.any(String));
       expect(completeDesignOperation).toHaveBeenCalledOnce();
     },
   );
 
   it('keeps the existing draft if an outdated presentation draft cannot be rebuilt', async () => {
-    const next = structuredClone(DEFAULT_DESIGN_V2); next.theme.typography.scale = 'large';
-    const apply = operation('failed-presentation-rebuild'); apply.type = 'apply_design'; apply.payload.design = next;
-    const completeDesignOperation = vi.fn(); const markArtifactCleanup = vi.fn();
+    const next = structuredClone(DEFAULT_DESIGN_V2);
+    next.theme.typography.scale = 'large';
+    const apply = operation('failed-presentation-rebuild');
+    apply.type = 'apply_design';
+    apply.payload.design = next;
+    const completeDesignOperation = vi.fn();
+    const markArtifactCleanup = vi.fn();
     const database = {
-      claimOperation: vi.fn(() => Promise.resolve(apply)), getBlog: vi.fn(() => Promise.resolve(blog)), getActiveDesign: vi.fn(() => Promise.resolve(theme)),
-      updateOperationProgress: vi.fn(), listBuildCacheCandidates: vi.fn(() => Promise.resolve([])),
-      createArtifact: vi.fn(() => Promise.resolve({ id: 'failed-draft' })), completeDesignOperation, markArtifactCleanup, failOperation: vi.fn(),
+      claimOperation: vi.fn(() => Promise.resolve(apply)),
+      getBlog: vi.fn(() => Promise.resolve(blog)),
+      getActiveDesign: vi.fn(() => Promise.resolve(theme)),
+      updateOperationProgress: vi.fn(),
+      listBuildCacheCandidates: vi.fn(() => Promise.resolve([])),
+      createArtifact: vi.fn(() => Promise.resolve({ id: 'failed-draft' })),
+      completeDesignOperation,
+      markArtifactCleanup,
+      failOperation: vi.fn(),
     } as unknown as AppDatabase;
-    const artifacts = { readObject: vi.fn(() => Promise.resolve(null)), materializeArtifact: vi.fn(), uploadDirectory: vi.fn(), copyArtifact: vi.fn() } as unknown as ArtifactStore;
+    const artifacts = {
+      readObject: vi.fn(() => Promise.resolve(null)),
+      materializeArtifact: vi.fn(),
+      uploadDirectory: vi.fn(),
+      copyArtifact: vi.fn(),
+    } as unknown as ArtifactStore;
     vi.mocked(buildBlog).mockRejectedValueOnce(new Error('Renderer failed'));
-    await expect(new AppOperationExecutor(database, artifacts, config).execute(apply.id)).rejects.toBeInstanceOf(TerminalOperationError);
+    await expect(
+      new AppOperationExecutor(database, artifacts, config).execute(apply.id),
+    ).rejects.toBeInstanceOf(TerminalOperationError);
     expect(completeDesignOperation).not.toHaveBeenCalled();
     expect(markArtifactCleanup).toHaveBeenCalledWith('failed-draft');
     expect(blog.draftArtifactId).toBe('draft');
@@ -222,23 +439,41 @@ describe('AI operation execution', () => {
 
   it('does not create a revision or artifact for an unchanged design', async () => {
     const apply = operation('66666666-6666-4666-8666-666666666666');
-    apply.type = 'apply_design'; apply.payload.design = DEFAULT_DESIGN_V2;
-    const createArtifact = vi.fn(); const completeNoopDesignOperation = vi.fn(() => Promise.resolve(theme));
-    const database = { claimOperation: vi.fn(() => Promise.resolve(apply)), getBlog: vi.fn(() => Promise.resolve(blog)), getActiveDesign: vi.fn(() => Promise.resolve(theme)), createArtifact, completeNoopDesignOperation } as unknown as AppDatabase;
-    await expect(new AppOperationExecutor(database, {} as ArtifactStore, config).execute(apply.id)).resolves.toMatchObject({ message: 'Design unchanged', revisionId: theme.id });
+    apply.type = 'apply_design';
+    apply.payload.design = DEFAULT_DESIGN_V2;
+    const createArtifact = vi.fn();
+    const completeNoopDesignOperation = vi.fn(() => Promise.resolve(theme));
+    const database = {
+      claimOperation: vi.fn(() => Promise.resolve(apply)),
+      getBlog: vi.fn(() => Promise.resolve(blog)),
+      getActiveDesign: vi.fn(() => Promise.resolve(theme)),
+      createArtifact,
+      completeNoopDesignOperation,
+    } as unknown as AppDatabase;
+    await expect(
+      new AppOperationExecutor(database, {} as ArtifactStore, config).execute(apply.id),
+    ).resolves.toMatchObject({ message: 'Design unchanged', revisionId: theme.id });
     expect(createArtifact).not.toHaveBeenCalled();
   });
 
   it('keeps the saved revision when AI returns an unchanged design', async () => {
     const ai = operation('99999999-9999-4999-8999-999999999999');
-    const createArtifact = vi.fn(); const completeNoopDesignOperation = vi.fn(() => Promise.resolve(theme));
+    const createArtifact = vi.fn();
+    const completeNoopDesignOperation = vi.fn(() => Promise.resolve(theme));
     const generate = vi.fn<AiProvider['generate']>(() => Promise.resolve(DEFAULT_DESIGN_V2));
     const database = {
-      claimOperation: vi.fn(() => Promise.resolve(ai)), getBlog: vi.fn(() => Promise.resolve(blog)),
-      getActiveDesign: vi.fn(() => Promise.resolve(theme)), updateOperationProgress: vi.fn(() => Promise.resolve()),
-      createArtifact, completeNoopDesignOperation,
+      claimOperation: vi.fn(() => Promise.resolve(ai)),
+      getBlog: vi.fn(() => Promise.resolve(blog)),
+      getActiveDesign: vi.fn(() => Promise.resolve(theme)),
+      updateOperationProgress: vi.fn(() => Promise.resolve()),
+      createArtifact,
+      completeNoopDesignOperation,
     } as unknown as AppDatabase;
-    await expect(new AppOperationExecutor(database, {} as ArtifactStore, config, { aiProvider: () => ({ name: 'test', modelId: 'model', generate }) }).execute(ai.id)).resolves.toMatchObject({ message: 'Design unchanged', revisionId: theme.id });
+    await expect(
+      new AppOperationExecutor(database, {} as ArtifactStore, config, {
+        aiProvider: () => ({ name: 'test', modelId: 'model', generate }),
+      }).execute(ai.id),
+    ).resolves.toMatchObject({ message: 'Design unchanged', revisionId: theme.id });
     expect(generate).toHaveBeenCalledOnce();
     expect(completeNoopDesignOperation).toHaveBeenCalledOnce();
     expect(createArtifact).not.toHaveBeenCalled();
@@ -246,17 +481,31 @@ describe('AI operation execution', () => {
 
   it('reuses an exact structural build without materializing source or running Astro', async () => {
     const apply = operation('77777777-7777-4777-8777-777777777777');
-    apply.type = 'apply_design'; apply.payload.design = historicalTheme.config;
-    const buildKey = structuralBuildIdentity('source', historicalTheme.config, 'https://writer.vibelog.org');
+    apply.type = 'apply_design';
+    apply.payload.design = historicalTheme.config;
+    const buildKey = structuralBuildIdentity(
+      'source',
+      historicalTheme.config,
+      'https://writer.vibelog.org',
+    );
     const database = {
-      claimOperation: vi.fn(() => Promise.resolve(apply)), getBlog: vi.fn(() => Promise.resolve(blog)), getActiveDesign: vi.fn(() => Promise.resolve(theme)),
+      claimOperation: vi.fn(() => Promise.resolve(apply)),
+      getBlog: vi.fn(() => Promise.resolve(blog)),
+      getActiveDesign: vi.fn(() => Promise.resolve(theme)),
       listBuildCacheCandidates: vi.fn(() => Promise.resolve(['old-release'])),
-      createArtifact: vi.fn(() => Promise.resolve({ id: 'cached-draft' })), completeDesignOperation: vi.fn(() => Promise.resolve(historicalTheme)),
+      createArtifact: vi.fn(() => Promise.resolve({ id: 'cached-draft' })),
+      completeDesignOperation: vi.fn(() => Promise.resolve(historicalTheme)),
       markArtifactCleanup: vi.fn(() => Promise.resolve()),
     } as unknown as AppDatabase;
     const copyArtifact = vi.fn(() => Promise.resolve());
     const materializeArtifact = vi.fn();
-    const artifacts = { copyArtifact, materializeArtifact, readObject: vi.fn(() => Promise.resolve({ body: new Response(JSON.stringify({ identity: buildKey })).body })) } as unknown as ArtifactStore;
+    const artifacts = {
+      copyArtifact,
+      materializeArtifact,
+      readObject: vi.fn(() =>
+        Promise.resolve({ body: new Response(JSON.stringify({ identity: buildKey })).body }),
+      ),
+    } as unknown as ArtifactStore;
     vi.mocked(buildBlog).mockClear();
     await new AppOperationExecutor(database, artifacts, config).execute(apply.id);
     expect(copyArtifact).toHaveBeenCalledWith('old-release', 'cached-draft');
@@ -264,38 +513,46 @@ describe('AI operation execution', () => {
     expect(buildBlog).not.toHaveBeenCalled();
   });
 
-  it.each(['Astro build', 'artifact upload'] as const)('keeps the current draft when %s fails', async (failure) => {
-    const generate = vi.fn<AiProvider['generate']>(() => Promise.resolve(historicalTheme.config));
-    const completeDesignOperation = vi.fn();
-    const markArtifactCleanup = vi.fn(() => Promise.resolve());
-    const failOperation = vi.fn(() => Promise.resolve());
-    const database = {
-      claimOperation: vi.fn(() => Promise.resolve(operation('11111111-1111-4111-8111-111111111111'))),
-      getBlog: vi.fn(() => Promise.resolve(blog)),
-      updateOperationProgress: vi.fn(() => Promise.resolve()),
-      getActiveDesign: vi.fn(() => Promise.resolve(theme)),
-      listBuildCacheCandidates: vi.fn(() => Promise.resolve([])),
-      createArtifact: vi.fn(() => Promise.resolve({ id: 'candidate-draft' })),
-      completeDesignOperation,
-      markArtifactCleanup,
-      failOperation,
-    } as unknown as AppDatabase;
-    const materializeArtifact = vi.fn(() => Promise.resolve());
-    const uploadDirectory = vi.fn(() => Promise.resolve());
-    const artifacts = { materializeArtifact, uploadDirectory } as unknown as ArtifactStore;
-    if (failure === 'Astro build') vi.mocked(buildBlog).mockRejectedValueOnce(new Error('Astro failed'));
-    else uploadDirectory.mockRejectedValueOnce(new Error('R2 failed'));
-    const executor = new AppOperationExecutor(database, artifacts, config, {
-      aiProvider: () => ({ name: 'test', modelId: 'model', generate }),
-    });
+  it.each(['Astro build', 'artifact upload'] as const)(
+    'keeps the current draft when %s fails',
+    async (failure) => {
+      const generate = vi.fn<AiProvider['generate']>(() => Promise.resolve(historicalTheme.config));
+      const completeDesignOperation = vi.fn();
+      const markArtifactCleanup = vi.fn(() => Promise.resolve());
+      const failOperation = vi.fn(() => Promise.resolve());
+      const database = {
+        claimOperation: vi.fn(() =>
+          Promise.resolve(operation('11111111-1111-4111-8111-111111111111')),
+        ),
+        getBlog: vi.fn(() => Promise.resolve(blog)),
+        updateOperationProgress: vi.fn(() => Promise.resolve()),
+        getActiveDesign: vi.fn(() => Promise.resolve(theme)),
+        listBuildCacheCandidates: vi.fn(() => Promise.resolve([])),
+        createArtifact: vi.fn(() => Promise.resolve({ id: 'candidate-draft' })),
+        completeDesignOperation,
+        markArtifactCleanup,
+        failOperation,
+      } as unknown as AppDatabase;
+      const materializeArtifact = vi.fn(() => Promise.resolve());
+      const uploadDirectory = vi.fn(() => Promise.resolve());
+      const artifacts = { materializeArtifact, uploadDirectory } as unknown as ArtifactStore;
+      if (failure === 'Astro build')
+        vi.mocked(buildBlog).mockRejectedValueOnce(new Error('Astro failed'));
+      else uploadDirectory.mockRejectedValueOnce(new Error('R2 failed'));
+      const executor = new AppOperationExecutor(database, artifacts, config, {
+        aiProvider: () => ({ name: 'test', modelId: 'model', generate }),
+      });
 
-    await expect(executor.execute('11111111-1111-4111-8111-111111111111')).rejects.toBeInstanceOf(TerminalOperationError);
+      await expect(executor.execute('11111111-1111-4111-8111-111111111111')).rejects.toBeInstanceOf(
+        TerminalOperationError,
+      );
 
-    expect(completeDesignOperation).not.toHaveBeenCalled();
-    expect(markArtifactCleanup).toHaveBeenCalledWith('candidate-draft');
-    expect(blog.draftArtifactId).toBe('draft');
-    expect(blog.draftDesignRevisionId).toBe('theme');
-  });
+      expect(completeDesignOperation).not.toHaveBeenCalled();
+      expect(markArtifactCleanup).toHaveBeenCalledWith('candidate-draft');
+      expect(blog.draftArtifactId).toBe('draft');
+      expect(blog.draftDesignRevisionId).toBe('theme');
+    },
+  );
 
   it('rebuilds a historical design from the current source without AI or HackMD', async () => {
     const activate = operation('33333333-3333-4333-8333-333333333333');
@@ -330,13 +587,22 @@ describe('AI operation execution', () => {
       aiProvider: () => ({ name: 'test', modelId: 'model', generate }),
     });
 
-    await expect(executor.execute(activate.id)).resolves.toMatchObject({ revisionId: historicalTheme.id });
+    await expect(executor.execute(activate.id)).resolves.toMatchObject({
+      revisionId: historicalTheme.id,
+    });
 
     expect(getDesignRevision).toHaveBeenCalledWith(historicalTheme.id, blog.id);
     expect(materializeArtifact).toHaveBeenCalledWith(blog.sourceArtifactId, expect.any(String));
-    expect(buildBlog).toHaveBeenCalledWith(expect.objectContaining({ design: historicalTheme.config }));
+    expect(buildBlog).toHaveBeenCalledWith(
+      expect.objectContaining({ design: historicalTheme.config }),
+    );
     expect(generate).not.toHaveBeenCalled();
-    expect(completeDesignOperation).toHaveBeenCalledWith(activate, historicalTheme.config, 'historical-draft', expect.any(Object));
+    expect(completeDesignOperation).toHaveBeenCalledWith(
+      activate,
+      historicalTheme.config,
+      'historical-draft',
+      expect.any(Object),
+    );
   });
 
   it('publishes by copying the fenced draft without rebuilding or calling AI', async () => {
@@ -363,7 +629,9 @@ describe('AI operation execution', () => {
     });
     vi.mocked(buildBlog).mockClear();
 
-    await expect(executor.execute(publish.id)).resolves.toMatchObject({ message: 'Site published' });
+    await expect(executor.execute(publish.id)).resolves.toMatchObject({
+      message: 'Site published',
+    });
 
     expect(copyArtifact).toHaveBeenCalledWith('draft', 'release');
     expect(buildBlog).not.toHaveBeenCalled();
@@ -371,7 +639,10 @@ describe('AI operation execution', () => {
   });
 
   it('distinguishes provider failures from invalid theme responses', () => {
-    const providerMessage = operationPublicError('generate_design', new AiProviderRequestError('AI provider request failed'));
+    const providerMessage = operationPublicError(
+      'generate_design',
+      new AiProviderRequestError('AI provider request failed'),
+    );
     const timeoutMessage = operationPublicError('generate_design', new AiProviderTimeoutError());
     const validationMessage = operationPublicError('generate_design', new Error('Invalid design'));
     expect(providerMessage).toContain('temporarily unavailable');
@@ -380,8 +651,10 @@ describe('AI operation execution', () => {
   });
 
   it.each([
-    ['too_many_articles', '1,000'], ['article_too_large', '2 MiB'],
-    ['sync_too_large', '32 MiB'], ['metadata_too_large', 'metadata'],
+    ['too_many_articles', '1,000'],
+    ['article_too_large', '2 MiB'],
+    ['sync_too_large', '32 MiB'],
+    ['metadata_too_large', 'metadata'],
     ['incomplete_overview', 'incomplete article list'],
   ] as const)('explains the %s sync limit without exposing external content', (code, message) => {
     const result = operationPublicError('sync', new HackMdSourceError(code, 'private source text'));
@@ -391,29 +664,51 @@ describe('AI operation execution', () => {
   });
 
   it.each([
-    ['sync_too_large', '32 MiB'], ['incomplete_overview', 'incomplete article list'],
-  ] as const)('keeps the current draft and release when importing fails with %s', async (code, publicMessage) => {
-    const sync = { ...operation('sync-limit'), type: 'sync' as const, payload: { intent: 'content' } };
-    const completeSyncOperation = vi.fn();
-    const markArtifactCleanup = vi.fn<AppDatabase['markArtifactCleanup']>(() => Promise.resolve());
-    const failOperation = vi.fn(() => Promise.resolve());
-    const database = {
-      claimOperation: vi.fn(() => Promise.resolve(sync)), getBlog: vi.fn(() => Promise.resolve(blog)),
-      createArtifact: vi.fn().mockResolvedValueOnce({ id: 'pending-source' }).mockResolvedValueOnce({ id: 'pending-draft' }),
-      updateOperationProgress: vi.fn(), completeSyncOperation, markArtifactCleanup, failOperation,
-    } as unknown as AppDatabase;
-    const uploadDirectory = vi.fn();
-    const artifacts = { uploadDirectory } as unknown as ArtifactStore;
-    const executor = new AppOperationExecutor(database, artifacts, config, { contentSource: () => ({
-      name: ContentSourceName.HACKMD,
-      getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
-      getPosts: () => Promise.reject(new HackMdSourceError(code, 'External import failed')),
-    }) });
-    await expect(executor.execute(sync.id)).rejects.toThrow(publicMessage);
-    expect(markArtifactCleanup.mock.calls.map(([id]) => id)).toEqual(['pending-source', 'pending-draft']);
-    expect(completeSyncOperation).not.toHaveBeenCalled();
-    expect(uploadDirectory).not.toHaveBeenCalled();
-    expect(failOperation).toHaveBeenCalledWith(sync, expect.stringContaining(publicMessage));
-    expect(blog.draftArtifactId).toBe('draft');
-  });
+    ['sync_too_large', '32 MiB'],
+    ['incomplete_overview', 'incomplete article list'],
+  ] as const)(
+    'keeps the current draft and release when importing fails with %s',
+    async (code, publicMessage) => {
+      const sync = {
+        ...operation('sync-limit'),
+        type: 'sync' as const,
+        payload: { intent: 'content' },
+      };
+      const completeSyncOperation = vi.fn();
+      const markArtifactCleanup = vi.fn<AppDatabase['markArtifactCleanup']>(() =>
+        Promise.resolve(),
+      );
+      const failOperation = vi.fn(() => Promise.resolve());
+      const database = {
+        claimOperation: vi.fn(() => Promise.resolve(sync)),
+        getBlog: vi.fn(() => Promise.resolve(blog)),
+        createArtifact: vi
+          .fn()
+          .mockResolvedValueOnce({ id: 'pending-source' })
+          .mockResolvedValueOnce({ id: 'pending-draft' }),
+        updateOperationProgress: vi.fn(),
+        completeSyncOperation,
+        markArtifactCleanup,
+        failOperation,
+      } as unknown as AppDatabase;
+      const uploadDirectory = vi.fn();
+      const artifacts = { uploadDirectory } as unknown as ArtifactStore;
+      const executor = new AppOperationExecutor(database, artifacts, config, {
+        contentSource: () => ({
+          name: ContentSourceName.HACKMD,
+          getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
+          getPosts: () => Promise.reject(new HackMdSourceError(code, 'External import failed')),
+        }),
+      });
+      await expect(executor.execute(sync.id)).rejects.toThrow(publicMessage);
+      expect(markArtifactCleanup.mock.calls.map(([id]) => id)).toEqual([
+        'pending-source',
+        'pending-draft',
+      ]);
+      expect(completeSyncOperation).not.toHaveBeenCalled();
+      expect(uploadDirectory).not.toHaveBeenCalled();
+      expect(failOperation).toHaveBeenCalledWith(sync, expect.stringContaining(publicMessage));
+      expect(blog.draftArtifactId).toBe('draft');
+    },
+  );
 });

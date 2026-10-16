@@ -32,7 +32,8 @@ Useful commands:
 ```sh
 pnpm dev          # web process with direct background jobs
 pnpm db:migrate   # apply local database migrations
-pnpm check        # lint, typecheck, tests, and schema checks
+pnpm format       # format authored TypeScript (100-column target)
+pnpm check        # formatting, lint, typecheck, tests, and schema checks
 pnpm test:e2e     # isolated Compose publish flow
 ```
 

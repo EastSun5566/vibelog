@@ -5,7 +5,15 @@ import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import matter from 'gray-matter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildBlog, buildFromVibelog, ContentSourceName, createDevBuilder, DEFAULT_DESIGN_V2, HackMdSource, writeSourceSnapshot } from '../src/index.js';
+import {
+  buildBlog,
+  buildFromVibelog,
+  ContentSourceName,
+  createDevBuilder,
+  DEFAULT_DESIGN_V2,
+  HackMdSource,
+  writeSourceSnapshot,
+} from '../src/index.js';
 import type { ContentSource } from '../src/index.js';
 import { parseFrontMatter, stringifyFrontMatter } from '../src/core/frontmatter.js';
 
@@ -22,40 +30,108 @@ afterEach(async () => {
 });
 
 describe('DevBuilder content summary', () => {
-  it.each(['post', 'author'] as const)('rejects executable front matter from the %s source', async (target) => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-frontmatter-')); roots.push(root);
-    const content = '---JavaScript\n({ title: "Not data" })\n---\nBody.';
-    const builder = createDevBuilder({ root, contentSource: {
-      name: ContentSourceName.HACKMD,
-      getAuthor: () => Promise.resolve({ name: 'Writer', bio: target === 'author' ? content : 'Public notes' }),
-      getPosts: () => Promise.resolve({ posts: [{ id: 'one', title: 'One', slug: 'one', date: '2026-01-01T00:00:00Z', content: target === 'post' ? content : 'Body.' }] }),
-    } });
-    await builder.prepare({ installDependencies: false });
-    await expect(builder.fetchContent()).rejects.toThrow('JavaScript front matter is not supported');
-  });
+  it.each(['post', 'author'] as const)(
+    'rejects executable front matter from the %s source',
+    async (target) => {
+      const root = await mkdtemp(join(tmpdir(), 'vibelog-frontmatter-'));
+      roots.push(root);
+      const content = '---JavaScript\n({ title: "Not data" })\n---\nBody.';
+      const builder = createDevBuilder({
+        root,
+        contentSource: {
+          name: ContentSourceName.HACKMD,
+          getAuthor: () =>
+            Promise.resolve({
+              name: 'Writer',
+              bio: target === 'author' ? content : 'Public notes',
+            }),
+          getPosts: () =>
+            Promise.resolve({
+              posts: [
+                {
+                  id: 'one',
+                  title: 'One',
+                  slug: 'one',
+                  date: '2026-01-01T00:00:00Z',
+                  content: target === 'post' ? content : 'Body.',
+                },
+              ],
+            }),
+        },
+      });
+      await builder.prepare({ installDependencies: false });
+      await expect(builder.fetchContent()).rejects.toThrow(
+        'JavaScript front matter is not supported',
+      );
+    },
+  );
 
   it('rejects executable front matter in an existing source snapshot before Astro runs', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-frontmatter-snapshot-')); roots.push(root);
-    const builder = createDevBuilder({ root, contentSource: {
-      name: ContentSourceName.HACKMD,
-      getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Public notes' }),
-      getPosts: () => Promise.resolve({ posts: [{ id: 'one', title: 'One', slug: 'one', date: '2026-01-01T00:00:00Z', content: 'Body.' }] }),
-    } });
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-frontmatter-snapshot-'));
+    roots.push(root);
+    const builder = createDevBuilder({
+      root,
+      contentSource: {
+        name: ContentSourceName.HACKMD,
+        getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Public notes' }),
+        getPosts: () =>
+          Promise.resolve({
+            posts: [
+              {
+                id: 'one',
+                title: 'One',
+                slug: 'one',
+                date: '2026-01-01T00:00:00Z',
+                content: 'Body.',
+              },
+            ],
+          }),
+      },
+    });
     await builder.prepare({ installDependencies: false });
     await builder.fetchContent();
-    await writeFile(join(builder.vibelogDir, 'src', 'content', 'blog', 'one.md'), '---js\n({ date: "2026-01-01" })\n---\nBody.');
+    await writeFile(
+      join(builder.vibelogDir, 'src', 'content', 'blog', 'one.md'),
+      '---js\n({ date: "2026-01-01" })\n---\nBody.',
+    );
     const timing = vi.fn();
-    await expect(buildFromVibelog({ vibelogDir: builder.vibelogDir, outDir: join(root, 'dist'), site: 'https://writer.example.com', onStageTiming: timing })).rejects.toThrow('JavaScript front matter is not supported');
+    await expect(
+      buildFromVibelog({
+        vibelogDir: builder.vibelogDir,
+        outDir: join(root, 'dist'),
+        site: 'https://writer.example.com',
+        onStageTiming: timing,
+      }),
+    ).rejects.toThrow('JavaScript front matter is not supported');
     expect(timing).not.toHaveBeenCalledWith('astro', expect.anything());
   });
 
   it('returns normalized metadata without article bodies and reads the source once', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-')); roots.push(root);
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-'));
+    roots.push(root);
     const getAuthor = vi.fn(() => Promise.resolve({ name: 'Writer', bio: 'Public notes' }));
-    const getPosts = vi.fn(() => Promise.resolve({ posts: [
-      { id: 'older', title: 'Older', slug: 'Older Post', date: '2026-01-01T00:00:00Z', content: 'private body one' },
-      { id: 'newer', title: 'Newer', slug: 'Newer Post', date: '2026-02-01T00:00:00Z', updatedAt: '2026-02-03T00:00:00Z', tags: [' ＡＩ ', 'ai', '閱讀   筆記'], content: 'private body two' },
-    ] }));
+    const getPosts = vi.fn(() =>
+      Promise.resolve({
+        posts: [
+          {
+            id: 'older',
+            title: 'Older',
+            slug: 'Older Post',
+            date: '2026-01-01T00:00:00Z',
+            content: 'private body one',
+          },
+          {
+            id: 'newer',
+            title: 'Newer',
+            slug: 'Newer Post',
+            date: '2026-02-01T00:00:00Z',
+            updatedAt: '2026-02-03T00:00:00Z',
+            tags: [' ＡＩ ', 'ai', '閱讀   筆記'],
+            content: 'private body two',
+          },
+        ],
+      }),
+    );
     const source: ContentSource = { name: ContentSourceName.HACKMD, getAuthor, getPosts };
     const builder = createDevBuilder({ root, contentSource: source });
     await builder.prepare({ installDependencies: false });
@@ -68,23 +144,68 @@ describe('DevBuilder content summary', () => {
       site: { title: basename(root), description: 'Public notes', language: 'zh-Hant' },
       author: { name: 'Writer', bio: 'Public notes' },
       posts: [
-        { title: 'Newer', slug: 'newer-post', description: 'private body two', publishedAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-02-03T00:00:00.000Z', included: true, tags: [{ name: '閱讀 筆記', slug: '閱讀-筆記' }, { name: 'AI', slug: 'ai' }], contentHash: contentHash('private body two') },
-        { title: 'Older', slug: 'older-post', description: 'private body one', publishedAt: '2026-01-01T00:00:00.000Z', included: true, tags: [], contentHash: contentHash('private body one') },
+        {
+          title: 'Newer',
+          slug: 'newer-post',
+          description: 'private body two',
+          publishedAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-02-03T00:00:00.000Z',
+          included: true,
+          tags: [
+            { name: '閱讀 筆記', slug: '閱讀-筆記' },
+            { name: 'AI', slug: 'ai' },
+          ],
+          contentHash: contentHash('private body two'),
+        },
+        {
+          title: 'Older',
+          slug: 'older-post',
+          description: 'private body one',
+          publishedAt: '2026-01-01T00:00:00.000Z',
+          included: true,
+          tags: [],
+          contentHash: contentHash('private body one'),
+        },
       ],
-      contentProfile: { postCount: 2, tagCount: 2, averageLength: 'short', codeUsage: 'none', imageUsage: 'none', mathUsage: 'none' },
+      contentProfile: {
+        postCount: 2,
+        tagCount: 2,
+        averageLength: 'short',
+        codeUsage: 'none',
+        imageUsage: 'none',
+        mathUsage: 'none',
+      },
     });
     expect(summary.posts.every((post) => !Object.hasOwn(post, 'content'))).toBe(true);
   });
 
   it('writes only selected posts while retaining the full manifest', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-selection-')); roots.push(root);
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-selection-'));
+    roots.push(root);
     const source: ContentSource = {
       name: ContentSourceName.HACKMD,
       getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Public notes' }),
-      getPosts: () => Promise.resolve({ posts: [
-        { id: 'one', title: 'One', slug: 'one', date: '2026-01-01T00:00:00Z', tags: ['C++', '😀'], content: 'One body' },
-        { id: 'two', title: 'Two', slug: 'two', date: '2026-02-01T00:00:00Z', tags: ['C#'], content: 'Two body' },
-      ] }),
+      getPosts: () =>
+        Promise.resolve({
+          posts: [
+            {
+              id: 'one',
+              title: 'One',
+              slug: 'one',
+              date: '2026-01-01T00:00:00Z',
+              tags: ['C++', '😀'],
+              content: 'One body',
+            },
+            {
+              id: 'two',
+              title: 'Two',
+              slug: 'two',
+              date: '2026-02-01T00:00:00Z',
+              tags: ['C#'],
+              content: 'Two body',
+            },
+          ],
+        }),
     };
     const builder = createDevBuilder({ root, contentSource: source });
     await builder.prepare({ installDependencies: false });
@@ -92,22 +213,46 @@ describe('DevBuilder content summary', () => {
     const summary = await builder.fetchContent({ excludedSlugs: ['one'] });
 
     expect(summary.posts).toEqual([
-      { title: 'Two', slug: 'two', description: 'Two body', publishedAt: '2026-02-01T00:00:00.000Z', included: true, tags: [{ name: 'C#', slug: 'c-951a4d36' }], contentHash: contentHash('Two body') },
-      { title: 'One', slug: 'one', description: 'One body', publishedAt: '2026-01-01T00:00:00.000Z', included: false, tags: [
-        { name: '😀', slug: 'tag-f0443a34' },
-        { name: 'C++', slug: 'c-cedb1bac' },
-      ], contentHash: contentHash('One body') },
+      {
+        title: 'Two',
+        slug: 'two',
+        description: 'Two body',
+        publishedAt: '2026-02-01T00:00:00.000Z',
+        included: true,
+        tags: [{ name: 'C#', slug: 'c-951a4d36' }],
+        contentHash: contentHash('Two body'),
+      },
+      {
+        title: 'One',
+        slug: 'one',
+        description: 'One body',
+        publishedAt: '2026-01-01T00:00:00.000Z',
+        included: false,
+        tags: [
+          { name: '😀', slug: 'tag-f0443a34' },
+          { name: 'C++', slug: 'c-cedb1bac' },
+        ],
+        contentHash: contentHash('One body'),
+      },
     ]);
     expect(await readdir(join(root, '.vibelog', 'src', 'content', 'blog'))).toEqual(['two.md']);
-    const generatedPost = matter(await readFile(join(root, '.vibelog', 'src', 'content', 'blog', 'two.md'), 'utf8'));
+    const generatedPost = matter(
+      await readFile(join(root, '.vibelog', 'src', 'content', 'blog', 'two.md'), 'utf8'),
+    );
     expect(generatedPost.data).not.toHaveProperty('contentHash');
-    await expect(builder.fetchContent({ excludedSlugs: ['one', 'two'] })).rejects.toThrow('No articles selected');
+    await expect(builder.fetchContent({ excludedSlugs: ['one', 'two'] })).rejects.toThrow(
+      'No articles selected',
+    );
   });
 
   it('hashes only exact Markdown content, independently of title and tags', async () => {
-    const rootsForHashes = await Promise.all(['one', 'two', 'three'].map(async (name) => {
-      const root = await mkdtemp(join(tmpdir(), `vibelog-builder-hash-${name}-`)); roots.push(root); return root;
-    }));
+    const rootsForHashes = await Promise.all(
+      ['one', 'two', 'three'].map(async (name) => {
+        const root = await mkdtemp(join(tmpdir(), `vibelog-builder-hash-${name}-`));
+        roots.push(root);
+        return root;
+      }),
+    );
     const inputs = [
       { title: 'First title', tags: ['One'], content: 'Same Markdown' },
       { title: 'Changed title', tags: ['Different'], content: 'Same Markdown' },
@@ -117,11 +262,17 @@ describe('DevBuilder content summary', () => {
     for (const [index, root] of rootsForHashes.entries()) {
       const input = inputs[index];
       if (!input) throw new Error('Missing hash fixture');
-      const builder = createDevBuilder({ root, contentSource: {
-        name: ContentSourceName.HACKMD,
-        getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
-        getPosts: () => Promise.resolve({ posts: [{ id: 'one', slug: 'one', date: '2026-01-01T00:00:00Z', ...input }] }),
-      } });
+      const builder = createDevBuilder({
+        root,
+        contentSource: {
+          name: ContentSourceName.HACKMD,
+          getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
+          getPosts: () =>
+            Promise.resolve({
+              posts: [{ id: 'one', slug: 'one', date: '2026-01-01T00:00:00Z', ...input }],
+            }),
+        },
+      });
       await builder.prepare({ installDependencies: false });
       hashes.push((await builder.fetchContent()).posts[0]?.contentHash);
     }
@@ -130,263 +281,519 @@ describe('DevBuilder content summary', () => {
     expect(hashes[2]).not.toBe(hashes[0]);
   });
 
-  it('isolates overlapping builds, failure, cleanup, and retry from another blog', { timeout: 60_000 }, async () => {
-    const cwd = process.cwd();
-    const fixtures = await Promise.all(['alpha', 'bravo'].map(async (name) => {
-      const root = await mkdtemp(join(tmpdir(), `vibelog-concurrent-${name}-`)); roots.push(root);
-      const builder = createDevBuilder({ root, contentSource: {
-        name: ContentSourceName.HACKMD,
-        getAuthor: () => Promise.resolve({ name, bio: `${name} notes` }),
-        getPosts: () => Promise.resolve({ posts: [
-          { id: name, title: `${name} selected`, slug: name, date: '2026-01-01T00:00:00Z', content: `Only ${name} searchable body.` },
-          { id: 'excluded', title: 'Excluded note', slug: 'excluded', date: '2026-01-01T00:00:00Z', content: 'This note must never enter the index.' },
-        ] }),
-      } });
-      await builder.prepare({ installDependencies: false });
-      await builder.fetchContent({ excludedSlugs: ['excluded'] });
-      const ready = join(root, 'ready'); const release = join(root, 'release');
-      // Hold prerendering in both real Astro processes until the test releases them.
-      await writeFile(join(builder.vibelogDir, 'src', 'pages', 'build-barrier.astro'), `---
+  it(
+    'isolates overlapping builds, failure, cleanup, and retry from another blog',
+    { timeout: 60_000 },
+    async () => {
+      const cwd = process.cwd();
+      const fixtures = await Promise.all(
+        ['alpha', 'bravo'].map(async (name) => {
+          const root = await mkdtemp(join(tmpdir(), `vibelog-concurrent-${name}-`));
+          roots.push(root);
+          const builder = createDevBuilder({
+            root,
+            contentSource: {
+              name: ContentSourceName.HACKMD,
+              getAuthor: () => Promise.resolve({ name, bio: `${name} notes` }),
+              getPosts: () =>
+                Promise.resolve({
+                  posts: [
+                    {
+                      id: name,
+                      title: `${name} selected`,
+                      slug: name,
+                      date: '2026-01-01T00:00:00Z',
+                      content: `Only ${name} searchable body.`,
+                    },
+                    {
+                      id: 'excluded',
+                      title: 'Excluded note',
+                      slug: 'excluded',
+                      date: '2026-01-01T00:00:00Z',
+                      content: 'This note must never enter the index.',
+                    },
+                  ],
+                }),
+            },
+          });
+          await builder.prepare({ installDependencies: false });
+          await builder.fetchContent({ excludedSlugs: ['excluded'] });
+          const ready = join(root, 'ready');
+          const release = join(root, 'release');
+          // Hold prerendering in both real Astro processes until the test releases them.
+          await writeFile(
+            join(builder.vibelogDir, 'src', 'pages', 'build-barrier.astro'),
+            `---
 import { access, writeFile } from 'node:fs/promises';
 import { setTimeout } from 'node:timers/promises';
 await writeFile(${JSON.stringify(ready)}, 'ready');
 while (!await access(${JSON.stringify(release)}).then(() => true, () => false)) await setTimeout(20);
 ---
-<p>Build barrier</p>`);
-      const outDir = join(root, 'dist');
-      await mkdir(outDir); await writeFile(join(outDir, 'index.html'), `${name} previous successful output`);
-      return { name, root, builder, ready, release, outDir };
-    }));
-    const [alpha, bravo] = fixtures;
-    if (!alpha || !bravo) throw new Error('Missing concurrent fixtures');
-    const buildOptions = (fixture: typeof alpha) => ({ vibelogDir: fixture.builder.vibelogDir, outDir: fixture.outDir, site: `https://${fixture.name}.example.com` });
-    const timings = vi.fn<(stage: string, durationMs: number) => void>();
-    const builds = [
-      buildFromVibelog({ ...buildOptions(alpha), searchIdentity: 'alpha', searchCache: { directory: join(alpha.root, 'missing-cache'), identity: 'alpha' } }),
-      buildFromVibelog({ ...buildOptions(bravo), onStageTiming: timings }),
-    ];
-    // Observe both settlements immediately, including the intentionally failed build.
-    const settled = Promise.allSettled(builds);
-    let retry: Promise<void> | undefined;
-    try {
-      await vi.waitFor(async () => {
-        await Promise.all(fixtures.map((fixture) => stat(fixture.ready)));
-      }, { timeout: 25_000, interval: 20 });
-      expect(process.cwd()).toBe(cwd);
-      expect(createDevBuilder({ root: 'relative-project', contentSource: alpha.builder.contentSource }).root).toBe(join(cwd, 'relative-project'));
-      await writeFile(alpha.release, 'go');
-      await expect(builds[0]).rejects.toThrow('Search cache identity or files are invalid');
-      expect(await readFile(join(alpha.outDir, 'index.html'), 'utf8')).toBe('alpha previous successful output');
-      expect((await readdir(alpha.builder.vibelogDir)).filter((name) => name.startsWith('.build-staging-'))).toEqual([]);
-      expect(await readFile(join(bravo.outDir, 'index.html'), 'utf8')).toBe('bravo previous successful output');
-      expect(timings).not.toHaveBeenCalled();
-      retry = buildFromVibelog(buildOptions(alpha));
-      await retry;
-      const assertOwnContent = async (fixture: typeof alpha, other: string) => {
-        const html = await readFile(join(fixture.outDir, 'blog', fixture.name, 'index.html'), 'utf8');
-        expect(html).toContain(`Only ${fixture.name} searchable body.`);
-        expect(html).not.toContain(`Only ${other} searchable body.`);
-        const fragmentDirectory = join(fixture.outDir, 'pagefind', 'fragment');
-        const files = await readdir(fragmentDirectory);
-        expect(files).toHaveLength(1);
-        const fragments = (await Promise.all(files.map(async (file) => gunzipSync(await readFile(join(fragmentDirectory, file))).toString('utf8')))).join('');
-        expect(fragments).toContain(`Only ${fixture.name} searchable body.`);
-        expect(fragments).not.toContain(`Only ${other} searchable body.`);
-        expect(fragments).not.toContain('This note must never enter the index.');
-      };
-      await assertOwnContent(alpha, 'bravo');
-      // Finishing Pagefind and removing one operation's entire work tree must not
-      // stop the other renderer, which is still paused inside Astro.
-      await rm(alpha.root, { recursive: true, force: true });
-      expect(process.cwd()).toBe(cwd);
-      await writeFile(bravo.release, 'go');
-      await builds[1];
-      await assertOwnContent(bravo, 'alpha');
-      expect(timings.mock.calls.map(([stage]) => stage)).toEqual(['astro', 'syntax-css', 'pagefind', 'promote']);
-    } finally {
-      await Promise.all(fixtures.map((fixture) => writeFile(fixture.release, 'go').catch(() => undefined)));
-      await settled;
-      if (retry) await Promise.allSettled([retry]);
-    }
-  });
-
-  it('rejects an interrupted renderer without promoting or leaving staging output', { timeout: 30_000 }, async () => {
-    const cwd = process.cwd();
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-renderer-exit-')); roots.push(root);
-    const builder = createDevBuilder({ root, contentSource: {
-      name: ContentSourceName.HACKMD,
-      getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
-      getPosts: () => Promise.resolve({ posts: [{ id: 'one', title: 'One', slug: 'one', date: '2026-01-01T00:00:00Z', content: 'Body.' }] }),
-    } });
-    await builder.prepare({ installDependencies: false }); await builder.fetchContent();
-    await writeFile(join(builder.vibelogDir, 'src', 'pages', 'crash.astro'), '---\nprocess.kill(process.pid, "SIGKILL");\n---\n<p>Never completes</p>');
-    const outDir = join(root, 'dist'); await mkdir(outDir);
-    await writeFile(join(outDir, 'index.html'), 'Previous successful output');
-    await expect(buildFromVibelog({ vibelogDir: builder.vibelogDir, outDir, site: 'https://writer.example.com' })).rejects.toThrow('Blog renderer exited before completion (SIGKILL)');
-    expect(await readFile(join(outDir, 'index.html'), 'utf8')).toBe('Previous successful output');
-    expect((await readdir(builder.vibelogDir)).filter((name) => name.startsWith('.build-staging-'))).toEqual([]);
-    expect(process.cwd()).toBe(cwd);
-  });
-
-  it('compiles one frozen source snapshot into three structurally different complete blogs', { timeout: 45_000 }, async () => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-presentation-ir-')); roots.push(root);
-    const builder = createDevBuilder({ root, contentSource: {
-      name: ContentSourceName.HACKMD,
-      getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Build once, present many ways.' }),
-      getPosts: () => Promise.resolve({ posts: [
-        { id: 'one', title: 'First', slug: 'first', date: '2026-01-03T00:00:00Z', tags: ['Design'], content: '## First section\n\nBody.\n\n## Second section\n\nMore.' },
-        { id: 'two', title: 'Second', slug: 'second', date: '2026-01-02T00:00:00Z', tags: ['Design', 'Notes'], content: 'Second body.' },
-        { id: 'three', title: 'Third', slug: 'third', date: '2026-01-01T00:00:00Z', tags: ['Notes'], content: 'Third body.' },
-      ] }),
-    } });
-    await builder.prepare({ installDependencies: false });
-    const summary = await builder.fetchContent();
-    const sourceDir = join(root, 'source-snapshot');
-    await writeSourceSnapshot(builder.vibelogDir, sourceDir, summary);
-
-    const editorial = structuredClone(DEFAULT_DESIGN_V2);
-    editorial.theme.motif = 'editorial';
-    editorial.chrome.header.variant = 'masthead';
-    editorial.chrome.footer.variant = 'profile';
-    editorial.pages.home.sections = {
-      intro: { type: 'intro', variant: 'centered', showAuthor: true },
-      featured: { type: 'posts', source: { strategy: 'latest' }, variant: 'hero', limit: 1 },
-      recent: { type: 'posts', source: { strategy: 'latest' }, variant: 'grid', limit: 6, columns: 2, exclude: { sections: ['featured'] } },
-      topics: { type: 'topics', variant: 'list', limit: 12 },
-    };
-    editorial.pages.home.regions = { main: ['intro', 'featured', 'recent', 'topics'] };
-    editorial.pages.index = { layout: 'magazine', columns: 2, item: { variant: 'numbered', showDescription: true, showTags: true } };
-    editorial.pages.article.layout = 'with-aside';
-    editorial.pages.article.header.variant = 'editorial';
-    editorial.pages.article.prose.codeBlock = 'panel';
-    editorial.pages.article.modules.toc = { type: 'toc', variant: 'aside' };
-    editorial.pages.article.regions = { beforeBody: ['metadata', 'tags'], aside: ['toc'], afterBody: ['navigation'] };
-    editorial.description = 'An editorial magazine layout.';
-
-    const notebook = structuredClone(DEFAULT_DESIGN_V2);
-    notebook.theme.motif = 'notebook';
-    notebook.pages.home.sections = {
-      author: { type: 'author', variant: 'profile' },
-      recent: { type: 'posts', source: { strategy: 'latest' }, variant: 'cards', limit: 5, columns: 2 },
-      topics: { type: 'topics', variant: 'cloud', limit: 12 },
-    };
-    notebook.pages.home.regions = { main: ['author', 'recent', 'topics'] };
-    notebook.pages.index = { layout: 'grid', columns: 2, item: { variant: 'cards', showDescription: true, showTags: true } };
-    notebook.pages.article.layout = 'wide';
-    notebook.pages.article.prose.codeBlock = 'panel';
-    notebook.pages.article.modules.navigation = { type: 'navigation', variant: 'cards' };
-    notebook.description = 'A personal notebook layout.';
-
-    const fixtures = [
-      ['minimal', structuredClone(DEFAULT_DESIGN_V2), ['data-design-node="intro"', 'data-design-node="recent"']],
-      ['editorial', editorial, ['variant-masthead', 'data-design-node="featured"', 'data-design-node="topics"']],
-      ['notebook', notebook, ['data-design-node="author"', 'data-design-node="recent"', 'data-design-node="topics"']],
-    ] as const;
-    const homes: string[] = [];
-    for (const [name, design, signatures] of fixtures) {
-      const workDir = join(root, `compile-${name}`);
-      const outDir = join(workDir, 'dist');
-      await buildBlog({ sourceDir, design, workDir, outDir, site: 'https://writer.example.com' });
-      const home = await readFile(join(outDir, 'index.html'), 'utf8');
-      homes.push(home);
-      expect(home).toContain('<body class="page-home">');
-      for (const signature of signatures) expect(home).toContain(signature);
-      for (const path of ['global.css', 'blog/index.html', 'blog/first/index.html', 'tags/index.html', 'tags/design/index.html', 'search/index.html', 'rss.xml', 'sitemap-index.xml', 'robots.txt', 'llms.txt']) {
-        await expect(stat(join(outDir, path))).resolves.toBeTruthy();
+<p>Build barrier</p>`,
+          );
+          const outDir = join(root, 'dist');
+          await mkdir(outDir);
+          await writeFile(join(outDir, 'index.html'), `${name} previous successful output`);
+          return { name, root, builder, ready, release, outDir };
+        }),
+      );
+      const [alpha, bravo] = fixtures;
+      if (!alpha || !bravo) throw new Error('Missing concurrent fixtures');
+      const buildOptions = (fixture: typeof alpha) => ({
+        vibelogDir: fixture.builder.vibelogDir,
+        outDir: fixture.outDir,
+        site: `https://${fixture.name}.example.com`,
+      });
+      const timings = vi.fn<(stage: string, durationMs: number) => void>();
+      const builds = [
+        buildFromVibelog({
+          ...buildOptions(alpha),
+          searchIdentity: 'alpha',
+          searchCache: { directory: join(alpha.root, 'missing-cache'), identity: 'alpha' },
+        }),
+        buildFromVibelog({ ...buildOptions(bravo), onStageTiming: timings }),
+      ];
+      // Observe both settlements immediately, including the intentionally failed build.
+      const settled = Promise.allSettled(builds);
+      let retry: Promise<void> | undefined;
+      try {
+        await vi.waitFor(
+          async () => {
+            await Promise.all(fixtures.map((fixture) => stat(fixture.ready)));
+          },
+          { timeout: 25_000, interval: 20 },
+        );
+        expect(process.cwd()).toBe(cwd);
+        expect(
+          createDevBuilder({ root: 'relative-project', contentSource: alpha.builder.contentSource })
+            .root,
+        ).toBe(join(cwd, 'relative-project'));
+        await writeFile(alpha.release, 'go');
+        await expect(builds[0]).rejects.toThrow('Search cache identity or files are invalid');
+        expect(await readFile(join(alpha.outDir, 'index.html'), 'utf8')).toBe(
+          'alpha previous successful output',
+        );
+        expect(
+          (await readdir(alpha.builder.vibelogDir)).filter((name) =>
+            name.startsWith('.build-staging-'),
+          ),
+        ).toEqual([]);
+        expect(await readFile(join(bravo.outDir, 'index.html'), 'utf8')).toBe(
+          'bravo previous successful output',
+        );
+        expect(timings).not.toHaveBeenCalled();
+        retry = buildFromVibelog(buildOptions(alpha));
+        await retry;
+        const assertOwnContent = async (fixture: typeof alpha, other: string) => {
+          const html = await readFile(
+            join(fixture.outDir, 'blog', fixture.name, 'index.html'),
+            'utf8',
+          );
+          expect(html).toContain(`Only ${fixture.name} searchable body.`);
+          expect(html).not.toContain(`Only ${other} searchable body.`);
+          const fragmentDirectory = join(fixture.outDir, 'pagefind', 'fragment');
+          const files = await readdir(fragmentDirectory);
+          expect(files).toHaveLength(1);
+          const fragments = (
+            await Promise.all(
+              files.map(async (file) =>
+                gunzipSync(await readFile(join(fragmentDirectory, file))).toString('utf8'),
+              ),
+            )
+          ).join('');
+          expect(fragments).toContain(`Only ${fixture.name} searchable body.`);
+          expect(fragments).not.toContain(`Only ${other} searchable body.`);
+          expect(fragments).not.toContain('This note must never enter the index.');
+        };
+        await assertOwnContent(alpha, 'bravo');
+        // Finishing Pagefind and removing one operation's entire work tree must not
+        // stop the other renderer, which is still paused inside Astro.
+        await rm(alpha.root, { recursive: true, force: true });
+        expect(process.cwd()).toBe(cwd);
+        await writeFile(bravo.release, 'go');
+        await builds[1];
+        await assertOwnContent(bravo, 'alpha');
+        expect(timings.mock.calls.map(([stage]) => stage)).toEqual([
+          'astro',
+          'syntax-css',
+          'pagefind',
+          'promote',
+        ]);
+      } finally {
+        await Promise.all(
+          fixtures.map((fixture) => writeFile(fixture.release, 'go').catch(() => undefined)),
+        );
+        await settled;
+        if (retry) await Promise.allSettled([retry]);
       }
-      expect(home).toContain('<link rel="stylesheet" href="/global.css">');
-      const css = await readFile(join(outDir, 'global.css'), 'utf8');
-      expect(css).toContain('.site-header nav');
-      expect(css).not.toMatch(/\.home-hero\s*\{\s*padding-block-end/u);
-      const article = await readFile(join(outDir, 'blog', 'first', 'index.html'), 'utf8');
-      expect(article).not.toContain('<body class="page-home">');
-      const designCss = await readFile(join(outDir, 'design.css'), 'utf8');
-      if (name === 'notebook') expect(designCss).toContain('body.page-home{background-image:');
-      expect(designCss).not.toContain('body{background-image:');
-      await expect(stat(join(outDir, 'pagefind', 'pagefind.js'))).resolves.toBeTruthy();
-    }
-    expect(new Set(homes).size).toBe(3);
-  });
+    },
+  );
 
-  it('builds a complete V2 blog from frozen content and resolved home sections', { timeout: 30_000 }, async () => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-design-v2-build-')); roots.push(root);
-    const builder = createDevBuilder({ root, contentSource: {
-      name: ContentSourceName.HACKMD,
-      getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Notes' }),
-      getPosts: () => Promise.resolve({ posts: [
-        { id: 'new', title: 'New', slug: 'new', date: '2026-02-01T00:00:00Z', content: '## About\n\nNew body.\n\n## Details\n\nMore.' },
-        { id: 'old', title: 'Old', slug: 'old', date: '2026-01-01T00:00:00Z', content: 'Old body.' },
-      ] }),
-    } });
-    await builder.prepare({ installDependencies: false });
-    const summary = await builder.fetchContent();
-    const sourceDir = join(root, 'source');
-    await writeSourceSnapshot(builder.vibelogDir, sourceDir, summary);
-    const design = structuredClone(DEFAULT_DESIGN_V2);
-    design.pages.home = {
-      layout: 'sidebar',
-      sections: {
-        intro: { type: 'intro', variant: 'minimal', showAuthor: true },
+  it(
+    'rejects an interrupted renderer without promoting or leaving staging output',
+    { timeout: 30_000 },
+    async () => {
+      const cwd = process.cwd();
+      const root = await mkdtemp(join(tmpdir(), 'vibelog-renderer-exit-'));
+      roots.push(root);
+      const builder = createDevBuilder({
+        root,
+        contentSource: {
+          name: ContentSourceName.HACKMD,
+          getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
+          getPosts: () =>
+            Promise.resolve({
+              posts: [
+                {
+                  id: 'one',
+                  title: 'One',
+                  slug: 'one',
+                  date: '2026-01-01T00:00:00Z',
+                  content: 'Body.',
+                },
+              ],
+            }),
+        },
+      });
+      await builder.prepare({ installDependencies: false });
+      await builder.fetchContent();
+      await writeFile(
+        join(builder.vibelogDir, 'src', 'pages', 'crash.astro'),
+        '---\nprocess.kill(process.pid, "SIGKILL");\n---\n<p>Never completes</p>',
+      );
+      const outDir = join(root, 'dist');
+      await mkdir(outDir);
+      await writeFile(join(outDir, 'index.html'), 'Previous successful output');
+      await expect(
+        buildFromVibelog({
+          vibelogDir: builder.vibelogDir,
+          outDir,
+          site: 'https://writer.example.com',
+        }),
+      ).rejects.toThrow('Blog renderer exited before completion (SIGKILL)');
+      expect(await readFile(join(outDir, 'index.html'), 'utf8')).toBe('Previous successful output');
+      expect(
+        (await readdir(builder.vibelogDir)).filter((name) => name.startsWith('.build-staging-')),
+      ).toEqual([]);
+      expect(process.cwd()).toBe(cwd);
+    },
+  );
+
+  it(
+    'compiles one frozen source snapshot into three structurally different complete blogs',
+    { timeout: 45_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'vibelog-presentation-ir-'));
+      roots.push(root);
+      const builder = createDevBuilder({
+        root,
+        contentSource: {
+          name: ContentSourceName.HACKMD,
+          getAuthor: () =>
+            Promise.resolve({ name: 'Writer', bio: 'Build once, present many ways.' }),
+          getPosts: () =>
+            Promise.resolve({
+              posts: [
+                {
+                  id: 'one',
+                  title: 'First',
+                  slug: 'first',
+                  date: '2026-01-03T00:00:00Z',
+                  tags: ['Design'],
+                  content: '## First section\n\nBody.\n\n## Second section\n\nMore.',
+                },
+                {
+                  id: 'two',
+                  title: 'Second',
+                  slug: 'second',
+                  date: '2026-01-02T00:00:00Z',
+                  tags: ['Design', 'Notes'],
+                  content: 'Second body.',
+                },
+                {
+                  id: 'three',
+                  title: 'Third',
+                  slug: 'third',
+                  date: '2026-01-01T00:00:00Z',
+                  tags: ['Notes'],
+                  content: 'Third body.',
+                },
+              ],
+            }),
+        },
+      });
+      await builder.prepare({ installDependencies: false });
+      const summary = await builder.fetchContent();
+      const sourceDir = join(root, 'source-snapshot');
+      await writeSourceSnapshot(builder.vibelogDir, sourceDir, summary);
+
+      const editorial = structuredClone(DEFAULT_DESIGN_V2);
+      editorial.theme.motif = 'editorial';
+      editorial.chrome.header.variant = 'masthead';
+      editorial.chrome.footer.variant = 'profile';
+      editorial.pages.home.sections = {
+        intro: { type: 'intro', variant: 'centered', showAuthor: true },
         featured: { type: 'posts', source: { strategy: 'latest' }, variant: 'hero', limit: 1 },
-        recent: { type: 'posts', source: { strategy: 'latest' }, variant: 'list', limit: 5, exclude: { sections: ['featured'] } },
-      },
-      regions: { main: ['intro', 'featured'], aside: ['recent'] },
-    };
-    design.pages.article.layout = 'with-aside';
-    design.pages.article.modules.toc = { type: 'toc', variant: 'aside' };
-    design.pages.article.regions = { beforeBody: ['metadata', 'tags'], aside: ['toc'], afterBody: ['navigation'] };
-    const workDir = join(root, 'compile');
-    const outDir = join(workDir, 'dist');
-    await buildBlog({ sourceDir, design, workDir, outDir, site: 'https://writer.example.com', searchIdentity: 'frozen-source-v2' });
-    const home = await readFile(join(outDir, 'index.html'), 'utf8');
-    expect(home).toContain('data-design-node="featured"');
-    expect(home).toContain('data-design-node="recent"');
-    expect(home).toContain('home-region-aside');
-    const feature = home.slice(home.indexOf('data-design-node="featured"'), home.indexOf('data-design-node="recent"'));
-    expect(feature).toContain('New');
-    expect(feature).not.toContain('Old');
-    expect(home.slice(home.indexOf('data-design-node="recent"'))).toContain('Old');
-    expect(home).toContain('<link rel="stylesheet" href="/design.css">');
-    const article = await readFile(join(outDir, 'blog', 'new', 'index.html'), 'utf8');
-    expect(article).toContain('data-design-node="article-prose"');
-    expect(article).toContain('data-design-node="toc"');
-    expect(article).toContain('data-pagefind-body');
-    await expect(stat(join(outDir, 'design.css'))).resolves.toBeTruthy();
-    await expect(stat(join(outDir, 'components.css'))).resolves.toBeTruthy();
-    await expect(stat(join(outDir, 'prose.css'))).resolves.toBeTruthy();
-    await expect(stat(join(outDir, 'pagefind', 'pagefind.js'))).resolves.toBeTruthy();
-    const restyled = structuredClone(design);
-    restyled.theme.typography.scale = 'large';
-    const secondWork = join(root, 'restyled');
-    const secondOut = join(secondWork, 'dist');
-    await buildBlog({ sourceDir, design: restyled, workDir: secondWork, outDir: secondOut, site: 'https://writer.example.com', searchIdentity: 'frozen-source-v2', searchCache: { directory: outDir, identity: 'frozen-source-v2' } });
-    expect(await readFile(join(secondOut, 'pagefind', 'pagefind.js'))).toEqual(await readFile(join(outDir, 'pagefind', 'pagefind.js')));
-  });
+        recent: {
+          type: 'posts',
+          source: { strategy: 'latest' },
+          variant: 'grid',
+          limit: 6,
+          columns: 2,
+          exclude: { sections: ['featured'] },
+        },
+        topics: { type: 'topics', variant: 'list', limit: 12 },
+      };
+      editorial.pages.home.regions = { main: ['intro', 'featured', 'recent', 'topics'] };
+      editorial.pages.index = {
+        layout: 'magazine',
+        columns: 2,
+        item: { variant: 'numbered', showDescription: true, showTags: true },
+      };
+      editorial.pages.article.layout = 'with-aside';
+      editorial.pages.article.header.variant = 'editorial';
+      editorial.pages.article.prose.codeBlock = 'panel';
+      editorial.pages.article.modules.toc = { type: 'toc', variant: 'aside' };
+      editorial.pages.article.regions = {
+        beforeBody: ['metadata', 'tags'],
+        aside: ['toc'],
+        afterBody: ['navigation'],
+      };
+      editorial.description = 'An editorial magazine layout.';
+
+      const notebook = structuredClone(DEFAULT_DESIGN_V2);
+      notebook.theme.motif = 'notebook';
+      notebook.pages.home.sections = {
+        author: { type: 'author', variant: 'profile' },
+        recent: {
+          type: 'posts',
+          source: { strategy: 'latest' },
+          variant: 'cards',
+          limit: 5,
+          columns: 2,
+        },
+        topics: { type: 'topics', variant: 'cloud', limit: 12 },
+      };
+      notebook.pages.home.regions = { main: ['author', 'recent', 'topics'] };
+      notebook.pages.index = {
+        layout: 'grid',
+        columns: 2,
+        item: { variant: 'cards', showDescription: true, showTags: true },
+      };
+      notebook.pages.article.layout = 'wide';
+      notebook.pages.article.prose.codeBlock = 'panel';
+      notebook.pages.article.modules.navigation = { type: 'navigation', variant: 'cards' };
+      notebook.description = 'A personal notebook layout.';
+
+      const fixtures = [
+        [
+          'minimal',
+          structuredClone(DEFAULT_DESIGN_V2),
+          ['data-design-node="intro"', 'data-design-node="recent"'],
+        ],
+        [
+          'editorial',
+          editorial,
+          ['variant-masthead', 'data-design-node="featured"', 'data-design-node="topics"'],
+        ],
+        [
+          'notebook',
+          notebook,
+          ['data-design-node="author"', 'data-design-node="recent"', 'data-design-node="topics"'],
+        ],
+      ] as const;
+      const homes: string[] = [];
+      for (const [name, design, signatures] of fixtures) {
+        const workDir = join(root, `compile-${name}`);
+        const outDir = join(workDir, 'dist');
+        await buildBlog({ sourceDir, design, workDir, outDir, site: 'https://writer.example.com' });
+        const home = await readFile(join(outDir, 'index.html'), 'utf8');
+        homes.push(home);
+        expect(home).toContain('<body class="page-home">');
+        for (const signature of signatures) expect(home).toContain(signature);
+        for (const path of [
+          'global.css',
+          'blog/index.html',
+          'blog/first/index.html',
+          'tags/index.html',
+          'tags/design/index.html',
+          'search/index.html',
+          'rss.xml',
+          'sitemap-index.xml',
+          'robots.txt',
+          'llms.txt',
+        ]) {
+          await expect(stat(join(outDir, path))).resolves.toBeTruthy();
+        }
+        expect(home).toContain('<link rel="stylesheet" href="/global.css">');
+        const css = await readFile(join(outDir, 'global.css'), 'utf8');
+        expect(css).toContain('.site-header nav');
+        expect(css).not.toMatch(/\.home-hero\s*\{\s*padding-block-end/u);
+        const article = await readFile(join(outDir, 'blog', 'first', 'index.html'), 'utf8');
+        expect(article).not.toContain('<body class="page-home">');
+        const designCss = await readFile(join(outDir, 'design.css'), 'utf8');
+        if (name === 'notebook') expect(designCss).toContain('body.page-home{background-image:');
+        expect(designCss).not.toContain('body{background-image:');
+        await expect(stat(join(outDir, 'pagefind', 'pagefind.js'))).resolves.toBeTruthy();
+      }
+      expect(new Set(homes).size).toBe(3);
+    },
+  );
+
+  it(
+    'builds a complete V2 blog from frozen content and resolved home sections',
+    { timeout: 30_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'vibelog-design-v2-build-'));
+      roots.push(root);
+      const builder = createDevBuilder({
+        root,
+        contentSource: {
+          name: ContentSourceName.HACKMD,
+          getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Notes' }),
+          getPosts: () =>
+            Promise.resolve({
+              posts: [
+                {
+                  id: 'new',
+                  title: 'New',
+                  slug: 'new',
+                  date: '2026-02-01T00:00:00Z',
+                  content: '## About\n\nNew body.\n\n## Details\n\nMore.',
+                },
+                {
+                  id: 'old',
+                  title: 'Old',
+                  slug: 'old',
+                  date: '2026-01-01T00:00:00Z',
+                  content: 'Old body.',
+                },
+              ],
+            }),
+        },
+      });
+      await builder.prepare({ installDependencies: false });
+      const summary = await builder.fetchContent();
+      const sourceDir = join(root, 'source');
+      await writeSourceSnapshot(builder.vibelogDir, sourceDir, summary);
+      const design = structuredClone(DEFAULT_DESIGN_V2);
+      design.pages.home = {
+        layout: 'sidebar',
+        sections: {
+          intro: { type: 'intro', variant: 'minimal', showAuthor: true },
+          featured: { type: 'posts', source: { strategy: 'latest' }, variant: 'hero', limit: 1 },
+          recent: {
+            type: 'posts',
+            source: { strategy: 'latest' },
+            variant: 'list',
+            limit: 5,
+            exclude: { sections: ['featured'] },
+          },
+        },
+        regions: { main: ['intro', 'featured'], aside: ['recent'] },
+      };
+      design.pages.article.layout = 'with-aside';
+      design.pages.article.modules.toc = { type: 'toc', variant: 'aside' };
+      design.pages.article.regions = {
+        beforeBody: ['metadata', 'tags'],
+        aside: ['toc'],
+        afterBody: ['navigation'],
+      };
+      const workDir = join(root, 'compile');
+      const outDir = join(workDir, 'dist');
+      await buildBlog({
+        sourceDir,
+        design,
+        workDir,
+        outDir,
+        site: 'https://writer.example.com',
+        searchIdentity: 'frozen-source-v2',
+      });
+      const home = await readFile(join(outDir, 'index.html'), 'utf8');
+      expect(home).toContain('data-design-node="featured"');
+      expect(home).toContain('data-design-node="recent"');
+      expect(home).toContain('home-region-aside');
+      const feature = home.slice(
+        home.indexOf('data-design-node="featured"'),
+        home.indexOf('data-design-node="recent"'),
+      );
+      expect(feature).toContain('New');
+      expect(feature).not.toContain('Old');
+      expect(home.slice(home.indexOf('data-design-node="recent"'))).toContain('Old');
+      expect(home).toContain('<link rel="stylesheet" href="/design.css">');
+      const article = await readFile(join(outDir, 'blog', 'new', 'index.html'), 'utf8');
+      expect(article).toContain('data-design-node="article-prose"');
+      expect(article).toContain('data-design-node="toc"');
+      expect(article).toContain('data-pagefind-body');
+      await expect(stat(join(outDir, 'design.css'))).resolves.toBeTruthy();
+      await expect(stat(join(outDir, 'components.css'))).resolves.toBeTruthy();
+      await expect(stat(join(outDir, 'prose.css'))).resolves.toBeTruthy();
+      await expect(stat(join(outDir, 'pagefind', 'pagefind.js'))).resolves.toBeTruthy();
+      const restyled = structuredClone(design);
+      restyled.theme.typography.scale = 'large';
+      const secondWork = join(root, 'restyled');
+      const secondOut = join(secondWork, 'dist');
+      await buildBlog({
+        sourceDir,
+        design: restyled,
+        workDir: secondWork,
+        outDir: secondOut,
+        site: 'https://writer.example.com',
+        searchIdentity: 'frozen-source-v2',
+        searchCache: { directory: outDir, identity: 'frozen-source-v2' },
+      });
+      expect(await readFile(join(secondOut, 'pagefind', 'pagefind.js'))).toEqual(
+        await readFile(join(outDir, 'pagefind', 'pagefind.js')),
+      );
+    },
+  );
 
   it('keeps short article outlines open and folds long ones', { timeout: 45_000 }, async () => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-toc-length-')); roots.push(root);
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-toc-length-'));
+    roots.push(root);
     const counts = [2, 8, 9, 26];
-    const builder = createDevBuilder({ root, contentSource: {
-      name: ContentSourceName.HACKMD,
-      getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Notes' }),
-      getPosts: () => Promise.resolve({ posts: counts.map((count) => ({
-        id: `outline-${String(count)}`,
-        title: count === 26 ? 'A very long article title that needs room to wrap naturally across several lines' : `Outline ${String(count)}`,
-        slug: `outline-${String(count)}`,
-        date: '2026-01-01T00:00:00Z',
-        content: Array.from({ length: count }, (_, index) => `## Section ${String(index + 1)}\n\nBody ${String(index + 1)}.`).join('\n\n'),
-      })) }),
-    } });
+    const builder = createDevBuilder({
+      root,
+      contentSource: {
+        name: ContentSourceName.HACKMD,
+        getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Notes' }),
+        getPosts: () =>
+          Promise.resolve({
+            posts: counts.map((count) => ({
+              id: `outline-${String(count)}`,
+              title:
+                count === 26
+                  ? 'A very long article title that needs room to wrap naturally across several lines'
+                  : `Outline ${String(count)}`,
+              slug: `outline-${String(count)}`,
+              date: '2026-01-01T00:00:00Z',
+              content: Array.from(
+                { length: count },
+                (_, index) => `## Section ${String(index + 1)}\n\nBody ${String(index + 1)}.`,
+              ).join('\n\n'),
+            })),
+          }),
+      },
+    });
     await builder.prepare({ installDependencies: false });
     const summary = await builder.fetchContent();
     const sourceDir = join(root, 'source-snapshot');
     await writeSourceSnapshot(builder.vibelogDir, sourceDir, summary);
     const workDir = join(root, 'compile');
     const outDir = join(workDir, 'dist');
-    await buildBlog({ sourceDir, design: DEFAULT_DESIGN_V2, workDir, outDir, site: 'https://writer.example.com' });
+    await buildBlog({
+      sourceDir,
+      design: DEFAULT_DESIGN_V2,
+      workDir,
+      outDir,
+      site: 'https://writer.example.com',
+    });
 
     for (const count of counts) {
-      const article = await readFile(join(outDir, 'blog', `outline-${String(count)}`, 'index.html'), 'utf8');
+      const article = await readFile(
+        join(outDir, 'blog', `outline-${String(count)}`, 'index.html'),
+        'utf8',
+      );
       const toc = /<nav class="table-of-contents"[^]*?<\/nav>/u.exec(article)?.[0];
       expect(toc).toBeDefined();
       expect(toc).toContain(count <= 8 ? '<details open>' : '<details>');
@@ -396,213 +803,324 @@ while (!await access(${JSON.stringify(release)}).then(() => true, () => false)) 
   });
 
   it('replaces repository-owned CSS when upgrading an older draft', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-upgrade-')); roots.push(root);
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-upgrade-'));
+    roots.push(root);
     const source: ContentSource = {
       name: ContentSourceName.HACKMD,
       getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'Public notes' }),
-      getPosts: () => Promise.resolve({ posts: [
-        { id: 'one', title: 'One', slug: 'one', date: '2026-01-01T00:00:00Z', content: 'One body' },
-      ] }),
+      getPosts: () =>
+        Promise.resolve({
+          posts: [
+            {
+              id: 'one',
+              title: 'One',
+              slug: 'one',
+              date: '2026-01-01T00:00:00Z',
+              content: 'One body',
+            },
+          ],
+        }),
     };
     const builder = createDevBuilder({ root, contentSource: source });
     await builder.prepare({ installDependencies: false });
-    await writeFile(join(root, '.vibelog', '.vibelog-state.json'), JSON.stringify({ templateVersion: 2 }));
+    await writeFile(
+      join(root, '.vibelog', '.vibelog-state.json'),
+      JSON.stringify({ templateVersion: 2 }),
+    );
     await mkdir(join(root, '.vibelog', 'src', 'styles'), { recursive: true });
-    await writeFile(join(root, '.vibelog', 'src', 'styles', 'global.css'), '/* legacy custom copy */');
+    await writeFile(
+      join(root, '.vibelog', 'src', 'styles', 'global.css'),
+      '/* legacy custom copy */',
+    );
 
     await builder.prepare({ installDependencies: false });
 
-    expect(JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8'))).toEqual({ templateVersion: 18 });
+    expect(
+      JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8')),
+    ).toEqual({ templateVersion: 18 });
     await expect(stat(join(root, '.vibelog', 'src', 'styles', 'global.css'))).rejects.toThrow();
-    expect(await readFile(join(root, '.vibelog', 'public', 'global.css'), 'utf8')).not.toContain('legacy custom copy');
+    expect(await readFile(join(root, '.vibelog', 'public', 'global.css'), 'utf8')).not.toContain(
+      'legacy custom copy',
+    );
   });
 
-  it('builds the V12 reading experience with reliable descriptions, search, and machine-readable content', { timeout: 30_000 }, async () => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-public-')); roots.push(root);
-    const posts = Array.from({ length: 6 }, (_, index) => {
-      const number = index + 1;
-      return {
-        id: `article-${String(number)}`,
-        title: `Article ${String(number)}`,
-        slug: `article-${String(number)}`,
-        date: `2026-01-0${String(number)}T00:00:00Z`,
-        updatedAt: number === 4 ? '2026-01-08T12:00:00Z' : number === 5 ? '2026-01-05T12:00:00Z' : undefined,
-        tags: number <= 3 ? ['Notes'] : ['Writing', number % 2 === 0 ? 'Even' : 'Odd'],
-        content: number === 6
-          ? `![Private image](https://images.example.com/private.png)\n\n# Ignored heading\n\n### Preface details\n\nA **reliable** summary with [readable text](https://example.com/hidden) and \`code\`.\n\n## Main section\n\nBody for article ${String(number)}.\n\n### Implementation details\n\nMore details.\n\n#### Ignored nested heading\n\nClosing note.`
-          : number === 5
-            ? `Body for article ${String(number)}.\n\n## Only section\n\nA single section does not need a table of contents.`
-            : number === 4
-              ? `Body for article ${String(number)}.\n\n\`\`\`ts\nconst greeting = "hello";\n\`\`\`\n\n\`\`\`bash\nnpm run build\n\`\`\``
-              : `Body for article ${String(number)}.`,
-        description: number === 6 ? 'A **HackMD overview** summary with [readable text](https://example.com/private).' : undefined,
+  it(
+    'builds the V12 reading experience with reliable descriptions, search, and machine-readable content',
+    { timeout: 30_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-public-'));
+      roots.push(root);
+      const posts = Array.from({ length: 6 }, (_, index) => {
+        const number = index + 1;
+        return {
+          id: `article-${String(number)}`,
+          title: `Article ${String(number)}`,
+          slug: `article-${String(number)}`,
+          date: `2026-01-0${String(number)}T00:00:00Z`,
+          updatedAt:
+            number === 4
+              ? '2026-01-08T12:00:00Z'
+              : number === 5
+                ? '2026-01-05T12:00:00Z'
+                : undefined,
+          tags: number <= 3 ? ['Notes'] : ['Writing', number % 2 === 0 ? 'Even' : 'Odd'],
+          content:
+            number === 6
+              ? `![Private image](https://images.example.com/private.png)\n\n# Ignored heading\n\n### Preface details\n\nA **reliable** summary with [readable text](https://example.com/hidden) and \`code\`.\n\n## Main section\n\nBody for article ${String(number)}.\n\n### Implementation details\n\nMore details.\n\n#### Ignored nested heading\n\nClosing note.`
+              : number === 5
+                ? `Body for article ${String(number)}.\n\n## Only section\n\nA single section does not need a table of contents.`
+                : number === 4
+                  ? `Body for article ${String(number)}.\n\n\`\`\`ts\nconst greeting = "hello";\n\`\`\`\n\n\`\`\`bash\nnpm run build\n\`\`\``
+                  : `Body for article ${String(number)}.`,
+          description:
+            number === 6
+              ? 'A **HackMD overview** summary with [readable text](https://example.com/private).'
+              : undefined,
+        };
+      });
+      const source: ContentSource = {
+        name: ContentSourceName.HACKMD,
+        getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'A short public author bio.' }),
+        getPosts: () => Promise.resolve({ posts }),
       };
-    });
+      const builder = createDevBuilder({ root, contentSource: source });
+      await builder.prepare({ installDependencies: false });
+      await writeFile(
+        join(root, 'vibelog.config.json'),
+        JSON.stringify({
+          site: {
+            title: 'Writer Journal',
+            description: 'Essays from Writer.',
+            language: 'zh-Hant',
+          },
+        }),
+      );
+      await builder.fetchContent();
+
+      const generatedPost = matter(
+        await readFile(join(root, '.vibelog', 'src', 'content', 'blog', 'article-6.md'), 'utf8'),
+      );
+      const expectedDescription = 'A HackMD overview summary with readable text.';
+      expect(generatedPost.data.description).toBe(expectedDescription);
+      expect(generatedPost.data.description).not.toMatch(/https?:|[*`![\]]/u);
+      expect(generatedPost.content).toContain('https://images.example.com/private.png');
+
+      const output = join(root, 'public');
+      await buildFromVibelog({
+        vibelogDir: join(root, '.vibelog'),
+        outDir: output,
+        site: 'https://writer.example.com',
+      });
+
+      const home = await readFile(join(output, 'index.html'), 'utf8');
+      expect(home).toContain('<h1 id="home-intro-heading">Writer Journal</h1>');
+      expect(home).toContain('<p class="site-description">Essays from Writer.</p>');
+      expect(home).not.toContain('A short public author bio.');
+      expect(home).not.toContain('class="author-bio"');
+      expect(jsonLd(home)).toMatchObject({
+        '@type': 'Blog',
+        name: 'Writer Journal',
+        author: { name: 'Writer' },
+      });
+      expect(home).not.toContain('pagefind-component-ui.js');
+      expect(home).toContain('href="/search"');
+      expect(home).toContain(
+        '<nav aria-label="其他閱讀方式"><ul class="footer-links" role="list"><li><a href="/rss.xml">RSS</a></li><li><a href="/llms.txt">llms.txt</a></li></ul></nav>',
+      );
+      expect(home).not.toContain('data-pagefind-body');
+      for (const number of [6, 5, 4, 3, 2]) expect(home).toContain(`Article ${String(number)}`);
+      expect(home).not.toContain('Article 1');
+      expect(home).toContain(expectedDescription);
+      expect(home).not.toContain('images.example.com');
+
+      const archive = await readFile(join(output, 'blog', 'index.html'), 'utf8');
+      for (const number of [6, 5, 4, 3, 2, 1])
+        expect(archive).toContain(`Article ${String(number)}`);
+      expect(archive.indexOf('Article 6')).toBeLessThan(archive.indexOf('Article 5'));
+      expect(archive.indexOf('Article 2')).toBeLessThan(archive.indexOf('Article 1'));
+      expect(archive).toContain('Writing');
+      expect(archive).toContain(expectedDescription);
+
+      const article = await readFile(join(output, 'blog', 'article-4', 'index.html'), 'utf8');
+      expect(article).toContain('<title>Article 4 · Writer Journal</title>');
+      expect(article).toContain('<meta property="og:type" content="article">');
+      expect(article).toContain(
+        '<meta property="article:published_time" content="2026-01-04T00:00:00.000Z">',
+      );
+      expect(article).toContain(
+        '<meta property="article:modified_time" content="2026-01-08T12:00:00.000Z">',
+      );
+      expect(article).toContain('<meta property="article:tag" content="Even">');
+      expect(article).toContain('<meta property="article:tag" content="Writing">');
+      expect(article).toContain('更新於');
+      expect(article).toContain(
+        '<link rel="canonical" href="https://writer.example.com/blog/article-4/" data-pagefind-meta="canonical[href]">',
+      );
+      expect(article).toContain('較新文章');
+      expect(article).toContain('Article 5');
+      expect(article).toContain('較舊文章');
+      expect(article).toContain('Article 3');
+      expect(article).not.toContain('blog-item-description');
+      expect(jsonLd(article)).toMatchObject({
+        '@type': 'BlogPosting',
+        headline: 'Article 4',
+        author: { name: 'Writer' },
+        datePublished: '2026-01-04T00:00:00.000Z',
+        dateModified: '2026-01-08T12:00:00.000Z',
+        keywords: ['Even', 'Writing'],
+      });
+      expect(article).not.toContain('pagefind-component-ui.js');
+      expect(article).toContain('data-pagefind-body');
+      expect(article).toContain('data-pagefind-meta="title"');
+      expect(article).toContain('data-pagefind-meta="description[content]"');
+      expect(article).toContain('data-pagefind-meta="tags[content]"');
+      expect(article).toContain('data-pagefind-meta="canonical[href]"');
+      expect(article).toMatch(
+        /<div class="prose" data-pagefind-body data-design-node="article-prose">/u,
+      );
+      expect(article).not.toMatch(/<div class="blog-post-content" data-pagefind-body>/u);
+      expect(article).toMatch(/<pre class="astro-code[^"<]*"[^>]*data-language="ts"/u);
+      expect(article).toMatch(/<pre class="astro-code[^"<]*"[^>]*data-language="bash"/u);
+      expect(article).toContain('<link rel="stylesheet" href="/syntax.css">');
+      expect(article).toMatch(/<span class="syntax-style-[a-f0-9]+"/u);
+      expect(article).not.toMatch(/<span style="--shiki-/u);
+      const syntaxCss = await readFile(join(output, 'syntax.css'), 'utf8');
+      expect(syntaxCss).toContain('--shiki-light:');
+      expect(syntaxCss).toContain('--shiki-dark:');
+      expect(article).toContain(
+        '<link rel="alternate" type="text/markdown" href="https://writer.example.com/blog/article-4/index.md">',
+      );
+      expect(article).toContain(
+        '<link rel="describedby" href="https://writer.example.com/llms.txt">',
+      );
+      const sameDayArticle = await readFile(
+        join(output, 'blog', 'article-5', 'index.html'),
+        'utf8',
+      );
+      expect(sameDayArticle).toContain(
+        '<meta property="article:modified_time" content="2026-01-05T12:00:00.000Z">',
+      );
+      expect(sameDayArticle).not.toContain('更新於');
+
+      const tagIndex = await readFile(join(output, 'tags', 'index.html'), 'utf8');
+      expect(tagIndex).toContain('<title>主題 · Writer Journal</title>');
+      expect(tagIndex.indexOf('Notes')).toBeLessThan(tagIndex.indexOf('Writing'));
+      expect(tagIndex).toContain('3 篇');
+      const writingTag = await readFile(join(output, 'tags', 'writing', 'index.html'), 'utf8');
+      expect(writingTag).toContain('<title>主題：Writing · Writer Journal</title>');
+      expect(writingTag.indexOf('Article 6')).toBeLessThan(writingTag.indexOf('Article 5'));
+      expect(writingTag).not.toContain('Article 3');
+      expect(writingTag).toContain(expectedDescription);
+
+      const feed = await readFile(join(output, 'rss.xml'), 'utf8');
+      expect(feed).toContain('<pubDate>Tue, 06 Jan 2026 00:00:00 GMT</pubDate>');
+      expect(feed).toContain('<category>Writing</category>');
+      expect(feed).toContain(`<description>${expectedDescription}</description>`);
+      expect(feed).not.toContain('images.example.com');
+      const summarizedArticle = await readFile(
+        join(output, 'blog', 'article-6', 'index.html'),
+        'utf8',
+      );
+      expect(summarizedArticle).toContain(
+        `<meta name="description" content="${expectedDescription}">`,
+      );
+      expect(summarizedArticle).toContain(
+        `<meta property="og:description" content="${expectedDescription}">`,
+      );
+      expect(summarizedArticle).toContain(
+        `<meta name="twitter:description" content="${expectedDescription}">`,
+      );
+      expect(summarizedArticle).not.toContain('class="blog-item-description"');
+      const tableOfContents =
+        /<nav class="table-of-contents" aria-label="文章目錄">[\s\S]*?<\/nav>/u.exec(
+          summarizedArticle,
+        )?.[0];
+      expect(tableOfContents).toBeDefined();
+      expect(summarizedArticle.match(/aria-label="文章目錄"/gu)).toHaveLength(1);
+      expect(tableOfContents).toContain('<details open>');
+      expect(tableOfContents).toContain('href="#preface-details"');
+      expect(tableOfContents).toContain('href="#main-section"');
+      expect(tableOfContents).toContain('href="#implementation-details"');
+      expect(tableOfContents).not.toContain('Ignored heading');
+      expect(tableOfContents).not.toContain('Ignored nested heading');
+      expect(tableOfContents).toMatch(
+        /href="#main-section"[^]*<ol>[^]*href="#implementation-details"/u,
+      );
+      expect(summarizedArticle).toContain('id="preface-details"');
+      expect(summarizedArticle).toContain('id="main-section"');
+      expect(summarizedArticle).toContain('id="implementation-details"');
+      expect(summarizedArticle).toContain(
+        '<a class="article-back-to-start" href="#article-start">回到文章開頭</a>',
+      );
+      const singleHeadingArticle = await readFile(
+        join(output, 'blog', 'article-5', 'index.html'),
+        'utf8',
+      );
+      expect(singleHeadingArticle).toContain('id="only-section"');
+      expect(singleHeadingArticle).not.toContain('aria-label="文章目錄"');
+      expect(singleHeadingArticle).not.toContain('article-back-to-start');
+      expect(feed.indexOf('Article 6')).toBeLessThan(feed.indexOf('Article 5'));
+      const sitemap = await readFile(join(output, 'sitemap-0.xml'), 'utf8');
+      expect(sitemap).toContain('https://writer.example.com/blog/article-1/');
+      expect(sitemap).toContain('https://writer.example.com/blog/article-6/');
+      expect(sitemap).toContain('https://writer.example.com/tags/writing/');
+      expect(sitemap).not.toContain('https://writer.example.com/search/');
+      expect(sitemap).not.toContain('.md');
+      const search = await readFile(join(output, 'search', 'index.html'), 'utf8');
+      expect(search).toContain('<meta name="robots" content="noindex, follow">');
+      expect(search).toContain('/pagefind/pagefind-component-ui.js');
+      expect(search).toContain('<pagefind-input');
+      expect(search).toContain('<pagefind-results');
+      expect(search).not.toContain('data-pagefind-body');
+      expect(await stat(join(output, 'pagefind', 'pagefind.js'))).toBeTruthy();
+      expect(await stat(join(output, 'pagefind', 'pagefind-component-ui.js'))).toBeTruthy();
+      expect(await stat(join(output, 'pagefind', 'pagefind-component-ui.css'))).toBeTruthy();
+      const markdown = await readFile(join(output, 'blog', 'article-4', 'index.md'), 'utf8');
+      expect(markdown).toContain(
+        '# Article 4\n\nPublished: 2026-01-04\nUpdated: 2026-01-08\nCanonical: https://writer.example.com/blog/article-4/',
+      );
+      expect(markdown).toContain('Body for article 4.');
+      expect(markdown).not.toContain('article-navigation');
+      const llms = await readFile(join(output, 'llms.txt'), 'utf8');
+      expect(llms).toContain('# Writer Journal\n\n> Essays from Writer.\n\n## Posts');
+      expect(llms).toContain('https://writer.example.com/blog/article-4/index.md');
+      expect(llms).toContain(expectedDescription);
+      expect(llms.indexOf('Article 6')).toBeLessThan(llms.indexOf('Article 1'));
+      const robots = await readFile(join(output, 'robots.txt'), 'utf8');
+      expect(robots).toBe(
+        'User-agent: *\nAllow: /\n\nSitemap: https://writer.example.com/sitemap-index.xml\n',
+      );
+    },
+  );
+
+  it('builds an empty tag index when no posts have tags', { timeout: 20_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-no-tags-'));
+    roots.push(root);
     const source: ContentSource = {
       name: ContentSourceName.HACKMD,
-      getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'A short public author bio.' }),
-      getPosts: () => Promise.resolve({ posts }),
+      getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
+      getPosts: () =>
+        Promise.resolve({
+          posts: [
+            {
+              id: 'one',
+              title: 'One',
+              slug: 'one',
+              date: '2026-01-01T00:00:00Z',
+              content: 'One body',
+            },
+          ],
+        }),
     };
     const builder = createDevBuilder({ root, contentSource: source });
     await builder.prepare({ installDependencies: false });
-    await writeFile(join(root, 'vibelog.config.json'), JSON.stringify({
-      site: { title: 'Writer Journal', description: 'Essays from Writer.', language: 'zh-Hant' },
-    }));
     await builder.fetchContent();
-
-    const generatedPost = matter(await readFile(join(root, '.vibelog', 'src', 'content', 'blog', 'article-6.md'), 'utf8'));
-    const expectedDescription = 'A HackMD overview summary with readable text.';
-    expect(generatedPost.data.description).toBe(expectedDescription);
-    expect(generatedPost.data.description).not.toMatch(/https?:|[*`![\]]/u);
-    expect(generatedPost.content).toContain('https://images.example.com/private.png');
-
     const output = join(root, 'public');
     await buildFromVibelog({
       vibelogDir: join(root, '.vibelog'),
       outDir: output,
       site: 'https://writer.example.com',
     });
-
-    const home = await readFile(join(output, 'index.html'), 'utf8');
-    expect(home).toContain('<h1 id="home-intro-heading">Writer Journal</h1>');
-    expect(home).toContain('<p class="site-description">Essays from Writer.</p>');
-    expect(home).not.toContain('A short public author bio.');
-    expect(home).not.toContain('class="author-bio"');
-    expect(jsonLd(home)).toMatchObject({ '@type': 'Blog', name: 'Writer Journal', author: { name: 'Writer' } });
-    expect(home).not.toContain('pagefind-component-ui.js');
-    expect(home).toContain('href="/search"');
-    expect(home).toContain('<nav aria-label="其他閱讀方式"><ul class="footer-links" role="list"><li><a href="/rss.xml">RSS</a></li><li><a href="/llms.txt">llms.txt</a></li></ul></nav>');
-    expect(home).not.toContain('data-pagefind-body');
-    for (const number of [6, 5, 4, 3, 2]) expect(home).toContain(`Article ${String(number)}`);
-    expect(home).not.toContain('Article 1');
-    expect(home).toContain(expectedDescription);
-    expect(home).not.toContain('images.example.com');
-
-    const archive = await readFile(join(output, 'blog', 'index.html'), 'utf8');
-    for (const number of [6, 5, 4, 3, 2, 1]) expect(archive).toContain(`Article ${String(number)}`);
-    expect(archive.indexOf('Article 6')).toBeLessThan(archive.indexOf('Article 5'));
-    expect(archive.indexOf('Article 2')).toBeLessThan(archive.indexOf('Article 1'));
-    expect(archive).toContain('Writing');
-    expect(archive).toContain(expectedDescription);
-
-    const article = await readFile(join(output, 'blog', 'article-4', 'index.html'), 'utf8');
-    expect(article).toContain('<title>Article 4 · Writer Journal</title>');
-    expect(article).toContain('<meta property="og:type" content="article">');
-    expect(article).toContain('<meta property="article:published_time" content="2026-01-04T00:00:00.000Z">');
-    expect(article).toContain('<meta property="article:modified_time" content="2026-01-08T12:00:00.000Z">');
-    expect(article).toContain('<meta property="article:tag" content="Even">');
-    expect(article).toContain('<meta property="article:tag" content="Writing">');
-    expect(article).toContain('更新於');
-    expect(article).toContain('<link rel="canonical" href="https://writer.example.com/blog/article-4/" data-pagefind-meta="canonical[href]">');
-    expect(article).toContain('較新文章');
-    expect(article).toContain('Article 5');
-    expect(article).toContain('較舊文章');
-    expect(article).toContain('Article 3');
-    expect(article).not.toContain('blog-item-description');
-    expect(jsonLd(article)).toMatchObject({ '@type': 'BlogPosting', headline: 'Article 4', author: { name: 'Writer' }, datePublished: '2026-01-04T00:00:00.000Z', dateModified: '2026-01-08T12:00:00.000Z', keywords: ['Even', 'Writing'] });
-    expect(article).not.toContain('pagefind-component-ui.js');
-    expect(article).toContain('data-pagefind-body');
-    expect(article).toContain('data-pagefind-meta="title"');
-    expect(article).toContain('data-pagefind-meta="description[content]"');
-    expect(article).toContain('data-pagefind-meta="tags[content]"');
-    expect(article).toContain('data-pagefind-meta="canonical[href]"');
-    expect(article).toMatch(/<div class="prose" data-pagefind-body data-design-node="article-prose">/u);
-    expect(article).not.toMatch(/<div class="blog-post-content" data-pagefind-body>/u);
-    expect(article).toMatch(/<pre class="astro-code[^"<]*"[^>]*data-language="ts"/u);
-    expect(article).toMatch(/<pre class="astro-code[^"<]*"[^>]*data-language="bash"/u);
-    expect(article).toContain('<link rel="stylesheet" href="/syntax.css">');
-    expect(article).toMatch(/<span class="syntax-style-[a-f0-9]+"/u);
-    expect(article).not.toMatch(/<span style="--shiki-/u);
-    const syntaxCss = await readFile(join(output, 'syntax.css'), 'utf8');
-    expect(syntaxCss).toContain('--shiki-light:');
-    expect(syntaxCss).toContain('--shiki-dark:');
-    expect(article).toContain('<link rel="alternate" type="text/markdown" href="https://writer.example.com/blog/article-4/index.md">');
-    expect(article).toContain('<link rel="describedby" href="https://writer.example.com/llms.txt">');
-    const sameDayArticle = await readFile(join(output, 'blog', 'article-5', 'index.html'), 'utf8');
-    expect(sameDayArticle).toContain('<meta property="article:modified_time" content="2026-01-05T12:00:00.000Z">');
-    expect(sameDayArticle).not.toContain('更新於');
-
-    const tagIndex = await readFile(join(output, 'tags', 'index.html'), 'utf8');
-    expect(tagIndex).toContain('<title>主題 · Writer Journal</title>');
-    expect(tagIndex.indexOf('Notes')).toBeLessThan(tagIndex.indexOf('Writing'));
-    expect(tagIndex).toContain('3 篇');
-    const writingTag = await readFile(join(output, 'tags', 'writing', 'index.html'), 'utf8');
-    expect(writingTag).toContain('<title>主題：Writing · Writer Journal</title>');
-    expect(writingTag.indexOf('Article 6')).toBeLessThan(writingTag.indexOf('Article 5'));
-    expect(writingTag).not.toContain('Article 3');
-    expect(writingTag).toContain(expectedDescription);
-
-    const feed = await readFile(join(output, 'rss.xml'), 'utf8');
-    expect(feed).toContain('<pubDate>Tue, 06 Jan 2026 00:00:00 GMT</pubDate>');
-    expect(feed).toContain('<category>Writing</category>');
-    expect(feed).toContain(`<description>${expectedDescription}</description>`);
-    expect(feed).not.toContain('images.example.com');
-    const summarizedArticle = await readFile(join(output, 'blog', 'article-6', 'index.html'), 'utf8');
-    expect(summarizedArticle).toContain(`<meta name="description" content="${expectedDescription}">`);
-    expect(summarizedArticle).toContain(`<meta property="og:description" content="${expectedDescription}">`);
-    expect(summarizedArticle).toContain(`<meta name="twitter:description" content="${expectedDescription}">`);
-    expect(summarizedArticle).not.toContain('class="blog-item-description"');
-    const tableOfContents = /<nav class="table-of-contents" aria-label="文章目錄">[\s\S]*?<\/nav>/u.exec(summarizedArticle)?.[0];
-    expect(tableOfContents).toBeDefined();
-    expect(summarizedArticle.match(/aria-label="文章目錄"/gu)).toHaveLength(1);
-    expect(tableOfContents).toContain('<details open>');
-    expect(tableOfContents).toContain('href="#preface-details"');
-    expect(tableOfContents).toContain('href="#main-section"');
-    expect(tableOfContents).toContain('href="#implementation-details"');
-    expect(tableOfContents).not.toContain('Ignored heading');
-    expect(tableOfContents).not.toContain('Ignored nested heading');
-    expect(tableOfContents).toMatch(/href="#main-section"[^]*<ol>[^]*href="#implementation-details"/u);
-    expect(summarizedArticle).toContain('id="preface-details"');
-    expect(summarizedArticle).toContain('id="main-section"');
-    expect(summarizedArticle).toContain('id="implementation-details"');
-    expect(summarizedArticle).toContain('<a class="article-back-to-start" href="#article-start">回到文章開頭</a>');
-    const singleHeadingArticle = await readFile(join(output, 'blog', 'article-5', 'index.html'), 'utf8');
-    expect(singleHeadingArticle).toContain('id="only-section"');
-    expect(singleHeadingArticle).not.toContain('aria-label="文章目錄"');
-    expect(singleHeadingArticle).not.toContain('article-back-to-start');
-    expect(feed.indexOf('Article 6')).toBeLessThan(feed.indexOf('Article 5'));
-    const sitemap = await readFile(join(output, 'sitemap-0.xml'), 'utf8');
-    expect(sitemap).toContain('https://writer.example.com/blog/article-1/');
-    expect(sitemap).toContain('https://writer.example.com/blog/article-6/');
-    expect(sitemap).toContain('https://writer.example.com/tags/writing/');
-    expect(sitemap).not.toContain('https://writer.example.com/search/');
-    expect(sitemap).not.toContain('.md');
-    const search = await readFile(join(output, 'search', 'index.html'), 'utf8');
-    expect(search).toContain('<meta name="robots" content="noindex, follow">');
-    expect(search).toContain('/pagefind/pagefind-component-ui.js');
-    expect(search).toContain('<pagefind-input');
-    expect(search).toContain('<pagefind-results');
-    expect(search).not.toContain('data-pagefind-body');
-    expect(await stat(join(output, 'pagefind', 'pagefind.js'))).toBeTruthy();
-    expect(await stat(join(output, 'pagefind', 'pagefind-component-ui.js'))).toBeTruthy();
-    expect(await stat(join(output, 'pagefind', 'pagefind-component-ui.css'))).toBeTruthy();
-    const markdown = await readFile(join(output, 'blog', 'article-4', 'index.md'), 'utf8');
-    expect(markdown).toContain('# Article 4\n\nPublished: 2026-01-04\nUpdated: 2026-01-08\nCanonical: https://writer.example.com/blog/article-4/');
-    expect(markdown).toContain('Body for article 4.');
-    expect(markdown).not.toContain('article-navigation');
-    const llms = await readFile(join(output, 'llms.txt'), 'utf8');
-    expect(llms).toContain('# Writer Journal\n\n> Essays from Writer.\n\n## Posts');
-    expect(llms).toContain('https://writer.example.com/blog/article-4/index.md');
-    expect(llms).toContain(expectedDescription);
-    expect(llms.indexOf('Article 6')).toBeLessThan(llms.indexOf('Article 1'));
-    const robots = await readFile(join(output, 'robots.txt'), 'utf8');
-    expect(robots).toBe('User-agent: *\nAllow: /\n\nSitemap: https://writer.example.com/sitemap-index.xml\n');
-  });
-
-  it('builds an empty tag index when no posts have tags', { timeout: 20_000 }, async () => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-no-tags-')); roots.push(root);
-    const source: ContentSource = {
-      name: ContentSourceName.HACKMD,
-      getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
-      getPosts: () => Promise.resolve({ posts: [
-        { id: 'one', title: 'One', slug: 'one', date: '2026-01-01T00:00:00Z', content: 'One body' },
-      ] }),
-    };
-    const builder = createDevBuilder({ root, contentSource: source });
-    await builder.prepare({ installDependencies: false });
-    await builder.fetchContent();
-    const output = join(root, 'public');
-    await buildFromVibelog({ vibelogDir: join(root, '.vibelog'), outDir: output, site: 'https://writer.example.com' });
     const home = await readFile(join(output, 'index.html'), 'utf8');
     const tagIndex = await readFile(join(output, 'tags', 'index.html'), 'utf8');
     expect(home).not.toContain('>主題</a>');
@@ -610,228 +1128,390 @@ while (!await access(${JSON.stringify(release)}).then(() => true, () => false)) 
     expect(await readdir(join(output, 'blog'))).not.toContain('2');
   });
 
-  it('paginates only the post archive at 10 posts and removes stale pages on rebuild', { timeout: 30_000 }, async () => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-pagination-')); roots.push(root);
-    let count = 11;
-    const source: ContentSource = {
-      name: ContentSourceName.HACKMD,
-      getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
-      getPosts: () => Promise.resolve({ posts: Array.from({ length: count }, (_, index) => ({
+  it(
+    'paginates only the post archive at 10 posts and removes stale pages on rebuild',
+    { timeout: 30_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-pagination-'));
+      roots.push(root);
+      let count = 11;
+      const source: ContentSource = {
+        name: ContentSourceName.HACKMD,
+        getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
+        getPosts: () =>
+          Promise.resolve({
+            posts: Array.from({ length: count }, (_, index) => ({
+              id: `post-${String(index + 1)}`,
+              title: `Post ${String(index + 1)}`,
+              slug: `post-${String(index + 1)}`,
+              date: `2026-01-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
+              content: `Unique body ${String(index + 1)}`,
+            })),
+          }),
+      };
+      const builder = createDevBuilder({ root, contentSource: source });
+      await builder.prepare({ installDependencies: false });
+      const output = join(root, 'public');
+      await builder.fetchContent();
+      await buildFromVibelog({
+        vibelogDir: join(root, '.vibelog'),
+        outDir: output,
+        site: 'https://writer.example.com',
+      });
+
+      const first = await readFile(join(output, 'blog', 'index.html'), 'utf8');
+      const second = await readFile(join(output, 'blog', '2', 'index.html'), 'utf8');
+      expect(first).toContain('Post 11');
+      expect(first).not.toContain('Post 1</');
+      expect(first).toContain('href="/blog/2/"');
+      expect(first).toContain('<link rel="canonical" href="https://writer.example.com/blog/">');
+      expect(second).toContain('Post 1');
+      expect(second).not.toContain('Post 11');
+      expect(second).toContain('href="/blog/"');
+      expect(second).toContain('<link rel="canonical" href="https://writer.example.com/blog/2/">');
+      expect(await readdir(join(output, 'blog'))).not.toContain('1');
+
+      count = 10;
+      await builder.fetchContent();
+      await buildFromVibelog({
+        vibelogDir: join(root, '.vibelog'),
+        outDir: output,
+        site: 'https://writer.example.com',
+      });
+      const ten = await readFile(join(output, 'blog', 'index.html'), 'utf8');
+      expect(ten).toContain('Post 1');
+      expect(ten).not.toContain('Post 11');
+      expect(ten).not.toContain('archive-pagination');
+      expect(await readdir(join(output, 'blog'))).not.toContain('2');
+    },
+  );
+
+  it(
+    'builds all 1,000 articles, search fragments, feeds and archive pages',
+    { timeout: 120_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-capacity-'));
+      roots.push(root);
+      const posts = Array.from({ length: 1000 }, (_, index) => ({
         id: `post-${String(index + 1)}`,
-        title: `Post ${String(index + 1)}`,
         slug: `post-${String(index + 1)}`,
-        date: `2026-01-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
-        content: `Unique body ${String(index + 1)}`,
-      })) }),
-    };
-    const builder = createDevBuilder({ root, contentSource: source });
-    await builder.prepare({ installDependencies: false });
-    const output = join(root, 'public');
-    await builder.fetchContent();
-    await buildFromVibelog({ vibelogDir: join(root, '.vibelog'), outDir: output, site: 'https://writer.example.com' });
+        title: `Capacity article ${String(index + 1)}`,
+        date: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+        tags: ['Writing'],
+        content: `## Reading\n\nUnique article ${String(index + 1)}. ${'A paragraph about writing and code. '.repeat(50)}\n\n\`\`\`ts\nconst article = ${String(index + 1)};\n\`\`\``,
+      }));
+      const builder = createDevBuilder({
+        root,
+        contentSource: {
+          name: ContentSourceName.HACKMD,
+          getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'A large public archive.' }),
+          getPosts: () => Promise.resolve({ posts }),
+        },
+      });
+      await builder.prepare({ installDependencies: false });
+      await builder.fetchContent();
+      const output = join(root, 'public');
+      const started = performance.now();
+      await buildFromVibelog({
+        vibelogDir: builder.vibelogDir,
+        outDir: output,
+        site: 'https://writer.example.com',
+      });
+      console.info(
+        JSON.stringify({
+          event: 'capacity_build',
+          postCount: posts.length,
+          durationMs: Math.round(performance.now() - started),
+        }),
+      );
+      const directories = await readdir(join(output, 'blog'));
+      expect(directories.filter((name) => name.startsWith('post-'))).toHaveLength(1000);
+      expect(directories.filter((name) => /^\d+$/u.test(name))).toHaveLength(99);
+      expect(directories).not.toContain('1');
+      expect(await readFile(join(output, 'blog', '100', 'index.html'), 'utf8')).toContain(
+        'Capacity article 1',
+      );
+      for (const slug of ['post-1', 'post-1000']) {
+        expect(await readFile(join(output, 'blog', slug, 'index.html'), 'utf8')).toContain(
+          'data-pagefind-body',
+        );
+        expect(await readFile(join(output, 'blog', slug, 'index.md'), 'utf8')).toContain(
+          '## Reading',
+        );
+      }
+      expect((await readFile(join(output, 'rss.xml'), 'utf8')).match(/<item>/gu)).toHaveLength(
+        1000,
+      );
+      expect(
+        (await readFile(join(output, 'sitemap-0.xml'), 'utf8')).match(
+          /<loc>https:\/\/writer.example.com\/blog\/post-/gu,
+        ),
+      ).toHaveLength(1000);
+      expect(
+        (await readFile(join(output, 'llms.txt'), 'utf8')).match(/\/blog\/post-\d+\/index\.md/gu),
+      ).toHaveLength(1000);
+      expect(await readdir(join(output, 'pagefind', 'fragment'))).toHaveLength(1000);
+      expect(await stat(join(output, 'pagefind', 'pagefind-component-ui.js'))).toBeTruthy();
+    },
+  );
 
-    const first = await readFile(join(output, 'blog', 'index.html'), 'utf8');
-    const second = await readFile(join(output, 'blog', '2', 'index.html'), 'utf8');
-    expect(first).toContain('Post 11');
-    expect(first).not.toContain('Post 1</');
-    expect(first).toContain('href="/blog/2/"');
-    expect(first).toContain('<link rel="canonical" href="https://writer.example.com/blog/">');
-    expect(second).toContain('Post 1');
-    expect(second).not.toContain('Post 11');
-    expect(second).toContain('href="/blog/"');
-    expect(second).toContain('<link rel="canonical" href="https://writer.example.com/blog/2/">');
-    expect(await readdir(join(output, 'blog'))).not.toContain('1');
+  it(
+    'keeps hostile article titles inside safely serialized JSON-LD',
+    { timeout: 20_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-jsonld-'));
+      roots.push(root);
+      const title = 'An article </script><script>alert(1)</script>';
+      const source: ContentSource = {
+        name: ContentSourceName.HACKMD,
+        getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
+        getPosts: () =>
+          Promise.resolve({
+            posts: [
+              { id: 'post', title, slug: 'post', date: '2026-01-01T00:00:00Z', content: 'Body.' },
+            ],
+          }),
+      };
+      const builder = createDevBuilder({ root, contentSource: source });
+      await builder.prepare({ installDependencies: false });
+      await builder.fetchContent();
+      const output = join(root, 'public');
+      await buildFromVibelog({
+        vibelogDir: join(root, '.vibelog'),
+        outDir: output,
+        site: 'https://writer.example.com',
+      });
+      const article = await readFile(join(output, 'blog', 'post', 'index.html'), 'utf8');
+      expect(jsonLd(article).headline).toBe(title);
+      expect(
+        /<script type="application\/ld\+json">([^]*?)<\/script>/u.exec(article)?.[1],
+      ).not.toContain('<');
+      expect(article).toContain('\\u003c/script>');
+      const markdown = await readFile(join(output, 'blog', 'post', 'index.md'), 'utf8');
+      expect(markdown).toContain('Canonical: https://writer.example.com/blog/post/');
+    },
+  );
 
-    count = 10;
-    await builder.fetchContent();
-    await buildFromVibelog({ vibelogDir: join(root, '.vibelog'), outDir: output, site: 'https://writer.example.com' });
-    const ten = await readFile(join(output, 'blog', 'index.html'), 'utf8');
-    expect(ten).toContain('Post 1');
-    expect(ten).not.toContain('Post 11');
-    expect(ten).not.toContain('archive-pagination');
-    expect(await readdir(join(output, 'blog'))).not.toContain('2');
-  });
+  it.each(['live HackMD', 'stored snapshot'] as const)(
+    'preserves Markdown and enforces rendering boundaries from %s',
+    { timeout: 25_000 },
+    async (mode) => {
+      const root = await mkdtemp(join(tmpdir(), 'vibelog-markdown-fidelity-'));
+      roots.push(root);
+      const content = await readFile(
+        join(import.meta.dirname, 'fixtures', 'content', 'markdown-fidelity.md'),
+        'utf8',
+      );
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((input: string | URL | Request) => {
+          const url =
+            typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+          if (url.endsWith('/info/@writer'))
+            return Promise.resolve(
+              Response.json({ user: { displayName: 'Writer', biography: '' } }),
+            );
+          if (url.endsWith('/api/@writer/overview'))
+            return Promise.resolve(
+              Response.json({
+                notes: [
+                  {
+                    id: 'fidelity',
+                    title: 'Markdown fidelity',
+                    content: 'Rendering regression fixture.',
+                    tags: [],
+                    lastchangeAt: '',
+                    publishType: 'view',
+                    publishedAt: '2026-01-01T00:00:00Z',
+                    permalink: 'fidelity',
+                  },
+                ],
+              }),
+            );
+          if (url.endsWith('/fidelity/download')) return Promise.resolve(new Response(content));
+          return Promise.resolve(new Response(null, { status: 404 }));
+        }),
+      );
+      const source = new HackMdSource('writer', { baseUrl: 'http://fixture.test' });
+      const builder = createDevBuilder({ root, contentSource: source });
+      await builder.prepare({ installDependencies: false });
+      const summary = await builder.fetchContent();
+      const sourceDir = join(root, 'source');
+      await writeSourceSnapshot(builder.vibelogDir, sourceDir, summary);
+      if (mode === 'stored snapshot') {
+        const postPath = join(sourceDir, 'content', 'blog', 'fidelity.md');
+        const { data } = parseFrontMatter(await readFile(postPath, 'utf8'));
+        // Old snapshots and non-HackMD sources must be safe without the sync sanitizer.
+        await writeFile(postPath, stringifyFrontMatter(content, data));
+      }
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.reject(new Error('Frozen builds must not fetch content'))),
+      );
+      const workDir = join(root, 'compile');
+      const outDir = join(workDir, 'dist');
+      await buildBlog({
+        sourceDir,
+        design: DEFAULT_DESIGN_V2,
+        workDir,
+        outDir,
+        site: 'https://writer.example.com',
+      });
+      const article = await readFile(join(outDir, 'blog', 'fidelity', 'index.html'), 'utf8');
+      expect(article).toContain('prefix:value and scope:unknown remain complete.');
+      expect(article).toContain(':widget[label]{color="blue"}');
+      expect(article).toContain('::widget[Leaf label]{color="blue"}');
+      expect(article).toContain(':::widget[Container label]{color="blue"}');
+      expect(article).toContain('Container body with **original markup**.');
+      expect(article).toMatch(/<code>a (?:&lt;|&#x3C;) b<\/code>/u);
+      const codeBlocks = [...article.matchAll(/<pre\b[^>]*>([^]*?)<\/pre>/gu)].map((match) =>
+        (match[1] ?? '')
+          .replace(/<[^>]*>/gu, '')
+          .replace(/&#x3C;|&lt;/gu, '<')
+          .replaceAll('&gt;', '>'),
+      );
+      for (const literal of [
+        '<div>tilde code</div>',
+        '<div>long fence code</div>',
+        '<div>indented code</div>',
+        '<div>quoted code</div>',
+        '[code example](javascript:literal)',
+      ]) {
+        expect(codeBlocks.join('\n')).toContain(literal);
+      }
+      expect(article).not.toContain('<script>alert');
+      expect(article).not.toContain('<img src="x"');
+      expect(article).not.toMatch(/(?:href|src)="(?:javascript|vbscript|data):/iu);
+      expect(article.match(/href="about:blank#blocked[^"<]*"/gu)).toHaveLength(5);
+      expect(article).toContain('src="about:blank#blocked"');
+      expect(article).toContain('href="https://example.com/"');
+      expect(article).toContain('href="mailto:writer@example.com"');
+      expect(article).toContain('href="/blog/other/"');
+      const markdown = await readFile(join(outDir, 'blog', 'fidelity', 'index.md'), 'utf8');
+      expect(markdown).toContain('`a < b`');
+      expect(markdown).toContain('~~~html\n<div>tilde code</div>');
+    },
+  );
 
-  it('builds all 1,000 articles, search fragments, feeds and archive pages', { timeout: 120_000 }, async () => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-capacity-')); roots.push(root);
-    const posts = Array.from({ length: 1000 }, (_, index) => ({
-      id: `post-${String(index + 1)}`, slug: `post-${String(index + 1)}`, title: `Capacity article ${String(index + 1)}`,
-      date: new Date(Date.UTC(2026, 0, index + 1)).toISOString(), tags: ['Writing'],
-      content: `## Reading\n\nUnique article ${String(index + 1)}. ${'A paragraph about writing and code. '.repeat(50)}\n\n\`\`\`ts\nconst article = ${String(index + 1)};\n\`\`\``,
-    }));
-    const builder = createDevBuilder({ root, contentSource: {
-      name: ContentSourceName.HACKMD,
-      getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'A large public archive.' }),
-      getPosts: () => Promise.resolve({ posts }),
-    } });
-    await builder.prepare({ installDependencies: false });
-    await builder.fetchContent();
-    const output = join(root, 'public');
-    const started = performance.now();
-    await buildFromVibelog({ vibelogDir: builder.vibelogDir, outDir: output, site: 'https://writer.example.com' });
-    console.info(JSON.stringify({ event: 'capacity_build', postCount: posts.length, durationMs: Math.round(performance.now() - started) }));
-    const directories = await readdir(join(output, 'blog'));
-    expect(directories.filter((name) => name.startsWith('post-'))).toHaveLength(1000);
-    expect(directories.filter((name) => /^\d+$/u.test(name))).toHaveLength(99);
-    expect(directories).not.toContain('1');
-    expect(await readFile(join(output, 'blog', '100', 'index.html'), 'utf8')).toContain('Capacity article 1');
-    for (const slug of ['post-1', 'post-1000']) {
-      expect(await readFile(join(output, 'blog', slug, 'index.html'), 'utf8')).toContain('data-pagefind-body');
-      expect(await readFile(join(output, 'blog', slug, 'index.md'), 'utf8')).toContain('## Reading');
-    }
-    expect((await readFile(join(output, 'rss.xml'), 'utf8')).match(/<item>/gu)).toHaveLength(1000);
-    expect((await readFile(join(output, 'sitemap-0.xml'), 'utf8')).match(/<loc>https:\/\/writer.example.com\/blog\/post-/gu)).toHaveLength(1000);
-    expect((await readFile(join(output, 'llms.txt'), 'utf8')).match(/\/blog\/post-\d+\/index\.md/gu)).toHaveLength(1000);
-    expect(await readdir(join(output, 'pagefind', 'fragment'))).toHaveLength(1000);
-    expect(await stat(join(output, 'pagefind', 'pagefind-component-ui.js'))).toBeTruthy();
-  });
+  it(
+    'renders common HackMD Markdown without adding client scripts',
+    { timeout: 20_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-hackmd-markdown-'));
+      roots.push(root);
+      const content = await readFile(
+        join(import.meta.dirname, 'fixtures', 'content', 'hackmd-compatibility.md'),
+        'utf8',
+      );
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((input: string | URL | Request) => {
+          const url =
+            typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+          if (url.endsWith('/info/@writer'))
+            return Promise.resolve(
+              Response.json({ user: { displayName: 'Writer', biography: '' } }),
+            );
+          if (url.endsWith('/api/@writer/overview'))
+            return Promise.resolve(
+              Response.json({
+                notes: [
+                  {
+                    id: 'compatibility',
+                    title: 'HackMD compatibility',
+                    content: 'Overview summary from HackMD.',
+                    tags: [],
+                    lastchangeAt: '',
+                    publishType: 'view',
+                    publishedAt: '2026-01-01T00:00:00Z',
+                    permalink: 'compatibility',
+                  },
+                ],
+              }),
+            );
+          if (url.endsWith('/compatibility/download'))
+            return Promise.resolve(new Response(content));
+          return Promise.resolve(new Response(null, { status: 404 }));
+        }),
+      );
+      const source = new HackMdSource('writer', { baseUrl: 'http://fixture.test' });
+      const builder = createDevBuilder({ root, contentSource: source });
+      await builder.prepare({ installDependencies: false });
+      await builder.fetchContent();
+      const output = join(root, 'public');
 
-  it('keeps hostile article titles inside safely serialized JSON-LD', { timeout: 20_000 }, async () => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-jsonld-')); roots.push(root);
-    const title = 'An article </script><script>alert(1)</script>';
-    const source: ContentSource = {
-      name: ContentSourceName.HACKMD,
-      getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
-      getPosts: () => Promise.resolve({ posts: [{ id: 'post', title, slug: 'post', date: '2026-01-01T00:00:00Z', content: 'Body.' }] }),
-    };
-    const builder = createDevBuilder({ root, contentSource: source });
-    await builder.prepare({ installDependencies: false });
-    await builder.fetchContent();
-    const output = join(root, 'public');
-    await buildFromVibelog({ vibelogDir: join(root, '.vibelog'), outDir: output, site: 'https://writer.example.com' });
-    const article = await readFile(join(output, 'blog', 'post', 'index.html'), 'utf8');
-    expect(jsonLd(article).headline).toBe(title);
-    expect(/<script type="application\/ld\+json">([^]*?)<\/script>/u.exec(article)?.[1]).not.toContain('<');
-    expect(article).toContain('\\u003c/script>');
-    const markdown = await readFile(join(output, 'blog', 'post', 'index.md'), 'utf8');
-    expect(markdown).toContain('Canonical: https://writer.example.com/blog/post/');
-  });
+      await buildFromVibelog({
+        vibelogDir: join(root, '.vibelog'),
+        outDir: output,
+        site: 'https://writer.example.com',
+      });
 
-  it.each(['live HackMD', 'stored snapshot'] as const)('preserves Markdown and enforces rendering boundaries from %s', { timeout: 25_000 }, async (mode) => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-markdown-fidelity-')); roots.push(root);
-    const content = await readFile(join(import.meta.dirname, 'fixtures', 'content', 'markdown-fidelity.md'), 'utf8');
-    vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      if (url.endsWith('/info/@writer')) return Promise.resolve(Response.json({ user: { displayName: 'Writer', biography: '' } }));
-      if (url.endsWith('/api/@writer/overview')) return Promise.resolve(Response.json({ notes: [{
-        id: 'fidelity', title: 'Markdown fidelity', content: 'Rendering regression fixture.', tags: [],
-        lastchangeAt: '', publishType: 'view', publishedAt: '2026-01-01T00:00:00Z', permalink: 'fidelity',
-      }] }));
-      if (url.endsWith('/fidelity/download')) return Promise.resolve(new Response(content));
-      return Promise.resolve(new Response(null, { status: 404 }));
-    }));
-    const source = new HackMdSource('writer', { baseUrl: 'http://fixture.test' });
-    const builder = createDevBuilder({ root, contentSource: source });
-    await builder.prepare({ installDependencies: false });
-    const summary = await builder.fetchContent();
-    const sourceDir = join(root, 'source');
-    await writeSourceSnapshot(builder.vibelogDir, sourceDir, summary);
-    if (mode === 'stored snapshot') {
-      const postPath = join(sourceDir, 'content', 'blog', 'fidelity.md');
-      const { data } = parseFrontMatter(await readFile(postPath, 'utf8'));
-      // Old snapshots and non-HackMD sources must be safe without the sync sanitizer.
-      await writeFile(postPath, stringifyFrontMatter(content, data));
-    }
-    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('Frozen builds must not fetch content'))));
-    const workDir = join(root, 'compile');
-    const outDir = join(workDir, 'dist');
-    await buildBlog({ sourceDir, design: DEFAULT_DESIGN_V2, workDir, outDir, site: 'https://writer.example.com' });
-    const article = await readFile(join(outDir, 'blog', 'fidelity', 'index.html'), 'utf8');
-    expect(article).toContain('prefix:value and scope:unknown remain complete.');
-    expect(article).toContain(':widget[label]{color="blue"}');
-    expect(article).toContain('::widget[Leaf label]{color="blue"}');
-    expect(article).toContain(':::widget[Container label]{color="blue"}');
-    expect(article).toContain('Container body with **original markup**.');
-    expect(article).toMatch(/<code>a (?:&lt;|&#x3C;) b<\/code>/u);
-    const codeBlocks = [...article.matchAll(/<pre\b[^>]*>([^]*?)<\/pre>/gu)].map((match) => (match[1] ?? '').replace(/<[^>]*>/gu, '').replace(/&#x3C;|&lt;/gu, '<').replaceAll('&gt;', '>'));
-    for (const literal of ['<div>tilde code</div>', '<div>long fence code</div>', '<div>indented code</div>', '<div>quoted code</div>', '[code example](javascript:literal)']) {
-      expect(codeBlocks.join('\n')).toContain(literal);
-    }
-    expect(article).not.toContain('<script>alert');
-    expect(article).not.toContain('<img src="x"');
-    expect(article).not.toMatch(/(?:href|src)="(?:javascript|vbscript|data):/iu);
-    expect(article.match(/href="about:blank#blocked[^"<]*"/gu)).toHaveLength(5);
-    expect(article).toContain('src="about:blank#blocked"');
-    expect(article).toContain('href="https://example.com/"');
-    expect(article).toContain('href="mailto:writer@example.com"');
-    expect(article).toContain('href="/blog/other/"');
-    const markdown = await readFile(join(outDir, 'blog', 'fidelity', 'index.md'), 'utf8');
-    expect(markdown).toContain('`a < b`');
-    expect(markdown).toContain('~~~html\n<div>tilde code</div>');
-  });
-
-  it('renders common HackMD Markdown without adding client scripts', { timeout: 20_000 }, async () => {
-    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-hackmd-markdown-')); roots.push(root);
-    const content = await readFile(join(import.meta.dirname, 'fixtures', 'content', 'hackmd-compatibility.md'), 'utf8');
-    vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      if (url.endsWith('/info/@writer')) return Promise.resolve(Response.json({ user: { displayName: 'Writer', biography: '' } }));
-      if (url.endsWith('/api/@writer/overview')) return Promise.resolve(Response.json({ notes: [{
-        id: 'compatibility',
-        title: 'HackMD compatibility',
-        content: 'Overview summary from HackMD.',
-        tags: [],
-        lastchangeAt: '',
-        publishType: 'view',
-        publishedAt: '2026-01-01T00:00:00Z',
-        permalink: 'compatibility',
-      }] }));
-      if (url.endsWith('/compatibility/download')) return Promise.resolve(new Response(content));
-      return Promise.resolve(new Response(null, { status: 404 }));
-    }));
-    const source = new HackMdSource('writer', { baseUrl: 'http://fixture.test' });
-    const builder = createDevBuilder({ root, contentSource: source });
-    await builder.prepare({ installDependencies: false });
-    await builder.fetchContent();
-    const output = join(root, 'public');
-
-    await buildFromVibelog({ vibelogDir: join(root, '.vibelog'), outDir: output, site: 'https://writer.example.com' });
-
-    const article = await readFile(join(output, 'blog', 'compatibility', 'index.html'), 'utf8');
-    for (const type of ['info', 'success', 'warning', 'danger', 'note', 'tip', 'important', 'caution']) {
-      expect(article).toContain(`callout-${type}`);
-    }
-    expect(article).toContain('<aside aria-label="Background" class="callout callout-info">');
-    expect(article).toContain('<details class="spoiler"><summary class="spoiler-title">Show the answer</summary>');
-    expect(article).toContain('<details class="spoiler"><summary class="spoiler-title">Terminal output</summary>');
-    expect(article).toMatch(/<details class="spoiler" open(?:="")?><summary class="spoiler-title">Open details<\/summary>/u);
-    expect(article).not.toContain('class="ignored"');
-    expect(article).toContain('<mark>important</mark>');
-    expect(article).toContain('<ins>new</ins>');
-    expect(article).toContain('H<sub>2</sub>O');
-    expect(article).toContain('x<sup>2</sup>');
-    expect(article).toContain('<ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>');
-    expect(article).toContain('class="contains-task-list"');
-    expect(article).toContain('data-footnotes');
-    expect(article).toContain('<dl>');
-    expect(article).toContain('<dt>Term</dt>');
-    expect(article).toMatch(/<dd>A concise definition\.\s*<\/dd>/u);
-    expect(article).toContain('✨');
-    expect(article).toContain('<math xmlns="http://www.w3.org/1998/Math/MathML"');
-    expect(article).toContain('class="katex-error"');
-    expect(article).toContain('<mfrac>');
-    expect(article).not.toContain('href="https://example.com/math-probe"');
-    expect(article).not.toContain('href="javascript:');
-    expect(article).not.toContain('src="https://example.com/math-probe.png"');
-    expect(article).toContain('data-language="javascript"');
-    expect(article).toContain('data-line-start="1"');
-    expect(article).toContain('data-line-start="3"');
-    expect(article).toContain('data-line-start="10"');
-    expect(article).toContain('data-line-number="10"');
-    expect(article).toContain('class="line highlighted"');
-    expect(article).toContain('data-language="text"');
-    expect(article).toMatch(/<pre class="astro-code[^"<]*wrap-code/u);
-    expect(article).toContain(':::warning');
-    expect(article).toContain('<blockquote>\n<p>A regular blockquote stays a blockquote.</p>');
-    expect(article).toContain('Keep an inline [TOC] reference visible.');
-    expect(article).not.toMatch(/<p>\[TOC\]<\/p>/u);
-    expect(article).toContain('Custom heading');
-    expect(article).toContain('Unknown directives keep their content.');
-    expect(article).toContain(':::custom[Custom heading]');
-    expect(article).not.toContain('<script>alert');
-    expect(article).toContain('about:blank#blocked-');
-    expect(article).not.toContain('pagefind-component-ui.js');
-    expect(jsonLd(article)).toMatchObject({ '@type': 'BlogPosting', headline: 'HackMD compatibility' });
-    expect(article).toContain('<meta name="description" content="Overview summary from HackMD.">');
-  });
+      const article = await readFile(join(output, 'blog', 'compatibility', 'index.html'), 'utf8');
+      for (const type of [
+        'info',
+        'success',
+        'warning',
+        'danger',
+        'note',
+        'tip',
+        'important',
+        'caution',
+      ]) {
+        expect(article).toContain(`callout-${type}`);
+      }
+      expect(article).toContain('<aside aria-label="Background" class="callout callout-info">');
+      expect(article).toContain(
+        '<details class="spoiler"><summary class="spoiler-title">Show the answer</summary>',
+      );
+      expect(article).toContain(
+        '<details class="spoiler"><summary class="spoiler-title">Terminal output</summary>',
+      );
+      expect(article).toMatch(
+        /<details class="spoiler" open(?:="")?><summary class="spoiler-title">Open details<\/summary>/u,
+      );
+      expect(article).not.toContain('class="ignored"');
+      expect(article).toContain('<mark>important</mark>');
+      expect(article).toContain('<ins>new</ins>');
+      expect(article).toContain('H<sub>2</sub>O');
+      expect(article).toContain('x<sup>2</sup>');
+      expect(article).toContain('<ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>');
+      expect(article).toContain('class="contains-task-list"');
+      expect(article).toContain('data-footnotes');
+      expect(article).toContain('<dl>');
+      expect(article).toContain('<dt>Term</dt>');
+      expect(article).toMatch(/<dd>A concise definition\.\s*<\/dd>/u);
+      expect(article).toContain('✨');
+      expect(article).toContain('<math xmlns="http://www.w3.org/1998/Math/MathML"');
+      expect(article).toContain('class="katex-error"');
+      expect(article).toContain('<mfrac>');
+      expect(article).not.toContain('href="https://example.com/math-probe"');
+      expect(article).not.toContain('href="javascript:');
+      expect(article).not.toContain('src="https://example.com/math-probe.png"');
+      expect(article).toContain('data-language="javascript"');
+      expect(article).toContain('data-line-start="1"');
+      expect(article).toContain('data-line-start="3"');
+      expect(article).toContain('data-line-start="10"');
+      expect(article).toContain('data-line-number="10"');
+      expect(article).toContain('class="line highlighted"');
+      expect(article).toContain('data-language="text"');
+      expect(article).toMatch(/<pre class="astro-code[^"<]*wrap-code/u);
+      expect(article).toContain(':::warning');
+      expect(article).toContain('<blockquote>\n<p>A regular blockquote stays a blockquote.</p>');
+      expect(article).toContain('Keep an inline [TOC] reference visible.');
+      expect(article).not.toMatch(/<p>\[TOC\]<\/p>/u);
+      expect(article).toContain('Custom heading');
+      expect(article).toContain('Unknown directives keep their content.');
+      expect(article).toContain(':::custom[Custom heading]');
+      expect(article).not.toContain('<script>alert');
+      expect(article).toContain('about:blank#blocked-');
+      expect(article).not.toContain('pagefind-component-ui.js');
+      expect(jsonLd(article)).toMatchObject({
+        '@type': 'BlogPosting',
+        headline: 'HackMD compatibility',
+      });
+      expect(article).toContain(
+        '<meta name="description" content="Overview summary from HackMD.">',
+      );
+    },
+  );
 });

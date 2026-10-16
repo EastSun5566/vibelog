@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_DESIGN_V2 } from '@vibelog/core';
-import type { BlogRecord, PublishedReleaseRecord, SyncedPostSummary, ThemeRevisionRecord } from '../src/database.js';
+import type {
+  BlogRecord,
+  PublishedReleaseRecord,
+  SyncedPostSummary,
+  ThemeRevisionRecord,
+} from '../src/database.js';
 import { calculatePublicationDiff, createReleaseSnapshot } from '../src/publication-diff.js';
 
 const post = (slug: string, overrides: Partial<SyncedPostSummary> = {}): SyncedPostSummary => ({
@@ -31,7 +36,14 @@ const blog = (posts: SyncedPostSummary[], overrides: Partial<BlogRecord> = {}): 
   sourceArtifactId: overrides.sourceArtifactId ?? '55555555-5555-4555-8555-555555555555',
   draftArtifactId: overrides.draftArtifactId ?? '66666666-6666-4666-8666-666666666666',
   draftDesignRevisionId: overrides.draftDesignRevisionId ?? '33333333-3333-4333-8333-333333333333',
-  contentProfile: overrides.contentProfile ?? { postCount: posts.length, tagCount: 0, averageLength: 'short', codeUsage: 'none', imageUsage: 'none', mathUsage: 'none' },
+  contentProfile: overrides.contentProfile ?? {
+    postCount: posts.length,
+    tagCount: 0,
+    averageLength: 'short',
+    codeUsage: 'none',
+    imageUsage: 'none',
+    mathUsage: 'none',
+  },
   language: overrides.language ?? 'en',
 });
 const theme = (overrides: Partial<ThemeRevisionRecord> = {}): ThemeRevisionRecord => ({
@@ -45,7 +57,10 @@ const theme = (overrides: Partial<ThemeRevisionRecord> = {}): ThemeRevisionRecor
   createdAt: '2026-01-01T00:00:00.000Z',
   ...overrides,
 });
-const release = (source: BlogRecord, overrides: Partial<PublishedReleaseRecord> = {}): PublishedReleaseRecord => ({
+const release = (
+  source: BlogRecord,
+  overrides: Partial<PublishedReleaseRecord> = {},
+): PublishedReleaseRecord => ({
   id: '44444444-4444-4444-8444-444444444444',
   blogId: source.id,
   themeRevisionId: theme().id,
@@ -60,11 +75,23 @@ const release = (source: BlogRecord, overrides: Partial<PublishedReleaseRecord> 
 describe('publication diff', () => {
   it('describes a first publication without exposing internal identifiers', () => {
     const draft = blog([post('one'), post('hidden', { included: false })]);
-    expect(calculatePublicationDiff(draft, theme(), null)).toMatchObject({ mode: 'first', includedCount: 1, rebuilt: false });
+    expect(calculatePublicationDiff(draft, theme(), null)).toMatchObject({
+      mode: 'first',
+      includedCount: 1,
+      rebuilt: false,
+    });
   });
 
   it('classifies added, updated and removed articles by slug', () => {
-    const liveBlog = blog([post('kept'), post('changed'), post('renamed-old'), post('excluded-both', { included: false })], { contentVersion: 1 });
+    const liveBlog = blog(
+      [
+        post('kept'),
+        post('changed'),
+        post('renamed-old'),
+        post('excluded-both', { included: false }),
+      ],
+      { contentVersion: 1 },
+    );
     const draft = blog([
       post('kept'),
       post('changed', { contentHash: 'b'.repeat(64) }),
@@ -78,17 +105,42 @@ describe('publication diff', () => {
   });
 
   it('tracks identity and theme independently of article changes', () => {
-    const liveBlog = blog([post('one')], { title: 'Old title', description: 'Old description', author: 'Old author', language: 'zh-Hant', contentVersion: 1 });
-    const diff = calculatePublicationDiff(blog([post('one')]), theme({ id: '55555555-5555-4555-8555-555555555555' }), release(liveBlog));
+    const liveBlog = blog([post('one')], {
+      title: 'Old title',
+      description: 'Old description',
+      author: 'Old author',
+      language: 'zh-Hant',
+      contentVersion: 1,
+    });
+    const diff = calculatePublicationDiff(
+      blog([post('one')]),
+      theme({ id: '55555555-5555-4555-8555-555555555555' }),
+      release(liveBlog),
+    );
     expect(diff.identityChanges).toEqual(['title', 'description', 'author', 'language']);
     expect(diff.themeChanged).toBe(true);
     expect(diff.rebuilt).toBe(false);
   });
 
   it('ignores tag ordering and a newly introduced digest on a legacy manifest', () => {
-    const livePost = post('one', { tags: [{ name: 'Writing', slug: 'writing' }, { name: 'AI', slug: 'ai' }], contentHash: undefined });
-    const draftPost = post('one', { tags: [{ name: 'AI', slug: 'ai' }, { name: 'Writing', slug: 'writing' }] });
-    const diff = calculatePublicationDiff(blog([draftPost]), theme(), release(blog([livePost], { contentVersion: 1 })));
+    const livePost = post('one', {
+      tags: [
+        { name: 'Writing', slug: 'writing' },
+        { name: 'AI', slug: 'ai' },
+      ],
+      contentHash: undefined,
+    });
+    const draftPost = post('one', {
+      tags: [
+        { name: 'AI', slug: 'ai' },
+        { name: 'Writing', slug: 'writing' },
+      ],
+    });
+    const diff = calculatePublicationDiff(
+      blog([draftPost]),
+      theme(),
+      release(blog([livePost], { contentVersion: 1 })),
+    );
     expect(diff.updated).toEqual([]);
     expect(diff.rebuilt).toBe(true);
   });
@@ -104,12 +156,20 @@ describe('publication diff', () => {
 
   it('marks semantic-equivalent content-version changes as a rebuilt draft', () => {
     const liveBlog = blog([post('one')], { contentVersion: 1 });
-    expect(calculatePublicationDiff(blog([post('one')]), theme(), release(liveBlog))).toMatchObject({ mode: 'tracked', rebuilt: true });
+    expect(calculatePublicationDiff(blog([post('one')]), theme(), release(liveBlog))).toMatchObject(
+      { mode: 'tracked', rebuilt: true },
+    );
   });
 
   it('falls back safely for releases created before snapshot tracking', () => {
     const draft = blog([post('one')]);
-    expect(calculatePublicationDiff(draft, theme(), release(draft, { snapshot: null, contentVersion: 1 }))).toMatchObject({
+    expect(
+      calculatePublicationDiff(
+        draft,
+        theme(),
+        release(draft, { snapshot: null, contentVersion: 1 }),
+      ),
+    ).toMatchObject({
       mode: 'legacy',
       rebuilt: true,
       added: [],

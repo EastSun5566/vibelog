@@ -1,7 +1,14 @@
 import type { ClientRoot } from './dom.js';
 
 function syncAriaInvalid(control: EventTarget | null): void {
-  if (!(control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)) return;
+  if (
+    !(
+      control instanceof HTMLInputElement ||
+      control instanceof HTMLTextAreaElement ||
+      control instanceof HTMLSelectElement
+    )
+  )
+    return;
   if (!control.validity.valid) control.setAttribute('aria-invalid', 'true');
   else control.removeAttribute('aria-invalid');
 }
@@ -10,12 +17,20 @@ export function initializeValidation(root: ClientRoot): void {
   for (const form of root.querySelectorAll<HTMLFormElement>('form')) {
     if (form.dataset.validationBound) continue;
     form.dataset.validationBound = 'true';
-    form.addEventListener('invalid', (event) => {
-      syncAriaInvalid(event.target);
-    }, true);
-    form.addEventListener('blur', (event) => {
-      syncAriaInvalid(event.target);
-    }, true);
+    form.addEventListener(
+      'invalid',
+      (event) => {
+        syncAriaInvalid(event.target);
+      },
+      true,
+    );
+    form.addEventListener(
+      'blur',
+      (event) => {
+        syncAriaInvalid(event.target);
+      },
+      true,
+    );
     form.addEventListener('input', (event) => {
       syncAriaInvalid(event.target);
     });

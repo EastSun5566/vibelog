@@ -9,13 +9,20 @@ const HOME_REGIONS = new Set(['main', 'aside', 'lead', 'rail']);
 
 function pointer(input: string): string[] {
   if (!input.startsWith('/')) throw new Error('Patch path must be a JSON pointer');
-  const segments = input.slice(1).split('/').map((segment) => {
-    if (/~(?![01])/u.test(segment)) throw new Error('Patch path has an invalid escape');
-    const key = segment.replaceAll('~1', '/').replaceAll('~0', '~');
-    if (FORBIDDEN_KEYS.has(key)) throw new Error('Patch path contains a reserved key');
-    return key;
-  });
-  if (!ROOT_KEYS.has(segments[0] ?? '') || (segments[0] !== 'description' && segments.length < 2) || (segments[0] === 'description' && segments.length !== 1)) {
+  const segments = input
+    .slice(1)
+    .split('/')
+    .map((segment) => {
+      if (/~(?![01])/u.test(segment)) throw new Error('Patch path has an invalid escape');
+      const key = segment.replaceAll('~1', '/').replaceAll('~0', '~');
+      if (FORBIDDEN_KEYS.has(key)) throw new Error('Patch path contains a reserved key');
+      return key;
+    });
+  if (
+    !ROOT_KEYS.has(segments[0] ?? '') ||
+    (segments[0] !== 'description' && segments.length < 2) ||
+    (segments[0] === 'description' && segments.length !== 1)
+  ) {
     throw new Error('Patch path is outside editable design fields');
   }
   return segments;
@@ -33,11 +40,15 @@ function arrayIndex(key: string, length: number, allowEnd: boolean): number {
   if (key === '-' && allowEnd) return length;
   if (!/^(0|[1-9][0-9]*)$/u.test(key)) throw new Error('Patch array index is invalid');
   const index = Number(key);
-  if (!Number.isSafeInteger(index) || index > length || (!allowEnd && index === length)) throw new Error('Patch array index is out of bounds');
+  if (!Number.isSafeInteger(index) || index > length || (!allowEnd && index === length))
+    throw new Error('Patch array index is out of bounds');
   return index;
 }
 
-function parentAt(document: unknown, segments: string[]): { parent: Record<string, unknown> | unknown[]; key: string } {
+function parentAt(
+  document: unknown,
+  segments: string[],
+): { parent: Record<string, unknown> | unknown[]; key: string } {
   let current: unknown = document;
   for (const key of segments.slice(0, -1)) {
     if (!current || typeof current !== 'object') throw new Error('Patch parent does not exist');
@@ -51,7 +62,12 @@ function parentAt(document: unknown, segments: string[]): { parent: Record<strin
   return { parent: current as Record<string, unknown> | unknown[], key: segments.at(-1) ?? '' };
 }
 
-function mutate(document: unknown, segments: string[], operation: 'add' | 'replace' | 'remove', value?: unknown): unknown {
+function mutate(
+  document: unknown,
+  segments: string[],
+  operation: 'add' | 'replace' | 'remove',
+  value?: unknown,
+): unknown {
   const { parent, key } = parentAt(document, segments);
   if (Array.isArray(parent)) {
     const index = arrayIndex(key, parent.length, operation === 'add');
@@ -72,19 +88,29 @@ function mutate(document: unknown, segments: string[], operation: 'add' | 'repla
 }
 
 function isHomeRegionIndex(segments: string[]): boolean {
-  return segments.length === 5 && segments[0] === 'pages' && segments[1] === 'home' && segments[2] === 'regions' && HOME_REGIONS.has(segments[3] ?? '');
+  return (
+    segments.length === 5 &&
+    segments[0] === 'pages' &&
+    segments[1] === 'home' &&
+    segments[2] === 'regions' &&
+    HOME_REGIONS.has(segments[3] ?? '')
+  );
 }
 
 function parsePatches(input: unknown) {
   if (!Array.isArray(input)) throw new Error('Design patch must contain 1–16 operations');
   let bytes: number;
-  try { bytes = Buffer.byteLength(JSON.stringify(input)); }
-  catch { throw new Error('Design patch is not JSON'); }
+  try {
+    bytes = Buffer.byteLength(JSON.stringify(input));
+  } catch {
+    throw new Error('Design patch is not JSON');
+  }
   if (bytes > MAX_PATCH_BYTES) throw new Error('Design patch exceeds 32 KiB');
   const patches = designPatchesV2Schema.parse(input);
   for (const patch of patches) {
     if (patch.op === 'move') {
-      if (!isHomeRegionIndex(pointer(patch.from)) || !isHomeRegionIndex(pointer(patch.path))) throw new Error('Move is limited to homepage region entries');
+      if (!isHomeRegionIndex(pointer(patch.from)) || !isHomeRegionIndex(pointer(patch.path)))
+        throw new Error('Move is limited to homepage region entries');
     } else if (patch.op === 'add' || patch.op === 'replace') {
       assertSafeValue(patch.value);
     }
@@ -103,7 +129,12 @@ export function applyDesignPatchV2(base: BlogDesignSpecV2, input: unknown): Blog
       const moved = mutate(candidate, from, 'remove');
       mutate(candidate, path, 'add', moved);
     } else {
-      mutate(candidate, path, patch.op, patch.op === 'remove' ? undefined : structuredClone(patch.value));
+      mutate(
+        candidate,
+        path,
+        patch.op,
+        patch.op === 'remove' ? undefined : structuredClone(patch.value),
+      );
     }
   }
   return normalizeDesignV2(validateBlogDesignSpecV2(candidate));

@@ -16,17 +16,23 @@ export class ApplicationImage extends pulumi.ComponentResource {
     super('vibelog:infra:ApplicationImage', name, {}, opts);
     const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url));
     const tag = pulumi.interpolate`${args.repository}:pulumi-${args.environment}`;
-    this.image = new dockerBuild.Image(`${name}-build`, {
-      context: { location: repositoryRoot },
-      dockerfile: { location: fileURLToPath(new URL('../../../packages/app/Dockerfile', import.meta.url)) },
-      platforms: [dockerBuild.Platform.Linux_amd64],
-      tags: [tag],
-      push: true,
-      buildOnPreview: false,
-    }, {
-      parent: this,
-      retainOnDelete: true,
-    });
+    this.image = new dockerBuild.Image(
+      `${name}-build`,
+      {
+        context: { location: repositoryRoot },
+        dockerfile: {
+          location: fileURLToPath(new URL('../../../packages/app/Dockerfile', import.meta.url)),
+        },
+        platforms: [dockerBuild.Platform.Linux_amd64],
+        tags: [tag],
+        push: true,
+        buildOnPreview: false,
+      },
+      {
+        parent: this,
+        retainOnDelete: true,
+      },
+    );
     this.reference = this.image.ref;
     this.registerOutputs({ reference: this.reference });
   }

@@ -13,7 +13,8 @@ export const DESIGN_CATALOG = {
     contentWidth: ['narrow', 'medium', 'wide'],
     density: ['compact', 'comfortable'],
     radius: ['none', 'soft', 'round'],
-    colors: 'Exactly six #RRGGBB colors. Text and accent must each have 4.5 contrast against background.',
+    colors:
+      'Exactly six #RRGGBB colors. Text and accent must each have 4.5 contrast against background.',
   },
   chrome: {
     header: {

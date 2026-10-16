@@ -17,7 +17,7 @@ export interface ApiPayload {
 export async function readPayload(response: Response): Promise<ApiPayload> {
   try {
     const payload: unknown = await response.json();
-    return payload && typeof payload === 'object' ? payload as ApiPayload : {};
+    return payload && typeof payload === 'object' ? (payload as ApiPayload) : {};
   } catch {
     return {};
   }

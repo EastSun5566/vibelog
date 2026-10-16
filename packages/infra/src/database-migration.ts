@@ -12,19 +12,24 @@ export class DatabaseMigration extends pulumi.ComponentResource {
 
   constructor(name: string, args: DatabaseMigrationArgs, opts?: pulumi.ComponentResourceOptions) {
     super('vibelog:infra:DatabaseMigration', name, {}, opts);
-    const migrate = 'pnpm --filter @vibelog/core build && pnpm --filter @vibelog/app build && pnpm --filter @vibelog/app db:migrate';
-    this.run = new command.local.Command(`${name}-run`, {
-      create: migrate,
-      update: migrate,
-      dir: '../..',
-      environment: { DATABASE_MIGRATION_URL: args.databaseUrl },
-      triggers: [args.imageDigest],
-      logging: command.local.Logging.None,
-      addPreviousOutputInEnv: false,
-    }, {
-      parent: this,
-      additionalSecretOutputs: ['stdout', 'stderr'],
-    });
+    const migrate =
+      'pnpm --filter @vibelog/core build && pnpm --filter @vibelog/app build && pnpm --filter @vibelog/app db:migrate';
+    this.run = new command.local.Command(
+      `${name}-run`,
+      {
+        create: migrate,
+        update: migrate,
+        dir: '../..',
+        environment: { DATABASE_MIGRATION_URL: args.databaseUrl },
+        triggers: [args.imageDigest],
+        logging: command.local.Logging.None,
+        addPreviousOutputInEnv: false,
+      },
+      {
+        parent: this,
+        additionalSecretOutputs: ['stdout', 'stderr'],
+      },
+    );
     this.registerOutputs();
   }
 }

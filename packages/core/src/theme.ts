@@ -4,11 +4,17 @@ export { contrastRatio } from './design/color.js';
 
 const HEX = /^#[0-9a-f]{6}$/i;
 const ENUMS = {
-  preset: ['minimal', 'editorial', 'notebook'], appearance: ['light', 'dark'],
-  bodyFont: ['system-sans', 'system-serif', 'system-mono'], headingFont: ['system-sans', 'system-serif', 'system-mono'],
-  scale: ['compact', 'comfortable', 'large'], contentWidth: ['narrow', 'medium', 'wide'],
-  density: ['compact', 'comfortable'], radius: ['none', 'soft', 'round'],
-  headerStyle: ['compact', 'centered'], postListStyle: ['divided', 'cards', 'numbered'], codeBlockStyle: ['plain', 'panel'],
+  preset: ['minimal', 'editorial', 'notebook'],
+  appearance: ['light', 'dark'],
+  bodyFont: ['system-sans', 'system-serif', 'system-mono'],
+  headingFont: ['system-sans', 'system-serif', 'system-mono'],
+  scale: ['compact', 'comfortable', 'large'],
+  contentWidth: ['narrow', 'medium', 'wide'],
+  density: ['compact', 'comfortable'],
+  radius: ['none', 'soft', 'round'],
+  headerStyle: ['compact', 'centered'],
+  postListStyle: ['divided', 'cards', 'numbered'],
+  codeBlockStyle: ['plain', 'panel'],
 } as const;
 const CONFIG_KEYS = [...Object.keys(ENUMS), 'colors', 'description'].sort();
 const COLOR_KEYS = ['accent', 'background', 'border', 'muted', 'surface', 'text'];
@@ -20,41 +26,72 @@ const LEGACY_VARIANTS = {
 } as const;
 
 export const DEFAULT_THEME: ThemeConfig = {
-  preset: 'minimal', appearance: 'light',
-  colors: { background: '#ffffff', surface: '#f7f7f5', text: '#1f2328', muted: '#59636e', accent: '#075985', border: '#d0d7de' },
-  bodyFont: 'system-sans', headingFont: 'system-sans', scale: 'comfortable', contentWidth: 'medium', density: 'comfortable', radius: 'soft',
-  headerStyle: 'compact', postListStyle: 'divided', codeBlockStyle: 'plain',
+  preset: 'minimal',
+  appearance: 'light',
+  colors: {
+    background: '#ffffff',
+    surface: '#f7f7f5',
+    text: '#1f2328',
+    muted: '#59636e',
+    accent: '#075985',
+    border: '#d0d7de',
+  },
+  bodyFont: 'system-sans',
+  headingFont: 'system-sans',
+  scale: 'comfortable',
+  contentWidth: 'medium',
+  density: 'comfortable',
+  radius: 'soft',
+  headerStyle: 'compact',
+  postListStyle: 'divided',
+  codeBlockStyle: 'plain',
   description: 'A clear, quiet theme that keeps the writing first.',
 };
 
 function assertExactKeys(value: Record<string, unknown>, expected: string[], label: string): void {
   const actual = Object.keys(value).sort();
-  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) throw new Error(`${label} contains missing or unknown fields`);
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index]))
+    throw new Error(`${label} contains missing or unknown fields`);
 }
 
 export function validateThemeConfig(input: unknown): ThemeConfig {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Theme must be an object');
+  if (!input || typeof input !== 'object' || Array.isArray(input))
+    throw new Error('Theme must be an object');
   const inputValue = input as Record<string, unknown>;
   const variantCount = V2_KEYS.filter((key) => Object.hasOwn(inputValue, key)).length;
-  if (variantCount !== 0 && variantCount !== V2_KEYS.length) throw new Error('Theme contains an incomplete V2 variant set');
+  if (variantCount !== 0 && variantCount !== V2_KEYS.length)
+    throw new Error('Theme contains an incomplete V2 variant set');
   if (!ENUMS.preset.includes(inputValue.preset as never)) throw new Error('Invalid theme preset');
-  const value: Record<string, unknown> = variantCount === 0
-    ? { ...inputValue, ...LEGACY_VARIANTS[inputValue.preset as keyof typeof LEGACY_VARIANTS] }
-    : inputValue;
+  const value: Record<string, unknown> =
+    variantCount === 0
+      ? { ...inputValue, ...LEGACY_VARIANTS[inputValue.preset as keyof typeof LEGACY_VARIANTS] }
+      : inputValue;
   assertExactKeys(value, CONFIG_KEYS, 'Theme');
-  for (const [key, allowed] of Object.entries(ENUMS)) if (!allowed.includes(value[key] as never)) throw new Error(`Invalid theme ${key}`);
-  if (!value.colors || typeof value.colors !== 'object' || Array.isArray(value.colors)) throw new Error('Theme colors must be an object');
+  for (const [key, allowed] of Object.entries(ENUMS))
+    if (!allowed.includes(value[key] as never)) throw new Error(`Invalid theme ${key}`);
+  if (!value.colors || typeof value.colors !== 'object' || Array.isArray(value.colors))
+    throw new Error('Theme colors must be an object');
   const colors = value.colors as Record<string, unknown>;
   assertExactKeys(colors, COLOR_KEYS, 'Theme colors');
-  for (const key of COLOR_KEYS) if (typeof colors[key] !== 'string' || !HEX.test(colors[key])) throw new Error(`Invalid theme color: ${key}`);
-  if (typeof value.description !== 'string' || value.description.trim().length < 1 || value.description.length > 240) throw new Error('Theme description must be between 1 and 240 characters');
-  if (contrastRatio(colors.text as string, colors.background as string) < 4.5) throw new Error('Theme text does not have enough contrast against the background');
-  if (contrastRatio(colors.accent as string, colors.background as string) < 4.5) throw new Error('Theme links do not have enough contrast against the background');
+  for (const key of COLOR_KEYS)
+    if (typeof colors[key] !== 'string' || !HEX.test(colors[key]))
+      throw new Error(`Invalid theme color: ${key}`);
+  if (
+    typeof value.description !== 'string' ||
+    value.description.trim().length < 1 ||
+    value.description.length > 240
+  )
+    throw new Error('Theme description must be between 1 and 240 characters');
+  if (contrastRatio(colors.text as string, colors.background as string) < 4.5)
+    throw new Error('Theme text does not have enough contrast against the background');
+  if (contrastRatio(colors.accent as string, colors.background as string) < 4.5)
+    throw new Error('Theme links do not have enough contrast against the background');
   return structuredClone(value) as unknown as ThemeConfig;
 }
 
 const FONT_STACKS = {
-  'system-sans': 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  'system-sans':
+    'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   'system-serif': 'ui-serif, Georgia, Cambria, "Times New Roman", serif',
   'system-mono': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
 };
@@ -191,11 +228,16 @@ const MARKDOWN_STYLES = `/* Extended Markdown */
 .prose .katex-error { color: var(--theme-accent); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 `;
 
-interface RenderThemeCssOptions { includeLegacyVariants?: boolean }
+interface RenderThemeCssOptions {
+  includeLegacyVariants?: boolean;
+}
 
 export function renderThemeCss(input: ThemeConfig, options: RenderThemeCssOptions = {}): string {
   const theme = validateThemeConfig(input);
-  const variants = options.includeLegacyVariants === false ? '' : `${PRESETS[theme.preset]}
+  const variants =
+    options.includeLegacyVariants === false
+      ? ''
+      : `${PRESETS[theme.preset]}
 ${HEADER_STYLES[theme.headerStyle]}
 ${POST_LIST_STYLES[theme.postListStyle]}
 ${CODE_BLOCK_STYLES[theme.codeBlockStyle]}`;

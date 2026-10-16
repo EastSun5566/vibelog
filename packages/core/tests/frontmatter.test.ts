@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { parseFrontMatter, stringifyFrontMatter } from '../src/core/frontmatter.js';
 
 describe('content front matter', () => {
-  it.each(['js', 'javascript', 'JS', 'JavaScript'])('rejects %s in parsing and serialization', (language) => {
-    const input = `---${language}\n({ title: 'Not data' })\n---\nArticle body`;
-    expect(() => parseFrontMatter(input)).toThrow('JavaScript front matter is not supported');
-    expect(() => stringifyFrontMatter(input, { title: 'Writer title' })).toThrow('JavaScript front matter is not supported');
-  });
+  it.each(['js', 'javascript', 'JS', 'JavaScript'])(
+    'rejects %s in parsing and serialization',
+    (language) => {
+      const input = `---${language}\n({ title: 'Not data' })\n---\nArticle body`;
+      expect(() => parseFrontMatter(input)).toThrow('JavaScript front matter is not supported');
+      expect(() => stringifyFrontMatter(input, { title: 'Writer title' })).toThrow(
+        'JavaScript front matter is not supported',
+      );
+    },
+  );
 
   it.each([
     ['yaml', 'title: Original\ncustom: retained'],

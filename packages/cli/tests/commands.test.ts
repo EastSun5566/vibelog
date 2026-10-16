@@ -1,31 +1,63 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AgentClient, CliError } from '../src/client.js';
 import { run } from '../src/commands.js';
-import { parsePairing, type Credentials, type CredentialStore, type PendingPairing } from '../src/credentials.js';
+import {
+  parsePairing,
+  type Credentials,
+  type CredentialStore,
+  type PendingPairing,
+} from '../src/credentials.js';
 
 const store = (authorized = true): CredentialStore => {
-  let credentials: Credentials | null = authorized ? { token: 'private-test-grant', expiresAt: '2099-01-01' } : null;
+  let credentials: Credentials | null = authorized
+    ? { token: 'private-test-grant', expiresAt: '2099-01-01' }
+    : null;
   let pairing: PendingPairing | null = null;
   return {
-    get: vi.fn(() => Promise.resolve(credentials)), set: vi.fn((value: Credentials) => { credentials = value; return Promise.resolve(); }),
-    delete: vi.fn(() => { credentials = null; return Promise.resolve(); }), check: vi.fn(() => Promise.resolve()),
+    get: vi.fn(() => Promise.resolve(credentials)),
+    set: vi.fn((value: Credentials) => {
+      credentials = value;
+      return Promise.resolve();
+    }),
+    delete: vi.fn(() => {
+      credentials = null;
+      return Promise.resolve();
+    }),
+    check: vi.fn(() => Promise.resolve()),
     getPairing: vi.fn(() => Promise.resolve(pairing ? structuredClone(pairing) : null)),
-    setPairing: vi.fn((value: PendingPairing) => { pairing = structuredClone(value); return Promise.resolve(); }),
-    deletePairing: vi.fn(() => { pairing = null; return Promise.resolve(); }),
+    setPairing: vi.fn((value: PendingPairing) => {
+      pairing = structuredClone(value);
+      return Promise.resolve();
+    }),
+    deletePairing: vi.fn(() => {
+      pairing = null;
+      return Promise.resolve();
+    }),
   };
 };
-const pairingResponse = { deviceCode: 'd'.repeat(43), userCode: 'AABBCCDD00', authorizationUrl: 'https://vibelog.org/agent/authorize?code=AABBCCDD00', expiresAt: '2099-01-01' };
+const pairingResponse = {
+  deviceCode: 'd'.repeat(43),
+  userCode: 'AABBCCDD00',
+  authorizationUrl: 'https://vibelog.org/agent/authorize?code=AABBCCDD00',
+  expiresAt: '2099-01-01',
+};
 describe('agent CLI', () => {
   it('help names the public scoped package without loading credentials', async () => {
-    const write = vi.fn(); await run(['--help'], { write }); expect(write).toHaveBeenCalledWith(expect.stringContaining('@vibelog/cli'));
+    const write = vi.fn();
+    await run(['--help'], { write });
+    expect(write).toHaveBeenCalledWith(expect.stringContaining('@vibelog/cli'));
   });
   it('reuses authorization and passes through old and new service payloads without creating work', async () => {
-    const fetcher = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json({ permission: 'draft:read-write', expiresAt: '2099-01-01' }))
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({ permission: 'draft:read-write', expiresAt: '2099-01-01' }),
+      )
       .mockResolvedValueOnce(Response.json({ blog: null, sourceReady: false, draftReady: false }))
       .mockResolvedValueOnce(Response.json({ blog: null, nextActions: [{ action: 'connect' }] }));
     const write = vi.fn<(value: unknown) => void>();
-    for (const command of ['status', 'context', 'context']) expect(await run([command], { store: store(), fetcher, write })).toBe(0);
+    for (const command of ['status', 'context', 'context'])
+      expect(await run([command], { store: store(), fetcher, write })).toBe(0);
     expect(write.mock.calls.map(([value]) => value)).toEqual([
       { permission: 'draft:read-write', expiresAt: '2099-01-01' },
       { blog: null, sourceReady: false, draftReady: false },
@@ -34,220 +66,584 @@ describe('agent CLI', () => {
     expect(fetcher.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true);
   });
   it.each(['login_required', 'agent_unauthorized', 'secure_storage_unavailable'])(
-    'reports %s without silently pairing again', async (code) => {
+    'reports %s without silently pairing again',
+    async (code) => {
       const credentials = store();
       if (code === 'login_required') credentials.get = () => Promise.resolve(null);
-      if (code === 'secure_storage_unavailable') credentials.get = () => Promise.reject(new Error('locked'));
-      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ error: { code, message: 'Authorization unavailable.' } }, { status: 401 }));
-      await expect(run(['status'], { store: credentials, fetcher })).rejects.toMatchObject({ code, recovery: { action: code === 'secure_storage_unavailable' ? 'check_secure_storage' : 'login' } });
-      expect(fetcher.mock.calls.every(([url]) => typeof url === 'string' && url.endsWith('/session'))).toBe(true);
+      if (code === 'secure_storage_unavailable')
+        credentials.get = () => Promise.reject(new Error('locked'));
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          Response.json(
+            { error: { code, message: 'Authorization unavailable.' } },
+            { status: 401 },
+          ),
+        );
+      await expect(run(['status'], { store: credentials, fetcher })).rejects.toMatchObject({
+        code,
+        recovery: {
+          action: code === 'secure_storage_unavailable' ? 'check_secure_storage' : 'login',
+        },
+      });
+      expect(
+        fetcher.mock.calls.every(([url]) => typeof url === 'string' && url.endsWith('/session')),
+      ).toBe(true);
       expect(fetcher).toHaveBeenCalledTimes(code === 'agent_unauthorized' ? 1 : 0);
     },
   );
   it('stores the approved token without printing it or the private device code', async () => {
-    const credentials = store(false); const write = vi.fn();
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(pairingResponse))
-      .mockResolvedValueOnce(Response.json({ status: 'approved', token: 'private-grant', expiresAt: '2099-01-01' }));
-    expect(await run(['login', '--draft-only'], { store: credentials, fetcher, write, sleep: () => Promise.resolve() })).toBe(0);
-    expect(vi.mocked(credentials.set)).toHaveBeenCalledWith({ token: 'private-grant', expiresAt: '2099-01-01' });
-    expect(JSON.stringify(write.mock.calls)).not.toContain('private-grant'); expect(JSON.stringify(write.mock.calls)).not.toContain(pairingResponse.deviceCode);
+    const credentials = store(false);
+    const write = vi.fn();
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(pairingResponse))
+      .mockResolvedValueOnce(
+        Response.json({ status: 'approved', token: 'private-grant', expiresAt: '2099-01-01' }),
+      );
+    expect(
+      await run(['login', '--draft-only'], {
+        store: credentials,
+        fetcher,
+        write,
+        sleep: () => Promise.resolve(),
+      }),
+    ).toBe(0);
+    expect(vi.mocked(credentials.set)).toHaveBeenCalledWith({
+      token: 'private-grant',
+      expiresAt: '2099-01-01',
+    });
+    expect(JSON.stringify(write.mock.calls)).not.toContain('private-grant');
+    expect(JSON.stringify(write.mock.calls)).not.toContain(pairingResponse.deviceCode);
   });
   it('waits after creation and pending responses even when the transport has latency', async () => {
-    const credentials = store(false); const polls: number[] = []; const delays: number[] = []; let time = 0;
+    const credentials = store(false);
+    const polls: number[] = [];
+    const delays: number[] = [];
+    let time = 0;
     const fetcher = vi.fn<typeof fetch>().mockImplementation((url) => {
       time += 200;
-      if (url === 'https://vibelog.org/api/agent/v1/pairings') return Promise.resolve(Response.json(pairingResponse));
+      if (url === 'https://vibelog.org/api/agent/v1/pairings')
+        return Promise.resolve(Response.json(pairingResponse));
       polls.push(time);
-      return Promise.resolve(Response.json(polls.length === 1 ? { status: 'pending' } : { status: 'approved', token: 'private-grant', expiresAt: '2099-01-01' }));
+      return Promise.resolve(
+        Response.json(
+          polls.length === 1
+            ? { status: 'pending' }
+            : { status: 'approved', token: 'private-grant', expiresAt: '2099-01-01' },
+        ),
+      );
     });
-    expect(await run(['login', '--draft-only'], { store: credentials, fetcher, write: vi.fn(), now: () => time, sleep: (ms) => { time += ms; delays.push(ms); return Promise.resolve(); } })).toBe(0);
-    expect(delays).toEqual([5000, 5000]); expect(polls).toEqual([5400, 10_600]);
+    expect(
+      await run(['login', '--draft-only'], {
+        store: credentials,
+        fetcher,
+        write: vi.fn(),
+        now: () => time,
+        sleep: (ms) => {
+          time += ms;
+          delays.push(ms);
+          return Promise.resolve();
+        },
+      }),
+    ).toBe(0);
+    expect(delays).toEqual([5000, 5000]);
+    expect(polls).toEqual([5400, 10_600]);
   });
   it('revokes an approved grant when its expiry is invalid without saving or printing it', async () => {
-    const credentials = store(false); const write = vi.fn(); await credentials.setPairing(pairingResponse);
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ status: 'approved', token: 'private-grant', expiresAt: 'not-a-date' }))
+    const credentials = store(false);
+    const write = vi.fn();
+    await credentials.setPairing(pairingResponse);
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({ status: 'approved', token: 'private-grant', expiresAt: 'not-a-date' }),
+      )
       .mockRejectedValueOnce(new Error('revoke interrupted'));
-    await expect(run(['login', '--no-wait', '--draft-only'], { store: credentials, fetcher, write })).rejects.toMatchObject({ code: 'invalid_response' });
+    await expect(
+      run(['login', '--no-wait', '--draft-only'], { store: credentials, fetcher, write }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
     expect(fetcher.mock.calls[1]?.[0]).toBe('https://vibelog.org/api/agent/v1/session');
-    expect(fetcher.mock.calls[1]?.[1]).toMatchObject({ method: 'DELETE', redirect: 'error', headers: { Authorization: 'Bearer private-grant' } });
-    expect(credentials.set).not.toHaveBeenCalled(); expect(await credentials.getPairing()).not.toBeNull(); expect(write).not.toHaveBeenCalled();
+    expect(fetcher.mock.calls[1]?.[1]).toMatchObject({
+      method: 'DELETE',
+      redirect: 'error',
+      headers: { Authorization: 'Bearer private-grant' },
+    });
+    expect(credentials.set).not.toHaveBeenCalled();
+    expect(await credentials.getPairing()).not.toBeNull();
+    expect(write).not.toHaveBeenCalled();
   });
   it('starts immediately, resumes the same pairing across invocations and only clears it after saving the grant', async () => {
-    const credentials = store(false); const write = vi.fn(); const pause = vi.fn(); let time = 0;
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(pairingResponse))
+    const credentials = store(false);
+    const write = vi.fn();
+    const pause = vi.fn();
+    let time = 0;
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(pairingResponse))
       .mockResolvedValueOnce(Response.json({ status: 'pending' }))
-      .mockResolvedValueOnce(Response.json({ status: 'approved', token: 'private-grant', expiresAt: '2099-01-01' }));
+      .mockResolvedValueOnce(
+        Response.json({ status: 'approved', token: 'private-grant', expiresAt: '2099-01-01' }),
+      );
     const runtime = { store: credentials, fetcher, write, sleep: pause, now: () => time };
     expect(await run(['login', '--no-wait', '--draft-only'], runtime)).toBe(0);
-    expect(fetcher).toHaveBeenCalledTimes(1); expect(pause).not.toHaveBeenCalled();
-    expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'approval_required', expiresAt: '1970-01-01T00:10:00.000Z', retryAfterSeconds: 5 }));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(pause).not.toHaveBeenCalled();
+    expect(write).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'approval_required',
+        expiresAt: '1970-01-01T00:10:00.000Z',
+        retryAfterSeconds: 5,
+      }),
+    );
     expect(await run(['login', '--no-wait', '--draft-only'], runtime)).toBe(0);
     expect(fetcher).toHaveBeenCalledTimes(1);
     time = 5000;
     expect(await run(['login', '--no-wait', '--draft-only'], runtime)).toBe(0);
-    expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'approval_required', retryAfterSeconds: 5 }));
+    expect(write).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'approval_required', retryAfterSeconds: 5 }),
+    );
     // A rapid rerun respects the persisted polling interval without another request.
-    expect(await run(['login', '--no-wait', '--draft-only'], runtime)).toBe(0); expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(await run(['login', '--no-wait', '--draft-only'], runtime)).toBe(0);
+    expect(fetcher).toHaveBeenCalledTimes(2);
     time = 10_000;
     expect(await run(['login', '--no-wait', '--draft-only'], runtime)).toBe(0);
     expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'authorized' }));
-    expect(await credentials.getPairing()).toBeNull(); expect(pause).not.toHaveBeenCalled();
-    expect(fetcher.mock.calls.filter(([url]) => url === 'https://vibelog.org/api/agent/v1/pairings')).toHaveLength(1);
-    expect(fetcher.mock.calls.slice(1).map(([, init]) => init?.body)).toEqual([JSON.stringify({ deviceCode: pairingResponse.deviceCode }), JSON.stringify({ deviceCode: pairingResponse.deviceCode })]);
-    expect(vi.mocked(credentials.set).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(credentials.deletePairing).mock.invocationCallOrder[0]);
-    expect(JSON.stringify(write.mock.calls)).not.toContain(pairingResponse.deviceCode); expect(JSON.stringify(write.mock.calls)).not.toContain('private-grant');
+    expect(await credentials.getPairing()).toBeNull();
+    expect(pause).not.toHaveBeenCalled();
+    expect(
+      fetcher.mock.calls.filter(([url]) => url === 'https://vibelog.org/api/agent/v1/pairings'),
+    ).toHaveLength(1);
+    expect(fetcher.mock.calls.slice(1).map(([, init]) => init?.body)).toEqual([
+      JSON.stringify({ deviceCode: pairingResponse.deviceCode }),
+      JSON.stringify({ deviceCode: pairingResponse.deviceCode }),
+    ]);
+    expect(vi.mocked(credentials.set).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(credentials.deletePairing).mock.invocationCallOrder[0],
+    );
+    expect(JSON.stringify(write.mock.calls)).not.toContain(pairingResponse.deviceCode);
+    expect(JSON.stringify(write.mock.calls)).not.toContain('private-grant');
   });
   it('continues the blocking login from a saved pairing with its original deadline and Retry-After', async () => {
-    const credentials = store(false); let time = 0; const delays: number[] = [];
+    const credentials = store(false);
+    let time = 0;
+    const delays: number[] = [];
     await credentials.setPairing({ ...pairingResponse, expiresAt: new Date(60_000).toISOString() });
-    const fetcher = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json({ error: { code: 'slow_down', message: 'Wait.' } }, { status: 429, headers: { 'Retry-After': '12' } }))
-      .mockResolvedValueOnce(Response.json({ status: 'approved', token: 'private-grant', expiresAt: '2099-01-01' }));
-    expect(await run(['login', '--draft-only'], { store: credentials, fetcher, write: vi.fn(), now: () => time, sleep: (ms) => { time += ms; delays.push(ms); return Promise.resolve(); } })).toBe(0);
-    expect(delays).toEqual([12_000]); expect(fetcher.mock.calls.every(([url]) => typeof url === 'string' && url.endsWith('/pairings/token'))).toBe(true);
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          { error: { code: 'slow_down', message: 'Wait.' } },
+          { status: 429, headers: { 'Retry-After': '12' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        Response.json({ status: 'approved', token: 'private-grant', expiresAt: '2099-01-01' }),
+      );
+    expect(
+      await run(['login', '--draft-only'], {
+        store: credentials,
+        fetcher,
+        write: vi.fn(),
+        now: () => time,
+        sleep: (ms) => {
+          time += ms;
+          delays.push(ms);
+          return Promise.resolve();
+        },
+      }),
+    ).toBe(0);
+    expect(delays).toEqual([12_000]);
+    expect(
+      fetcher.mock.calls.every(
+        ([url]) => typeof url === 'string' && url.endsWith('/pairings/token'),
+      ),
+    ).toBe(true);
   });
   it('bounds blocking Retry-After by the original expiry and clears the expired request', async () => {
-    const credentials = store(false); let time = 0; const delays: number[] = [];
+    const credentials = store(false);
+    let time = 0;
+    const delays: number[] = [];
     await credentials.setPairing({ ...pairingResponse, expiresAt: new Date(8000).toISOString() });
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ error: { code: 'slow_down', message: 'Wait.' } }, { status: 429, headers: { 'Retry-After': '60' } }));
-    await expect(run(['login', '--draft-only'], { store: credentials, fetcher, write: vi.fn(), now: () => time, sleep: (ms) => { time += ms; delays.push(ms); return Promise.resolve(); } })).rejects.toMatchObject({ code: 'pairing_expired' });
-    expect(delays).toEqual([8000]); expect(fetcher).toHaveBeenCalledTimes(1); expect(await credentials.getPairing()).toBeNull();
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { error: { code: 'slow_down', message: 'Wait.' } },
+          { status: 429, headers: { 'Retry-After': '60' } },
+        ),
+      );
+    await expect(
+      run(['login', '--draft-only'], {
+        store: credentials,
+        fetcher,
+        write: vi.fn(),
+        now: () => time,
+        sleep: (ms) => {
+          time += ms;
+          delays.push(ms);
+          return Promise.resolve();
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'pairing_expired' });
+    expect(delays).toEqual([8000]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(await credentials.getPairing()).toBeNull();
   });
   it('keeps a nonblocking pairing and its retry delay after 429 or network interruption', async () => {
-    const credentials = store(false); let time = 0;
+    const credentials = store(false);
+    let time = 0;
     await credentials.setPairing({ ...pairingResponse, expiresAt: new Date(60_000).toISOString() });
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ error: { code: 'rate_limited', message: 'Wait.' } }, { status: 429, headers: { 'Retry-After': '20' } }));
-    const runtime = { store: credentials, fetcher, write: vi.fn(), now: () => time, sleep: vi.fn() };
-    await expect(run(['login', '--no-wait', '--draft-only'], runtime)).rejects.toMatchObject({ status: 429, retryAfterSeconds: 20 });
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          { error: { code: 'rate_limited', message: 'Wait.' } },
+          { status: 429, headers: { 'Retry-After': '20' } },
+        ),
+      );
+    const runtime = {
+      store: credentials,
+      fetcher,
+      write: vi.fn(),
+      now: () => time,
+      sleep: vi.fn(),
+    };
+    await expect(run(['login', '--no-wait', '--draft-only'], runtime)).rejects.toMatchObject({
+      status: 429,
+      retryAfterSeconds: 20,
+    });
     expect(await credentials.getPairing()).toMatchObject({ nextPollAt: 20_000 });
-    expect(await run(['login', '--no-wait', '--draft-only'], runtime)).toBe(0); expect(fetcher).toHaveBeenCalledTimes(1);
-    time = 20_000; fetcher.mockRejectedValueOnce(new Error('offline'));
-    await expect(run(['login', '--no-wait', '--draft-only'], runtime)).rejects.toMatchObject({ code: 'network_outcome_unknown' });
-    expect(await credentials.getPairing()).toMatchObject({ deviceCode: pairingResponse.deviceCode });
+    expect(await run(['login', '--no-wait', '--draft-only'], runtime)).toBe(0);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    time = 20_000;
+    fetcher.mockRejectedValueOnce(new Error('offline'));
+    await expect(run(['login', '--no-wait', '--draft-only'], runtime)).rejects.toMatchObject({
+      code: 'network_outcome_unknown',
+    });
+    expect(await credentials.getPairing()).toMatchObject({
+      deviceCode: pairingResponse.deviceCode,
+    });
   });
-  it.each(['pairing_denied', 'pairing_expired'])('clears %s without silently replacing it', async (code) => {
-    const credentials = store(false); await credentials.setPairing(pairingResponse);
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ error: { code, message: 'Unavailable.' } }, { status: code === 'pairing_expired' ? 410 : 403 }));
-    await expect(run(['login', '--no-wait', '--draft-only'], { store: credentials, fetcher, write: vi.fn() })).rejects.toMatchObject({ code, recovery: { action: 'restart_login' } });
-    expect(await credentials.getPairing()).toBeNull(); expect(fetcher).toHaveBeenCalledTimes(1);
-  });
+  it.each(['pairing_denied', 'pairing_expired'])(
+    'clears %s without silently replacing it',
+    async (code) => {
+      const credentials = store(false);
+      await credentials.setPairing(pairingResponse);
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          Response.json(
+            { error: { code, message: 'Unavailable.' } },
+            { status: code === 'pairing_expired' ? 410 : 403 },
+          ),
+        );
+      await expect(
+        run(['login', '--no-wait', '--draft-only'], {
+          store: credentials,
+          fetcher,
+          write: vi.fn(),
+        }),
+      ).rejects.toMatchObject({ code, recovery: { action: 'restart_login' } });
+      expect(await credentials.getPairing()).toBeNull();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    },
+  );
   it('clears local expiry before networking and preserves a pairing when grant storage fails', async () => {
-    const credentials = store(false); await credentials.setPairing({ ...pairingResponse, expiresAt: '2000-01-01' });
+    const credentials = store(false);
+    await credentials.setPairing({ ...pairingResponse, expiresAt: '2000-01-01' });
     const fetcher = vi.fn<typeof fetch>();
-    await expect(run(['login', '--no-wait', '--draft-only'], { store: credentials, fetcher })).rejects.toMatchObject({ code: 'pairing_expired' }); expect(fetcher).not.toHaveBeenCalled();
-    await credentials.setPairing(pairingResponse); credentials.set = () => Promise.reject(new Error('locked'));
-    fetcher.mockResolvedValueOnce(Response.json({ status: 'approved', token: 'private-grant', expiresAt: '2099-01-01' })).mockResolvedValueOnce(Response.json({ status: 'revoked' }));
-    await expect(run(['login', '--no-wait', '--draft-only'], { store: credentials, fetcher })).rejects.toMatchObject({ code: 'secure_storage_unavailable' });
-    expect(await credentials.getPairing()).not.toBeNull(); expect(fetcher.mock.calls[1]?.[1]?.method).toBe('DELETE');
+    await expect(
+      run(['login', '--no-wait', '--draft-only'], { store: credentials, fetcher }),
+    ).rejects.toMatchObject({ code: 'pairing_expired' });
+    expect(fetcher).not.toHaveBeenCalled();
+    await credentials.setPairing(pairingResponse);
+    credentials.set = () => Promise.reject(new Error('locked'));
+    fetcher
+      .mockResolvedValueOnce(
+        Response.json({ status: 'approved', token: 'private-grant', expiresAt: '2099-01-01' }),
+      )
+      .mockResolvedValueOnce(Response.json({ status: 'revoked' }));
+    await expect(
+      run(['login', '--no-wait', '--draft-only'], { store: credentials, fetcher }),
+    ).rejects.toMatchObject({ code: 'secure_storage_unavailable' });
+    expect(await credentials.getPairing()).not.toBeNull();
+    expect(fetcher.mock.calls[1]?.[1]?.method).toBe('DELETE');
   });
   it('keeps pending storage on failures and does not create a request before it is readable', async () => {
-    const credentials = store(false); credentials.getPairing = () => Promise.reject(new Error('locked'));
+    const credentials = store(false);
+    credentials.getPairing = () => Promise.reject(new Error('locked'));
     const fetcher = vi.fn<typeof fetch>();
-    await expect(run(['login', '--no-wait', '--draft-only'], { store: credentials, fetcher })).rejects.toMatchObject({ code: 'secure_storage_unavailable' }); expect(fetcher).not.toHaveBeenCalled();
-    credentials.getPairing = () => Promise.resolve(null); credentials.setPairing = () => Promise.reject(new Error('locked'));
+    await expect(
+      run(['login', '--no-wait', '--draft-only'], { store: credentials, fetcher }),
+    ).rejects.toMatchObject({ code: 'secure_storage_unavailable' });
+    expect(fetcher).not.toHaveBeenCalled();
+    credentials.getPairing = () => Promise.resolve(null);
+    credentials.setPairing = () => Promise.reject(new Error('locked'));
     fetcher.mockResolvedValueOnce(Response.json(pairingResponse));
-    await expect(run(['login', '--no-wait', '--draft-only'], { store: credentials, fetcher })).rejects.toMatchObject({ code: 'secure_storage_unavailable' }); expect(fetcher).toHaveBeenCalledTimes(1);
+    await expect(
+      run(['login', '--no-wait', '--draft-only'], { store: credentials, fetcher }),
+    ).rejects.toMatchObject({ code: 'secure_storage_unavailable' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it('resumes a legacy pending scope before reusing an existing grant', async () => {
-    const credentials = store(); await credentials.setPairing(pairingResponse); const write = vi.fn();
-    const fetcher = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json({ permission: 'draft:read-write', expiresAt: '2099-01-01' }))
-      .mockResolvedValueOnce(Response.json({ status: 'approved', token: 'new-draft-grant', expiresAt: '2099-01-01' }))
+    const credentials = store();
+    await credentials.setPairing(pairingResponse);
+    const write = vi.fn();
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({ permission: 'draft:read-write', expiresAt: '2099-01-01' }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({ status: 'approved', token: 'new-draft-grant', expiresAt: '2099-01-01' }),
+      )
       .mockResolvedValueOnce(Response.json({ status: 'revoked' }));
     expect(await run(['login', '--no-wait'], { store: credentials, fetcher, write })).toBe(0);
-    expect(write).toHaveBeenCalledWith(expect.objectContaining({ status: 'authorized', canPublish: false }));
+    expect(write).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'authorized', canPublish: false }),
+    );
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
-      'https://vibelog.org/api/agent/v1/session', 'https://vibelog.org/api/agent/v1/pairings/token', 'https://vibelog.org/api/agent/v1/session',
+      'https://vibelog.org/api/agent/v1/session',
+      'https://vibelog.org/api/agent/v1/pairings/token',
+      'https://vibelog.org/api/agent/v1/session',
     ]);
-    expect(await credentials.getPairing()).toBeNull(); expect(await credentials.get()).toHaveProperty('token', 'new-draft-grant');
-  });
-  it.each([[], ['--allow-publish'], ['--draft-only']])('requests the explicit or default scope %j', async (...flags: string[]) => {
-    const canPublish = !flags.includes('--draft-only'); const credentials = store(false); const write = vi.fn();
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(() => Promise.resolve(Response.json({ ...pairingResponse, canPublish })));
-    expect(await run(['login', '--no-wait', ...flags], { store: credentials, fetcher, write })).toBe(0);
-    expect(fetcher.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ canPublish }));
-    expect(write).toHaveBeenCalledWith(expect.objectContaining({ status: 'approval_required', canPublish }));
-  });
-  it('uses combined access in the original waiting mode', async () => {
-    let time = 0; const write = vi.fn(); const credentials = store(false);
-    const fetcher = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json({ ...pairingResponse, canPublish: true }))
-      .mockResolvedValueOnce(Response.json({ status: 'approved', token: 'combined-grant', expiresAt: '2099-01-01', canPublish: true }));
-    expect(await run(['login'], { store: credentials, fetcher, write, now: () => time, sleep: (ms) => { time += ms; return Promise.resolve(); } })).toBe(0);
-    expect(fetcher.mock.calls[0]?.[1]?.body).toBe('{"canPublish":true}');
-    expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'authorized', canPublish: true }));
-  });
-  it.each([true, false])('reuses only an exact-scope grant without pairing (publish %s)', async (canPublish) => {
-    const credentials = store(); const write = vi.fn();
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ expiresAt: '2099-01-01', canPublish }));
-    expect(await run(['login', '--no-wait', ...(canPublish ? [] : ['--draft-only'])], { store: credentials, fetcher, write })).toBe(0);
-    expect(fetcher).toHaveBeenCalledTimes(1); expect(await credentials.getPairing()).toBeNull();
-    expect(write).toHaveBeenCalledWith(expect.objectContaining({ status: 'authorized', canPublish }));
-  });
-  it.each([false, true])('changes scope only after approval and saving (old publish %s)', async (oldPublish) => {
-    let time = 0; const credentials = store(); const write = vi.fn(); const canPublish = !oldPublish;
-    const fetcher = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json({ expiresAt: '2099-01-01', canPublish: oldPublish }))
-      .mockResolvedValueOnce(Response.json({ ...pairingResponse, canPublish }))
-      .mockResolvedValueOnce(Response.json({ expiresAt: '2099-01-01', canPublish: oldPublish }))
-      .mockResolvedValueOnce(Response.json({ status: 'approved', token: 'replacement-grant', expiresAt: '2099-01-01', canPublish }))
-      .mockImplementation(() => { expect(vi.mocked(credentials.set)).toHaveBeenCalledWith({ token: 'replacement-grant', expiresAt: '2099-01-01' }); return Promise.resolve(Response.json({ status: 'revoked' })); });
-    const args = ['login', '--no-wait', ...(oldPublish ? ['--draft-only'] : [])];
-    const runtime = { store: credentials, fetcher, write, now: () => time };
-    await run(args, runtime); expect(await credentials.get()).toHaveProperty('token', 'private-test-grant');
-    expect(fetcher.mock.calls[1]?.[1]?.body).toBe(JSON.stringify({ canPublish }));
-    time = 5000; await run(args, runtime);
-    expect(await credentials.get()).toHaveProperty('token', 'replacement-grant');
-    expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'authorized', canPublish }));
-    expect(fetcher.mock.calls[4]?.[1]).toMatchObject({ method: 'DELETE', headers: { Authorization: 'Bearer private-test-grant' } });
-  });
-  it.each([undefined, false, true])('preserves the original pending scope without flags (%s)', async (canPublish) => {
-    const credentials = store(); const write = vi.fn();
-    await credentials.setPairing({ ...pairingResponse, canPublish });
-    const fetcher = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json({ expiresAt: '2099-01-01', canPublish: true }))
-      .mockResolvedValueOnce(Response.json({ status: 'approved', token: 'resumed-grant', expiresAt: '2099-01-01', canPublish }))
-      .mockResolvedValueOnce(Response.json({ status: 'revoked' }));
-    await run(['login', '--no-wait'], { store: credentials, fetcher, write });
-    expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'authorized', canPublish: Boolean(canPublish) }));
-    expect(fetcher.mock.calls[1]?.[0]).toContain('/pairings/token');
-    expect(fetcher.mock.calls.some(([url]) => typeof url === 'string' && url.endsWith('/pairings'))).toBe(false);
-  });
-  it('allows an explicit draft-only choice on a legacy service but never silently downgrades', async () => {
-    const credentials = store(false); const fetcher = vi.fn<typeof fetch>().mockImplementation(() => Promise.resolve(Response.json(pairingResponse)));
-    await expect(run(['login', '--no-wait'], { store: credentials, fetcher })).rejects.toMatchObject({ code: 'publish_permission_unavailable' });
     expect(await credentials.getPairing()).toBeNull();
-    expect(await run(['login', '--no-wait', '--draft-only'], { store: credentials, fetcher, write: vi.fn() })).toBe(0);
+    expect(await credentials.get()).toHaveProperty('token', 'new-draft-grant');
+  });
+  it.each([[], ['--allow-publish'], ['--draft-only']])(
+    'requests the explicit or default scope %j',
+    async (...flags: string[]) => {
+      const canPublish = !flags.includes('--draft-only');
+      const credentials = store(false);
+      const write = vi.fn();
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockImplementation(() =>
+          Promise.resolve(Response.json({ ...pairingResponse, canPublish })),
+        );
+      expect(
+        await run(['login', '--no-wait', ...flags], { store: credentials, fetcher, write }),
+      ).toBe(0);
+      expect(fetcher.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ canPublish }));
+      expect(write).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'approval_required', canPublish }),
+      );
+    },
+  );
+  it('uses combined access in the original waiting mode', async () => {
+    let time = 0;
+    const write = vi.fn();
+    const credentials = store(false);
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ ...pairingResponse, canPublish: true }))
+      .mockResolvedValueOnce(
+        Response.json({
+          status: 'approved',
+          token: 'combined-grant',
+          expiresAt: '2099-01-01',
+          canPublish: true,
+        }),
+      );
+    expect(
+      await run(['login'], {
+        store: credentials,
+        fetcher,
+        write,
+        now: () => time,
+        sleep: (ms) => {
+          time += ms;
+          return Promise.resolve();
+        },
+      }),
+    ).toBe(0);
+    expect(fetcher.mock.calls[0]?.[1]?.body).toBe('{"canPublish":true}');
+    expect(write).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'authorized', canPublish: true }),
+    );
+  });
+  it.each([true, false])(
+    'reuses only an exact-scope grant without pairing (publish %s)',
+    async (canPublish) => {
+      const credentials = store();
+      const write = vi.fn();
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(Response.json({ expiresAt: '2099-01-01', canPublish }));
+      expect(
+        await run(['login', '--no-wait', ...(canPublish ? [] : ['--draft-only'])], {
+          store: credentials,
+          fetcher,
+          write,
+        }),
+      ).toBe(0);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(await credentials.getPairing()).toBeNull();
+      expect(write).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'authorized', canPublish }),
+      );
+    },
+  );
+  it.each([false, true])(
+    'changes scope only after approval and saving (old publish %s)',
+    async (oldPublish) => {
+      let time = 0;
+      const credentials = store();
+      const write = vi.fn();
+      const canPublish = !oldPublish;
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json({ expiresAt: '2099-01-01', canPublish: oldPublish }))
+        .mockResolvedValueOnce(Response.json({ ...pairingResponse, canPublish }))
+        .mockResolvedValueOnce(Response.json({ expiresAt: '2099-01-01', canPublish: oldPublish }))
+        .mockResolvedValueOnce(
+          Response.json({
+            status: 'approved',
+            token: 'replacement-grant',
+            expiresAt: '2099-01-01',
+            canPublish,
+          }),
+        )
+        .mockImplementation(() => {
+          expect(vi.mocked(credentials.set)).toHaveBeenCalledWith({
+            token: 'replacement-grant',
+            expiresAt: '2099-01-01',
+          });
+          return Promise.resolve(Response.json({ status: 'revoked' }));
+        });
+      const args = ['login', '--no-wait', ...(oldPublish ? ['--draft-only'] : [])];
+      const runtime = { store: credentials, fetcher, write, now: () => time };
+      await run(args, runtime);
+      expect(await credentials.get()).toHaveProperty('token', 'private-test-grant');
+      expect(fetcher.mock.calls[1]?.[1]?.body).toBe(JSON.stringify({ canPublish }));
+      time = 5000;
+      await run(args, runtime);
+      expect(await credentials.get()).toHaveProperty('token', 'replacement-grant');
+      expect(write).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: 'authorized', canPublish }),
+      );
+      expect(fetcher.mock.calls[4]?.[1]).toMatchObject({
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer private-test-grant' },
+      });
+    },
+  );
+  it.each([undefined, false, true])(
+    'preserves the original pending scope without flags (%s)',
+    async (canPublish) => {
+      const credentials = store();
+      const write = vi.fn();
+      await credentials.setPairing({ ...pairingResponse, canPublish });
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json({ expiresAt: '2099-01-01', canPublish: true }))
+        .mockResolvedValueOnce(
+          Response.json({
+            status: 'approved',
+            token: 'resumed-grant',
+            expiresAt: '2099-01-01',
+            canPublish,
+          }),
+        )
+        .mockResolvedValueOnce(Response.json({ status: 'revoked' }));
+      await run(['login', '--no-wait'], { store: credentials, fetcher, write });
+      expect(write).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: 'authorized', canPublish: Boolean(canPublish) }),
+      );
+      expect(fetcher.mock.calls[1]?.[0]).toContain('/pairings/token');
+      expect(
+        fetcher.mock.calls.some(([url]) => typeof url === 'string' && url.endsWith('/pairings')),
+      ).toBe(false);
+    },
+  );
+  it('allows an explicit draft-only choice on a legacy service but never silently downgrades', async () => {
+    const credentials = store(false);
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(Response.json(pairingResponse)));
+    await expect(
+      run(['login', '--no-wait'], { store: credentials, fetcher }),
+    ).rejects.toMatchObject({ code: 'publish_permission_unavailable' });
+    expect(await credentials.getPairing()).toBeNull();
+    expect(
+      await run(['login', '--no-wait', '--draft-only'], {
+        store: credentials,
+        fetcher,
+        write: vi.fn(),
+      }),
+    ).toBe(0);
     expect(fetcher.mock.calls[1]?.[1]?.body).toBe('{"canPublish":false}');
   });
   it.each([
-    ['login', '--draft-only', '--allow-publish'], ['login', '--allow-publish', '--draft-only'],
-    ['login', '--draft-only', '--draft-only'], ['login', '--allow-publish', '--allow-publish'],
-    ['status', '--draft-only'], ['design', '--draft-only'], ['publish', '--allow-publish'],
+    ['login', '--draft-only', '--allow-publish'],
+    ['login', '--allow-publish', '--draft-only'],
+    ['login', '--draft-only', '--draft-only'],
+    ['login', '--allow-publish', '--allow-publish'],
+    ['status', '--draft-only'],
+    ['design', '--draft-only'],
+    ['publish', '--allow-publish'],
   ])('rejects incompatible, repeated or misplaced scope flags %j', async (...args) => {
     const fetcher = vi.fn<typeof fetch>();
-    await expect(run(args, { store: store(), fetcher })).rejects.toMatchObject({ code: 'invalid_arguments' });
+    await expect(run(args, { store: store(), fetcher })).rejects.toMatchObject({
+      code: 'invalid_arguments',
+    });
     expect(fetcher).not.toHaveBeenCalled();
   });
-  it.each(['pairing_denied', 'storage'])('keeps publishing access when draft-only approval fails (%s)', async (failure) => {
-    const credentials = store(); await credentials.setPairing({ ...pairingResponse, canPublish: false });
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ expiresAt: '2099-01-01', canPublish: true }));
-    if (failure === 'storage') {
-      credentials.set = vi.fn(() => Promise.reject(new Error('locked')));
-      fetcher.mockResolvedValueOnce(Response.json({ status: 'approved', token: 'limited-grant', expiresAt: '2099-01-01', canPublish: false }))
-        .mockResolvedValueOnce(Response.json({ status: 'revoked' }));
-    } else fetcher.mockResolvedValueOnce(Response.json({ error: { code: failure, message: 'Denied.' } }, { status: 403 }));
-    await expect(run(['login', '--no-wait', '--draft-only'], { store: credentials, fetcher })).rejects.toMatchObject({ code: failure === 'storage' ? 'secure_storage_unavailable' : failure });
-    expect(await credentials.get()).toHaveProperty('token', 'private-test-grant');
-    if (failure === 'storage') expect(fetcher.mock.calls[2]?.[1]).toMatchObject({ method: 'DELETE', headers: { Authorization: 'Bearer limited-grant' } });
-  });
+  it.each(['pairing_denied', 'storage'])(
+    'keeps publishing access when draft-only approval fails (%s)',
+    async (failure) => {
+      const credentials = store();
+      await credentials.setPairing({ ...pairingResponse, canPublish: false });
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json({ expiresAt: '2099-01-01', canPublish: true }));
+      if (failure === 'storage') {
+        credentials.set = vi.fn(() => Promise.reject(new Error('locked')));
+        fetcher
+          .mockResolvedValueOnce(
+            Response.json({
+              status: 'approved',
+              token: 'limited-grant',
+              expiresAt: '2099-01-01',
+              canPublish: false,
+            }),
+          )
+          .mockResolvedValueOnce(Response.json({ status: 'revoked' }));
+      } else
+        fetcher.mockResolvedValueOnce(
+          Response.json({ error: { code: failure, message: 'Denied.' } }, { status: 403 }),
+        );
+      await expect(
+        run(['login', '--no-wait', '--draft-only'], { store: credentials, fetcher }),
+      ).rejects.toMatchObject({
+        code: failure === 'storage' ? 'secure_storage_unavailable' : failure,
+      });
+      expect(await credentials.get()).toHaveProperty('token', 'private-test-grant');
+      if (failure === 'storage')
+        expect(fetcher.mock.calls[2]?.[1]).toMatchObject({
+          method: 'DELETE',
+          headers: { Authorization: 'Bearer limited-grant' },
+        });
+    },
+  );
   it('upgrades only after a new approval and safely saved grant, without exposing credentials', async () => {
-    const credentials = store(); let time = 0; const write = vi.fn();
-    const fetcher = vi.fn<typeof fetch>()
+    const credentials = store();
+    let time = 0;
+    const write = vi.fn();
+    const fetcher = vi
+      .fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json({ expiresAt: '2099-01-01', canPublish: false }))
       .mockResolvedValueOnce(Response.json({ ...pairingResponse, canPublish: true }))
       .mockResolvedValueOnce(Response.json({ expiresAt: '2099-01-01', canPublish: false }))
-      .mockResolvedValueOnce(Response.json({ status: 'approved', token: 'new-publish-grant', expiresAt: '2099-01-01', canPublish: true }))
+      .mockResolvedValueOnce(
+        Response.json({
+          status: 'approved',
+          token: 'new-publish-grant',
+          expiresAt: '2099-01-01',
+          canPublish: true,
+        }),
+      )
       .mockResolvedValueOnce(Response.json({ status: 'revoked' }));
     const runtime = { store: credentials, fetcher, write, now: () => time };
     await run(['login', '--no-wait', '--allow-publish'], runtime);
@@ -256,182 +652,476 @@ describe('agent CLI', () => {
     expect(fetcher.mock.calls[1]?.[1]?.body).toBe(JSON.stringify({ canPublish: true }));
     time = 5000;
     await run(['login', '--no-wait', '--allow-publish'], runtime);
-    expect(await credentials.get()).toHaveProperty('token', 'new-publish-grant'); expect(await credentials.getPairing()).toBeNull();
-    expect(fetcher.mock.calls[4]?.[1]).toMatchObject({ method: 'DELETE', headers: { Authorization: 'Bearer private-test-grant' } });
-    expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'authorized', canPublish: true }));
-    expect(JSON.stringify(write.mock.calls)).not.toContain('new-publish-grant'); expect(JSON.stringify(write.mock.calls)).not.toContain(pairingResponse.deviceCode);
+    expect(await credentials.get()).toHaveProperty('token', 'new-publish-grant');
+    expect(await credentials.getPairing()).toBeNull();
+    expect(fetcher.mock.calls[4]?.[1]).toMatchObject({
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer private-test-grant' },
+    });
+    expect(write).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'authorized', canPublish: true }),
+    );
+    expect(JSON.stringify(write.mock.calls)).not.toContain('new-publish-grant');
+    expect(JSON.stringify(write.mock.calls)).not.toContain(pairingResponse.deviceCode);
   });
-  it.each(['pairing_denied', 'pairing_expired'])('keeps old draft access when an upgrade is %s', async (code) => {
-    const credentials = store(); await credentials.setPairing({ ...pairingResponse, canPublish: true });
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ canPublish: false, expiresAt: '2099-01-01' }))
-      .mockResolvedValueOnce(Response.json({ error: { code, message: 'Unavailable.' } }, { status: code === 'pairing_expired' ? 410 : 403 }));
-    await expect(run(['login', '--no-wait', '--allow-publish'], { store: credentials, fetcher })).rejects.toMatchObject({ code });
-    expect(await credentials.get()).toHaveProperty('token', 'private-test-grant'); expect(await credentials.getPairing()).toBeNull();
-  });
+  it.each(['pairing_denied', 'pairing_expired'])(
+    'keeps old draft access when an upgrade is %s',
+    async (code) => {
+      const credentials = store();
+      await credentials.setPairing({ ...pairingResponse, canPublish: true });
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json({ canPublish: false, expiresAt: '2099-01-01' }))
+        .mockResolvedValueOnce(
+          Response.json(
+            { error: { code, message: 'Unavailable.' } },
+            { status: code === 'pairing_expired' ? 410 : 403 },
+          ),
+        );
+      await expect(
+        run(['login', '--no-wait', '--allow-publish'], { store: credentials, fetcher }),
+      ).rejects.toMatchObject({ code });
+      expect(await credentials.get()).toHaveProperty('token', 'private-test-grant');
+      expect(await credentials.getPairing()).toBeNull();
+    },
+  );
   it('keeps old access if upgraded grant storage fails and revokes only the new grant', async () => {
-    const credentials = store(); await credentials.setPairing({ ...pairingResponse, canPublish: true });
+    const credentials = store();
+    await credentials.setPairing({ ...pairingResponse, canPublish: true });
     credentials.set = () => Promise.reject(new Error('locked'));
-    const fetcher = vi.fn<typeof fetch>()
+    const fetcher = vi
+      .fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json({ expiresAt: '2099-01-01', canPublish: false }))
-      .mockResolvedValueOnce(Response.json({ status: 'approved', token: 'new-publish-grant', expiresAt: '2099-01-01', canPublish: true }))
+      .mockResolvedValueOnce(
+        Response.json({
+          status: 'approved',
+          token: 'new-publish-grant',
+          expiresAt: '2099-01-01',
+          canPublish: true,
+        }),
+      )
       .mockResolvedValueOnce(Response.json({ status: 'revoked' }));
-    await expect(run(['login', '--no-wait', '--allow-publish'], { store: credentials, fetcher })).rejects.toMatchObject({ code: 'secure_storage_unavailable' });
-    expect(await credentials.get()).toHaveProperty('token', 'private-test-grant'); expect(await credentials.getPairing()).not.toBeNull();
-    expect(fetcher.mock.calls[2]?.[1]).toMatchObject({ headers: { Authorization: 'Bearer new-publish-grant' } });
+    await expect(
+      run(['login', '--no-wait', '--allow-publish'], { store: credentials, fetcher }),
+    ).rejects.toMatchObject({ code: 'secure_storage_unavailable' });
+    expect(await credentials.get()).toHaveProperty('token', 'private-test-grant');
+    expect(await credentials.getPairing()).not.toBeNull();
+    expect(fetcher.mock.calls[2]?.[1]).toMatchObject({
+      headers: { Authorization: 'Bearer new-publish-grant' },
+    });
   });
-  it.each([false, true])('does not silently replace a pending pairing with scope %s', async (canPublish) => {
-    const credentials = store(); await credentials.setPairing({ ...pairingResponse, canPublish }); const fetcher = vi.fn<typeof fetch>();
-    await expect(run(['login', '--no-wait', ...(canPublish ? ['--draft-only'] : ['--allow-publish'])], { store: credentials, fetcher })).rejects.toMatchObject({ code: 'pairing_permission_conflict' });
-    expect(fetcher).not.toHaveBeenCalled(); expect(await credentials.get()).not.toBeNull(); expect(await credentials.getPairing()).toHaveProperty('canPublish', canPublish);
-  });
+  it.each([false, true])(
+    'does not silently replace a pending pairing with scope %s',
+    async (canPublish) => {
+      const credentials = store();
+      await credentials.setPairing({ ...pairingResponse, canPublish });
+      const fetcher = vi.fn<typeof fetch>();
+      await expect(
+        run(['login', '--no-wait', ...(canPublish ? ['--draft-only'] : ['--allow-publish'])], {
+          store: credentials,
+          fetcher,
+        }),
+      ).rejects.toMatchObject({ code: 'pairing_permission_conflict' });
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(await credentials.get()).not.toBeNull();
+      expect(await credentials.getPairing()).toHaveProperty('canPublish', canPublish);
+    },
+  );
   it('rejects missing or mismatched server publishing permission without saving a grant', async () => {
-    const credentials = store(false); const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(pairingResponse));
-    await expect(run(['login', '--no-wait', '--allow-publish'], { store: credentials, fetcher })).rejects.toMatchObject({ code: 'publish_permission_unavailable' });
+    const credentials = store(false);
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(pairingResponse));
+    await expect(
+      run(['login', '--no-wait', '--allow-publish'], { store: credentials, fetcher }),
+    ).rejects.toMatchObject({ code: 'publish_permission_unavailable' });
     expect(await credentials.getPairing()).toBeNull();
     await credentials.setPairing({ ...pairingResponse, canPublish: true });
-    fetcher.mockResolvedValueOnce(Response.json({ status: 'approved', token: 'bad-scope', expiresAt: '2099-01-01', canPublish: false }));
-    await expect(run(['login', '--no-wait', '--allow-publish'], { store: credentials, fetcher })).rejects.toMatchObject({ code: 'invalid_response' });
+    fetcher.mockResolvedValueOnce(
+      Response.json({
+        status: 'approved',
+        token: 'bad-scope',
+        expiresAt: '2099-01-01',
+        canPublish: false,
+      }),
+    );
+    await expect(
+      run(['login', '--no-wait', '--allow-publish'], { store: credentials, fetcher }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
     expect(credentials.set).not.toHaveBeenCalled();
-    await expect(run(['status', '--allow-publish'], { store: credentials })).rejects.toMatchObject({ code: 'invalid_arguments' });
+    await expect(run(['status', '--allow-publish'], { store: credentials })).rejects.toMatchObject({
+      code: 'invalid_arguments',
+    });
   });
   it('publishes with stable stdin input/key and exposes a fixed scope-recovery hint', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ status: 'accepted', operationId: 'op' }));
-    await run(['publish', '--file', '-', '--request-key', 'publish-request-123456'], { store: store(), fetcher, write: vi.fn(), input: () => Promise.resolve('{"stateVersion":"state"}') });
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ status: 'accepted', operationId: 'op' }));
+    await run(['publish', '--file', '-', '--request-key', 'publish-request-123456'], {
+      store: store(),
+      fetcher,
+      write: vi.fn(),
+      input: () => Promise.resolve('{"stateVersion":"state"}'),
+    });
     expect(fetcher.mock.calls[0]?.[0]).toBe('https://vibelog.org/api/agent/v1/publish');
-    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('Idempotency-Key')).toBe('publish-request-123456');
-    fetcher.mockResolvedValue(Response.json({ error: { code: 'publish_permission_required', message: 'Approve first.' } }, { status: 403 }));
-    await expect(new AgentClient('https://vibelog.org', store(), fetcher).request('/publish', 'POST', {}, 'publish-request-123456')).rejects.toMatchObject({ status: 403, recovery: { action: 'request_publish_access' } });
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('Idempotency-Key')).toBe(
+      'publish-request-123456',
+    );
+    fetcher.mockResolvedValue(
+      Response.json(
+        { error: { code: 'publish_permission_required', message: 'Approve first.' } },
+        { status: 403 },
+      ),
+    );
+    await expect(
+      new AgentClient('https://vibelog.org', store(), fetcher).request(
+        '/publish',
+        'POST',
+        {},
+        'publish-request-123456',
+      ),
+    ).rejects.toMatchObject({ status: 403, recovery: { action: 'request_publish_access' } });
   });
   it('logout revokes a saved grant and removes both local entries', async () => {
-    const credentials = store(); await credentials.setPairing(pairingResponse);
+    const credentials = store();
+    await credentials.setPairing(pairingResponse);
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ status: 'revoked' }));
     expect(await run(['logout'], { store: credentials, fetcher, write: vi.fn() })).toBe(0);
-    expect(await credentials.get()).toBeNull(); expect(await credentials.getPairing()).toBeNull();
+    expect(await credentials.get()).toBeNull();
+    expect(await credentials.getPairing()).toBeNull();
     expect(fetcher.mock.calls[0]?.[1]?.method).toBe('DELETE');
   });
   it('logout removes a pending login without requiring a grant or network access', async () => {
-    const credentials = store(false); await credentials.setPairing(pairingResponse); const fetcher = vi.fn<typeof fetch>();
+    const credentials = store(false);
+    await credentials.setPairing(pairingResponse);
+    const fetcher = vi.fn<typeof fetch>();
     expect(await run(['logout'], { store: credentials, fetcher, write: vi.fn() })).toBe(0);
-    expect(await credentials.getPairing()).toBeNull(); expect(fetcher).not.toHaveBeenCalled();
+    expect(await credentials.getPairing()).toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();
   });
   it('rejects untrusted pairing responses and use of the new flag outside login', async () => {
-    for (const value of [{ ...pairingResponse, authorizationUrl: 'https://evil.test/agent/authorize?code=AABBCCDD00' }, { ...pairingResponse, expiresAt: 'not-a-date' }, { ...pairingResponse, deviceCode: 'short' }]) {
+    for (const value of [
+      { ...pairingResponse, authorizationUrl: 'https://evil.test/agent/authorize?code=AABBCCDD00' },
+      { ...pairingResponse, expiresAt: 'not-a-date' },
+      { ...pairingResponse, deviceCode: 'short' },
+    ]) {
       expect(() => parsePairing(value, 'https://vibelog.org')).toThrow();
-      await expect(run(['login', '--no-wait'], { store: store(false), fetcher: vi.fn<typeof fetch>().mockResolvedValue(Response.json(value)) })).rejects.toMatchObject({ code: 'invalid_response' });
+      await expect(
+        run(['login', '--no-wait'], {
+          store: store(false),
+          fetcher: vi.fn<typeof fetch>().mockResolvedValue(Response.json(value)),
+        }),
+      ).rejects.toMatchObject({ code: 'invalid_response' });
     }
-    await expect(run(['status', '--no-wait'], { store: store() })).rejects.toMatchObject({ code: 'invalid_arguments' });
-    await expect(run(['login', '--no-wait', '--no-wait'], { store: store() })).rejects.toMatchObject({ code: 'invalid_arguments' });
+    await expect(run(['status', '--no-wait'], { store: store() })).rejects.toMatchObject({
+      code: 'invalid_arguments',
+    });
+    await expect(
+      run(['login', '--no-wait', '--no-wait'], { store: store() }),
+    ).rejects.toMatchObject({ code: 'invalid_arguments' });
   });
   it('fails before pairing when secure storage is unavailable', async () => {
-    const credentials = store(); credentials.check = () => Promise.reject(new Error('locked'));
-    const fetcher = vi.fn(); await expect(run(['login'], { store: credentials, fetcher })).rejects.toMatchObject({ code: 'secure_storage_unavailable' }); expect(fetcher).not.toHaveBeenCalled();
+    const credentials = store();
+    credentials.check = () => Promise.reject(new Error('locked'));
+    const fetcher = vi.fn();
+    await expect(run(['login'], { store: credentials, fetcher })).rejects.toMatchObject({
+      code: 'secure_storage_unavailable',
+    });
+    expect(fetcher).not.toHaveBeenCalled();
   });
   it('submits stdin JSON with the same request key and no token in the URL or output', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ operationId: 'op' })); const write = vi.fn();
-    await run(['design', '--file', '-', '--request-key', 'request-key-123456'], { store: store(), fetcher, write, input: () => Promise.resolve('{"stateVersion":"state","design":{}}') });
-    const [url, request] = fetcher.mock.calls[0]; expect(url).toBe('https://vibelog.org/api/agent/v1/design');
-    expect(new Headers(request?.headers).get('Idempotency-Key')).toBe('request-key-123456'); expect(request?.redirect).toBe('error');
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ operationId: 'op' }));
+    const write = vi.fn();
+    await run(['design', '--file', '-', '--request-key', 'request-key-123456'], {
+      store: store(),
+      fetcher,
+      write,
+      input: () => Promise.resolve('{"stateVersion":"state","design":{}}'),
+    });
+    const [url, request] = fetcher.mock.calls[0];
+    expect(url).toBe('https://vibelog.org/api/agent/v1/design');
+    expect(new Headers(request?.headers).get('Idempotency-Key')).toBe('request-key-123456');
+    expect(request?.redirect).toBe('error');
     expect(JSON.stringify(write.mock.calls)).not.toContain('private-test-grant');
   });
 
   it('accepts streamed selection input for 1,000 long slugs without widening design input', async () => {
-    const text = JSON.stringify({ stateVersion: 'a'.repeat(43), excludedSlugs: Array.from({ length: 1000 }, (_, index) => `${'文'.repeat(76)}${String(index).padStart(4, '0')}`) });
-    expect(Buffer.byteLength(text)).toBeGreaterThan(64 * 1024);
-    const input = vi.spyOn(process.stdin, Symbol.asyncIterator).mockImplementation(async function* () {
-      const bytes = Buffer.from(text);
-      yield await Promise.resolve(bytes.subarray(0, 64 * 1024));
-      yield bytes.subarray(64 * 1024);
-      return undefined;
+    const text = JSON.stringify({
+      stateVersion: 'a'.repeat(43),
+      excludedSlugs: Array.from(
+        { length: 1000 },
+        (_, index) => `${'文'.repeat(76)}${String(index).padStart(4, '0')}`,
+      ),
     });
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ operationId: 'selection-operation' }));
+    expect(Buffer.byteLength(text)).toBeGreaterThan(64 * 1024);
+    const input = vi
+      .spyOn(process.stdin, Symbol.asyncIterator)
+      .mockImplementation(async function* () {
+        const bytes = Buffer.from(text);
+        yield await Promise.resolve(bytes.subarray(0, 64 * 1024));
+        yield bytes.subarray(64 * 1024);
+        return undefined;
+      });
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ operationId: 'selection-operation' }));
     try {
-      expect(await run(['selection', '--file', '-', '--request-key', 'selection-key-123456'], { store: store(), fetcher, write: vi.fn() })).toBe(0);
+      expect(
+        await run(['selection', '--file', '-', '--request-key', 'selection-key-123456'], {
+          store: store(),
+          fetcher,
+          write: vi.fn(),
+        }),
+      ).toBe(0);
       expect(fetcher).toHaveBeenCalledOnce();
       expect(fetcher.mock.calls[0]?.[0]).toBe('https://vibelog.org/api/agent/v1/selection');
       const body = fetcher.mock.calls[0]?.[1]?.body;
       if (typeof body !== 'string') throw new Error('Expected a JSON request body');
       expect(JSON.parse(body)).toEqual(JSON.parse(text));
       fetcher.mockClear();
-      await expect(run(['design', '--file', '-', '--request-key', 'selection-key-123456'], { store: store(), fetcher, input: () => Promise.resolve(text) })).rejects.toMatchObject({ code: 'input_too_large' });
+      await expect(
+        run(['design', '--file', '-', '--request-key', 'selection-key-123456'], {
+          store: store(),
+          fetcher,
+          input: () => Promise.resolve(text),
+        }),
+      ).rejects.toMatchObject({ code: 'input_too_large' });
       expect(fetcher).not.toHaveBeenCalled();
-    } finally { input.mockRestore(); }
+    } finally {
+      input.mockRestore();
+    }
   });
 
   it('stops selection stdin above 256 KiB before submitting a request', async () => {
-    const input = vi.spyOn(process.stdin, Symbol.asyncIterator).mockImplementation(async function* () {
-      yield await Promise.resolve(Buffer.alloc(256 * 1024));
-      yield Buffer.alloc(1);
-      return undefined;
-    });
+    const input = vi
+      .spyOn(process.stdin, Symbol.asyncIterator)
+      .mockImplementation(async function* () {
+        yield await Promise.resolve(Buffer.alloc(256 * 1024));
+        yield Buffer.alloc(1);
+        return undefined;
+      });
     const fetcher = vi.fn();
     try {
-      await expect(run(['selection', '--file', '-', '--request-key', 'selection-key-123456'], { store: store(), fetcher })).rejects.toMatchObject({ code: 'input_too_large', message: 'Input must not exceed 256 KiB.' });
+      await expect(
+        run(['selection', '--file', '-', '--request-key', 'selection-key-123456'], {
+          store: store(),
+          fetcher,
+        }),
+      ).rejects.toMatchObject({
+        code: 'input_too_large',
+        message: 'Input must not exceed 256 KiB.',
+      });
       expect(fetcher).not.toHaveBeenCalled();
-    } finally { input.mockRestore(); }
+    } finally {
+      input.mockRestore();
+    }
   });
   it('reports an uncertain outcome without inventing a new operation', async () => {
-    const client = new AgentClient('https://vibelog.org', store(), vi.fn<typeof fetch>().mockRejectedValue(new Error('network')));
-    await expect(client.request('/design', 'POST', {}, 'request-key-123456')).rejects.toMatchObject({ code: 'network_outcome_unknown', details: { requestKey: 'request-key-123456' }, recovery: { action: 'retry_same_request' } });
+    const client = new AgentClient(
+      'https://vibelog.org',
+      store(),
+      vi.fn<typeof fetch>().mockRejectedValue(new Error('network')),
+    );
+    await expect(client.request('/design', 'POST', {}, 'request-key-123456')).rejects.toMatchObject(
+      {
+        code: 'network_outcome_unknown',
+        details: { requestKey: 'request-key-123456' },
+        recovery: { action: 'retry_same_request' },
+      },
+    );
   });
   it.each([
-    ['state_changed', 409, 'read_context'], ['operation_in_progress', 409, 'read_context'],
-    ['agent_build_quota_exceeded', 429, 'wait_retry_after'], ['rate_limited', 429, 'wait_retry_after'],
-    ['internal_error', 503, 'check_service'], ['deletion_in_progress', 409, 'open_editor'],
-  ])('preserves HTTP diagnostics for %s and never retries automatically', async (code, status, action) => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ error: { code, message: 'Request unavailable.', requestId: 'body-request-id', details: 'do-not-copy-body' } }, { status, headers: { 'X-Request-Id': 'header-request-id', 'Retry-After': '120' } }));
-    const client = new AgentClient('https://vibelog.org', store(), fetcher);
-    const error = await client.request('/context').catch((value: unknown) => value);
-    expect(error).toBeInstanceOf(CliError);
-    expect(error).toMatchObject({ code, status, requestId: 'header-request-id', retryAfterSeconds: 120, recovery: { action } });
-    expect(JSON.stringify(error)).not.toContain('do-not-copy-body'); expect(JSON.stringify(error)).not.toContain('private-test-grant');
-    expect(fetcher).toHaveBeenCalledTimes(1);
-  });
+    ['state_changed', 409, 'read_context'],
+    ['operation_in_progress', 409, 'read_context'],
+    ['agent_build_quota_exceeded', 429, 'wait_retry_after'],
+    ['rate_limited', 429, 'wait_retry_after'],
+    ['internal_error', 503, 'check_service'],
+    ['deletion_in_progress', 409, 'open_editor'],
+  ])(
+    'preserves HTTP diagnostics for %s and never retries automatically',
+    async (code, status, action) => {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json(
+          {
+            error: {
+              code,
+              message: 'Request unavailable.',
+              requestId: 'body-request-id',
+              details: 'do-not-copy-body',
+            },
+          },
+          { status, headers: { 'X-Request-Id': 'header-request-id', 'Retry-After': '120' } },
+        ),
+      );
+      const client = new AgentClient('https://vibelog.org', store(), fetcher);
+      const error = await client.request('/context').catch((value: unknown) => value);
+      expect(error).toBeInstanceOf(CliError);
+      expect(error).toMatchObject({
+        code,
+        status,
+        requestId: 'header-request-id',
+        retryAfterSeconds: 120,
+        recovery: { action },
+      });
+      expect(JSON.stringify(error)).not.toContain('do-not-copy-body');
+      expect(JSON.stringify(error)).not.toContain('private-test-grant');
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    },
+  );
   it('uses a safe body request id and ignores malformed retry headers', async () => {
-    const client = new AgentClient('https://vibelog.org', store(), vi.fn<typeof fetch>().mockResolvedValue(Response.json({ error: { code: 'rate_limited', message: 'Wait.', requestId: 'body-request-id' } }, { status: 429, headers: { 'Retry-After': '2099' } })));
+    const client = new AgentClient(
+      'https://vibelog.org',
+      store(),
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          Response.json(
+            { error: { code: 'rate_limited', message: 'Wait.', requestId: 'body-request-id' } },
+            { status: 429, headers: { 'Retry-After': '2099' } },
+          ),
+        ),
+    );
     // Numeric values are delays, not years.
-    await expect(client.request('/context')).rejects.toMatchObject({ requestId: 'body-request-id', retryAfterSeconds: 2099 });
+    await expect(client.request('/context')).rejects.toMatchObject({
+      requestId: 'body-request-id',
+      retryAfterSeconds: 2099,
+    });
     for (const retry of ['-1', '1.5', 'Infinity', '999999999999999999999999', 'tomorrow']) {
-      const malformed = new AgentClient('https://vibelog.org', store(), vi.fn<typeof fetch>().mockResolvedValue(Response.json({ error: { code: 'rate_limited', message: 'Wait.', requestId: '<script>' } }, { status: 429, headers: { 'Retry-After': retry } })));
+      const malformed = new AgentClient(
+        'https://vibelog.org',
+        store(),
+        vi
+          .fn<typeof fetch>()
+          .mockResolvedValue(
+            Response.json(
+              { error: { code: 'rate_limited', message: 'Wait.', requestId: '<script>' } },
+              { status: 429, headers: { 'Retry-After': retry } },
+            ),
+          ),
+      );
       const error = await malformed.request('/context').catch((value: unknown) => value);
       expect(error).toMatchObject({ status: 429, recovery: { action: 'wait_retry_after' } });
-      expect(error).toHaveProperty('retryAfterSeconds', undefined); expect(error).toHaveProperty('requestId', undefined);
+      expect(error).toHaveProperty('retryAfterSeconds', undefined);
+      expect(error).toHaveProperty('requestId', undefined);
     }
   });
   it('handles HTTP-date Retry-After without changing the server delay', async () => {
-    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-08T00:00:00Z'));
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-08T00:00:00Z'));
     try {
-      const client = new AgentClient('https://vibelog.org', store(), vi.fn<typeof fetch>().mockResolvedValue(Response.json({ error: { code: 'rate_limited', message: 'Wait.' } }, { status: 429, headers: { 'Retry-After': 'Thu, 08 Oct 2026 00:01:00 GMT' } })));
+      const client = new AgentClient(
+        'https://vibelog.org',
+        store(),
+        vi
+          .fn<typeof fetch>()
+          .mockResolvedValue(
+            Response.json(
+              { error: { code: 'rate_limited', message: 'Wait.' } },
+              { status: 429, headers: { 'Retry-After': 'Thu, 08 Oct 2026 00:01:00 GMT' } },
+            ),
+          ),
+      );
       await expect(client.request('/context')).rejects.toMatchObject({ retryAfterSeconds: 60 });
-    } finally { vi.useRealTimers(); }
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('distinguishes interrupted reads and retains ids for interrupted waits and expired grants', async () => {
     const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new Error('offline'));
     const client = new AgentClient('https://vibelog.org', store(), fetcher);
-    await expect(client.request('/context')).rejects.toMatchObject({ code: 'network_outcome_unknown', recovery: { action: 'retry_read' } });
+    await expect(client.request('/context')).rejects.toMatchObject({
+      code: 'network_outcome_unknown',
+      recovery: { action: 'retry_read' },
+    });
     const id = '12345678-1234-1234-1234-123456789abc';
-    await expect(client.wait(id, () => Promise.resolve())).rejects.toMatchObject({ code: 'network_outcome_unknown', details: { operationId: id }, recovery: { action: 'resume_wait', operationId: id } });
-    fetcher.mockResolvedValue(Response.json({ error: { code: 'agent_unauthorized', message: 'Grant revoked.' } }, { status: 401 }));
-    await expect(client.wait(id, () => Promise.resolve())).rejects.toMatchObject({ status: 401, details: { operationId: id }, recovery: { action: 'login', operationId: id } });
+    await expect(client.wait(id, () => Promise.resolve())).rejects.toMatchObject({
+      code: 'network_outcome_unknown',
+      details: { operationId: id },
+      recovery: { action: 'resume_wait', operationId: id },
+    });
+    fetcher.mockResolvedValue(
+      Response.json(
+        { error: { code: 'agent_unauthorized', message: 'Grant revoked.' } },
+        { status: 401 },
+      ),
+    );
+    await expect(client.wait(id, () => Promise.resolve())).rejects.toMatchObject({
+      status: 401,
+      details: { operationId: id },
+      recovery: { action: 'login', operationId: id },
+    });
     expect(fetcher).toHaveBeenCalledTimes(3);
   });
   it('retains the mutation key when the response cannot confirm its outcome', async () => {
-    const client = new AgentClient('https://vibelog.org', store(), vi.fn<typeof fetch>().mockResolvedValue(new Response('not-json', { status: 502 })));
-    await expect(client.request('/design', 'POST', {}, 'request-key-123456')).rejects.toMatchObject({ code: 'invalid_response', status: 502, details: { requestKey: 'request-key-123456' }, recovery: { action: 'retry_same_request' } });
+    const client = new AgentClient(
+      'https://vibelog.org',
+      store(),
+      vi.fn<typeof fetch>().mockResolvedValue(new Response('not-json', { status: 502 })),
+    );
+    await expect(client.request('/design', 'POST', {}, 'request-key-123456')).rejects.toMatchObject(
+      {
+        code: 'invalid_response',
+        status: 502,
+        details: { requestKey: 'request-key-123456' },
+        recovery: { action: 'retry_same_request' },
+      },
+    );
   });
   it('stops polling within the deadline, preserves the operation id and supports resumption', async () => {
-    let time = 0; const delays: number[] = [];
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(() => Promise.resolve(Response.json({ status: 'running' })));
-    const client = new AgentClient('https://vibelog.org', store(), fetcher); const id = '12345678-1234-1234-1234-123456789abc';
-    expect(await client.wait(id, (ms) => { delays.push(ms); time += ms; return Promise.resolve(); }, () => time, 600_000)).toMatchObject({ status: 'pending', operationId: id });
-    expect(time).toBe(600_000); expect(delays.slice(0, 4)).toEqual([5000, 10000, 15000, 20000]); expect(Math.max(...delays)).toBe(20000);
-    fetcher.mockResolvedValue(Response.json({ status: 'succeeded' })); expect(await client.wait(id, () => Promise.resolve(), () => time)).toMatchObject({ status: 'succeeded' });
+    let time = 0;
+    const delays: number[] = [];
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(Response.json({ status: 'running' })));
+    const client = new AgentClient('https://vibelog.org', store(), fetcher);
+    const id = '12345678-1234-1234-1234-123456789abc';
+    expect(
+      await client.wait(
+        id,
+        (ms) => {
+          delays.push(ms);
+          time += ms;
+          return Promise.resolve();
+        },
+        () => time,
+        600_000,
+      ),
+    ).toMatchObject({ status: 'pending', operationId: id });
+    expect(time).toBe(600_000);
+    expect(delays.slice(0, 4)).toEqual([5000, 10000, 15000, 20000]);
+    expect(Math.max(...delays)).toBe(20000);
+    fetcher.mockResolvedValue(Response.json({ status: 'succeeded' }));
+    expect(
+      await client.wait(
+        id,
+        () => Promise.resolve(),
+        () => time,
+      ),
+    ).toMatchObject({ status: 'succeeded' });
   });
   it('rejects publishing and credential arguments', async () => {
-    await expect(run(['publish'], { store: store() })).rejects.toMatchObject({ code: 'invalid_arguments' });
-    await expect(run(['status', '--token', 'secret'], { store: store() })).rejects.toMatchObject({ code: 'invalid_arguments' });
+    await expect(run(['publish'], { store: store() })).rejects.toMatchObject({
+      code: 'invalid_arguments',
+    });
+    await expect(run(['status', '--token', 'secret'], { store: store() })).rejects.toMatchObject({
+      code: 'invalid_arguments',
+    });
   });
   it('returns a nonzero status for invalid designs', async () => {
-    const write = vi.fn(); expect(await run(['validate', '--file', '-'], { store: store(), input: () => Promise.resolve('{"design":{}}'), write, fetcher: vi.fn<typeof fetch>().mockResolvedValue(Response.json({ valid: false, errors: [{ path: 'version', message: 'Required' }] }, { status: 422 })) })).toBe(1);
+    const write = vi.fn();
+    expect(
+      await run(['validate', '--file', '-'], {
+        store: store(),
+        input: () => Promise.resolve('{"design":{}}'),
+        write,
+        fetcher: vi
+          .fn<typeof fetch>()
+          .mockResolvedValue(
+            Response.json(
+              { valid: false, errors: [{ path: 'version', message: 'Required' }] },
+              { status: 422 },
+            ),
+          ),
+      }),
+    ).toBe(1);
     expect(write).toHaveBeenCalledWith(expect.objectContaining({ valid: false }));
   });
 });

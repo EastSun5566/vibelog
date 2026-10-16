@@ -12,17 +12,25 @@ function body(value: string): ReadableStream<Uint8Array> {
   });
 }
 
-function storeWith(objects: Record<string, string>): { store: ArtifactStore; readObject: ReturnType<typeof vi.fn> } {
-  const readObject = vi.fn((_artifactId: string, path: string) => Promise.resolve(objects[path] ? { body: body(objects[path]) } : null));
-  return { store: {
-    uploadDirectory: vi.fn(),
-    materializeArtifact: vi.fn(),
-    copyArtifact: vi.fn(),
-    putObject: vi.fn(),
-    listObjects: vi.fn(() => Promise.resolve(Object.keys(objects))),
+function storeWith(objects: Record<string, string>): {
+  store: ArtifactStore;
+  readObject: ReturnType<typeof vi.fn>;
+} {
+  const readObject = vi.fn((_artifactId: string, path: string) =>
+    Promise.resolve(objects[path] ? { body: body(objects[path]) } : null),
+  );
+  return {
+    store: {
+      uploadDirectory: vi.fn(),
+      materializeArtifact: vi.fn(),
+      copyArtifact: vi.fn(),
+      putObject: vi.fn(),
+      listObjects: vi.fn(() => Promise.resolve(Object.keys(objects))),
+      readObject,
+      deleteArtifact: vi.fn(),
+    },
     readObject,
-    deleteArtifact: vi.fn(),
-  }, readObject };
+  };
 }
 
 describe('artifact serving paths', () => {
@@ -35,7 +43,16 @@ describe('artifact serving paths', () => {
     expect(safeArtifactPath(requestPath)).toBe(expected);
   });
 
-  it.each(['/blog//post', '/blog/post//', '/./post', '/../post', '/blog/%2e%2e/post', '/blog%2fpost', '/blog%5cpost', '/blog/%'])('rejects unsafe path %s', (requestPath) => {
+  it.each([
+    '/blog//post',
+    '/blog/post//',
+    '/./post',
+    '/../post',
+    '/blog/%2e%2e/post',
+    '/blog%2fpost',
+    '/blog%5cpost',
+    '/blog/%',
+  ])('rejects unsafe path %s', (requestPath) => {
     try {
       safeArtifactPath(requestPath);
       expect.unreachable('Expected an unsafe_path error');
@@ -48,15 +65,24 @@ describe('artifact serving paths', () => {
   });
 
   it('resolves both canonical trailing-slash and slashless directory URLs to index.html', async () => {
-    const { store, readObject } = storeWith({ 'blog/web-interface-guidelines/index.html': '<h1>Post</h1>' });
-    await expect(findArtifactObject(store, 'release', '/blog/web-interface-guidelines/')).resolves.toMatchObject({ path: 'blog/web-interface-guidelines/index.html' });
+    const { store, readObject } = storeWith({
+      'blog/web-interface-guidelines/index.html': '<h1>Post</h1>',
+    });
+    await expect(
+      findArtifactObject(store, 'release', '/blog/web-interface-guidelines/'),
+    ).resolves.toMatchObject({ path: 'blog/web-interface-guidelines/index.html' });
     expect(readObject).toHaveBeenCalledTimes(1);
-    await expect(findArtifactObject(store, 'release', '/blog/web-interface-guidelines')).resolves.toMatchObject({ path: 'blog/web-interface-guidelines/index.html' });
+    await expect(
+      findArtifactObject(store, 'release', '/blog/web-interface-guidelines'),
+    ).resolves.toMatchObject({ path: 'blog/web-interface-guidelines/index.html' });
     expect(readObject).toHaveBeenCalledTimes(3);
   });
 
   it('prefers an exact object before directory index fallback', async () => {
-    const { store, readObject } = storeWith({ 'theme.css': 'body{}', 'theme.css/index.html': 'wrong' });
+    const { store, readObject } = storeWith({
+      'theme.css': 'body{}',
+      'theme.css/index.html': 'wrong',
+    });
     const found = await findArtifactObject(store, 'release', '/theme.css');
     expect(found?.path).toBe('theme.css');
     expect(readObject).toHaveBeenCalledTimes(1);

@@ -11,5 +11,9 @@ const shared = {
 
 await Promise.all([
   build({ ...shared, entryPoints: ['src/browser/main.ts'], outfile: 'dist/assets/client.js' }),
-  build({ ...shared, entryPoints: ['src/browser/analytics.ts'], outfile: 'dist/assets/analytics.js' }),
+  build({
+    ...shared,
+    entryPoints: ['src/browser/analytics.ts'],
+    outfile: 'dist/assets/analytics.js',
+  }),
 ]);
