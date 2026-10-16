@@ -111,6 +111,16 @@ runtime; the default `prepare()` instead installs template dependencies. The
 renderer runs in a separate process, and failed builds keep the last successful
 output.
 
+The core build generates fingerprints for the shipped template and renderer,
+including the bundled math implementation. Cache identities also account for
+the resolved rendering dependency versions, checked once when the module loads
+so standalone npm installations can use their own dependency graph. Documentation,
+CLI and hosted-AI changes alone do not invalidate renderer caches.
+
+Legacy or mismatched fingerprints trigger a template refresh or cache miss on
+the next build operation. Explicit template/search versions remain available;
+existing public releases are not rebuilt or published automatically.
+
 ## Migrating from the older npm API
 
 This is an explicit API migration. There is no legacy compatibility shim.

@@ -55,10 +55,19 @@ if (docker(['image', 'inspect', image, '--format', '{{json .Config.Cmd}}']) !== 
 }
 docker(['run', '--rm', '--network', 'none', '--entrypoint', 'node', image, '--input-type=module', '--eval', `
   import assert from 'node:assert/strict';
-  import { readdirSync } from 'node:fs';
-  import { join } from 'node:path';
+  import { readFileSync, readdirSync } from 'node:fs';
+  import { dirname, join } from 'node:path';
+  import { fileURLToPath, pathToFileURL } from 'node:url';
+  import { DEFAULT_DESIGN_V2, structuralBuildIdentity, searchIndexIdentity } from '@vibelog/core';
   const packages = readdirSync(join(process.cwd(), 'node_modules/.pnpm'));
   assert(!packages.some((name) => name.startsWith('braces@')), 'Build-only braces shipped in runtime');
+  const directory = dirname(fileURLToPath(import.meta.resolve('@vibelog/core')));
+  const manifest = JSON.parse(readFileSync(join(directory, 'core/build-fingerprints.json'), 'utf8'));
+  const actual = await import(pathToFileURL(join(directory, 'core/build-fingerprints.js')).href);
+  assert.match(manifest.template, /^[a-f0-9]{64}$/);
+  assert.match(actual.rendererFingerprint, /^[a-f0-9]{64}$/);
+  assert.match(structuralBuildIdentity('smoke', DEFAULT_DESIGN_V2, 'https://writer.example.com'), /^[a-f0-9]{64}$/);
+  assert.match(searchIndexIdentity('smoke', 'https://writer.example.com'), /^[a-f0-9]{64}$/);
 `]);
 docker(['run', '--rm', '--network', 'none', '--entrypoint', 'node', image, '--input-type=module', '--eval', readFileSync(new URL('../../packages/core/scripts/math-bundle-smoke.mjs', import.meta.url), 'utf8')]);
 const volumes = docker(['image', 'inspect', image, '--format', '{{json .Config.Volumes}}']);

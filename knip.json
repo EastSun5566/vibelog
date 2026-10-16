@@ -46,8 +46,8 @@
       "ignoreBinaries": ["pulumi"]
     },
     "packages/core": {
-      "entry": ["src/index.ts", "tests/**/*.test.ts", "scripts/build-math.mjs", "scripts/math-bundle-smoke.mjs"],
-      "project": ["src/**/*.ts", "tests/**/*.ts", "scripts/build-math.mjs", "scripts/math-bundle-smoke.mjs"],
+      "entry": ["src/index.ts", "tests/**/*.test.ts", "scripts/build.mjs", "scripts/build-math.mjs", "scripts/build-fingerprints.mjs", "scripts/math-bundle-smoke.mjs"],
+      "project": ["src/**/*.ts", "tests/**/*.ts", "scripts/build.mjs", "scripts/build-math.mjs", "scripts/build-fingerprints.mjs", "scripts/math-bundle-smoke.mjs"],
       "ignoreDependencies": ["@astrojs/rss"]
     },
     "packages/app": {

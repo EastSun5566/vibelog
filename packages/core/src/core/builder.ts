@@ -28,6 +28,7 @@ import { logger } from './logger.js';
 import { parseFrontMatter, stringifyFrontMatter } from './frontmatter.js';
 import type { ContentSource, Post } from '../types.js';
 import { loadConfig } from './config.js';
+import { rendererFingerprint, templateFingerprint } from './build-fingerprints.js';
 
 export const TEMPLATE_VERSION = 18;
 export const SEARCH_SCHEMA_VERSION = 3;
@@ -38,6 +39,8 @@ export function searchIndexIdentity(sourceArtifactId: string, site: string): str
     .update(new URL(site).origin)
     .update('\0')
     .update(String(SEARCH_SCHEMA_VERSION))
+    .update('\0')
+    .update(rendererFingerprint)
     .digest('hex');
 }
 function canonical(value: unknown): unknown {
@@ -65,6 +68,7 @@ export function structuralBuildIdentity(
           site: new URL(site).origin,
           templateVersion: TEMPLATE_VERSION,
           searchSchemaVersion: SEARCH_SCHEMA_VERSION,
+          rendererFingerprint,
         }),
       ),
     )
@@ -229,6 +233,8 @@ export class DevBuilder {
 
     await fs.writeJson(join(stagingDir, '.vibelog-state.json'), {
       templateVersion: TEMPLATE_VERSION,
+      templateFingerprint,
+      rendererFingerprint,
     });
 
     if (installDependencies) {
@@ -261,8 +267,14 @@ export class DevBuilder {
       const statePath = join(this.vibelogDir, '.vibelog-state.json');
       const state = (await fs.readJson(statePath).catch(() => null)) as {
         templateVersion?: number;
+        templateFingerprint?: string;
+        rendererFingerprint?: string;
       } | null;
-      if (state?.templateVersion === TEMPLATE_VERSION) {
+      if (
+        state?.templateVersion === TEMPLATE_VERSION &&
+        state.templateFingerprint === templateFingerprint &&
+        state.rendererFingerprint === rendererFingerprint
+      ) {
         if (!installDependencies) await this.ensurePackagedRuntime(this.vibelogDir);
         logger.info('Using current ".vibelog" directory');
         return;

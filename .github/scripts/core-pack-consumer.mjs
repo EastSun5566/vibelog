@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import { buildBlog, compileDesignCss, ContentSourceName, createDevBuilder, DEFAULT_DESIGN_V2, validateBlogDesignSpecV2, writeSourceSnapshot } from '@vibelog/core';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { buildBlog, compileDesignCss, ContentSourceName, createDevBuilder, DEFAULT_DESIGN_V2, validateBlogDesignSpecV2, writeSourceSnapshot, structuralBuildIdentity, searchIndexIdentity } from '@vibelog/core';
 import { migratePersistedDesignToV2 } from '@vibelog/core/migration-v1';
 
 const design = validateBlogDesignSpecV2(structuredClone(DEFAULT_DESIGN_V2));
@@ -20,6 +21,16 @@ const builder = createDevBuilder({
   },
 });
 await builder.prepare({ installDependencies: false });
+const coreDist = dirname(fileURLToPath(import.meta.resolve('@vibelog/core')));
+const fingerprints = JSON.parse(await readFile(join(coreDist, 'core/build-fingerprints.json'), 'utf8'));
+const actual = await import(pathToFileURL(join(coreDist, 'core/build-fingerprints.js')).href);
+assert.match(fingerprints.template, /^[a-f0-9]{64}$/);
+assert.match(actual.rendererFingerprint, /^[a-f0-9]{64}$/);
+const state = JSON.parse(await readFile(join(builder.vibelogDir, '.vibelog-state.json'), 'utf8'));
+assert.equal(state.templateFingerprint, fingerprints.template);
+assert.equal(state.rendererFingerprint, actual.rendererFingerprint);
+assert.match(structuralBuildIdentity('source', design, 'https://package.example.com'), /^[a-f0-9]{64}$/);
+assert.match(searchIndexIdentity('source', 'https://package.example.com'), /^[a-f0-9]{64}$/);
 const summary = await builder.fetchContent();
 const sourceDir = join(process.cwd(), 'source');
 await writeSourceSnapshot(builder.vibelogDir, sourceDir, summary);
