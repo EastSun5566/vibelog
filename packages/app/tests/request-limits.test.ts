@@ -20,6 +20,37 @@ const { app } = createApp({
 });
 afterAll(() => database.close());
 
+describe('hosted edge enforcement', () => {
+  const hosted = createApp({
+    config: { ...config, edgeSharedSecret: 'test-edge-secret' }, database,
+    artifactStore: new S3ArtifactStore(config.objectStore),
+    emailSender: { sendMagicLink: send }, dispatcher: { dispatch: () => Promise.resolve(0) },
+  }).app;
+
+  it('rejects unsigned requests on every hosted surface before database access', async () => {
+    const query = vi.spyOn(database.pool, 'query');
+    try {
+      for (const [host, path] of [
+        ['localhost:3000', '/editor'], ['localhost:3000', '/api/agent/v1/context'],
+        ['preview.localhost:3000', '/'], ['writer.localhost:3000', '/blog/post/'],
+      ] as const) {
+        const response = await hosted.request(path, { headers: { Host: host } });
+        expect(response.status).toBe(401);
+        expect(await response.json()).toMatchObject({ error: { code: 'edge_identity_required' } });
+      }
+      expect(query).not.toHaveBeenCalled();
+    } finally { query.mockRestore(); }
+  });
+
+  it('keeps direct health probes checking the database', async () => {
+    const ping = vi.spyOn(database, 'ping').mockResolvedValue();
+    try {
+      for (const method of ['GET', 'HEAD']) expect((await hosted.request('/health', { method })).status).toBe(200);
+      expect(ping).toHaveBeenCalledTimes(2);
+    } finally { ping.mockRestore(); }
+  });
+});
+
 describe('agent payload limit scope', () => {
   it('lets a large native article-selection form reach the existing browser auth guard', async () => {
     const body = new URLSearchParams();

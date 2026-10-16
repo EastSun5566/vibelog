@@ -32,6 +32,18 @@ For a `rootDomain` such as `example.org`:
 
 Cloudflare proxies the apex and wildcard records through separate Worker routes. The edge Worker preserves the requested hostname, signs the origin request, and contains no application domain logic.
 
+With `EDGE_SHARED_SECRET` configured, the web origin requires signed edge identity
+before serving application, API, preview or blog requests. Only unsigned
+`GET /health` and `HEAD /health` remain available for probes and deployment smoke;
+health still checks database connectivity. Direct self-hosting without an edge
+secret keeps its existing hostname and authentication checks. This guard does
+not prevent requests from reaching Cloud Run or replace network-level controls.
+
+The signing format is unchanged, so the existing Worker can serve the updated
+origin without a coordinated protocol migration. Method binding is tracked in
+issue [#42](https://github.com/EastSun5566/vibelog/issues/42); changing the format
+needs a separate compatibility and rollout decision.
+
 ## Normal deployment
 
 Build the edge bundle and Pulumi program before previewing:

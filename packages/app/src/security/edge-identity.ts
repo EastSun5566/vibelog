@@ -6,7 +6,11 @@ import { AppError } from '../http.js';
 export function edgeIdentity(secret: string | undefined): MiddlewareHandler<{ Variables: AppVariables }> {
   return async (c, next) => {
     const host = c.req.header('x-vibelog-host');
-    if (!host) return next();
+    if (!host) {
+      const healthProbe = c.req.path === '/health' && (c.req.method === 'GET' || c.req.method === 'HEAD');
+      if (secret && !healthProbe) throw new AppError('edge_identity_required', 'A verified edge identity is required.', 401, { 'Cache-Control': 'no-store' });
+      return next();
+    }
     const timestamp = c.req.header('x-vibelog-timestamp'); const signature = c.req.header('x-vibelog-signature');
     const clientKey = c.req.header('x-vibelog-client-key');
     if (!secret || !timestamp || !signature || !/^\d+$/u.test(timestamp) || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300 || (clientKey !== undefined && !/^[A-Za-z0-9_-]{43}$/u.test(clientKey))) throw new AppError('edge_identity_invalid', 'Invalid edge identity', 401);
