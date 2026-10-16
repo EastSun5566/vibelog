@@ -652,6 +652,40 @@ while (!await access(${JSON.stringify(release)}).then(() => true, () => false)) 
     expect(await readdir(join(output, 'blog'))).not.toContain('2');
   });
 
+  it('builds all 1,000 articles, search fragments, feeds and archive pages', { timeout: 120_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-capacity-')); roots.push(root);
+    const posts = Array.from({ length: 1000 }, (_, index) => ({
+      id: `post-${String(index + 1)}`, slug: `post-${String(index + 1)}`, title: `Capacity article ${String(index + 1)}`,
+      date: new Date(Date.UTC(2026, 0, index + 1)).toISOString(), tags: ['Writing'],
+      content: `## Reading\n\nUnique article ${String(index + 1)}. ${'A paragraph about writing and code. '.repeat(50)}\n\n\`\`\`ts\nconst article = ${String(index + 1)};\n\`\`\``,
+    }));
+    const builder = createDevBuilder({ root, contentSource: {
+      name: ContentSourceName.HACKMD,
+      getAuthor: () => Promise.resolve({ name: 'Writer', bio: 'A large public archive.' }),
+      getPosts: () => Promise.resolve({ posts }),
+    } });
+    await builder.prepare({ installDependencies: false });
+    await builder.fetchContent();
+    const output = join(root, 'public');
+    const started = performance.now();
+    await buildFromVibelog({ vibelogDir: builder.vibelogDir, outDir: output, site: 'https://writer.example.com' });
+    console.info(JSON.stringify({ event: 'capacity_build', postCount: posts.length, durationMs: Math.round(performance.now() - started) }));
+    const directories = await readdir(join(output, 'blog'));
+    expect(directories.filter((name) => name.startsWith('post-'))).toHaveLength(1000);
+    expect(directories.filter((name) => /^\d+$/u.test(name))).toHaveLength(99);
+    expect(directories).not.toContain('1');
+    expect(await readFile(join(output, 'blog', '100', 'index.html'), 'utf8')).toContain('Capacity article 1');
+    for (const slug of ['post-1', 'post-1000']) {
+      expect(await readFile(join(output, 'blog', slug, 'index.html'), 'utf8')).toContain('data-pagefind-body');
+      expect(await readFile(join(output, 'blog', slug, 'index.md'), 'utf8')).toContain('## Reading');
+    }
+    expect((await readFile(join(output, 'rss.xml'), 'utf8')).match(/<item>/gu)).toHaveLength(1000);
+    expect((await readFile(join(output, 'sitemap-0.xml'), 'utf8')).match(/<loc>https:\/\/writer.example.com\/blog\/post-/gu)).toHaveLength(1000);
+    expect((await readFile(join(output, 'llms.txt'), 'utf8')).match(/\/blog\/post-\d+\/index\.md/gu)).toHaveLength(1000);
+    expect(await readdir(join(output, 'pagefind', 'fragment'))).toHaveLength(1000);
+    expect(await stat(join(output, 'pagefind', 'pagefind-component-ui.js'))).toBeTruthy();
+  });
+
   it('keeps hostile article titles inside safely serialized JSON-LD', { timeout: 20_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'vibelog-builder-jsonld-')); roots.push(root);
     const title = 'An article </script><script>alert(1)</script>';

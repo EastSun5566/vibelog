@@ -13,11 +13,11 @@ const BASE_URL = 'https://hackmd.io';
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_ATTEMPTS = 3;
 const DOWNLOAD_CONCURRENCY = 4;
-const MAX_PUBLIC_POSTS = 200;
+const MAX_PUBLIC_POSTS = 1000;
 const MAX_ARTICLE_BYTES = 2 * 1024 * 1024;
 const MAX_SYNC_BYTES = 32 * 1024 * 1024;
 const MAX_PROFILE_BYTES = 256 * 1024;
-const MAX_OVERVIEW_BYTES = 2 * 1024 * 1024;
+const MAX_OVERVIEW_BYTES = 8 * 1024 * 1024;
 const MAX_RETRY_DELAY_MS = 5_000;
 const RETRY_DELAYS_MS = [250, 1_000] as const;
 const HACKMD_SOURCE_ERROR = Symbol.for('@vibelog/core/HackMdSourceError');
@@ -30,6 +30,7 @@ export type HackMdSourceErrorCode =
   | 'request_timeout'
   | 'request_rejected'
   | 'invalid_response'
+  | 'incomplete_overview'
   | 'metadata_too_large'
   | 'too_many_articles'
   | 'article_too_large'
@@ -66,7 +67,14 @@ const noteSchema = z.object({
   publishedAt: z.string().nullish().transform((value) => value ?? ''),
   permalink: z.string().nullish().transform((value) => value ?? undefined),
 }).loose();
-const overviewSchema = z.object({ notes: z.array(noteSchema) }).loose();
+const overviewSchema = z.object({
+  notes: z.array(noteSchema),
+  meta: z.object({
+    page: z.number().int().min(1).optional(),
+    total: z.number().int().nonnegative().optional(),
+    totalPages: z.number().int().nonnegative().optional(),
+  }).loose().optional(),
+}).loose();
 const personSchema = z.object({
   displayName: z.string().nullish(),
   biography: z.string().nullish(),
@@ -262,7 +270,7 @@ async function mapConcurrent<T, R>(items: T[], concurrency: number, task: (item:
 function prepareNotes(notes: z.infer<typeof noteSchema>[]): PreparedNote[] {
   const publicNotes = notes.filter((note) => note.publishType === 'view' && note.publishedAt);
   if (publicNotes.length === 0) throw new HackMdSourceError('no_public_articles', 'No public published HackMD articles were found');
-  if (publicNotes.length > MAX_PUBLIC_POSTS) throw new HackMdSourceError('too_many_articles', 'HackMD profile exceeds the 200 article limit');
+  if (publicNotes.length > MAX_PUBLIC_POSTS) throw new HackMdSourceError('too_many_articles', 'HackMD profile exceeds the 1,000 article limit');
 
   const slugs = new Set<string>();
   return publicNotes.map((note) => {
@@ -302,6 +310,9 @@ export class HackMdSource implements ContentSource {
   async getPosts() {
     const overviewController = new AbortController();
     const overview = await requestJson(`${this.baseUrl}/api/@${this.username}/overview`, 'overview', MAX_OVERVIEW_BYTES, (input) => overviewSchema.parse(input), overviewController.signal);
+    if ((overview.meta?.total ?? 0) > overview.notes.length || (overview.meta?.totalPages ?? 1) > 1 || (overview.meta?.page ?? 1) > 1) {
+      throw new HackMdSourceError('incomplete_overview', 'HackMD returned an incomplete article list');
+    }
     const notes = prepareNotes(overview.notes);
     let totalBytes = 0;
     const posts = await mapConcurrent(notes, DOWNLOAD_CONCURRENCY, async (note, signal): Promise<Post> => {

@@ -1,4 +1,4 @@
-import { AiProviderRequestError, AiProviderTimeoutError, DEFAULT_DESIGN_V2, buildBlog, structuralBuildIdentity } from '@vibelog/core';
+import { AiProviderRequestError, AiProviderTimeoutError, ContentSourceName, DEFAULT_DESIGN_V2, HackMdSourceError, buildBlog, structuralBuildIdentity } from '@vibelog/core';
 import type { AiProvider } from '@vibelog/core';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -377,5 +377,43 @@ describe('AI operation execution', () => {
     expect(providerMessage).toContain('temporarily unavailable');
     expect(timeoutMessage).toContain('too long to respond');
     expect(validationMessage).toContain('valid design');
+  });
+
+  it.each([
+    ['too_many_articles', '1,000'], ['article_too_large', '2 MiB'],
+    ['sync_too_large', '32 MiB'], ['metadata_too_large', 'metadata'],
+    ['incomplete_overview', 'incomplete article list'],
+  ] as const)('explains the %s sync limit without exposing external content', (code, message) => {
+    const result = operationPublicError('sync', new HackMdSourceError(code, 'private source text'));
+    expect(result).toContain(message);
+    expect(result).not.toContain('private source text');
+    expect(result).not.toContain('Sync failed');
+  });
+
+  it.each([
+    ['sync_too_large', '32 MiB'], ['incomplete_overview', 'incomplete article list'],
+  ] as const)('keeps the current draft and release when importing fails with %s', async (code, publicMessage) => {
+    const sync = { ...operation('sync-limit'), type: 'sync' as const, payload: { intent: 'content' } };
+    const completeSyncOperation = vi.fn();
+    const markArtifactCleanup = vi.fn<AppDatabase['markArtifactCleanup']>(() => Promise.resolve());
+    const failOperation = vi.fn(() => Promise.resolve());
+    const database = {
+      claimOperation: vi.fn(() => Promise.resolve(sync)), getBlog: vi.fn(() => Promise.resolve(blog)),
+      createArtifact: vi.fn().mockResolvedValueOnce({ id: 'pending-source' }).mockResolvedValueOnce({ id: 'pending-draft' }),
+      updateOperationProgress: vi.fn(), completeSyncOperation, markArtifactCleanup, failOperation,
+    } as unknown as AppDatabase;
+    const uploadDirectory = vi.fn();
+    const artifacts = { uploadDirectory } as unknown as ArtifactStore;
+    const executor = new AppOperationExecutor(database, artifacts, config, { contentSource: () => ({
+      name: ContentSourceName.HACKMD,
+      getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
+      getPosts: () => Promise.reject(new HackMdSourceError(code, 'External import failed')),
+    }) });
+    await expect(executor.execute(sync.id)).rejects.toThrow(publicMessage);
+    expect(markArtifactCleanup.mock.calls.map(([id]) => id)).toEqual(['pending-source', 'pending-draft']);
+    expect(completeSyncOperation).not.toHaveBeenCalled();
+    expect(uploadDirectory).not.toHaveBeenCalled();
+    expect(failOperation).toHaveBeenCalledWith(sync, expect.stringContaining(publicMessage));
+    expect(blog.draftArtifactId).toBe('draft');
   });
 });

@@ -75,6 +75,22 @@ describe('HackMdSource', () => {
     expect(result.posts.every((post) => !Object.hasOwn(post, 'description'))).toBe(true);
   });
 
+  it.each([
+    { total: 2 }, { totalPages: 2 }, { page: 2, total: 1, totalPages: 1 },
+  ])('rejects an incomplete overview before downloading articles: %j', async (meta) => {
+    const fetchMock = vi.fn(() => Promise.resolve(Response.json({ notes: [note('one')], meta })));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({ code: 'incomplete_overview' });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('accepts a complete overview whose total includes unpublished notes', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => Promise.resolve(fetchUrl(input).endsWith('/overview')
+      ? Response.json({ notes: [note('one'), note('draft', { publishType: 'edit', publishedAt: '' })], meta: { page: 1, total: 2, totalPages: 1 } })
+      : new Response('Body'))));
+    await expect(new HackMdSource('writer').getPosts()).resolves.toMatchObject({ posts: [{ id: 'one' }] });
+  });
+
   it('keeps same-day modifications, ignores earlier ones, and defaults missing tags', async () => {
     vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => Promise.resolve(fetchUrl(input).endsWith('/overview')
       ? overview([
@@ -255,10 +271,10 @@ describe('HackMdSource', () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json({ user: { displayName: 'Writer', biography: 'x'.repeat(256 * 1024) } }))));
     await expect(new HackMdSource('writer').getAuthor()).rejects.toMatchObject({ code: 'metadata_too_large' });
 
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json({ notes: [], padding: 'x'.repeat(2 * 1024 * 1024) }))));
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json({ notes: [], padding: 'x'.repeat(8 * 1024 * 1024) }))));
     await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({ code: 'metadata_too_large' });
 
-    const tooMany = Array.from({ length: 201 }, (_, index) => note(String(index)));
+    const tooMany = Array.from({ length: 1001 }, (_, index) => note(String(index)));
     const countFetch = vi.fn(() => Promise.resolve(overview(tooMany)));
     vi.stubGlobal('fetch', countFetch);
     await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({ code: 'too_many_articles' });
@@ -269,6 +285,31 @@ describe('HackMdSource', () => {
       ? overview(Array.from({ length: 17 }, (_, index) => note(String(index))))
       : new Response(body))));
     await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({ code: 'sync_too_large' });
+  });
+
+  it('imports all 1,000 public articles with a larger overview, without downloading private notes', async () => {
+    const notes = Array.from({ length: 1000 }, (_, index) => note(String(index), { content: 'summary '.repeat(300) }));
+    const metadata = { notes: [...notes, note('private', { publishType: 'edit' })], meta: { page: 1, total: 1001, totalPages: 1 } };
+    expect(new TextEncoder().encode(JSON.stringify(metadata)).byteLength).toBeGreaterThan(2 * 1024 * 1024);
+    const fetchMock = vi.fn((input: string | URL | Request) => Promise.resolve(fetchUrl(input).endsWith('/overview')
+      ? Response.json(metadata)
+      : new Response('Article body')));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await new HackMdSource('writer').getPosts();
+    expect(result.posts).toHaveLength(1000);
+    expect(result.posts.map((post) => post.id)).toEqual(notes.map((item) => item.id));
+    expect(fetchMock).toHaveBeenCalledTimes(1001);
+    expect(fetchMock.mock.calls.some(([input]) => fetchUrl(input).endsWith('/private/download'))).toBe(false);
+  });
+
+  it('accepts 32 MiB of aggregate Markdown without truncation', async () => {
+    const body = 'x'.repeat(2 * 1024 * 1024);
+    vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => Promise.resolve(fetchUrl(input).endsWith('/overview')
+      ? overview(Array.from({ length: 16 }, (_, index) => note(String(index))))
+      : new Response(body))));
+    const result = await new HackMdSource('writer').getPosts();
+    expect(result.posts).toHaveLength(16);
+    expect(result.posts.every((post) => post.content.length === body.length)).toBe(true);
   });
 
   it('cancels remaining downloads after a permanent article failure', async () => {

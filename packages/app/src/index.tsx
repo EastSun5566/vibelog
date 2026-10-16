@@ -67,7 +67,11 @@ export function createApp(options: CreateAppOptions) {
     app.use(path, async (c, next) => { c.header('Cache-Control', 'private, no-store'); await next(); c.header('Cache-Control', 'private, no-store'); });
     app.use(path, bodyLimit({ maxSize: 16 * 1024, onError: (c) => jsonError(c, new AppError('payload_too_large', 'Authentication request body exceeds 16 KiB', 413)) }));
   }
-  app.use(`${AGENT_API}/*`, bodyLimit({ maxSize: 64 * 1024, onError: () => Response.json({ error: { code: 'payload_too_large', message: 'Request body exceeds 64 KiB', requestId: randomUUID() } }, { status: 413 }) }));
+  const agentBodyLimit: MiddlewareHandler<AppEnv> = (c, next) => {
+    const limitKiB = c.req.method === 'POST' && c.req.path === `${AGENT_API}/selection` ? 256 : 64;
+    return bodyLimit({ maxSize: limitKiB * 1024, onError: () => Response.json({ error: { code: 'payload_too_large', message: `Request body exceeds ${String(limitKiB)} KiB`, requestId: randomUUID() } }, { status: 413 }) })(c, next);
+  };
+  app.use(`${AGENT_API}/*`, agentBodyLimit);
   app.use('*', async (c, next) => {
     if (blocksRequest(config.maintenanceStage, 'web', c.req.path)) return maintenanceResponse(c.req.method);
     await next();
