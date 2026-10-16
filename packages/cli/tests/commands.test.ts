@@ -333,6 +333,42 @@ describe('agent CLI', () => {
     expect(new Headers(request?.headers).get('Idempotency-Key')).toBe('request-key-123456'); expect(request?.redirect).toBe('error');
     expect(JSON.stringify(write.mock.calls)).not.toContain('private-test-grant');
   });
+
+  it('accepts streamed selection input for 1,000 long slugs without widening design input', async () => {
+    const text = JSON.stringify({ stateVersion: 'a'.repeat(43), excludedSlugs: Array.from({ length: 1000 }, (_, index) => `${'文'.repeat(76)}${String(index).padStart(4, '0')}`) });
+    expect(Buffer.byteLength(text)).toBeGreaterThan(64 * 1024);
+    const input = vi.spyOn(process.stdin, Symbol.asyncIterator).mockImplementation(async function* () {
+      const bytes = Buffer.from(text);
+      yield await Promise.resolve(bytes.subarray(0, 64 * 1024));
+      yield bytes.subarray(64 * 1024);
+      return undefined;
+    });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ operationId: 'selection-operation' }));
+    try {
+      expect(await run(['selection', '--file', '-', '--request-key', 'selection-key-123456'], { store: store(), fetcher, write: vi.fn() })).toBe(0);
+      expect(fetcher).toHaveBeenCalledOnce();
+      expect(fetcher.mock.calls[0]?.[0]).toBe('https://vibelog.org/api/agent/v1/selection');
+      const body = fetcher.mock.calls[0]?.[1]?.body;
+      if (typeof body !== 'string') throw new Error('Expected a JSON request body');
+      expect(JSON.parse(body)).toEqual(JSON.parse(text));
+      fetcher.mockClear();
+      await expect(run(['design', '--file', '-', '--request-key', 'selection-key-123456'], { store: store(), fetcher, input: () => Promise.resolve(text) })).rejects.toMatchObject({ code: 'input_too_large' });
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally { input.mockRestore(); }
+  });
+
+  it('stops selection stdin above 256 KiB before submitting a request', async () => {
+    const input = vi.spyOn(process.stdin, Symbol.asyncIterator).mockImplementation(async function* () {
+      yield await Promise.resolve(Buffer.alloc(256 * 1024));
+      yield Buffer.alloc(1);
+      return undefined;
+    });
+    const fetcher = vi.fn();
+    try {
+      await expect(run(['selection', '--file', '-', '--request-key', 'selection-key-123456'], { store: store(), fetcher })).rejects.toMatchObject({ code: 'input_too_large', message: 'Input must not exceed 256 KiB.' });
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally { input.mockRestore(); }
+  });
   it('reports an uncertain outcome without inventing a new operation', async () => {
     const client = new AgentClient('https://vibelog.org', store(), vi.fn<typeof fetch>().mockRejectedValue(new Error('network')));
     await expect(client.request('/design', 'POST', {}, 'request-key-123456')).rejects.toMatchObject({ code: 'network_outcome_unknown', details: { requestKey: 'request-key-123456' }, recovery: { action: 'retry_same_request' } });

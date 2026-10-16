@@ -30,6 +30,10 @@ export function operationPublicError(type: OperationRecord['type'], error: unkno
         temporarily_unavailable: 'HackMD is not responding reliably right now. Please try again later.',
         request_timeout: 'HackMD is not responding reliably right now. Please try again later.',
         no_public_articles: 'This HackMD account does not have any public published articles.',
+        too_many_articles: 'Sync supports up to 1,000 public published articles per HackMD profile. No changes were saved.',
+        article_too_large: 'A HackMD article exceeds the 2 MiB Markdown limit. Shorten that article before syncing again.',
+        sync_too_large: 'This profile exceeds the 128 MiB total Markdown limit. Reduce its published content before syncing again.',
+        metadata_too_large: 'HackMD profile or article-list metadata exceeds the import limit. Try a smaller public profile.',
       };
       const publicMessage = messages[error.code];
       if (publicMessage) return publicMessage;

@@ -4,7 +4,7 @@ import { AgentClient, CliError } from './client.js';
 import { secureStore, type CredentialStore } from './credentials.js';
 import { login } from './login.js';
 
-export const HELP = `VibeLog CLI 0.5.0 (@vibelog/cli) — private drafts and human-requested publishing
+export const HELP = `VibeLog CLI 0.5.1 (@vibelog/cli) — private drafts and human-requested publishing
 Usage: vibelog <command> [options]
   login                 Request browser-approved draft and publishing access
   login --no-wait       Start or resume approval without waiting; run again after approving
@@ -60,16 +60,17 @@ export async function run(args: string[], runtime: Runtime = {}): Promise<number
     write(await client.request(path)); return 0;
   }
   const file = flags['--file']; if (!file) throw new CliError('invalid_arguments', 'Supply --file PATH or --file - for stdin.');
-  const text = file === '-' ? await (runtime.input ?? readInput)() : await readFile(file, 'utf8');
-  if (Buffer.byteLength(text) > 64 * 1024) throw new CliError('input_too_large', 'Input must not exceed 64 KiB.');
+  const limitKiB = command === 'selection' ? 256 : 64;
+  const text = file === '-' ? await (runtime.input ?? (() => readInput(limitKiB)))() : await readFile(file, 'utf8');
+  if (Buffer.byteLength(text) > limitKiB * 1024) throw new CliError('input_too_large', `Input must not exceed ${String(limitKiB)} KiB.`);
   let input: unknown; try { input = JSON.parse(text); } catch { throw new CliError('invalid_json', 'Input is not valid JSON.'); }
   const key = flags['--request-key'];
   if (command !== 'validate' && (!key || !/^[A-Za-z0-9_-]{16,128}$/u.test(key))) throw new CliError('invalid_request_key', 'Supply a stable --request-key of 16–128 characters.');
   const result = await client.request(command === 'validate' ? '/design/validate' : `/${command}`, 'POST', input, key);
   write(result); return result.valid === false ? 1 : 0;
 }
-async function readInput(): Promise<string> {
+async function readInput(limitKiB: number): Promise<string> {
   const chunks: Buffer[] = []; let length = 0;
-  for await (const chunk of process.stdin) { const buffer = Buffer.from(chunk as Uint8Array); length += buffer.length; if (length > 64 * 1024) throw new CliError('input_too_large', 'Input must not exceed 64 KiB.'); chunks.push(buffer); }
+  for await (const chunk of process.stdin) { const buffer = Buffer.from(chunk as Uint8Array); length += buffer.length; if (length > limitKiB * 1024) throw new CliError('input_too_large', `Input must not exceed ${String(limitKiB)} KiB.`); chunks.push(buffer); }
   return Buffer.concat(chunks).toString('utf8');
 }

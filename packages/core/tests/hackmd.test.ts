@@ -255,10 +255,10 @@ describe('HackMdSource', () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json({ user: { displayName: 'Writer', biography: 'x'.repeat(256 * 1024) } }))));
     await expect(new HackMdSource('writer').getAuthor()).rejects.toMatchObject({ code: 'metadata_too_large' });
 
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json({ notes: [], padding: 'x'.repeat(2 * 1024 * 1024) }))));
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json({ notes: [], padding: 'x'.repeat(8 * 1024 * 1024) }))));
     await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({ code: 'metadata_too_large' });
 
-    const tooMany = Array.from({ length: 201 }, (_, index) => note(String(index)));
+    const tooMany = Array.from({ length: 1001 }, (_, index) => note(String(index)));
     const countFetch = vi.fn(() => Promise.resolve(overview(tooMany)));
     vi.stubGlobal('fetch', countFetch);
     await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({ code: 'too_many_articles' });
@@ -266,9 +266,34 @@ describe('HackMdSource', () => {
 
     const body = 'x'.repeat(2 * 1024 * 1024);
     vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => Promise.resolve(fetchUrl(input).endsWith('/overview')
-      ? overview(Array.from({ length: 17 }, (_, index) => note(String(index))))
+      ? overview(Array.from({ length: 65 }, (_, index) => note(String(index))))
       : new Response(body))));
     await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({ code: 'sync_too_large' });
+  });
+
+  it('imports all 1,000 public articles with a larger overview, without downloading private notes', async () => {
+    const notes = Array.from({ length: 1000 }, (_, index) => note(String(index), { content: 'summary '.repeat(300) }));
+    const metadata = { notes: [...notes, note('private', { publishType: 'edit' })] };
+    expect(new TextEncoder().encode(JSON.stringify(metadata)).byteLength).toBeGreaterThan(2 * 1024 * 1024);
+    const fetchMock = vi.fn((input: string | URL | Request) => Promise.resolve(fetchUrl(input).endsWith('/overview')
+      ? Response.json(metadata)
+      : new Response('Article body')));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await new HackMdSource('writer').getPosts();
+    expect(result.posts).toHaveLength(1000);
+    expect(result.posts.map((post) => post.id)).toEqual(notes.map((item) => item.id));
+    expect(fetchMock).toHaveBeenCalledTimes(1001);
+    expect(fetchMock.mock.calls.some(([input]) => fetchUrl(input).endsWith('/private/download'))).toBe(false);
+  });
+
+  it('accepts 128 MiB of aggregate Markdown without truncation', async () => {
+    const body = 'x'.repeat(2 * 1024 * 1024);
+    vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => Promise.resolve(fetchUrl(input).endsWith('/overview')
+      ? overview(Array.from({ length: 64 }, (_, index) => note(String(index))))
+      : new Response(body))));
+    const result = await new HackMdSource('writer').getPosts();
+    expect(result.posts).toHaveLength(64);
+    expect(result.posts.every((post) => post.content.length === body.length)).toBe(true);
   });
 
   it('cancels remaining downloads after a permanent article failure', async () => {

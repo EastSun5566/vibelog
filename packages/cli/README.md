@@ -11,6 +11,10 @@ For local development, use `pnpm --filter @vibelog/cli build` and `node packages
 
 The install examples use published **0.5.0**. Publishing commands require 0.4.0+ and a compatible API. The website's prompt uses the production-pinned CLI version.
 
+This source prepares **0.5.1**, which accepts selection input up to 256 KiB for
+1,000-article profiles. Other mutation inputs remain limited to 64 KiB. Production
+stays pinned to the published version until the matching API and CLI are released.
+
 Reuse valid authorization. At the start of the main flow, request a publishing upgrade if valid access is draft-only; explain that new browser approval is needed. For explicitly draft-only work, keep the limited grant. Otherwise run `login` only when `status` reports `login_required` or `agent_unauthorized`; network and secure-storage errors should be resolved without creating another login.
 
 In 0.5.0, agents use `login --no-wait` for draft and publishing access (`--draft-only` opts out). In 0.4.0, use `login --no-wait --allow-publish` for the same scope. The command prints an approval URL, code and expiry, **never a token or device code**, and returns immediately with `approval_required` (exit 0). Sign in with the intended account, confirm the code in the browser, and approve the displayed permissions. Return to your agent; it runs the same command again to finish connecting and receive `authorized`. The pending request is stored in OS secure storage, separate from your grant and isolated by service origin. Do not start another login process or use `nohup` to wait. Some harnesses need human input to resume; explain that limitation without asking for an extra “Done”.

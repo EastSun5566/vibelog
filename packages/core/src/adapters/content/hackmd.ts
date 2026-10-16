@@ -13,11 +13,11 @@ const BASE_URL = 'https://hackmd.io';
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_ATTEMPTS = 3;
 const DOWNLOAD_CONCURRENCY = 4;
-const MAX_PUBLIC_POSTS = 200;
+const MAX_PUBLIC_POSTS = 1000;
 const MAX_ARTICLE_BYTES = 2 * 1024 * 1024;
-const MAX_SYNC_BYTES = 32 * 1024 * 1024;
+const MAX_SYNC_BYTES = 128 * 1024 * 1024;
 const MAX_PROFILE_BYTES = 256 * 1024;
-const MAX_OVERVIEW_BYTES = 2 * 1024 * 1024;
+const MAX_OVERVIEW_BYTES = 8 * 1024 * 1024;
 const MAX_RETRY_DELAY_MS = 5_000;
 const RETRY_DELAYS_MS = [250, 1_000] as const;
 const HACKMD_SOURCE_ERROR = Symbol.for('@vibelog/core/HackMdSourceError');
@@ -262,7 +262,7 @@ async function mapConcurrent<T, R>(items: T[], concurrency: number, task: (item:
 function prepareNotes(notes: z.infer<typeof noteSchema>[]): PreparedNote[] {
   const publicNotes = notes.filter((note) => note.publishType === 'view' && note.publishedAt);
   if (publicNotes.length === 0) throw new HackMdSourceError('no_public_articles', 'No public published HackMD articles were found');
-  if (publicNotes.length > MAX_PUBLIC_POSTS) throw new HackMdSourceError('too_many_articles', 'HackMD profile exceeds the 200 article limit');
+  if (publicNotes.length > MAX_PUBLIC_POSTS) throw new HackMdSourceError('too_many_articles', 'HackMD profile exceeds the 1,000 article limit');
 
   const slugs = new Set<string>();
   return publicNotes.map((note) => {
@@ -307,7 +307,7 @@ export class HackMdSource implements ContentSource {
     const posts = await mapConcurrent(notes, DOWNLOAD_CONCURRENCY, async (note, signal): Promise<Post> => {
       const result = await requestText(`${this.baseUrl}/${note.id}/download`, 'article', MAX_ARTICLE_BYTES, signal);
       totalBytes += result.bytes;
-      if (totalBytes > MAX_SYNC_BYTES) throw new HackMdSourceError('sync_too_large', 'HackMD articles exceed the 32 MiB sync limit');
+      if (totalBytes > MAX_SYNC_BYTES) throw new HackMdSourceError('sync_too_large', 'HackMD articles exceed the 128 MiB sync limit');
       return {
         id: note.id,
         title: note.title,

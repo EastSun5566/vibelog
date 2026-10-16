@@ -37,6 +37,24 @@ describe('agent payload limit scope', () => {
     expect(response.status).toBe(413);
     expect(await response.json()).toMatchObject({ error: { code: 'payload_too_large' } });
   });
+
+  it('lets selection lists for 1,000 long Unicode slugs reach authentication', async () => {
+    const body = JSON.stringify({ stateVersion: 'a'.repeat(43), excludedSlugs: Array.from({ length: 1000 }, (_, index) => `${'文'.repeat(76)}${String(index).padStart(4, '0')}`) });
+    const bytes = new TextEncoder().encode(body).byteLength;
+    expect(bytes).toBeGreaterThan(64 * 1024);
+    expect(bytes).toBeLessThan(256 * 1024);
+    const response = await app.request('/api/agent/v1/selection', { method: 'POST', body, headers: { Host: 'localhost:3000', 'Content-Type': 'application/json' } });
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ error: { code: 'agent_unauthorized' } });
+  });
+
+  it('still bounds selection payloads at 256 KiB, including streamed bodies', async () => {
+    const body = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(256 * 1024)); controller.enqueue(new Uint8Array(1)); controller.close(); } });
+    const request = new Request('http://localhost:3000/api/agent/v1/selection', { method: 'POST', headers: { Host: 'localhost:3000', 'Content-Type': 'application/json' }, body, duplex: 'half' } as RequestInit);
+    const response = await app.request(request);
+    expect(response.status).toBe(413);
+    expect(await response.json()).toMatchObject({ error: { code: 'payload_too_large', message: 'Request body exceeds 256 KiB' } });
+  });
 });
 
 describe('authentication request limits', () => {
