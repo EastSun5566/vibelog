@@ -15,7 +15,7 @@ const MAX_ATTEMPTS = 3;
 const DOWNLOAD_CONCURRENCY = 4;
 const MAX_PUBLIC_POSTS = 1000;
 const MAX_ARTICLE_BYTES = 2 * 1024 * 1024;
-const MAX_SYNC_BYTES = 64 * 1024 * 1024;
+const MAX_SYNC_BYTES = 32 * 1024 * 1024;
 const MAX_PROFILE_BYTES = 256 * 1024;
 const MAX_OVERVIEW_BYTES = 8 * 1024 * 1024;
 const MAX_RETRY_DELAY_MS = 5_000;
@@ -318,7 +318,7 @@ export class HackMdSource implements ContentSource {
     const posts = await mapConcurrent(notes, DOWNLOAD_CONCURRENCY, async (note, signal): Promise<Post> => {
       const result = await requestText(`${this.baseUrl}/${note.id}/download`, 'article', MAX_ARTICLE_BYTES, signal);
       totalBytes += result.bytes;
-      if (totalBytes > MAX_SYNC_BYTES) throw new HackMdSourceError('sync_too_large', 'HackMD articles exceed the 64 MiB sync limit');
+      if (totalBytes > MAX_SYNC_BYTES) throw new HackMdSourceError('sync_too_large', 'HackMD articles exceed the 32 MiB sync limit');
       return {
         id: note.id,
         title: note.title,
