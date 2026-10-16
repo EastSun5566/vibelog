@@ -30,6 +30,7 @@ export type HackMdSourceErrorCode =
   | 'request_timeout'
   | 'request_rejected'
   | 'invalid_response'
+  | 'incomplete_overview'
   | 'metadata_too_large'
   | 'too_many_articles'
   | 'article_too_large'
@@ -66,7 +67,14 @@ const noteSchema = z.object({
   publishedAt: z.string().nullish().transform((value) => value ?? ''),
   permalink: z.string().nullish().transform((value) => value ?? undefined),
 }).loose();
-const overviewSchema = z.object({ notes: z.array(noteSchema) }).loose();
+const overviewSchema = z.object({
+  notes: z.array(noteSchema),
+  meta: z.object({
+    page: z.number().int().min(1).optional(),
+    total: z.number().int().nonnegative().optional(),
+    totalPages: z.number().int().nonnegative().optional(),
+  }).loose().optional(),
+}).loose();
 const personSchema = z.object({
   displayName: z.string().nullish(),
   biography: z.string().nullish(),
@@ -302,6 +310,9 @@ export class HackMdSource implements ContentSource {
   async getPosts() {
     const overviewController = new AbortController();
     const overview = await requestJson(`${this.baseUrl}/api/@${this.username}/overview`, 'overview', MAX_OVERVIEW_BYTES, (input) => overviewSchema.parse(input), overviewController.signal);
+    if ((overview.meta?.total ?? 0) > overview.notes.length || (overview.meta?.totalPages ?? 1) > 1 || (overview.meta?.page ?? 1) > 1) {
+      throw new HackMdSourceError('incomplete_overview', 'HackMD returned an incomplete article list');
+    }
     const notes = prepareNotes(overview.notes);
     let totalBytes = 0;
     const posts = await mapConcurrent(notes, DOWNLOAD_CONCURRENCY, async (note, signal): Promise<Post> => {

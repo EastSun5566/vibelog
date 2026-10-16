@@ -75,6 +75,22 @@ describe('HackMdSource', () => {
     expect(result.posts.every((post) => !Object.hasOwn(post, 'description'))).toBe(true);
   });
 
+  it.each([
+    { total: 2 }, { totalPages: 2 }, { page: 2, total: 1, totalPages: 1 },
+  ])('rejects an incomplete overview before downloading articles: %j', async (meta) => {
+    const fetchMock = vi.fn(() => Promise.resolve(Response.json({ notes: [note('one')], meta })));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({ code: 'incomplete_overview' });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('accepts a complete overview whose total includes unpublished notes', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => Promise.resolve(fetchUrl(input).endsWith('/overview')
+      ? Response.json({ notes: [note('one'), note('draft', { publishType: 'edit', publishedAt: '' })], meta: { page: 1, total: 2, totalPages: 1 } })
+      : new Response('Body'))));
+    await expect(new HackMdSource('writer').getPosts()).resolves.toMatchObject({ posts: [{ id: 'one' }] });
+  });
+
   it('keeps same-day modifications, ignores earlier ones, and defaults missing tags', async () => {
     vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => Promise.resolve(fetchUrl(input).endsWith('/overview')
       ? overview([
@@ -273,7 +289,7 @@ describe('HackMdSource', () => {
 
   it('imports all 1,000 public articles with a larger overview, without downloading private notes', async () => {
     const notes = Array.from({ length: 1000 }, (_, index) => note(String(index), { content: 'summary '.repeat(300) }));
-    const metadata = { notes: [...notes, note('private', { publishType: 'edit' })] };
+    const metadata = { notes: [...notes, note('private', { publishType: 'edit' })], meta: { page: 1, total: 1001, totalPages: 1 } };
     expect(new TextEncoder().encode(JSON.stringify(metadata)).byteLength).toBeGreaterThan(2 * 1024 * 1024);
     const fetchMock = vi.fn((input: string | URL | Request) => Promise.resolve(fetchUrl(input).endsWith('/overview')
       ? Response.json(metadata)

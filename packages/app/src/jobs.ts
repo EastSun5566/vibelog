@@ -34,6 +34,7 @@ export function operationPublicError(type: OperationRecord['type'], error: unkno
         article_too_large: 'A HackMD article exceeds the 2 MiB Markdown limit. Shorten that article before syncing again.',
         sync_too_large: 'This profile exceeds the 128 MiB total Markdown limit. Reduce its published content before syncing again.',
         metadata_too_large: 'HackMD profile or article-list metadata exceeds the import limit. Try a smaller public profile.',
+        incomplete_overview: 'HackMD returned an incomplete article list. No changes were saved. Please try syncing again later.',
       };
       const publicMessage = messages[error.code];
       if (publicMessage) return publicMessage;

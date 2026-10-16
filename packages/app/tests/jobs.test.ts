@@ -382,6 +382,7 @@ describe('AI operation execution', () => {
   it.each([
     ['too_many_articles', '1,000'], ['article_too_large', '2 MiB'],
     ['sync_too_large', '128 MiB'], ['metadata_too_large', 'metadata'],
+    ['incomplete_overview', 'incomplete article list'],
   ] as const)('explains the %s sync limit without exposing external content', (code, message) => {
     const result = operationPublicError('sync', new HackMdSourceError(code, 'private source text'));
     expect(result).toContain(message);
@@ -389,7 +390,9 @@ describe('AI operation execution', () => {
     expect(result).not.toContain('Sync failed');
   });
 
-  it('keeps the current draft and release when importing exceeds capacity', async () => {
+  it.each([
+    ['sync_too_large', '128 MiB'], ['incomplete_overview', 'incomplete article list'],
+  ] as const)('keeps the current draft and release when importing fails with %s', async (code, publicMessage) => {
     const sync = { ...operation('sync-limit'), type: 'sync' as const, payload: { intent: 'content' } };
     const completeSyncOperation = vi.fn();
     const markArtifactCleanup = vi.fn<AppDatabase['markArtifactCleanup']>(() => Promise.resolve());
@@ -404,13 +407,13 @@ describe('AI operation execution', () => {
     const executor = new AppOperationExecutor(database, artifacts, config, { contentSource: () => ({
       name: ContentSourceName.HACKMD,
       getAuthor: () => Promise.resolve({ name: 'Writer', bio: '' }),
-      getPosts: () => Promise.reject(new HackMdSourceError('sync_too_large', 'Exceeded capacity')),
+      getPosts: () => Promise.reject(new HackMdSourceError(code, 'External import failed')),
     }) });
-    await expect(executor.execute(sync.id)).rejects.toThrow('128 MiB');
+    await expect(executor.execute(sync.id)).rejects.toThrow(publicMessage);
     expect(markArtifactCleanup.mock.calls.map(([id]) => id)).toEqual(['pending-source', 'pending-draft']);
     expect(completeSyncOperation).not.toHaveBeenCalled();
     expect(uploadDirectory).not.toHaveBeenCalled();
-    expect(failOperation).toHaveBeenCalledWith(sync, expect.stringContaining('128 MiB'));
+    expect(failOperation).toHaveBeenCalledWith(sync, expect.stringContaining(publicMessage));
     expect(blog.draftArtifactId).toBe('draft');
   });
 });

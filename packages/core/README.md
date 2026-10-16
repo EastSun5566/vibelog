@@ -101,8 +101,10 @@ Markdown per article**, **128 MiB total Markdown** and **8 MiB of overview data*
 Profile metadata is limited to 256 KiB. Downloads use four concurrent requests;
 images remain external and are not part of the Markdown byte budget. Limits
 apply to the profile's published articles before article selection. Imports do
-not silently truncate content; a failed sync preserves the last working draft
-and live release.
+not silently truncate content; if HackMD's pagination metadata indicates a
+partial response, sync stops rather than accepting the subset. Responses without
+that metadata remain compatible but cannot prove upstream completeness. A failed
+sync preserves the last working draft and live release.
 
 `prepare({ installDependencies: false })` uses the installed package's template
 runtime; the default `prepare()` instead installs template dependencies. The
