@@ -31,7 +31,13 @@ function inlineText(node: PhrasingContent): string {
 function paragraphText(paragraph: Paragraph): string {
   if (paragraph.children.length === 1 && paragraph.children[0]?.type === 'text') {
     const value = paragraph.children[0].value.trim();
-    if (value.toUpperCase() === '[TOC]' || HTML_BLOCK.test(value) || HTML_COMMENT.test(value) || HTML_SINGLE_TAG.test(value)) return '';
+    if (
+      value.toUpperCase() === '[TOC]' ||
+      HTML_BLOCK.test(value) ||
+      HTML_COMMENT.test(value) ||
+      HTML_SINGLE_TAG.test(value)
+    )
+      return '';
   }
   return paragraph.children.map(inlineText).join('').replace(/\s+/gu, ' ').trim();
 }
@@ -58,12 +64,20 @@ function descriptionFromMarkdown(markdown: string): string | undefined {
 }
 
 export function extractPostDescription(markdown: string, fallbackTitle: string): string {
-  return descriptionFromMarkdown(markdown)
-    ?? truncateDescription(fallbackTitle.replace(/\s+/gu, ' ').trim());
+  return (
+    descriptionFromMarkdown(markdown) ??
+    truncateDescription(fallbackTitle.replace(/\s+/gu, ' ').trim())
+  );
 }
 
-export function resolvePostDescription(preferred: string | undefined, markdown: string, fallbackTitle: string): string {
-  return (preferred?.trim() ? descriptionFromMarkdown(preferred) : undefined)
-    ?? descriptionFromMarkdown(markdown)
-    ?? truncateDescription(fallbackTitle.replace(/\s+/gu, ' ').trim());
+export function resolvePostDescription(
+  preferred: string | undefined,
+  markdown: string,
+  fallbackTitle: string,
+): string {
+  return (
+    (preferred?.trim() ? descriptionFromMarkdown(preferred) : undefined) ??
+    descriptionFromMarkdown(markdown) ??
+    truncateDescription(fallbackTitle.replace(/\s+/gu, ' ').trim())
+  );
 }

@@ -12,42 +12,60 @@ import { securePostgresUrl } from './runtime-database-role.js';
 
 const config = new pulumi.Config('vibelog');
 const phase = config.require('deploymentPhase');
-if (phase !== 'foundation' && phase !== 'application') throw new Error('vibelog:deploymentPhase must be foundation or application');
+if (phase !== 'foundation' && phase !== 'application')
+  throw new Error('vibelog:deploymentPhase must be foundation or application');
 
 const environment = config.require('environment');
 const accountId = config.require('cloudflareAccountId');
 const zoneId = config.require('cloudflareZoneId');
 const rootDomain = config.require('rootDomain');
 const bucketName = config.get('r2BucketName') ?? `vibelog-${environment}-artifacts`;
-const cloudflareR2Provider = new cloudflare.Provider('cloudflare-r2', { apiToken: config.requireSecret('cloudflareR2ApiToken') });
-const cloudflareDeliveryProvider = new cloudflare.Provider('cloudflare-delivery', { apiToken: config.requireSecret('cloudflareDeliveryApiToken') });
+const cloudflareR2Provider = new cloudflare.Provider('cloudflare-r2', {
+  apiToken: config.requireSecret('cloudflareR2ApiToken'),
+});
+const cloudflareDeliveryProvider = new cloudflare.Provider('cloudflare-delivery', {
+  apiToken: config.requireSecret('cloudflareDeliveryApiToken'),
+});
 const neonProvider = new neon.Provider('neon', { apiKey: config.requireSecret('neonApiKey') });
-const foundation = new ProductionFoundation('foundation', {
-  cloudflareAccountId: accountId,
-  r2BucketName: bucketName,
-  r2Location: config.get('r2Location') ?? 'apac',
-  neonOrgId: config.require('neonOrgId'),
-  neonRegionId: config.require('neonRegionId'),
-  neonProjectName: config.get('neonProjectName') ?? `vibelog-${environment}`,
-  cloudflareProvider: cloudflareR2Provider,
-  neonProvider,
-}, { providers: [cloudflareR2Provider, neonProvider] });
+const foundation = new ProductionFoundation(
+  'foundation',
+  {
+    cloudflareAccountId: accountId,
+    r2BucketName: bucketName,
+    r2Location: config.get('r2Location') ?? 'apac',
+    neonOrgId: config.require('neonOrgId'),
+    neonRegionId: config.require('neonRegionId'),
+    neonProjectName: config.get('neonProjectName') ?? `vibelog-${environment}`,
+    cloudflareProvider: cloudflareR2Provider,
+    neonProvider,
+  },
+  { providers: [cloudflareR2Provider, neonProvider] },
+);
 const forwardingDestination = config.requireSecret('supportForwardingDestination');
-const email = new EmailFoundation('email', {
-  accountId,
-  zoneId,
-  rootDomain,
-  forwardingDestination,
-  resendManagementApiKey: config.requireSecret('resendManagementApiKey'),
-  cloudflareProvider: cloudflareDeliveryProvider,
-}, { providers: [cloudflareDeliveryProvider] });
+const email = new EmailFoundation(
+  'email',
+  {
+    accountId,
+    zoneId,
+    rootDomain,
+    forwardingDestination,
+    resendManagementApiKey: config.requireSecret('resendManagementApiKey'),
+    cloudflareProvider: cloudflareDeliveryProvider,
+  },
+  { providers: [cloudflareDeliveryProvider] },
+);
 
 const databaseUrl = foundation.runtimeDatabaseUrl;
 const directDatabaseUrl = securePostgresUrl(foundation.database.connectionUri);
 
 function createApplication() {
   const maintenanceStage = config.get('maintenanceStage') ?? 'normal';
-  if (maintenanceStage !== 'normal' && maintenanceStage !== 'draining' && maintenanceStage !== 'locked') throw new Error('vibelog:maintenanceStage must be normal, draining, or locked');
+  if (
+    maintenanceStage !== 'normal' &&
+    maintenanceStage !== 'draining' &&
+    maintenanceStage !== 'locked'
+  )
+    throw new Error('vibelog:maintenanceStage must be normal, draining, or locked');
   const gcpConfig = new pulumi.Config('gcp');
   const project = gcpConfig.require('project');
   const region = config.require('gcpRegion');
@@ -58,54 +76,66 @@ function createApplication() {
     repository: config.require('containerImageRepository'),
     environment,
   });
-  const migration = new DatabaseMigration('database-migration', {
-    databaseUrl: directDatabaseUrl,
-    imageDigest: image.reference,
-  }, { dependsOn: [foundation.runtimeRole] });
-  const runtime = new GcpContainerRuntime('runtime', {
-    project,
-    region,
-    environment,
-    maintenanceStage,
-    imageDigest: image.reference,
-    deployerServiceAccountEmail,
-    appOrigin: pulumi.interpolate`https://${rootDomain}`,
-    previewOrigin: pulumi.interpolate`https://preview.${rootDomain}`,
-    objectStoreEndpoint: pulumi.interpolate`https://${accountId}.r2.cloudflarestorage.com`,
-    objectStoreBucket: foundation.bucket.name,
-    aiProvider: config.get('aiProvider') ?? 'openai',
-    aiModel: config.get('aiModel') ?? 'gpt-4o-mini',
-    aiFallbackModels: config.getObject<string[]>('aiFallbackModels') ?? [],
-    aiApiKeyEnv: config.get('aiApiKeyEnv') ?? 'OPENAI_API_KEY',
-    googleAnalyticsMeasurementId: config.get('googleAnalyticsMeasurementId'),
-    agentCliVersion: config.get('agentCliVersion'),
-    emailFrom: `VibeLog <login@send.${rootDomain}>`,
-    emailReplyTo: `support@${rootDomain}`,
-    minInstances: config.getNumber('minInstances') ?? 0,
-    maxInstances: config.getNumber('maxInstances') ?? 3,
-    provider: gcpProvider,
-    secrets: {
-      databaseUrl,
-      objectStoreAccessKeyId: config.requireSecret('objectStoreAccessKeyId'),
-      objectStoreSecretAccessKey: config.requireSecret('objectStoreSecretAccessKey'),
-      resendApiKey: email.runtimeApiKeyToken,
-      betterAuthSecret: config.requireSecret('betterAuthSecret'),
-      aiApiKey: config.requireSecret('aiApiKey'),
-      edgeSharedSecret,
+  const migration = new DatabaseMigration(
+    'database-migration',
+    {
+      databaseUrl: directDatabaseUrl,
+      imageDigest: image.reference,
     },
-  }, { providers: [gcpProvider], dependsOn: [migration] });
-  new CloudflareDelivery('delivery', {
-    accountId,
-    zoneId,
-    rootDomain,
-    maintenanceStage,
-    originUrl: runtime.webUrl,
-    edgeSharedSecret,
-    supportAddress: `support@${rootDomain}`,
-    forwardingDestination,
-    forwardingAddress: email.forwardingAddress,
-    provider: cloudflareDeliveryProvider,
-  }, { providers: [cloudflareDeliveryProvider] });
+    { dependsOn: [foundation.runtimeRole] },
+  );
+  const runtime = new GcpContainerRuntime(
+    'runtime',
+    {
+      project,
+      region,
+      environment,
+      maintenanceStage,
+      imageDigest: image.reference,
+      deployerServiceAccountEmail,
+      appOrigin: pulumi.interpolate`https://${rootDomain}`,
+      previewOrigin: pulumi.interpolate`https://preview.${rootDomain}`,
+      objectStoreEndpoint: pulumi.interpolate`https://${accountId}.r2.cloudflarestorage.com`,
+      objectStoreBucket: foundation.bucket.name,
+      aiProvider: config.get('aiProvider') ?? 'openai',
+      aiModel: config.get('aiModel') ?? 'gpt-4o-mini',
+      aiFallbackModels: config.getObject<string[]>('aiFallbackModels') ?? [],
+      aiApiKeyEnv: config.get('aiApiKeyEnv') ?? 'OPENAI_API_KEY',
+      googleAnalyticsMeasurementId: config.get('googleAnalyticsMeasurementId'),
+      agentCliVersion: config.get('agentCliVersion'),
+      emailFrom: `VibeLog <login@send.${rootDomain}>`,
+      emailReplyTo: `support@${rootDomain}`,
+      minInstances: config.getNumber('minInstances') ?? 0,
+      maxInstances: config.getNumber('maxInstances') ?? 3,
+      provider: gcpProvider,
+      secrets: {
+        databaseUrl,
+        objectStoreAccessKeyId: config.requireSecret('objectStoreAccessKeyId'),
+        objectStoreSecretAccessKey: config.requireSecret('objectStoreSecretAccessKey'),
+        resendApiKey: email.runtimeApiKeyToken,
+        betterAuthSecret: config.requireSecret('betterAuthSecret'),
+        aiApiKey: config.requireSecret('aiApiKey'),
+        edgeSharedSecret,
+      },
+    },
+    { providers: [gcpProvider], dependsOn: [migration] },
+  );
+  new CloudflareDelivery(
+    'delivery',
+    {
+      accountId,
+      zoneId,
+      rootDomain,
+      maintenanceStage,
+      originUrl: runtime.webUrl,
+      edgeSharedSecret,
+      supportAddress: `support@${rootDomain}`,
+      forwardingDestination,
+      forwardingAddress: email.forwardingAddress,
+      provider: cloudflareDeliveryProvider,
+    },
+    { providers: [cloudflareDeliveryProvider] },
+  );
   return { runtime, image, maintenanceStage };
 }
 

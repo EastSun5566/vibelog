@@ -14,7 +14,11 @@ describe('remarkHackmdCompatibility', () => {
           name: 'info',
           attributes: { class: 'untrusted' },
           children: [
-            { type: 'paragraph', data: { directiveLabel: true }, children: [{ type: 'text', value: 'Background' }] },
+            {
+              type: 'paragraph',
+              data: { directiveLabel: true },
+              children: [{ type: 'text', value: 'Background' }],
+            },
             { type: 'paragraph', children: [{ type: 'text', value: 'Safe content' }] },
           ],
         },
@@ -41,7 +45,10 @@ describe('remarkHackmdCompatibility', () => {
       },
     });
     expect(tree.children[1]).not.toHaveProperty('data.hProperties.class', 'untrusted');
-    expect(tree.children[2]).toMatchObject({ type: 'paragraph', children: [{ value: ':::custom-element Keep me' }] });
+    expect(tree.children[2]).toMatchObject({
+      type: 'paragraph',
+      children: [{ value: ':::custom-element Keep me' }],
+    });
   });
 
   it('turns GitHub alerts into labelled callouts without changing regular quotes', () => {
@@ -50,11 +57,18 @@ describe('remarkHackmdCompatibility', () => {
       children: [
         {
           type: 'blockquote',
-          children: [{ type: 'paragraph', children: [{ type: 'text', value: '[!WARNING] Custom warning\nBe careful.' }] }],
+          children: [
+            {
+              type: 'paragraph',
+              children: [{ type: 'text', value: '[!WARNING] Custom warning\nBe careful.' }],
+            },
+          ],
         },
         {
           type: 'blockquote',
-          children: [{ type: 'paragraph', children: [{ type: 'text', value: 'A regular quotation.' }] }],
+          children: [
+            { type: 'paragraph', children: [{ type: 'text', value: 'A regular quotation.' }] },
+          ],
         },
       ],
     } as Root;
@@ -79,14 +93,18 @@ describe('remarkHackmdCompatibility', () => {
   });
 
   it('supports common safe inline syntax and space-titled spoilers', () => {
-    const source = ':::spoiler Terminal output\n\nSecret body.\n\n:::\n\n==mark== ++insert++ H~2~O x^2^ {漢字|かんじ}';
+    const source =
+      ':::spoiler Terminal output\n\nSecret body.\n\n:::\n\n==mark== ++insert++ H~2~O x^2^ {漢字|かんじ}';
     const tree = {
       type: 'root',
       children: [
         { type: 'paragraph', children: [{ type: 'text', value: ':::spoiler Terminal output' }] },
         { type: 'paragraph', children: [{ type: 'text', value: 'Secret body.' }] },
         { type: 'paragraph', children: [{ type: 'text', value: ':::' }] },
-        { type: 'paragraph', children: [{ type: 'text', value: '==mark== ++insert++ H~2~O x^2^ {漢字|かんじ}' }] },
+        {
+          type: 'paragraph',
+          children: [{ type: 'text', value: '==mark== ++insert++ H~2~O x^2^ {漢字|かんじ}' }],
+        },
       ],
     } as Root;
 
@@ -108,11 +126,17 @@ describe('remarkHackmdCompatibility', () => {
   });
 
   it('supports open spoilers without passing through unknown attributes', () => {
-    const source = ':::spoiler {state="open" class="untrusted"} Terminal output\n\nSecret body.\n\n:::';
+    const source =
+      ':::spoiler {state="open" class="untrusted"} Terminal output\n\nSecret body.\n\n:::';
     const tree = {
       type: 'root',
       children: [
-        { type: 'paragraph', children: [{ type: 'text', value: ':::spoiler {state="open" class="untrusted"} Terminal output' }] },
+        {
+          type: 'paragraph',
+          children: [
+            { type: 'text', value: ':::spoiler {state="open" class="untrusted"} Terminal output' },
+          ],
+        },
         { type: 'paragraph', children: [{ type: 'text', value: 'Secret body.' }] },
         { type: 'paragraph', children: [{ type: 'text', value: ':::' }] },
       ],
@@ -157,14 +181,21 @@ describe('remarkHackmdCompatibility', () => {
     const source = '\\==literal==';
     const tree = {
       type: 'root',
-      children: [{
-        type: 'paragraph',
-        children: [{
-          type: 'text',
-          value: '==literal==',
-          position: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 13, offset: 12 } },
-        }],
-      }],
+      children: [
+        {
+          type: 'paragraph',
+          children: [
+            {
+              type: 'text',
+              value: '==literal==',
+              position: {
+                start: { line: 1, column: 1, offset: 0 },
+                end: { line: 1, column: 13, offset: 12 },
+              },
+            },
+          ],
+        },
+      ],
     } as Root;
 
     remarkHackmdCompatibility()(tree, { value: source });

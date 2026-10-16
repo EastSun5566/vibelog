@@ -5,7 +5,9 @@ function rejectJavaScript(): never {
 }
 
 // A front-matter header can override the default language, even during stringify.
-const options = { engines: { javascript: { parse: rejectJavaScript, stringify: rejectJavaScript } } };
+const options = {
+  engines: { javascript: { parse: rejectJavaScript, stringify: rejectJavaScript } },
+};
 
 export function parseFrontMatter(content: string) {
   return matter(content, options);

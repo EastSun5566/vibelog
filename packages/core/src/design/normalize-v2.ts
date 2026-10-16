@@ -13,16 +13,20 @@ export function normalizeDesignV2(input: BlogDesignSpecV2): BlogDesignSpecV2 {
   normalizeNode(value.chrome.header);
   normalizeNode(value.chrome.footer);
   normalizeNode(value.pages.home);
-  value.pages.home.sections = Object.fromEntries(Object.entries(value.pages.home.sections)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([id, section]) => [id, normalizeNode(section)]));
+  value.pages.home.sections = Object.fromEntries(
+    Object.entries(value.pages.home.sections)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([id, section]) => [id, normalizeNode(section)]),
+  );
   normalizeNode(value.pages.index);
   normalizeNode(value.pages.index.item);
   normalizeNode(value.pages.article);
   normalizeNode(value.pages.article.header);
   normalizeNode(value.pages.article.prose);
-  value.pages.article.modules = Object.fromEntries(Object.entries(value.pages.article.modules)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([id, module]) => [id, normalizeNode(module)]));
+  value.pages.article.modules = Object.fromEntries(
+    Object.entries(value.pages.article.modules)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([id, module]) => [id, normalizeNode(module)]),
+  );
   return value;
 }

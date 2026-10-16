@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { handleRequest } from '../src/index.js';
 
-const env = { ORIGIN_URL: 'https://origin.run.test', EDGE_SHARED_SECRET: 'secret', ROOT_DOMAIN: 'example.com' };
+const env = {
+  ORIGIN_URL: 'https://origin.run.test',
+  EDGE_SHARED_SECRET: 'secret',
+  ROOT_DOMAIN: 'example.com',
+};
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -32,21 +36,41 @@ describe('public blog edge cache', () => {
 });
 
 describe('edge maintenance gate', () => {
-  it.each(['draining', 'locked'])('blocks every host before reaching origin in %s', async (stage) => {
-    const fetch = vi.spyOn(globalThis, 'fetch');
-    for (const url of ['https://example.com/', 'https://writer.example.com/blog/', 'https://preview.example.com/']) {
-      const response = await handleRequest(new Request(url), { ...env, MAINTENANCE_STAGE: stage });
-      expect(response.status).toBe(503);
-      expect(response.headers.get('Cache-Control')).toBe('no-store');
-    }
-    expect(fetch).not.toHaveBeenCalled();
-  });
+  it.each(['draining', 'locked'])(
+    'blocks every host before reaching origin in %s',
+    async (stage) => {
+      const fetch = vi.spyOn(globalThis, 'fetch');
+      for (const url of [
+        'https://example.com/',
+        'https://writer.example.com/blog/',
+        'https://preview.example.com/',
+      ]) {
+        const response = await handleRequest(new Request(url), {
+          ...env,
+          MAINTENANCE_STAGE: stage,
+        });
+        expect(response.status).toBe(503);
+        expect(response.headers.get('Cache-Control')).toBe('no-store');
+      }
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
 
   it('leaves health reachable and HEAD responses empty', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
-    expect((await handleRequest(new Request('https://example.com/health'), { ...env, MAINTENANCE_STAGE: 'locked' })).status).toBe(200);
+    expect(
+      (
+        await handleRequest(new Request('https://example.com/health'), {
+          ...env,
+          MAINTENANCE_STAGE: 'locked',
+        })
+      ).status,
+    ).toBe(200);
     expect(fetch).toHaveBeenCalledOnce();
-    const response = await handleRequest(new Request('https://writer.example.com/', { method: 'HEAD' }), { ...env, MAINTENANCE_STAGE: 'locked' });
+    const response = await handleRequest(
+      new Request('https://writer.example.com/', { method: 'HEAD' }),
+      { ...env, MAINTENANCE_STAGE: 'locked' },
+    );
     expect(response.status).toBe(503);
     expect(await response.text()).toBe('');
   });
@@ -56,21 +80,62 @@ describe('anonymous agent client identity', () => {
   it('overwrites caller identity and binds an opaque client key into the edge signature', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
     const clientIp = '192.0.2.10';
-    await handleRequest(new Request('https://example.com/api/agent/v1/pairings', {
-      method: 'POST', headers: { 'cf-connecting-ip': clientIp, 'x-vibelog-client-key': 'forged', 'x-forwarded-for': '192.0.2.20' },
-    }), env);
+    await handleRequest(
+      new Request('https://example.com/api/agent/v1/pairings', {
+        method: 'POST',
+        headers: {
+          'cf-connecting-ip': clientIp,
+          'x-vibelog-client-key': 'forged',
+          'x-forwarded-for': '192.0.2.20',
+        },
+      }),
+      env,
+    );
     const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
-    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(env.EDGE_SHARED_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-    const digest = async (payload: string) => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload))))).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(env.EDGE_SHARED_SECRET),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const digest = async (payload: string) =>
+      btoa(
+        String.fromCharCode(
+          ...new Uint8Array(
+            await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)),
+          ),
+        ),
+      )
+        .replaceAll('+', '-')
+        .replaceAll('/', '_')
+        .replaceAll('=', '');
     const clientKey = await digest(`agent-client\n${clientIp}`);
-    expect(headers.get('x-vibelog-client-key')).toBe(clientKey); expect(clientKey).not.toContain(clientIp);
-    expect(headers.get('x-vibelog-signature')).toBe(await digest(`${headers.get('x-vibelog-timestamp') ?? ''}\nexample.com\n/api/agent/v1/pairings\n${clientKey}`));
-    await handleRequest(new Request('https://example.com/api/agent/v1/pairings/token', { headers: { 'cf-connecting-ip': clientIp } }), env);
-    expect(new Headers(fetch.mock.calls[1]?.[1]?.headers).get('x-vibelog-client-key')).toBe(clientKey);
+    expect(headers.get('x-vibelog-client-key')).toBe(clientKey);
+    expect(clientKey).not.toContain(clientIp);
+    expect(headers.get('x-vibelog-signature')).toBe(
+      await digest(
+        `${headers.get('x-vibelog-timestamp') ?? ''}\nexample.com\n/api/agent/v1/pairings\n${clientKey}`,
+      ),
+    );
+    await handleRequest(
+      new Request('https://example.com/api/agent/v1/pairings/token', {
+        headers: { 'cf-connecting-ip': clientIp },
+      }),
+      env,
+    );
+    expect(new Headers(fetch.mock.calls[1]?.[1]?.headers).get('x-vibelog-client-key')).toBe(
+      clientKey,
+    );
   });
   it('removes a forged client key when Cloudflare supplies no client address', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
-    await handleRequest(new Request('https://example.com/api/agent/v1/pairings', { headers: { 'x-vibelog-client-key': 'forged' } }), env);
+    await handleRequest(
+      new Request('https://example.com/api/agent/v1/pairings', {
+        headers: { 'x-vibelog-client-key': 'forged' },
+      }),
+      env,
+    );
     expect(new Headers(fetch.mock.calls[0]?.[1]?.headers).has('x-vibelog-client-key')).toBe(false);
   });
 });

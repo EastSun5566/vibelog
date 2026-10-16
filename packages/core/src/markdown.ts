@@ -18,8 +18,10 @@ export function sanitizeMarkdown(markdown: string): string {
     const start = node.position?.start.offset;
     const end = node.position?.end.offset;
     if (start !== undefined && end !== undefined) {
-      if (node.type === 'code' || node.type === 'inlineCode' || node.type === 'html') protectedRanges.push({ start, end });
-      if (node.type === 'html') edits.push({ start, end, value: source.slice(start, end).replaceAll('<', '&lt;') });
+      if (node.type === 'code' || node.type === 'inlineCode' || node.type === 'html')
+        protectedRanges.push({ start, end });
+      if (node.type === 'html')
+        edits.push({ start, end, value: source.slice(start, end).replaceAll('<', '&lt;') });
     }
     if ('children' in node) for (const child of node.children) visit(child);
   }

@@ -19,7 +19,12 @@ export interface ContentProfile {
 export type HomeSection =
   | { type: 'intro'; variant: 'minimal' | 'centered' | 'split'; showAuthor: boolean }
   | { type: 'featured-posts'; variant: 'hero' | 'split'; count: 1 | 2 }
-  | { type: 'recent-posts'; variant: 'list' | 'cards' | 'grid'; limit: 3 | 5 | 6 | 9; columns?: 1 | 2 | 3 }
+  | {
+      type: 'recent-posts';
+      variant: 'list' | 'cards' | 'grid';
+      limit: 3 | 5 | 6 | 9;
+      columns?: 1 | 2 | 3;
+    }
   | { type: 'topics'; variant: 'list' | 'cloud'; limit: 6 | 12 | 24 }
   | { type: 'author'; variant: 'compact' | 'profile' };
 

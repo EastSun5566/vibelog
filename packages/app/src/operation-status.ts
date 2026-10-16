@@ -11,30 +11,56 @@ const OPERATION_LABELS: Record<OperationRecord['type'], string> = {
 
 const PENDING_MESSAGES: Record<OperationRecord['type'], Record<'queued' | 'running', string>> = {
   sync: { queued: 'Waiting to sync…', running: 'Reading HackMD and building the preview…' },
-  generate_design: { queued: 'Waiting for AI design generation…', running: 'AI is shaping your design…' },
+  generate_design: {
+    queued: 'Waiting for AI design generation…',
+    running: 'AI is shaping your design…',
+  },
   apply_design: { queued: 'Waiting to build the design…', running: 'Building the design preview…' },
-  activate_design: { queued: 'Waiting to restore the design…', running: 'Rebuilding the selected design…' },
+  activate_design: {
+    queued: 'Waiting to restore the design…',
+    running: 'Rebuilding the selected design…',
+  },
   publish: { queued: 'Waiting to publish…', running: 'Building a new live release…' },
 };
 
-const OPERATION_MAX: Partial<Record<OperationType, number>> = { sync: 4, apply_design: 3, activate_design: 3, publish: 3 };
+const OPERATION_MAX: Partial<Record<OperationType, number>> = {
+  sync: 4,
+  apply_design: 3,
+  activate_design: 3,
+  publish: 3,
+};
 
 function storedProgress(operation: OperationRecord): OperationProgress | null {
   const progress = operation.result?.progress;
   if (!progress || typeof progress !== 'object') return null;
   const candidate = progress as Record<string, unknown>;
   if (candidate.kind === 'indeterminate') return { kind: 'indeterminate' };
-  if (candidate.kind !== 'determinate' || typeof candidate.value !== 'number' || typeof candidate.max !== 'number') return null;
-  if (!Number.isInteger(candidate.value) || !Number.isInteger(candidate.max) || candidate.max < 1 || candidate.value < 0 || candidate.value > candidate.max) return null;
+  if (
+    candidate.kind !== 'determinate' ||
+    typeof candidate.value !== 'number' ||
+    typeof candidate.max !== 'number'
+  )
+    return null;
+  if (
+    !Number.isInteger(candidate.value) ||
+    !Number.isInteger(candidate.max) ||
+    candidate.max < 1 ||
+    candidate.value < 0 ||
+    candidate.value > candidate.max
+  )
+    return null;
   return { kind: 'determinate', value: candidate.value, max: candidate.max };
 }
 
 export function operationProgress(operation: OperationRecord): OperationProgress {
-  if (operation.status === 'queued' || operation.type === 'generate_design') return { kind: 'indeterminate' };
+  if (operation.status === 'queued' || operation.type === 'generate_design')
+    return { kind: 'indeterminate' };
   const saved = storedProgress(operation);
   if (saved) return saved;
   const max = OPERATION_MAX[operation.type];
-  return max ? { kind: 'determinate', value: operation.status === 'succeeded' ? max : 0, max } : { kind: 'indeterminate' };
+  return max
+    ? { kind: 'determinate', value: operation.status === 'succeeded' ? max : 0, max }
+    : { kind: 'indeterminate' };
 }
 
 export function operationLabel(operation: OperationRecord): string {
@@ -47,17 +73,25 @@ export function operationLabel(operation: OperationRecord): string {
 }
 
 export function operationMessage(operation: OperationRecord): string {
-  const progressMessage = typeof operation.result?.progressMessage === 'string' ? operation.result.progressMessage : null;
+  const progressMessage =
+    typeof operation.result?.progressMessage === 'string' ? operation.result.progressMessage : null;
   if (operation.status === 'failed') {
     const error = operation.errorMessage ?? 'The operation failed. Please try again.';
     return progressMessage ? `${progressMessage} — ${error}` : error;
   }
-  if (operation.status === 'succeeded') return typeof operation.result?.message === 'string' ? operation.result.message : 'Done';
+  if (operation.status === 'succeeded')
+    return typeof operation.result?.message === 'string' ? operation.result.message : 'Done';
   if (operation.status === 'running' && progressMessage) return progressMessage;
   if (operation.type === 'sync') {
     const intent = syncOperationIntent(operation.payload);
-    if (intent === 'identity') return operation.status === 'queued' ? 'Waiting to update blog details…' : 'Reading HackMD and rebuilding the draft…';
-    if (intent === 'selection') return operation.status === 'queued' ? 'Waiting to update article selection…' : 'Rebuilding the draft from your article selection…';
+    if (intent === 'identity')
+      return operation.status === 'queued'
+        ? 'Waiting to update blog details…'
+        : 'Reading HackMD and rebuilding the draft…';
+    if (intent === 'selection')
+      return operation.status === 'queued'
+        ? 'Waiting to update article selection…'
+        : 'Rebuilding the draft from your article selection…';
   }
   return PENDING_MESSAGES[operation.type][operation.status];
 }

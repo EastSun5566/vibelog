@@ -39,7 +39,11 @@ export function assertCsrfToken(actual: string | undefined, expected: string): v
   }
 }
 
-export function jsonError<Environment extends { Variables: AppVariables }, Path extends string, RequestInput extends Input>(c: Context<Environment, Path, RequestInput>, error: unknown) {
+export function jsonError<
+  Environment extends { Variables: AppVariables },
+  Path extends string,
+  RequestInput extends Input,
+>(c: Context<Environment, Path, RequestInput>, error: unknown) {
   const requestId = String(c.get('requestId') || randomUUID());
   if (error instanceof AppError) {
     for (const [name, value] of Object.entries(error.headers ?? {})) c.header(name, value);
@@ -47,11 +51,14 @@ export function jsonError<Environment extends { Variables: AppVariables }, Path 
   }
 
   console.error(`[${requestId}]`, error);
-  return c.json({
-    error: {
-      code: 'internal_error',
-      message: 'An unexpected error occurred',
-      requestId,
+  return c.json(
+    {
+      error: {
+        code: 'internal_error',
+        message: 'An unexpected error occurred',
+        requestId,
+      },
     },
-  }, 500);
+    500,
+  );
 }

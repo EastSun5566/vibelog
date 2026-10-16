@@ -1,5 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { join, resolve, dirname, basename, isAbsolute, relative, sep, parse as parsePath } from 'node:path';
+import {
+  join,
+  resolve,
+  dirname,
+  basename,
+  isAbsolute,
+  relative,
+  sep,
+  parse as parsePath,
+} from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, fork } from 'node:child_process';
 import type { RenderOptions, RenderMessage } from './render-worker.js';
@@ -23,15 +32,43 @@ import { loadConfig } from './config.js';
 export const TEMPLATE_VERSION = 18;
 export const SEARCH_SCHEMA_VERSION = 3;
 export function searchIndexIdentity(sourceArtifactId: string, site: string): string {
-  return createHash('sha256').update(sourceArtifactId).update('\0').update(new URL(site).origin).update('\0').update(String(SEARCH_SCHEMA_VERSION)).digest('hex');
+  return createHash('sha256')
+    .update(sourceArtifactId)
+    .update('\0')
+    .update(new URL(site).origin)
+    .update('\0')
+    .update(String(SEARCH_SCHEMA_VERSION))
+    .digest('hex');
 }
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).filter(([, child]) => child !== undefined).sort(([left], [right]) => left.localeCompare(right)).map(([key, child]) => [key, canonical(child)]));
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, child]) => child !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, child]) => [key, canonical(child)]),
+    );
   return value;
 }
-export function structuralBuildIdentity(sourceArtifactId: string, design: BlogDesignSpecV2, site: string): string {
-  return createHash('sha256').update(JSON.stringify(canonical({ sourceArtifactId, design: validateBlogDesignSpecV2(design), site: new URL(site).origin, templateVersion: TEMPLATE_VERSION, searchSchemaVersion: SEARCH_SCHEMA_VERSION }))).digest('hex');
+export function structuralBuildIdentity(
+  sourceArtifactId: string,
+  design: BlogDesignSpecV2,
+  site: string,
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify(
+        canonical({
+          sourceArtifactId,
+          design: validateBlogDesignSpecV2(design),
+          site: new URL(site).origin,
+          templateVersion: TEMPLATE_VERSION,
+          searchSchemaVersion: SEARCH_SCHEMA_VERSION,
+        }),
+      ),
+    )
+    .digest('hex');
 }
 
 const postSchema = z.object({
@@ -42,7 +79,10 @@ const postSchema = z.object({
   slug: z.string(),
   date: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid post date'),
   tags: z.array(z.string()).optional().default([]),
-  updatedAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid post modified date').optional(),
+  updatedAt: z
+    .string()
+    .refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid post modified date')
+    .optional(),
 });
 
 function normalizeTagName(value: string): string {
@@ -90,15 +130,22 @@ function normalizePostTags(posts: z.infer<typeof postSchema>[]): BuildPostTag[][
     tagsByKey.set(key, { name, slug });
   }
 
-  return postKeys.map((keys) => keys
-    .map((key) => tagsByKey.get(key))
-    .filter((tag): tag is BuildPostTag => Boolean(tag))
-    .sort((left, right) => left.name.localeCompare(right.name, 'zh-Hant')));
+  return postKeys.map((keys) =>
+    keys
+      .map((key) => tagsByKey.get(key))
+      .filter((tag): tag is BuildPostTag => Boolean(tag))
+      .sort((left, right) => left.name.localeCompare(right.name, 'zh-Hant')),
+  );
 }
 
 function isPathInside(root: string, target: string): boolean {
   const pathFromRoot = relative(root, target);
-  return pathFromRoot !== '' && !pathFromRoot.startsWith(`..${sep}`) && pathFromRoot !== '..' && !isAbsolute(pathFromRoot);
+  return (
+    pathFromRoot !== '' &&
+    !pathFromRoot.startsWith(`..${sep}`) &&
+    pathFromRoot !== '..' &&
+    !isAbsolute(pathFromRoot)
+  );
 }
 
 async function findTemplateDir() {
@@ -108,7 +155,7 @@ async function findTemplateDir() {
     basename(currentDir) === 'dist' ? '..' : '../..',
     'template',
   );
-  if (!await fs.exists(templateDir)) {
+  if (!(await fs.exists(templateDir))) {
     throw new Error(`Template directory not found: ${templateDir}`);
   }
 
@@ -130,7 +177,10 @@ export interface BuildPostSummary {
   updatedAt?: string;
   contentHash?: string;
 }
-export interface BuildPostTag { name: string; slug: string }
+export interface BuildPostTag {
+  name: string;
+  slug: string;
+}
 export interface BuildContentSummary {
   site: { title: string; description: string; language: string };
   author: { name: string; bio: string };
@@ -150,21 +200,22 @@ export class DevBuilder {
 
   private async ensurePackagedRuntime(directory: string): Promise<void> {
     const currentDir = dirname(fileURLToPath(import.meta.url));
-    const packageRoot = basename(currentDir) === 'dist' ? dirname(currentDir) : resolve(currentDir, '../..');
+    const packageRoot =
+      basename(currentDir) === 'dist' ? dirname(currentDir) : resolve(currentDir, '../..');
     const directNodeModules = join(packageRoot, 'node_modules');
-    const runtimeNodeModules = await fs.exists(join(directNodeModules, '@astrojs', 'rss'))
+    const runtimeNodeModules = (await fs.exists(join(directNodeModules, '@astrojs', 'rss')))
       ? directNodeModules
       : resolve(packageRoot, '../..');
     for (const requiredPackage of [
       join('astro', 'package.json'),
       join('@astrojs', 'rss', 'package.json'),
     ]) {
-      if (!await fs.exists(join(runtimeNodeModules, requiredPackage))) {
+      if (!(await fs.exists(join(runtimeNodeModules, requiredPackage)))) {
         throw new Error(`Packaged template runtime is incomplete: ${requiredPackage}`);
       }
     }
     const runtimeLink = join(directory, 'node_modules');
-    if (!await fs.exists(runtimeLink)) {
+    if (!(await fs.exists(runtimeLink))) {
       await fs.ensureSymlink(runtimeNodeModules, runtimeLink, 'junction');
     }
   }
@@ -176,7 +227,9 @@ export class DevBuilder {
     const backupDir = join(this.root, `.vibelog-backup-${randomUUID()}`);
     await fs.copy(templateDir, stagingDir);
 
-    await fs.writeJson(join(stagingDir, '.vibelog-state.json'), { templateVersion: TEMPLATE_VERSION });
+    await fs.writeJson(join(stagingDir, '.vibelog-state.json'), {
+      templateVersion: TEMPLATE_VERSION,
+    });
 
     if (installDependencies) {
       logger.info('Installing template dependencies...');
@@ -197,7 +250,7 @@ export class DevBuilder {
       if (hadExisting) await fs.remove(backupDir);
     } catch (error) {
       await fs.remove(stagingDir);
-      if (hadExisting && await fs.exists(backupDir)) await fs.move(backupDir, this.vibelogDir);
+      if (hadExisting && (await fs.exists(backupDir))) await fs.move(backupDir, this.vibelogDir);
       throw error;
     }
   }
@@ -206,7 +259,9 @@ export class DevBuilder {
     const installDependencies = options.installDependencies ?? true;
     if (await fs.exists(this.vibelogDir)) {
       const statePath = join(this.vibelogDir, '.vibelog-state.json');
-      const state = await fs.readJson(statePath).catch(() => null) as { templateVersion?: number } | null;
+      const state = (await fs.readJson(statePath).catch(() => null)) as {
+        templateVersion?: number;
+      } | null;
       if (state?.templateVersion === TEMPLATE_VERSION) {
         if (!installDependencies) await this.ensurePackagedRuntime(this.vibelogDir);
         logger.info('Using current ".vibelog" directory');
@@ -220,7 +275,9 @@ export class DevBuilder {
     await this.initVibelogDir({ installDependencies });
   }
 
-  async fetchContent({ excludedSlugs = [] }: { excludedSlugs?: Iterable<string> } = {}): Promise<BuildContentSummary> {
+  async fetchContent({
+    excludedSlugs = [],
+  }: { excludedSlugs?: Iterable<string> } = {}): Promise<BuildContentSummary> {
     logger.info(`Fetching ${this.contentSource.name} content...`);
 
     const [{ posts: rawPosts }, author] = await Promise.all([
@@ -260,7 +317,8 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
     const tagsByPost = normalizePostTags(posts);
     const normalizedPosts = posts.map((post, index) => {
       const title = post.title || 'Untitled';
-      const baseSlug = slugify(post.slug) || slugify(post.title) || slugify(post.id) || generateSlug();
+      const baseSlug =
+        slugify(post.slug) || slugify(post.title) || slugify(post.id) || generateSlug();
       const slug = baseSlug;
       if (usedSlugs.has(slug)) throw new Error(`Duplicate post slug after normalization: ${slug}`);
       usedSlugs.add(slug);
@@ -269,7 +327,8 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
       let updatedAt: string | undefined;
       if (post.updatedAt) {
         const modified = new Date(post.updatedAt);
-        if (modified.getTime() > new Date(publishedAt).getTime()) updatedAt = modified.toISOString();
+        if (modified.getTime() > new Date(publishedAt).getTime())
+          updatedAt = modified.toISOString();
       }
       return {
         ...post,
@@ -332,8 +391,10 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
       if (newConfigInstalled) await fs.remove(configPath);
       await fs.remove(stagedContentDir);
       await fs.remove(configStagingPath);
-      if (contentBackedUp && await fs.exists(backupContentDir)) await fs.move(backupContentDir, contentDir);
-      if (configBackedUp && await fs.exists(configBackupPath)) await fs.move(configBackupPath, configPath);
+      if (contentBackedUp && (await fs.exists(backupContentDir)))
+        await fs.move(backupContentDir, contentDir);
+      if (configBackedUp && (await fs.exists(configBackupPath)))
+        await fs.move(configBackupPath, configPath);
       throw error;
     }
     if (contentBackedUp) await fs.remove(backupContentDir);
@@ -345,18 +406,29 @@ export const SITE_LANGUAGE = ${JSON.stringify(siteLanguage)};
       site: { title: siteTitle, description: siteDescription, language: siteLanguage },
       author,
       posts: normalizedPosts
-        .map(({ title, slug, description, publishedAt, included, tags, updatedAt, contentHash }) => ({
-          title,
-          slug,
-          description,
-          publishedAt,
-          included,
-          tags,
-          contentHash,
-          ...(updatedAt ? { updatedAt } : {}),
-        }))
-        .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt) || left.slug.localeCompare(right.slug)),
-      contentProfile: createContentProfile(includedPosts.map((post) => ({ ...post, tags: post.tags.map((tag) => tag.name) })) as Post[]),
+        .map(
+          ({ title, slug, description, publishedAt, included, tags, updatedAt, contentHash }) => ({
+            title,
+            slug,
+            description,
+            publishedAt,
+            included,
+            tags,
+            contentHash,
+            ...(updatedAt ? { updatedAt } : {}),
+          }),
+        )
+        .sort(
+          (left, right) =>
+            right.publishedAt.localeCompare(left.publishedAt) ||
+            left.slug.localeCompare(right.slug),
+        ),
+      contentProfile: createContentProfile(
+        includedPosts.map((post) => ({
+          ...post,
+          tags: post.tags.map((tag) => tag.name),
+        })) as Post[],
+      ),
     };
   }
 }
@@ -373,14 +445,29 @@ export interface BuildOptions {
   searchCache?: { directory: string; identity: string };
   buildIdentity?: string;
 }
-export type BuildStage = 'prepare' | 'source-copy' | 'astro' | 'syntax-css' | 'pagefind' | 'promote';
-async function timed<T>(stage: BuildStage, report: BuildOptions['onStageTiming'], work: () => Promise<T>): Promise<T> {
+export type BuildStage =
+  | 'prepare'
+  | 'source-copy'
+  | 'astro'
+  | 'syntax-css'
+  | 'pagefind'
+  | 'promote';
+async function timed<T>(
+  stage: BuildStage,
+  report: BuildOptions['onStageTiming'],
+  work: () => Promise<T>,
+): Promise<T> {
   const started = performance.now();
-  try { return await work(); }
-  finally { report?.(stage, Math.round(performance.now() - started)); }
+  try {
+    return await work();
+  } finally {
+    report?.(stage, Math.round(performance.now() - started));
+  }
 }
 async function prepareDesignAssets(vibelogDir: string): Promise<void> {
-  const design = validateBlogDesignSpecV2(await fs.readJson(join(vibelogDir, 'src', 'generated', 'design.json')));
+  const design = validateBlogDesignSpecV2(
+    await fs.readJson(join(vibelogDir, 'src', 'generated', 'design.json')),
+  );
   const blogDirectory = join(vibelogDir, 'src', 'content', 'blog');
   const posts: ResolvablePost[] = [];
   for (const name of await fs.readdir(blogDirectory)) {
@@ -389,45 +476,80 @@ async function prepareDesignAssets(vibelogDir: string): Promise<void> {
     posts.push({
       slug: name.slice(0, -3),
       publishedAt: new Date(String(sourcePost.data.date)).toISOString(),
-      ...(sourcePost.data.updatedDate ? { updatedAt: new Date(String(sourcePost.data.updatedDate)).toISOString() } : {}),
+      ...(sourcePost.data.updatedDate
+        ? { updatedAt: new Date(String(sourcePost.data.updatedDate)).toISOString() }
+        : {}),
     });
   }
   const composition = resolveHomeComposition(design.pages.home, posts);
-  await fs.writeJson(join(vibelogDir, 'src', 'generated', 'resolved-home.json'), Object.fromEntries(
-    Object.values(composition.regions).flat().filter((section) => section.posts).map((section) => [section.id, section.posts?.map((post) => post.slug) ?? []]),
-  ));
+  await fs.writeJson(
+    join(vibelogDir, 'src', 'generated', 'resolved-home.json'),
+    Object.fromEntries(
+      Object.values(composition.regions)
+        .flat()
+        .filter((section) => section.posts)
+        .map((section) => [section.id, section.posts?.map((post) => post.slug) ?? []]),
+    ),
+  );
   await fs.writeFile(join(vibelogDir, 'public', 'design.css'), compileDesignCss(design));
 }
 // Tests import source modules; subprocesses always run the compiled runtime.
 const renderWorkerUrl = new URL('../../dist/core/render-worker.js', import.meta.url);
-async function renderInChild(options: RenderOptions, report: BuildOptions['onStageTiming']): Promise<void> {
+async function renderInChild(
+  options: RenderOptions,
+  report: BuildOptions['onStageTiming'],
+): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const child = fork(renderWorkerUrl, [], { cwd: options.vibelogDir, execArgv: [], stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
+    const child = fork(renderWorkerUrl, [], {
+      cwd: options.vibelogDir,
+      execArgv: [],
+      stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+    });
     let failure: Error | undefined;
     let completed = false;
     child.on('message', (message: RenderMessage) => {
       if (message.type === 'timing') {
-        try { report?.(message.stage, message.durationMs); }
-        catch (error) { failure = error instanceof Error ? error : new Error(String(error)); child.kill(); }
+        try {
+          report?.(message.stage, message.durationMs);
+        } catch (error) {
+          failure = error instanceof Error ? error : new Error(String(error));
+          child.kill();
+        }
       } else if (message.type === 'error') failure = new Error(message.message);
       else if (message.type === 'complete') completed = true;
     });
-    child.on('error', (error) => { failure = error; });
+    child.on('error', (error) => {
+      failure = error;
+    });
     // Wait for process exit before the caller removes its temporary directory.
     child.on('close', (code, signal) => {
       if (failure) reject(failure);
       else if (code === 0 && completed) resolve();
       else reject(new Error(`Blog renderer exited before completion (${signal ?? String(code)})`));
     });
-    child.send(options, (error) => { if (error) { failure = error; child.kill(); } });
+    child.send(options, (error) => {
+      if (error) {
+        failure = error;
+        child.kill();
+      }
+    });
   });
 }
 
-export async function buildFromVibelog({ vibelogDir, outDir, site, onStageTiming, searchIdentity, searchCache, buildIdentity }: BuildOptions) {
+export async function buildFromVibelog({
+  vibelogDir,
+  outDir,
+  site,
+  onStageTiming,
+  searchIdentity,
+  searchCache,
+  buildIdentity,
+}: BuildOptions) {
   logger.info('Starting production build...');
-  if (searchCache && searchIdentity !== searchCache.identity) throw new Error('Search cache identity does not match build identity');
+  if (searchCache && searchIdentity !== searchCache.identity)
+    throw new Error('Search cache identity does not match build identity');
 
-  if (!await fs.exists(vibelogDir)) {
+  if (!(await fs.exists(vibelogDir))) {
     throw new Error('The generated Astro draft is missing. Sync the HackMD content first.');
   }
 
@@ -440,11 +562,11 @@ export async function buildFromVibelog({ vibelogDir, outDir, site, onStageTiming
   const projectRoot = dirname(resolvedVibelogDir);
   const finalOutDir = resolve(outDir);
   if (
-    finalOutDir === parsePath(finalOutDir).root
-    || finalOutDir === projectRoot
-    || finalOutDir === resolvedVibelogDir
-    || isPathInside(resolvedVibelogDir, finalOutDir)
-    || !isPathInside(projectRoot, finalOutDir)
+    finalOutDir === parsePath(finalOutDir).root ||
+    finalOutDir === projectRoot ||
+    finalOutDir === resolvedVibelogDir ||
+    isPathInside(resolvedVibelogDir, finalOutDir) ||
+    !isPathInside(projectRoot, finalOutDir)
   ) {
     throw new Error('Build output must be a safe directory inside the project root');
   }
@@ -458,41 +580,64 @@ export async function buildFromVibelog({ vibelogDir, outDir, site, onStageTiming
   const tempOutDir = join(resolvedVibelogDir, `.build-staging-${randomUUID()}`);
   const backupOutDir = `${finalOutDir}.vibelog-backup-${randomUUID()}`;
   try {
-    await renderInChild({
-      vibelogDir: resolvedVibelogDir, outDir: tempOutDir, site: siteUrl.href,
-      ...(searchCache ? { searchCache: { ...searchCache, directory: resolve(searchCache.directory) } } : {}),
-    }, onStageTiming);
-    if (searchIdentity) await fs.writeJson(join(tempOutDir, 'search-index.json'), { identity: searchIdentity });
-    if (buildIdentity) await fs.writeJson(join(tempOutDir, 'build-identity.json'), { identity: buildIdentity });
+    await renderInChild(
+      {
+        vibelogDir: resolvedVibelogDir,
+        outDir: tempOutDir,
+        site: siteUrl.href,
+        ...(searchCache
+          ? { searchCache: { ...searchCache, directory: resolve(searchCache.directory) } }
+          : {}),
+      },
+      onStageTiming,
+    );
+    if (searchIdentity)
+      await fs.writeJson(join(tempOutDir, 'search-index.json'), { identity: searchIdentity });
+    if (buildIdentity)
+      await fs.writeJson(join(tempOutDir, 'build-identity.json'), { identity: buildIdentity });
   } catch (error) {
     await fs.remove(tempOutDir);
     throw error;
   }
 
   await timed('promote', onStageTiming, async () => {
-  const hadOutput = await fs.exists(finalOutDir);
-  if (hadOutput) await fs.move(finalOutDir, backupOutDir);
-  try {
-    await fs.move(tempOutDir, finalOutDir);
-    if (hadOutput) await fs.remove(backupOutDir);
-  } catch (error) {
-    await fs.remove(tempOutDir);
-    await fs.remove(finalOutDir);
-    if (hadOutput && await fs.exists(backupOutDir)) {
-      await fs.move(backupOutDir, finalOutDir);
+    const hadOutput = await fs.exists(finalOutDir);
+    if (hadOutput) await fs.move(finalOutDir, backupOutDir);
+    try {
+      await fs.move(tempOutDir, finalOutDir);
+      if (hadOutput) await fs.remove(backupOutDir);
+    } catch (error) {
+      await fs.remove(tempOutDir);
+      await fs.remove(finalOutDir);
+      if (hadOutput && (await fs.exists(backupOutDir))) {
+        await fs.move(backupOutDir, finalOutDir);
+      }
+      throw error;
     }
-    throw error;
-  }
   });
 
   logger.info(`Production build completed in ${outDir}`);
 }
 
-export async function writeSourceSnapshot(vibelogDir: string, outDir: string, summary: BuildContentSummary): Promise<SourceSnapshotV1> {
+export async function writeSourceSnapshot(
+  vibelogDir: string,
+  outDir: string,
+  summary: BuildContentSummary,
+): Promise<SourceSnapshotV1> {
   const root = resolve(vibelogDir);
   const destination = resolve(outDir);
-  if (destination === parsePath(destination).root || destination === root || isPathInside(root, destination)) throw new Error('Source snapshot output must be outside the generated project');
-  const snapshot = validateSourceSnapshot({ version: 1, site: summary.site, author: summary.author, contentProfile: summary.contentProfile });
+  if (
+    destination === parsePath(destination).root ||
+    destination === root ||
+    isPathInside(root, destination)
+  )
+    throw new Error('Source snapshot output must be outside the generated project');
+  const snapshot = validateSourceSnapshot({
+    version: 1,
+    site: summary.site,
+    author: summary.author,
+    contentProfile: summary.contentProfile,
+  });
   await fs.emptyDir(destination);
   await fs.copy(join(root, 'src', 'content'), join(destination, 'content'));
   await fs.writeJson(join(destination, 'source.json'), snapshot, { spaces: 2 });
@@ -511,22 +656,53 @@ export interface CompileBlogOptions {
   buildIdentity?: string;
 }
 
-export async function buildBlog({ sourceDir, design: inputDesign, workDir, outDir, site, onStageTiming, searchIdentity, searchCache, buildIdentity }: CompileBlogOptions): Promise<void> {
+export async function buildBlog({
+  sourceDir,
+  design: inputDesign,
+  workDir,
+  outDir,
+  site,
+  onStageTiming,
+  searchIdentity,
+  searchCache,
+  buildIdentity,
+}: CompileBlogOptions): Promise<void> {
   const sourceRoot = resolve(sourceDir);
   const root = resolve(workDir);
   const finalOutDir = resolve(outDir);
-  if (!isPathInside(root, finalOutDir)) throw new Error('Compiled output must be inside the build work directory');
+  if (!isPathInside(root, finalOutDir))
+    throw new Error('Compiled output must be inside the build work directory');
   const source = validateSourceSnapshot(await fs.readJson(join(sourceRoot, 'source.json')));
   const design = validateBlogDesignSpecV2(inputDesign);
-  const builder = new DevBuilder({ root, contentSource: {
-    name: ContentSourceName.HACKMD,
-    getPosts: () => Promise.reject(new Error('Frozen source build cannot fetch posts')),
-    getAuthor: () => Promise.reject(new Error('Frozen source build cannot fetch author')),
-  } });
+  const builder = new DevBuilder({
+    root,
+    contentSource: {
+      name: ContentSourceName.HACKMD,
+      getPosts: () => Promise.reject(new Error('Frozen source build cannot fetch posts')),
+      getAuthor: () => Promise.reject(new Error('Frozen source build cannot fetch author')),
+    },
+  });
   await timed('prepare', onStageTiming, () => builder.prepare({ installDependencies: false }));
-  await timed('source-copy', onStageTiming, () => fs.copy(join(sourceRoot, 'content'), join(builder.vibelogDir, 'src', 'content'), { overwrite: true }));
+  await timed('source-copy', onStageTiming, () =>
+    fs.copy(join(sourceRoot, 'content'), join(builder.vibelogDir, 'src', 'content'), {
+      overwrite: true,
+    }),
+  );
   await fs.ensureDir(join(builder.vibelogDir, 'src', 'generated'));
-  await fs.writeJson(join(builder.vibelogDir, 'src', 'generated', 'design.json'), design, { spaces: 2 });
-  await fs.writeFile(join(builder.vibelogDir, 'src', 'consts.ts'), `// Auto-generated site configuration\nexport const SITE_TITLE = ${JSON.stringify(source.site.title)};\nexport const SITE_DESCRIPTION = ${JSON.stringify(source.site.description)};\nexport const SITE_LANGUAGE = ${JSON.stringify(source.site.language)};\n`);
-  await buildFromVibelog({ vibelogDir: builder.vibelogDir, outDir: finalOutDir, site, onStageTiming, searchIdentity, searchCache, buildIdentity });
+  await fs.writeJson(join(builder.vibelogDir, 'src', 'generated', 'design.json'), design, {
+    spaces: 2,
+  });
+  await fs.writeFile(
+    join(builder.vibelogDir, 'src', 'consts.ts'),
+    `// Auto-generated site configuration\nexport const SITE_TITLE = ${JSON.stringify(source.site.title)};\nexport const SITE_DESCRIPTION = ${JSON.stringify(source.site.description)};\nexport const SITE_LANGUAGE = ${JSON.stringify(source.site.language)};\n`,
+  );
+  await buildFromVibelog({
+    vibelogDir: builder.vibelogDir,
+    outDir: finalOutDir,
+    site,
+    onStageTiming,
+    searchIdentity,
+    searchCache,
+    buildIdentity,
+  });
 }

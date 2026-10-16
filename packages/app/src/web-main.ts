@@ -9,8 +9,16 @@ const { app } = createApp({ config, ...dependencies });
 const server = startHttpServer(app.fetch);
 let shuttingDown = false;
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
-  if (shuttingDown) return; shuttingDown = true;
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log(`Received ${signal}; stopping VibeLog web`);
-  await closeHttpServer(server); await dependencies.database.close();
+  await closeHttpServer(server);
+  await dependencies.database.close();
 }
-for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { void shutdown(signal).catch((error: unknown) => { console.error('Web shutdown failed', error); process.exitCode = 1; }); });
+for (const signal of ['SIGINT', 'SIGTERM'] as const)
+  process.once(signal, () => {
+    void shutdown(signal).catch((error: unknown) => {
+      console.error('Web shutdown failed', error);
+      process.exitCode = 1;
+    });
+  });

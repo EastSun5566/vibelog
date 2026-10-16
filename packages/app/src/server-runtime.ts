@@ -3,7 +3,10 @@ import type { ServerType } from '@hono/node-server';
 
 type FetchCallback = Parameters<typeof serve>[0]['fetch'];
 
-export function startHttpServer(fetch: FetchCallback, env: NodeJS.ProcessEnv = process.env): ServerType {
+export function startHttpServer(
+  fetch: FetchCallback,
+  env: NodeJS.ProcessEnv = process.env,
+): ServerType {
   const port = Number.parseInt(env.PORT ?? '3000', 10);
   const hostname = env.HOST ?? '127.0.0.1';
 

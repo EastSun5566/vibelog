@@ -11,6 +11,13 @@ export async function copyPresentationDraft(
 ): Promise<void> {
   const css = compileDesignCss(design);
   await store.copyArtifact(sourceArtifactId, destinationArtifactId);
-  await store.putObject(destinationArtifactId, 'design.css', css, { contentType: 'text/css; charset=utf-8' });
-  await store.putObject(destinationArtifactId, 'build-identity.json', JSON.stringify({ identity: buildIdentity }), { contentType: 'application/json; charset=utf-8' });
+  await store.putObject(destinationArtifactId, 'design.css', css, {
+    contentType: 'text/css; charset=utf-8',
+  });
+  await store.putObject(
+    destinationArtifactId,
+    'build-identity.json',
+    JSON.stringify({ identity: buildIdentity }),
+    { contentType: 'application/json; charset=utf-8' },
+  );
 }

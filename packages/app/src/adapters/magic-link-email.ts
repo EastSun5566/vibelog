@@ -1,7 +1,15 @@
-export interface MagicLinkEmailContent { subject: string; text: string; html: string }
+export interface MagicLinkEmailContent {
+  subject: string;
+  text: string;
+  html: string;
+}
 
 function escapeHtml(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
 }
 
 export function magicLinkEmail(input: { url: string; expiresAt: Date }): MagicLinkEmailContent {

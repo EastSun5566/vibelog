@@ -23,7 +23,11 @@ export function safeArtifactPath(requestPath: string): string {
   }
 }
 
-export async function findArtifactObject(store: ArtifactStore, artifactId: string, requestPath: string): Promise<ResolvedArtifactObject | null> {
+export async function findArtifactObject(
+  store: ArtifactStore,
+  artifactId: string,
+  requestPath: string,
+): Promise<ResolvedArtifactObject | null> {
   const path = safeArtifactPath(requestPath);
   if (requestPath.endsWith('/') && path !== 'index.html') {
     const indexPath = `${path}/index.html`;

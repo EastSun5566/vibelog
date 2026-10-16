@@ -10,31 +10,30 @@ export interface VibelogConfig {
   };
 }
 
-
 export interface Post {
-  id: string
-  title: string
-  content: string
-  description?: string
-  slug: string
-  date: string
-  tags?: string[]
-  updatedAt?: string
+  id: string;
+  title: string;
+  content: string;
+  description?: string;
+  slug: string;
+  date: string;
+  tags?: string[];
+  updatedAt?: string;
 }
 export interface PostsResponse {
   posts: Post[];
 }
 
 export interface Author {
-  name: string
-  bio: string
+  name: string;
+  bio: string;
 }
-export type AuthorResponse = Author
+export type AuthorResponse = Author;
 
 export interface ContentSource {
   readonly name: ContentSourceName;
-  getPosts(): Promise<PostsResponse>
-  getAuthor(): Promise<AuthorResponse>
+  getPosts(): Promise<PostsResponse>;
+  getAuthor(): Promise<AuthorResponse>;
 }
 
 export type ThemePreset = 'minimal' | 'editorial' | 'notebook';
@@ -82,5 +81,5 @@ export interface AiGenerationContext {
 export interface AiProvider {
   readonly name: string;
   readonly modelId: string;
-  generate(input: DesignProposalInput, context?: AiGenerationContext): Promise<BlogDesignSpecV2>
+  generate(input: DesignProposalInput, context?: AiGenerationContext): Promise<BlogDesignSpecV2>;
 }

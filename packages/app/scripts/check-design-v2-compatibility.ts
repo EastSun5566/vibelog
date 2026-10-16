@@ -12,8 +12,15 @@ try {
   `);
   const revisions = Number(result.rows[0]?.revisions ?? -1);
   const previews = Number(result.rows[0]?.previews ?? -1);
-  console.info(JSON.stringify({ event: 'design_v2_compatibility_check', v1Revisions: revisions, v1PreviewSessions: previews }));
-  if (revisions !== 0 || previews !== 0) throw new Error('V1 designs remain; run the locked design-v2 conversion before deploying V2');
+  console.info(
+    JSON.stringify({
+      event: 'design_v2_compatibility_check',
+      v1Revisions: revisions,
+      v1PreviewSessions: previews,
+    }),
+  );
+  if (revisions !== 0 || previews !== 0)
+    throw new Error('V1 designs remain; run the locked design-v2 conversion before deploying V2');
 } finally {
   await client.end();
 }

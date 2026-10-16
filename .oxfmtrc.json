@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "singleQuote": true,
+  "embeddedLanguageFormatting": "off",
+  "sortImports": false,
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/coverage/**",
+    "**/.vibelog/**",
+    "**/.astro/**",
+    "packages/infra/sdks/**",
+    "packages/core/template/**",
+    "packages/app/src/drizzle/**"
+  ]
+}

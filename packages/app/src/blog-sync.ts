@@ -9,10 +9,16 @@ export const blogIdentitySchema = z.object({
 });
 
 const excludedSlugsSchema = z.array(z.string().min(1)).optional();
-const persistedBlogIdentitySchema = blogIdentitySchema.extend({ language: blogLanguageSchema.default('zh-Hant') });
+const persistedBlogIdentitySchema = blogIdentitySchema.extend({
+  language: blogLanguageSchema.default('zh-Hant'),
+});
 const syncOperationPayloadSchema = z.discriminatedUnion('intent', [
   z.object({ intent: z.literal('content'), excludedSlugs: excludedSlugsSchema }),
-  z.object({ intent: z.literal('identity'), site: persistedBlogIdentitySchema, excludedSlugs: excludedSlugsSchema }),
+  z.object({
+    intent: z.literal('identity'),
+    site: persistedBlogIdentitySchema,
+    excludedSlugs: excludedSlugsSchema,
+  }),
   z.object({ intent: z.literal('selection'), excludedSlugs: z.array(z.string().min(1)) }),
 ]);
 

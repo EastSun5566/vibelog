@@ -36,10 +36,14 @@ function ruleCss(rule: StyleRule): string {
     declarations.textAlign && `text-align:${declarations.textAlign}`,
     declarations.paddingBlock && `padding-block:${SPACE[declarations.paddingBlock]}`,
     declarations.gap && `gap:${SPACE[declarations.gap]}`,
-    declarations.surface && `background:${declarations.surface === 'transparent' ? 'transparent' : `var(--theme-${declarations.surface})`}`,
-    declarations.border && `border:${declarations.border === 'none' ? '0' : declarations.border === 'strong' ? '3px solid var(--theme-border)' : '1px solid color-mix(in srgb,var(--theme-border) 65%,transparent)'}`,
+    declarations.surface &&
+      `background:${declarations.surface === 'transparent' ? 'transparent' : `var(--theme-${declarations.surface})`}`,
+    declarations.border &&
+      `border:${declarations.border === 'none' ? '0' : declarations.border === 'strong' ? '3px solid var(--theme-border)' : '1px solid color-mix(in srgb,var(--theme-border) 65%,transparent)'}`,
     declarations.width && `max-width:${WIDTH[declarations.width]}`,
-  ].filter(Boolean).join(';');
+  ]
+    .filter(Boolean)
+    .join(';');
   return css ? `${TARGETS[rule.target]}{${css}}` : '';
 }
 
@@ -54,7 +58,8 @@ export function designToLegacyTheme(design: BlogDesignSpecV1): ThemeConfig {
     contentWidth: design.theme.layout.contentWidth,
     density: design.theme.layout.density,
     radius: design.theme.layout.radius,
-    headerStyle: design.chrome.header.variant === 'masthead' ? 'centered' : design.chrome.header.variant,
+    headerStyle:
+      design.chrome.header.variant === 'masthead' ? 'centered' : design.chrome.header.variant,
     postListStyle: design.pages.index.itemVariant,
     codeBlockStyle: design.pages.article.codeBlock,
     description: design.description,

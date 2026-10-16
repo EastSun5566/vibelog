@@ -3,7 +3,9 @@ import { isDangerousMarkdownUrl, sanitizeMarkdown } from '../src/markdown.js';
 
 describe('sanitizeMarkdown', () => {
   it('escapes raw HTML and neutralizes dangerous links without breaking blockquotes', () => {
-    const output = sanitizeMarkdown('<script>alert(1)</script>\n[x](javascript:alert(1))\n\n> Quoted text\n\n> [!NOTE]\n> Alert text\n\n```html\n<div onclick="x">code</div>\n```');
+    const output = sanitizeMarkdown(
+      '<script>alert(1)</script>\n[x](javascript:alert(1))\n\n> Quoted text\n\n> [!NOTE]\n> Alert text\n\n```html\n<div onclick="x">code</div>\n```',
+    );
     expect(output).toContain('&lt;script>alert(1)&lt;/script>');
     expect(output).toContain('about:blank#blocked-');
     expect(output).toContain('> Quoted text');
@@ -23,17 +25,30 @@ describe('sanitizeMarkdown', () => {
   });
 
   it('preserves ordinary comparisons and autolinks while escaping only HTML', () => {
-    expect(sanitizeMarkdown('a < b; <https://example.com>; <em>literal</em>\0'))
-      .toBe('a < b; <https://example.com>; &lt;em>literal&lt;/em>');
+    expect(sanitizeMarkdown('a < b; <https://example.com>; <em>literal</em>\0')).toBe(
+      'a < b; <https://example.com>; &lt;em>literal&lt;/em>',
+    );
   });
 });
 
 describe('Markdown URL policy', () => {
-  it.each(['javascript:alert(1)', 'JaVaScRiPt:alert(1)', 'java\tscript:alert(1)', ' data:text/html,test', 'vbscript:msgbox(1)'])('blocks dangerous schemes: %s', (url) => {
+  it.each([
+    'javascript:alert(1)',
+    'JaVaScRiPt:alert(1)',
+    'java\tscript:alert(1)',
+    ' data:text/html,test',
+    'vbscript:msgbox(1)',
+  ])('blocks dangerous schemes: %s', (url) => {
     expect(isDangerousMarkdownUrl(url)).toBe(true);
   });
 
-  it.each(['https://example.com', 'http://example.com', '/blog/post/', '#section', 'mailto:writer@example.com'])('retains normal links: %s', (url) => {
+  it.each([
+    'https://example.com',
+    'http://example.com',
+    '/blog/post/',
+    '#section',
+    'mailto:writer@example.com',
+  ])('retains normal links: %s', (url) => {
     expect(isDangerousMarkdownUrl(url)).toBe(false);
   });
 });

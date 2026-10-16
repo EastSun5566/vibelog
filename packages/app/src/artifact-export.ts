@@ -7,7 +7,12 @@ const ARCHIVE_DATE = new Date('1980-01-01T00:00:00.000Z');
 export class ArtifactExportError extends Error {}
 
 function safeArchivePath(path: string): string {
-  if (!path || path.startsWith('/') || path.includes('\\') || path.split('/').some((part) => !part || part === '.' || part === '..')) {
+  if (
+    !path ||
+    path.startsWith('/') ||
+    path.includes('\\') ||
+    path.split('/').some((part) => !part || part === '.' || part === '..')
+  ) {
     throw new ArtifactExportError('Artifact contains an unsafe path');
   }
   return path;
@@ -22,7 +27,10 @@ function appendEntry(archive: ZipStream, source: Readable, name: string): Promis
   });
 }
 
-export async function createArtifactZip(store: ArtifactStore, artifactId: string): Promise<ReadableStream<Uint8Array>> {
+export async function createArtifactZip(
+  store: ArtifactStore,
+  artifactId: string,
+): Promise<ReadableStream<Uint8Array>> {
   const paths = (await store.listObjects(artifactId)).map(safeArchivePath);
   if (paths.length === 0) throw new ArtifactExportError('Published artifact is empty');
 
@@ -36,11 +44,16 @@ export async function createArtifactZip(store: ArtifactStore, artifactId: string
     for (const path of paths) {
       const object = await store.readObject(artifactId, path);
       if (!object) throw new ArtifactExportError(`Published artifact is missing ${path}`);
-      await appendEntry(archive, Readable.fromWeb(object.body as import('node:stream/web').ReadableStream<Uint8Array>), path);
+      await appendEntry(
+        archive,
+        Readable.fromWeb(object.body as import('node:stream/web').ReadableStream<Uint8Array>),
+        path,
+      );
     }
     archive.finalize();
   })().catch((error: unknown) => {
-    const failure = error instanceof Error ? error : new ArtifactExportError('Could not create archive');
+    const failure =
+      error instanceof Error ? error : new ArtifactExportError('Could not create archive');
     archive.destroy(failure);
     output.destroy(failure);
   });

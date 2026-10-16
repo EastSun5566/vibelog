@@ -4,13 +4,25 @@ import { readFile } from 'node:fs/promises';
 import { Hono } from 'hono';
 import { DEFAULT_DESIGN_V2, designContractV2 } from '@vibelog/core';
 import { agentNextActions, requestHash, validateAgentDesign } from '../src/agent/contracts.js';
-import { agentInstructions, authorizationPage, grantsPage, onboardingPrompt } from '../src/agent/views.js';
+import {
+  agentInstructions,
+  authorizationPage,
+  grantsPage,
+  onboardingPrompt,
+} from '../src/agent/views.js';
 import type { AppSession } from '../src/auth.js';
 import { loadAppConfig } from '../src/config.js';
 import { guidePage, landingPage, loginPage } from '../src/views.js';
 
-const session: AppSession = { id: 'session', user: { id: 'writer', email: 'writer@example.com', name: 'Writer' }, csrfToken: 'csrf-test', expiresAt: '2099-01-01' };
-async function htmlOf(content: ReturnType<typeof loginPage>) { return (await new Hono().get('/', (c) => c.html(content)).request('/')).text(); }
+const session: AppSession = {
+  id: 'session',
+  user: { id: 'writer', email: 'writer@example.com', name: 'Writer' },
+  csrfToken: 'csrf-test',
+  expiresAt: '2099-01-01',
+};
+async function htmlOf(content: ReturnType<typeof loginPage>) {
+  return (await new Hono().get('/', (c) => c.html(content)).request('/')).text();
+}
 
 describe('agent design contract', () => {
   it('exposes an example accepted by the real validator without altering it', () => {
@@ -21,18 +33,31 @@ describe('agent design contract', () => {
   });
   it('returns field diagnostics rather than the original arguments', () => {
     const result = validateAgentDesign({ ...DEFAULT_DESIGN_V2, version: 'private-invalid-value' });
-    expect(result.valid).toBe(false); expect(JSON.stringify(result)).not.toContain('private-invalid-value');
-    if (!result.valid) expect(result.errors).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'version' })]));
+    expect(result.valid).toBe(false);
+    expect(JSON.stringify(result)).not.toContain('private-invalid-value');
+    if (!result.valid)
+      expect(result.errors).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'version' })]),
+      );
   });
   it('keeps the serialized contract and agent validator compatible with larger article layouts', () => {
     const design = structuredClone(DEFAULT_DESIGN_V2);
     design.theme.colors.accent = design.theme.colors.accent.toUpperCase();
-    design.pages.article.modules = Object.fromEntries(Array.from({ length: 9 }, (_, index) => [
-      `metadata-${String(index)}`, { type: 'metadata' as const, variant: 'compact' as const },
-    ]));
-    design.pages.article.regions = { beforeBody: Object.keys(design.pages.article.modules), aside: [], afterBody: [] };
+    design.pages.article.modules = Object.fromEntries(
+      Array.from({ length: 9 }, (_, index) => [
+        `metadata-${String(index)}`,
+        { type: 'metadata' as const, variant: 'compact' as const },
+      ]),
+    );
+    design.pages.article.regions = {
+      beforeBody: Object.keys(design.pages.article.modules),
+      aside: [],
+      afterBody: [],
+    };
     expect(validateAgentDesign(design).valid).toBe(true);
-    const contract = JSON.parse(JSON.stringify(designContractV2())) as ReturnType<typeof designContractV2>;
+    const contract = JSON.parse(JSON.stringify(designContractV2())) as ReturnType<
+      typeof designContractV2
+    >;
     expect(contract.schema).toEqual(designContractV2().schema);
     expect(contract.schema).toHaveProperty('$schema', 'http://json-schema.org/draft-07/schema#');
     expect(contract.schema).not.toHaveProperty('$defs');
@@ -43,18 +68,47 @@ describe('agent design contract', () => {
     expect(requestHash('design', {})).not.toBe(requestHash('sync', {}));
   });
   it('derives bounded next actions without interpreting failure messages or changing the blog', () => {
-    const empty = { state: 'failed' as const, sourceArtifactId: null, draftArtifactId: null, contentVersion: 0 };
-    const ready = { ...empty, sourceArtifactId: 'private-source', draftArtifactId: 'private-draft' };
+    const empty = {
+      state: 'failed' as const,
+      sourceArtifactId: null,
+      draftArtifactId: null,
+      contentVersion: 0,
+    };
+    const ready = {
+      ...empty,
+      sourceArtifactId: 'private-source',
+      draftArtifactId: 'private-draft',
+    };
     expect(agentNextActions(null, null)).toEqual([{ action: 'connect' }]);
-    expect(agentNextActions(empty, 'operation')).toEqual([{ action: 'wait', operationId: 'operation' }]);
-    expect(agentNextActions(empty, null)).toEqual([{ action: 'connect', reason: 'initial_sync_recovery' }]);
-    for (const partial of [{ ...ready, sourceArtifactId: null }, { ...ready, draftArtifactId: null }]) {
-      expect(agentNextActions(partial, null)).toEqual([{ action: 'open_editor', reason: 'draft_recovery_required' }]);
+    expect(agentNextActions(empty, 'operation')).toEqual([
+      { action: 'wait', operationId: 'operation' },
+    ]);
+    expect(agentNextActions(empty, null)).toEqual([
+      { action: 'connect', reason: 'initial_sync_recovery' },
+    ]);
+    for (const partial of [
+      { ...ready, sourceArtifactId: null },
+      { ...ready, draftArtifactId: null },
+    ]) {
+      expect(agentNextActions(partial, null)).toEqual([
+        { action: 'open_editor', reason: 'draft_recovery_required' },
+      ]);
     }
-    expect(agentNextActions(ready, null)).toEqual(['design', 'identity', 'selection', 'sync', 'open_editor'].map((action) => ({ action })));
-    expect(agentNextActions({ ...ready, state: 'deleting' }, 'operation')).toEqual([{ action: 'open_editor', reason: 'deletion_in_progress' }]);
-    expect(ready).toEqual({ state: 'failed', sourceArtifactId: 'private-source', draftArtifactId: 'private-draft', contentVersion: 0 });
-    expect(agentNextActions({ ...empty, contentVersion: 1 }, null)).toEqual([{ action: 'open_editor', reason: 'draft_recovery_required' }]);
+    expect(agentNextActions(ready, null)).toEqual(
+      ['design', 'identity', 'selection', 'sync', 'open_editor'].map((action) => ({ action })),
+    );
+    expect(agentNextActions({ ...ready, state: 'deleting' }, 'operation')).toEqual([
+      { action: 'open_editor', reason: 'deletion_in_progress' },
+    ]);
+    expect(ready).toEqual({
+      state: 'failed',
+      sourceArtifactId: 'private-source',
+      draftArtifactId: 'private-draft',
+      contentVersion: 0,
+    });
+    expect(agentNextActions({ ...empty, contentVersion: 1 }, null)).toEqual([
+      { action: 'open_editor', reason: 'draft_recovery_required' },
+    ]);
     expect(JSON.stringify(agentNextActions(ready, null))).not.toContain('private-');
   });
   it('pins the scoped CLI and keeps publishing human-controlled', () => {
@@ -78,123 +132,228 @@ describe('agent design contract', () => {
     const input = { github: false, google: false, returnTo: '/agent/authorize?code=AABBCCDDEE' };
     expect(await htmlOf(loginPage(input))).toContain('Sign in first, then approve');
     const sent = await htmlOf(loginPage({ ...input, sent: true }));
-    expect(sent).toContain('Open the link to sign in, then approve'); expect(sent).not.toContain('name="email"');
+    expect(sent).toContain('Open the link to sign in, then approve');
+    expect(sent).not.toContain('name="email"');
     expect(sent).toContain('returnTo=%2Fagent%2Fauthorize%3Fcode%3DAABBCCDDEE');
-    expect(await htmlOf(loginPage({ github: false, google: false }))).toContain('We’ll email you a one-time sign-in link.');
-    expect(await htmlOf(loginPage({ ...input, returnTo: 'https://example.com' }))).not.toContain('Sign in first, then approve');
+    expect(await htmlOf(loginPage({ github: false, google: false }))).toContain(
+      'We’ll email you a one-time sign-in link.',
+    );
+    expect(await htmlOf(loginPage({ ...input, returnTo: 'https://example.com' }))).not.toContain(
+      'Sign in first, then approve',
+    );
   });
   it('only instructs a published compatible CLI to resume without waiting and never guesses setup identity', () => {
-    for (const version of ['0.1.0', '0.2.0']) expect(agentInstructions('https://vibelog.org', version)).not.toContain('--no-wait');
+    for (const version of ['0.1.0', '0.2.0'])
+      expect(agentInstructions('https://vibelog.org', version)).not.toContain('--no-wait');
     for (const version of ['0.3.0', '0.4.0', '0.5.0', '1.0.0']) {
       const text = agentInstructions('https://vibelog.org', version);
-      expect(text).toContain(version !== '0.4.0' ? 'same `login --no-wait`' : 'same `login --no-wait --allow-publish`'); expect(text).toContain('nohup');
-      expect(text).toContain('Never guess profile or address'); expect(text).toContain('their corrected username');
-      expect(text).toContain('latest stateVersion'); expect(text).toContain('Do not create a replacement operation');
+      expect(text).toContain(
+        version !== '0.4.0' ? 'same `login --no-wait`' : 'same `login --no-wait --allow-publish`',
+      );
+      expect(text).toContain('nohup');
+      expect(text).toContain('Never guess profile or address');
+      expect(text).toContain('their corrected username');
+      expect(text).toContain('latest stateVersion');
+      expect(text).toContain('Do not create a replacement operation');
     }
     expect(onboardingPrompt('https://vibelog.org', '0.3.0')).toContain('Never guess');
   });
   it('gates combined approval and immediate preview handoff by pinned version', () => {
     const text = agentInstructions('https://vibelog.org', '0.5.0');
-    for (const part of ['canPublish false', 'at the start', 'same `login --no-wait`', '--draft-only',
-      'original pending scope', 'Finish that request first', 'after every successful connect, sync or design',
-      'clickable `editorUrl`', 'postCounts.selected / postCounts.total', "human's language", '2–3 actual changes',
-      'without an extra confirmation round', 'contract example is bare IR', 'Never describe pending or failed work as success']) {
+    for (const part of [
+      'canPublish false',
+      'at the start',
+      'same `login --no-wait`',
+      '--draft-only',
+      'original pending scope',
+      'Finish that request first',
+      'after every successful connect, sync or design',
+      'clickable `editorUrl`',
+      'postCounts.selected / postCounts.total',
+      "human's language",
+      '2–3 actual changes',
+      'without an extra confirmation round',
+      'contract example is bare IR',
+      'Never describe pending or failed work as success',
+    ]) {
       expect(text.toLowerCase()).toContain(part.toLowerCase());
     }
     expect(text).not.toContain('run login --no-wait --allow-publish and obtain');
     expect(agentInstructions('https://vibelog.org', '0.4.0')).not.toContain('--draft-only');
-    expect(agentInstructions('https://vibelog.org', '0.4.0')).toContain('same `login --no-wait --allow-publish`');
+    expect(agentInstructions('https://vibelog.org', '0.4.0')).toContain(
+      'same `login --no-wait --allow-publish`',
+    );
     const prompt = onboardingPrompt('https://vibelog.org', '0.5.0');
-    expect(prompt).toContain('Upgrade an existing draft-only grant'); expect(prompt).toContain('editorUrl');
-    expect(onboardingPrompt('https://vibelog.org', '0.4.0')).not.toContain('Upgrade an existing draft-only grant');
+    expect(prompt).toContain('Upgrade an existing draft-only grant');
+    expect(prompt).toContain('editorUrl');
+    expect(onboardingPrompt('https://vibelog.org', '0.4.0')).not.toContain(
+      'Upgrade an existing draft-only grant',
+    );
   });
   it('uses executable matching request envelopes in public instructions and the CLI README', async () => {
-    const texts = [agentInstructions('https://vibelog.org', '0.4.0'), agentInstructions('https://vibelog.org', '0.5.0'),
-      await readFile(new URL('../../cli/README.md', import.meta.url), 'utf8')];
+    const texts = [
+      agentInstructions('https://vibelog.org', '0.4.0'),
+      agentInstructions('https://vibelog.org', '0.5.0'),
+      await readFile(new URL('../../cli/README.md', import.meta.url), 'utf8'),
+    ];
     for (const text of texts) {
       const code = /```js\n([\s\S]*?)\n```/u.exec(text)?.[1];
       if (!code) throw new Error('Missing executable request examples');
       const design = designContractV2().example;
-      const bodies = runInNewContext(`${code}; ({ validationInput, submissionInput })`, { design, context: { stateVersion: 'current-state' } }) as { validationInput: string; submissionInput: string };
+      const bodies = runInNewContext(`${code}; ({ validationInput, submissionInput })`, {
+        design,
+        context: { stateVersion: 'current-state' },
+      }) as { validationInput: string; submissionInput: string };
       const validation = JSON.parse(bodies.validationInput) as { design: unknown };
-      expect(Object.keys(validation)).toEqual(['design']); expect(validateAgentDesign(validation.design).valid).toBe(true);
+      expect(Object.keys(validation)).toEqual(['design']);
+      expect(validateAgentDesign(validation.design).valid).toBe(true);
       expect(JSON.parse(bodies.submissionInput)).toEqual({ stateVersion: 'current-state', design });
     }
   });
   it.each([
-    ['pending', 'Authorize your agent'], ['approved', 'Draft access approved'], ['consumed', 'Agent connected'],
-    ['denied', 'Access denied'], ['expired', 'Request expired'],
+    ['pending', 'Authorize your agent'],
+    ['approved', 'Draft access approved'],
+    ['consumed', 'Agent connected'],
+    ['denied', 'Access denied'],
+    ['expired', 'Request expired'],
   ] as const)('renders real %s authorization state', async (status, title) => {
-    const html = await htmlOf(authorizationPage(session, { canPublish: false, userCode: 'AABBCCDDEE', status }));
-    expect(html).toContain(`<h1>${title}</h1>`); expect(html).toContain('writer@example.com');
+    const html = await htmlOf(
+      authorizationPage(session, { canPublish: false, userCode: 'AABBCCDDEE', status }),
+    );
+    expect(html).toContain(`<h1>${title}</h1>`);
+    expect(html).toContain('writer@example.com');
     if (status === 'pending') {
-      expect(html).toContain('Use a different account'); expect(html).toContain('action="/auth/logout"');
-      expect(html).toContain('value="/agent/authorize?code=AABBCCDDEE"'); expect(html).toContain('value="csrf-test"');
+      expect(html).toContain('Use a different account');
+      expect(html).toContain('action="/auth/logout"');
+      expect(html).toContain('value="/agent/authorize?code=AABBCCDDEE"');
+      expect(html).toContain('value="csrf-test"');
     } else expect(html).not.toContain('action="/agent/authorize"');
-    if (status === 'approved') { expect(html).toContain('finish connecting'); expect(html).not.toContain('detects approval automatically'); }
+    if (status === 'approved') {
+      expect(html).toContain('finish connecting');
+      expect(html).not.toContain('detects approval automatically');
+    }
   });
   it('shows publishing consent only for the saved pairing scope and gates instructions by CLI version', async () => {
-    const html = await htmlOf(authorizationPage(session, { userCode: 'AABBCCDDEE', status: 'pending', canPublish: true }));
-    expect(html).toContain('Authorize draft and publishing access'); expect(html).toContain('Ask it explicitly before publishing');
+    const html = await htmlOf(
+      authorizationPage(session, { userCode: 'AABBCCDDEE', status: 'pending', canPublish: true }),
+    );
+    expect(html).toContain('Authorize draft and publishing access');
+    expect(html).toContain('Ask it explicitly before publishing');
     expect(html).not.toContain('name="canPublish"');
-    expect(await htmlOf(authorizationPage(session, { userCode: 'AABBCCDDEE', status: 'approved', canPublish: true }))).toContain('Draft and publishing access approved');
+    expect(
+      await htmlOf(
+        authorizationPage(session, {
+          userCode: 'AABBCCDDEE',
+          status: 'approved',
+          canPublish: true,
+        }),
+      ),
+    ).toContain('Draft and publishing access approved');
     const current = agentInstructions('https://vibelog.org', '0.4.0');
-    for (const text of ['postCounts.selected', 'publicUrl is null', 'preserve page structure', 'Publish only on an explicit request', 'not proof of a human request', 'Do not retry with new keys']) expect(current).toContain(text);
+    for (const text of [
+      'postCounts.selected',
+      'publicUrl is null',
+      'preserve page structure',
+      'Publish only on an explicit request',
+      'not proof of a human request',
+      'Do not retry with new keys',
+    ])
+      expect(current).toContain(text);
     expect(current).not.toContain('Never attempt publish');
     expect(agentInstructions('https://vibelog.org', '0.3.0')).not.toContain('--allow-publish');
   });
   it('does not claim unavailable requests were approved and shares the prompt with signed-in users', async () => {
     const unavailable = await htmlOf(authorizationPage(session, null));
-    expect(unavailable).toContain('Request unavailable'); expect(unavailable).not.toContain('Draft access approved');
+    expect(unavailable).toContain('Request unavailable');
+    expect(unavailable).not.toContain('Draft access approved');
     const prompt = onboardingPrompt('https://vibelog.org', '0.1.0');
     const grants = await htmlOf(grantsPage(session, [], prompt));
-    expect(grants).toContain('data-copy-agent-prompt'); expect(grants).toContain('/assets/client.js'); expect(grants).toContain('@vibelog/cli@0.1.0');
-    expect((grants.match(/<details/gu) ?? [])).toHaveLength(1);
+    expect(grants).toContain('data-copy-agent-prompt');
+    expect(grants).toContain('/assets/client.js');
+    expect(grants).toContain('@vibelog/cli@0.1.0');
+    expect(grants.match(/<details/gu) ?? []).toHaveLength(1);
     expect(grants).not.toContain('View prompt');
     expect(await htmlOf(grantsPage(session, []))).not.toContain('data-copy-agent-prompt');
   });
   it('authorizes the onboarding client with the analytics CSP nonce', async () => {
-    const app = new Hono().get('/', (c) => c.html(landingPage(
-      { measurementId: 'G-TEST123', nonce: 'test-csp-nonce' },
-      onboardingPrompt('https://vibelog.org', '0.1.0'),
-    )));
+    const app = new Hono().get('/', (c) =>
+      c.html(
+        landingPage(
+          { measurementId: 'G-TEST123', nonce: 'test-csp-nonce' },
+          onboardingPrompt('https://vibelog.org', '0.1.0'),
+        ),
+      ),
+    );
     const html = await (await app.request('/')).text();
     expect(html).toContain('<script type="module" src="/assets/client.js" nonce="test-csp-nonce">');
     expect(html).toContain('nonce="test-csp-nonce" data-analytics-loader');
   });
   it('makes the prompt a direct primary entry without removing manual login or no-JS access', async () => {
-    const html = await htmlOf(landingPage(undefined, onboardingPrompt('https://vibelog.org', '0.1.0')));
-    expect(html).toContain('Keep writing in HackMD.'); expect(html).toContain('Publish a real blog.');
-    expect(html).toContain('Copy agent prompt'); expect(html).toContain('Use the editor');
-    expect(html).toContain('href="/auth/login"'); expect(html).toContain('readonly'); expect(html).toContain('@vibelog/cli@0.1.0');
+    const html = await htmlOf(
+      landingPage(undefined, onboardingPrompt('https://vibelog.org', '0.1.0')),
+    );
+    expect(html).toContain('Keep writing in HackMD.');
+    expect(html).toContain('Publish a real blog.');
+    expect(html).toContain('Copy agent prompt');
+    expect(html).toContain('Use the editor');
+    expect(html).toContain('href="/auth/login"');
+    expect(html).toContain('readonly');
+    expect(html).toContain('@vibelog/cli@0.1.0');
     expect(html).toContain('<details class="agent-prompt"><summary>View prompt</summary>');
     expect(html).not.toContain('Start publishing');
-    expect(html).toContain('Design with AI'); expect(html).toContain('Review privately'); expect(html).toContain('Publish when ready');
-    expect((html.match(/data-copy-agent-prompt/gu) ?? [])).toHaveLength(1);
+    expect(html).toContain('Design with AI');
+    expect(html).toContain('Review privately');
+    expect(html).toContain('Publish when ready');
+    expect(html.match(/data-copy-agent-prompt/gu) ?? []).toHaveLength(1);
   });
   it('keeps the guide concise without removing publishing or hosted AI boundaries', async () => {
     const html = await htmlOf(guidePage());
-    expect((html.match(/<h2 /gu) ?? [])).toHaveLength(3);
-    for (const text of ['Get started', 'Update and publish', 'Design and built-in features', 'agent prompt', 'use the editor',
-      'Only public, published HackMD notes', 'publish from the editor', 'restore an earlier live version', 'Presentation IR',
-      'not generated by the model', 'not article bodies', 'RSS', 'sitemap', 'llms.txt', 'per-post Markdown']) {
+    expect(html.match(/<h2 /gu) ?? []).toHaveLength(3);
+    for (const text of [
+      'Get started',
+      'Update and publish',
+      'Design and built-in features',
+      'agent prompt',
+      'use the editor',
+      'Only public, published HackMD notes',
+      'publish from the editor',
+      'restore an earlier live version',
+      'Presentation IR',
+      'not generated by the model',
+      'not article bodies',
+      'RSS',
+      'sitemap',
+      'llms.txt',
+      'per-post Markdown',
+    ]) {
       expect(html).toContain(text);
     }
     expect(await htmlOf(guidePage(session))).toContain('href="/editor"');
   });
   it('keeps the onboarding entry disabled unless an explicit stable CLI version is configured', async () => {
     const env = {
-      DATABASE_URL: 'postgresql://unused', BETTER_AUTH_SECRET: 'local-test-secret-at-least-32-characters',
-      OBJECT_STORE_ENDPOINT: 'https://unused.example.com', OBJECT_STORE_BUCKET: 'unused',
-      OBJECT_STORE_ACCESS_KEY_ID: 'unused', OBJECT_STORE_SECRET_ACCESS_KEY: 'unused',
-      RESEND_API_KEY: 'unused', EMAIL_FROM: 'login@example.com',
+      DATABASE_URL: 'postgresql://unused',
+      BETTER_AUTH_SECRET: 'local-test-secret-at-least-32-characters',
+      OBJECT_STORE_ENDPOINT: 'https://unused.example.com',
+      OBJECT_STORE_BUCKET: 'unused',
+      OBJECT_STORE_ACCESS_KEY_ID: 'unused',
+      OBJECT_STORE_SECRET_ACCESS_KEY: 'unused',
+      RESEND_API_KEY: 'unused',
+      EMAIL_FROM: 'login@example.com',
     };
     expect(loadAppConfig(env).agentCliVersion).toBeUndefined();
-    const app = new Hono().get('/', (c) => c.html(landingPage()))
-      .get('/enabled', (c) => c.html(landingPage(undefined, onboardingPrompt('https://vibelog.org', '0.1.0'))));
+    const app = new Hono()
+      .get('/', (c) => c.html(landingPage()))
+      .get('/enabled', (c) =>
+        c.html(landingPage(undefined, onboardingPrompt('https://vibelog.org', '0.1.0'))),
+      );
     expect(await (await app.request('/')).text()).not.toContain('data-copy-agent-prompt');
-    expect(loadAppConfig({ ...env, VIBELOG_AGENT_CLI_VERSION: '0.1.0' }).agentCliVersion).toBe('0.1.0');
+    expect(loadAppConfig({ ...env, VIBELOG_AGENT_CLI_VERSION: '0.1.0' }).agentCliVersion).toBe(
+      '0.1.0',
+    );
     expect(await (await app.request('/enabled')).text()).toContain('@vibelog/cli@0.1.0');
-    expect(() => loadAppConfig({ ...env, VIBELOG_AGENT_CLI_VERSION: 'latest' })).toThrow('pinned stable version');
+    expect(() => loadAppConfig({ ...env, VIBELOG_AGENT_CLI_VERSION: 'latest' })).toThrow(
+      'pinned stable version',
+    );
   });
 });

@@ -6,9 +6,7 @@ export function removeFirstH1IfMatchesTitle(markdown: string, title?: string) {
   if (match) {
     const h1Text = match[1];
     if (h1Text === title) {
-      return markdown
-        .replace(h1Regex, '')
-        .replace(/^\n+/, '');
+      return markdown.replace(h1Regex, '').replace(/^\n+/, '');
     }
   }
 

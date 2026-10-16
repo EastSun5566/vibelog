@@ -4,7 +4,12 @@ import { ResendTransactionalEmailSender } from './adapters/resend-email.js';
 import { S3ArtifactStore } from './adapters/s3-artifact-store.js';
 import type { AppConfig, OperationRuntimeConfig } from './config.js';
 import { AppDatabase } from './database.js';
-import { AppOperationExecutor, DeferredOutboxDispatcher, DurableOutboxWorker, OutboxDispatcher } from './jobs.js';
+import {
+  AppOperationExecutor,
+  DeferredOutboxDispatcher,
+  DurableOutboxWorker,
+  OutboxDispatcher,
+} from './jobs.js';
 
 function createCoreRuntimeDependencies(config: OperationRuntimeConfig) {
   const database = new AppDatabase(config.databaseUrl);
@@ -14,13 +19,25 @@ function createCoreRuntimeDependencies(config: OperationRuntimeConfig) {
 }
 export function createWebRuntimeDependencies(config: AppConfig) {
   const core = createCoreRuntimeDependencies(config);
-  const emailSender = config.email.provider === 'mailpit'
-    ? new MailpitTransactionalEmailSender(config.email.apiUrl, config.emailFrom, config.emailReplyTo)
-    : new ResendTransactionalEmailSender(config.email.apiKey, config.emailFrom, config.emailReplyTo);
-  if (config.queueMode === 'postgres') return { ...core, dispatcher: new DeferredOutboxDispatcher(), emailSender };
+  const emailSender =
+    config.email.provider === 'mailpit'
+      ? new MailpitTransactionalEmailSender(
+          config.email.apiUrl,
+          config.emailFrom,
+          config.emailReplyTo,
+        )
+      : new ResendTransactionalEmailSender(
+          config.email.apiKey,
+          config.emailFrom,
+          config.emailReplyTo,
+        );
+  if (config.queueMode === 'postgres')
+    return { ...core, dispatcher: new DeferredOutboxDispatcher(), emailSender };
   const queue = config.cloudTasks
     ? new CloudTasksOperationQueue(config.cloudTasks)
-    : new DirectOperationQueue(async (message) => { await core.executor.execute(message.operationId); });
+    : new DirectOperationQueue(async (message) => {
+        await core.executor.execute(message.operationId);
+      });
   return { ...core, queue, dispatcher: new OutboxDispatcher(core.database, queue), emailSender };
 }
 export function createWorkerRuntimeDependencies(config: OperationRuntimeConfig) {
@@ -31,6 +48,8 @@ export function createWorkerRuntimeDependencies(config: OperationRuntimeConfig) 
   }
   const queue = config.cloudTasks
     ? new CloudTasksOperationQueue(config.cloudTasks)
-    : new DirectOperationQueue(async (message) => { await core.executor.execute(message.operationId); });
+    : new DirectOperationQueue(async (message) => {
+        await core.executor.execute(message.operationId);
+      });
   return { ...core, queue, dispatcher: new OutboxDispatcher(core.database, queue) };
 }

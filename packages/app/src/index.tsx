@@ -1,7 +1,12 @@
 import { AGENT_API } from './agent/contracts.js';
 import { agentRoutes } from './agent/routes.js';
 import { AgentRepository } from './agent/repository.js';
-import { agentInstructions, authorizationPage, grantsPage, onboardingPrompt } from './agent/views.js';
+import {
+  agentInstructions,
+  authorizationPage,
+  grantsPage,
+  onboardingPrompt,
+} from './agent/views.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
@@ -14,8 +19,23 @@ import { findArtifactObject } from './artifact-serving.js';
 import { createAuth, emailRateLimitKey, readSession, type AppVariables } from './auth.js';
 import { blogIdentitySchema, blogLanguageSchema } from './blog-sync.js';
 import { loadAppConfig, type AppConfig } from './config.js';
-import { AiQuotaExceededError, AppDatabase, BlogAddressTakenError, BlogAlreadyExistsError, BlogConnectionConflictError, type BlogRecord, type OperationRecord, type OperationType } from './database.js';
-import { AppError, assertCsrfToken, assertMutationOrigin, jsonError, requestContext } from './http.js';
+import {
+  AiQuotaExceededError,
+  AppDatabase,
+  BlogAddressTakenError,
+  BlogAlreadyExistsError,
+  BlogConnectionConflictError,
+  type BlogRecord,
+  type OperationRecord,
+  type OperationType,
+} from './database.js';
+import {
+  AppError,
+  assertCsrfToken,
+  assertMutationOrigin,
+  jsonError,
+  requestContext,
+} from './http.js';
 import type { OperationDispatcher } from './ports/operation-queue.js';
 import { operationMessage, operationProgress } from './operation-status.js';
 import { blocksRequest, maintenanceResponse } from './maintenance.js';
@@ -24,84 +44,275 @@ import type { TransactionalEmailSender } from './ports/transactional-email.js';
 import { editorUrlWithPreviewPath, safePreviewPath } from './preview-path.js';
 import { hashToken, randomToken } from './security/crypto.js';
 import { edgeIdentity } from './security/edge-identity.js';
-import { hasUnsavedFineTuneChanges, themeFromControls, visualThemeFromControls } from './theme-studio.js';
-import { deletionPage, editorPage, guidePage, landingPage, loginPage, onboardingPage, operationPage, type AnalyticsDocumentConfig, type DeletionError } from './views.js';
+import {
+  hasUnsavedFineTuneChanges,
+  themeFromControls,
+  visualThemeFromControls,
+} from './theme-studio.js';
+import {
+  deletionPage,
+  editorPage,
+  guidePage,
+  landingPage,
+  loginPage,
+  onboardingPage,
+  operationPage,
+  type AnalyticsDocumentConfig,
+  type DeletionError,
+} from './views.js';
 
 const RESERVED = new Set(['preview', 'www', 'api', 'admin', 'assets']);
-const handleInput = z.string().trim().toLowerCase().min(3).max(32).regex(/^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/);
+const handleInput = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3)
+  .max(32)
+  .regex(/^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/);
 const emailInput = z.email().max(320);
-const hackmdInput = z.object({ hackmdUsername: z.string().trim().min(1).max(100).regex(/^[\p{L}\p{N}_.-]+$/u) });
+const hackmdInput = z.object({
+  hackmdUsername: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .regex(/^[\p{L}\p{N}_.-]+$/u),
+});
 const designInput = z.object({ prompt: z.string().trim().min(1).max(1000) });
 const previewTokenInput = z.string().min(32).max(512);
 const uuidInput = z.uuid();
 const deletionConfirmationInput = z.string().trim().min(1).max(320);
-interface AppEnv { Variables: AppVariables & { analyticsNonce?: string } }
+interface AppEnv {
+  Variables: AppVariables & { analyticsNonce?: string };
+}
 type AppContext = Context<AppEnv>;
-interface CreateAppOptions { config?: AppConfig; database?: AppDatabase; artifactStore: ArtifactStore; emailSender: TransactionalEmailSender; dispatcher: OperationDispatcher }
-const formValue = (body: Record<string, string | File>, key: string) => typeof body[key] === 'string' ? body[key] : undefined;
-function hostName(c: AppContext): string { try { return new URL(`http://${c.get('edgeHost') ?? c.req.header('host') ?? ''}`).hostname.toLowerCase(); } catch { return ''; } }
-function publicUsername(c: AppContext, config: AppConfig): string | null { const suffix = `.${config.appHostname}`; const host = hostName(c); if (!host.endsWith(suffix)) return null; const label = host.slice(0, -suffix.length); return /^[a-z0-9-]{3,32}$/.test(label) && !RESERVED.has(label) ? label : null; }
-function cookieValue(header: string | undefined, name: string): string | undefined { return header?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1); }
-function siteUrl(config: AppConfig, username: string): string { const origin = new URL(config.appOrigin); return `${origin.protocol}//${username}.${origin.hostname}${origin.port ? `:${origin.port}` : ''}`; }
-function releaseEtag(releaseId: string, requestPath: string): string { return `"${createHash('sha256').update(releaseId).update('\0').update(requestPath).digest('base64url')}"`; }
-function matchesEtag(value: string | undefined, etag: string): boolean { return value?.split(',').some((candidate) => { const tag = candidate.trim(); return tag === '*' || tag === etag || tag === `W/${etag}`; }) ?? false; }
-function contentType(path: string): string { const extension = path.split('.').at(-1)?.toLowerCase(); return ({ html: 'text/html; charset=utf-8', css: 'text/css; charset=utf-8', js: 'text/javascript; charset=utf-8', json: 'application/json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', ico: 'image/x-icon', xml: 'application/xml; charset=utf-8', md: 'text/markdown; charset=utf-8', txt: 'text/plain; charset=utf-8', wasm: 'application/wasm' } as Record<string, string>)[extension ?? ''] ?? 'application/octet-stream'; }
-function isSearchPage(path: string): boolean { return path === '/search' || path === '/search/'; }
-function usesSearchScripts(path: string): boolean { return isSearchPage(path) || path.startsWith('/pagefind/'); }
-async function artifactResponse(c: AppContext, store: ArtifactStore, artifactId: string, requestPath: string, cache: string, etag?: string, transformHtml?: (html: string) => string): Promise<Response> {
-  const found = await findArtifactObject(store, artifactId, requestPath); if (!found) throw new AppError('site_not_found', 'Page not found', 404);
-  const type = found.object.contentType ?? contentType(found.path); c.header('Content-Type', type); c.header('Cache-Control', cache);
-  if (etag) { c.header('ETag', etag); if (matchesEtag(c.req.header('if-none-match'), etag)) return new Response(null, { status: 304, headers: c.res.headers }); }
-  if (transformHtml && type.startsWith('text/html')) return new Response(transformHtml(await new Response(found.object.body).text()), { headers: c.res.headers });
+interface CreateAppOptions {
+  config?: AppConfig;
+  database?: AppDatabase;
+  artifactStore: ArtifactStore;
+  emailSender: TransactionalEmailSender;
+  dispatcher: OperationDispatcher;
+}
+const formValue = (body: Record<string, string | File>, key: string) =>
+  typeof body[key] === 'string' ? body[key] : undefined;
+function hostName(c: AppContext): string {
+  try {
+    return new URL(
+      `http://${c.get('edgeHost') ?? c.req.header('host') ?? ''}`,
+    ).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+function publicUsername(c: AppContext, config: AppConfig): string | null {
+  const suffix = `.${config.appHostname}`;
+  const host = hostName(c);
+  if (!host.endsWith(suffix)) return null;
+  const label = host.slice(0, -suffix.length);
+  return /^[a-z0-9-]{3,32}$/.test(label) && !RESERVED.has(label) ? label : null;
+}
+function cookieValue(header: string | undefined, name: string): string | undefined {
+  return header
+    ?.split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+}
+function siteUrl(config: AppConfig, username: string): string {
+  const origin = new URL(config.appOrigin);
+  return `${origin.protocol}//${username}.${origin.hostname}${origin.port ? `:${origin.port}` : ''}`;
+}
+function releaseEtag(releaseId: string, requestPath: string): string {
+  return `"${createHash('sha256').update(releaseId).update('\0').update(requestPath).digest('base64url')}"`;
+}
+function matchesEtag(value: string | undefined, etag: string): boolean {
+  return (
+    value?.split(',').some((candidate) => {
+      const tag = candidate.trim();
+      return tag === '*' || tag === etag || tag === `W/${etag}`;
+    }) ?? false
+  );
+}
+function contentType(path: string): string {
+  const extension = path.split('.').at(-1)?.toLowerCase();
+  return (
+    (
+      {
+        html: 'text/html; charset=utf-8',
+        css: 'text/css; charset=utf-8',
+        js: 'text/javascript; charset=utf-8',
+        json: 'application/json',
+        svg: 'image/svg+xml',
+        png: 'image/png',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        webp: 'image/webp',
+        ico: 'image/x-icon',
+        xml: 'application/xml; charset=utf-8',
+        md: 'text/markdown; charset=utf-8',
+        txt: 'text/plain; charset=utf-8',
+        wasm: 'application/wasm',
+      } as Record<string, string>
+    )[extension ?? ''] ?? 'application/octet-stream'
+  );
+}
+function isSearchPage(path: string): boolean {
+  return path === '/search' || path === '/search/';
+}
+function usesSearchScripts(path: string): boolean {
+  return isSearchPage(path) || path.startsWith('/pagefind/');
+}
+async function artifactResponse(
+  c: AppContext,
+  store: ArtifactStore,
+  artifactId: string,
+  requestPath: string,
+  cache: string,
+  etag?: string,
+  transformHtml?: (html: string) => string,
+): Promise<Response> {
+  const found = await findArtifactObject(store, artifactId, requestPath);
+  if (!found) throw new AppError('site_not_found', 'Page not found', 404);
+  const type = found.object.contentType ?? contentType(found.path);
+  c.header('Content-Type', type);
+  c.header('Cache-Control', cache);
+  if (etag) {
+    c.header('ETag', etag);
+    if (matchesEtag(c.req.header('if-none-match'), etag))
+      return new Response(null, { status: 304, headers: c.res.headers });
+  }
+  if (transformHtml && type.startsWith('text/html'))
+    return new Response(transformHtml(await new Response(found.object.body).text()), {
+      headers: c.res.headers,
+    });
   return new Response(found.object.body, { headers: c.res.headers });
 }
-function previewBridge(appOrigin: string, nonce: string): string { const parentOrigin = JSON.stringify(new URL(appOrigin).origin).replaceAll('<', '\\u003c'); return `<script nonce="${nonce}">(()=>{const parentOrigin=${parentOrigin};const report=()=>parent.postMessage({type:'vibelog-preview-location',path:location.pathname+location.search+location.hash},parentOrigin);addEventListener('hashchange',report);addEventListener('message',(event)=>{if(event.origin!==parentOrigin||event.source!==parent||event.data?.type!=='vibelog-preview-refresh')return;location.reload()});report()})()</script>`; }
-function injectPreviewBridge(html: string, script: string): string { return html.includes('</body>') ? html.replace('</body>', `${script}</body>`) : `${html}${script}`; }
+function previewBridge(appOrigin: string, nonce: string): string {
+  const parentOrigin = JSON.stringify(new URL(appOrigin).origin).replaceAll('<', '\\u003c');
+  return `<script nonce="${nonce}">(()=>{const parentOrigin=${parentOrigin};const report=()=>parent.postMessage({type:'vibelog-preview-location',path:location.pathname+location.search+location.hash},parentOrigin);addEventListener('hashchange',report);addEventListener('message',(event)=>{if(event.origin!==parentOrigin||event.source!==parent||event.data?.type!=='vibelog-preview-refresh')return;location.reload()});report()})()</script>`;
+}
+function injectPreviewBridge(html: string, script: string): string {
+  return html.includes('</body>')
+    ? html.replace('</body>', `${script}</body>`)
+    : `${html}${script}`;
+}
 
 export function createApp(options: CreateAppOptions) {
-  const config = options.config ?? loadAppConfig(); const database = options.database ?? new AppDatabase(config.databaseUrl);
-  const auth = createAuth(database, config, options.emailSender); const app = new Hono<AppEnv>();
+  const config = options.config ?? loadAppConfig();
+  const database = options.database ?? new AppDatabase(config.databaseUrl);
+  const auth = createAuth(database, config, options.emailSender);
+  const app = new Hono<AppEnv>();
   app.use('*', requestContext());
   app.use('*', edgeIdentity(config.edgeSharedSecret));
   for (const path of ['/auth/*', '/api/auth/*']) {
-    app.use(path, async (c, next) => { c.header('Cache-Control', 'private, no-store'); await next(); c.header('Cache-Control', 'private, no-store'); });
-    app.use(path, bodyLimit({ maxSize: 16 * 1024, onError: (c) => jsonError(c, new AppError('payload_too_large', 'Authentication request body exceeds 16 KiB', 413)) }));
+    app.use(path, async (c, next) => {
+      c.header('Cache-Control', 'private, no-store');
+      await next();
+      c.header('Cache-Control', 'private, no-store');
+    });
+    app.use(
+      path,
+      bodyLimit({
+        maxSize: 16 * 1024,
+        onError: (c) =>
+          jsonError(
+            c,
+            new AppError('payload_too_large', 'Authentication request body exceeds 16 KiB', 413),
+          ),
+      }),
+    );
   }
   const agentBodyLimit: MiddlewareHandler<AppEnv> = (c, next) => {
     const limitKiB = c.req.method === 'POST' && c.req.path === `${AGENT_API}/selection` ? 256 : 64;
-    return bodyLimit({ maxSize: limitKiB * 1024, onError: () => Response.json({ error: { code: 'payload_too_large', message: `Request body exceeds ${String(limitKiB)} KiB`, requestId: randomUUID() } }, { status: 413 }) })(c, next);
+    return bodyLimit({
+      maxSize: limitKiB * 1024,
+      onError: () =>
+        Response.json(
+          {
+            error: {
+              code: 'payload_too_large',
+              message: `Request body exceeds ${String(limitKiB)} KiB`,
+              requestId: randomUUID(),
+            },
+          },
+          { status: 413 },
+        ),
+    })(c, next);
   };
   app.use(`${AGENT_API}/*`, agentBodyLimit);
   app.use('*', async (c, next) => {
-    if (blocksRequest(config.maintenanceStage, 'web', c.req.path)) return maintenanceResponse(c.req.method);
+    if (blocksRequest(config.maintenanceStage, 'web', c.req.path))
+      return maintenanceResponse(c.req.method);
     await next();
   });
-  app.onError((error, c) => jsonError(c, error)); app.notFound((c) => jsonError(c, new AppError('not_found', 'Page not found', 404)));
-  app.get('/health', async (c) => { await database.ping(); return c.json({ status: 'ok', service: 'vibelog' }); });
+  app.onError((error, c) => jsonError(c, error));
+  app.notFound((c) => jsonError(c, new AppError('not_found', 'Page not found', 404)));
+  app.get('/health', async (c) => {
+    await database.ping();
+    return c.json({ status: 'ok', service: 'vibelog' });
+  });
   app.use('*', async (c, next) => {
-    const host = hostName(c); if (host === config.appHostname) return next();
+    const host = hostName(c);
+    if (host === config.appHostname) return next();
     if (host === new URL(config.previewOrigin).hostname) {
       if (c.req.path.startsWith('/preview-access/')) return next();
-      const token = cookieValue(c.req.header('cookie'), 'vibelog_preview'); const preview = token ? await database.getPreviewSession(hashToken(token)) : null;
-      if (!preview) throw new AppError('preview_access_denied', 'Preview access expired or invalid', 403);
-      const blog = await database.getBlog(preview.blogId); if (!blog?.draftArtifactId || blog.state === 'deleting') throw new AppError('preview_not_ready', 'Preview is not ready', 404);
+      const token = cookieValue(c.req.header('cookie'), 'vibelog_preview');
+      const preview = token ? await database.getPreviewSession(hashToken(token)) : null;
+      if (!preview)
+        throw new AppError('preview_access_denied', 'Preview access expired or invalid', 403);
+      const blog = await database.getBlog(preview.blogId);
+      if (!blog?.draftArtifactId || blog.state === 'deleting')
+        throw new AppError('preview_not_ready', 'Preview is not ready', 404);
       if (c.req.path === '/design.css') {
-        c.header('Content-Security-Policy', `default-src 'self'; script-src 'none'; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors ${config.appOrigin}`);
-        const design = await database.getActiveDesign(blog.id); if (!design) throw new AppError('design_not_found', 'Design not found', 404);
-        c.header('Content-Type', 'text/css; charset=utf-8'); c.header('Cache-Control', 'private, no-store'); return c.body(compileDesignCss(preview.designConfig ?? design.config));
+        c.header(
+          'Content-Security-Policy',
+          `default-src 'self'; script-src 'none'; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors ${config.appOrigin}`,
+        );
+        const design = await database.getActiveDesign(blog.id);
+        if (!design) throw new AppError('design_not_found', 'Design not found', 404);
+        c.header('Content-Type', 'text/css; charset=utf-8');
+        c.header('Cache-Control', 'private, no-store');
+        return c.body(compileDesignCss(preview.designConfig ?? design.config));
       }
       const nonce = randomBytes(18).toString('base64');
-      const previewScripts = usesSearchScripts(c.req.path) ? `'nonce-${nonce}' 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:` : `'nonce-${nonce}'`;
-      c.header('Content-Security-Policy', `default-src 'self'; script-src ${previewScripts}; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors ${config.appOrigin}`);
-      return artifactResponse(c, options.artifactStore, blog.draftArtifactId, c.req.path, 'private, no-store', undefined, (html) => injectPreviewBridge(html, previewBridge(config.appOrigin, nonce)));
+      const previewScripts = usesSearchScripts(c.req.path)
+        ? `'nonce-${nonce}' 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:`
+        : `'nonce-${nonce}'`;
+      c.header(
+        'Content-Security-Policy',
+        `default-src 'self'; script-src ${previewScripts}; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors ${config.appOrigin}`,
+      );
+      return artifactResponse(
+        c,
+        options.artifactStore,
+        blog.draftArtifactId,
+        c.req.path,
+        'private, no-store',
+        undefined,
+        (html) => injectPreviewBridge(html, previewBridge(config.appOrigin, nonce)),
+      );
     }
     const username = publicUsername(c, config);
     if (username) {
-      const blog = await database.getBlogByUsername(username); const release = blog ? await database.getActiveRelease(blog.id) : null;
-      if (!release) throw new AppError('site_not_found', 'This blog has not been published yet', 404);
-      const publicScripts = usesSearchScripts(c.req.path) ? "'self' 'wasm-unsafe-eval'; worker-src 'self' blob:" : "'none'";
-      c.header('Content-Security-Policy', `default-src 'self'; script-src ${publicScripts}; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`);
-      return artifactResponse(c, options.artifactStore, release.artifactId, c.req.path, 'public, no-cache', releaseEtag(release.id, c.req.path));
+      const blog = await database.getBlogByUsername(username);
+      const release = blog ? await database.getActiveRelease(blog.id) : null;
+      if (!release)
+        throw new AppError('site_not_found', 'This blog has not been published yet', 404);
+      const publicScripts = usesSearchScripts(c.req.path)
+        ? "'self' 'wasm-unsafe-eval'; worker-src 'self' blob:"
+        : "'none'";
+      c.header(
+        'Content-Security-Policy',
+        `default-src 'self'; script-src ${publicScripts}; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
+      );
+      return artifactResponse(
+        c,
+        options.artifactStore,
+        release.artifactId,
+        c.req.path,
+        'public, no-cache',
+        releaseEtag(release.id, c.req.path),
+      );
     }
     throw new AppError('unknown_host', 'Unknown VibeLog host', 404);
   });
@@ -109,18 +320,65 @@ export function createApp(options: CreateAppOptions) {
     await next();
     if (!c.res.headers.get('content-type')?.includes('text/html')) return;
     const nonce = c.get('analyticsNonce');
-    const scriptSources = nonce ? `'nonce-${nonce}' 'strict-dynamic' 'self' https://www.googletagmanager.com` : "'self'";
-    const imageSources = nonce ? "'self' data: https://*.google-analytics.com https://www.googletagmanager.com" : "'self' data:";
-    const connectSources = nonce ? "'self' https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com" : "'self'";
-    c.header('Content-Security-Policy', `default-src 'self'; script-src ${scriptSources}; style-src 'self'; img-src ${imageSources}; connect-src ${connectSources}; frame-src ${config.previewOrigin}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`);
+    const scriptSources = nonce
+      ? `'nonce-${nonce}' 'strict-dynamic' 'self' https://www.googletagmanager.com`
+      : "'self'";
+    const imageSources = nonce
+      ? "'self' data: https://*.google-analytics.com https://www.googletagmanager.com"
+      : "'self' data:";
+    const connectSources = nonce
+      ? "'self' https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com"
+      : "'self'";
+    c.header(
+      'Content-Security-Policy',
+      `default-src 'self'; script-src ${scriptSources}; style-src 'self'; img-src ${imageSources}; connect-src ${connectSources}; frame-src ${config.previewOrigin}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
+    );
   });
-  app.get('/assets/client.js', async (c) => { c.header('Content-Type', 'text/javascript; charset=utf-8'); c.header('Cache-Control', 'no-store'); return c.body(new Uint8Array(await readFile(new URL('../dist/assets/client.js', import.meta.url)))); });
-  app.get('/assets/analytics.js', async (c) => { c.header('Content-Type', 'text/javascript; charset=utf-8'); c.header('Cache-Control', 'no-store'); return c.body(new Uint8Array(await readFile(new URL('../dist/assets/analytics.js', import.meta.url)))); });
-  app.get('/assets/app.css', async (c) => { c.header('Content-Type', 'text/css; charset=utf-8'); c.header('Cache-Control', 'no-cache'); return c.body(new Uint8Array(await readFile(new URL('../dist/assets/app.css', import.meta.url)))); });
-  app.get('/assets/logo.svg', async (c) => { c.header('Content-Type', 'image/svg+xml'); c.header('Cache-Control', 'public, max-age=3600'); return c.body(new Uint8Array(await readFile(new URL('../dist/assets/logo.svg', import.meta.url)))); });
+  app.get('/assets/client.js', async (c) => {
+    c.header('Content-Type', 'text/javascript; charset=utf-8');
+    c.header('Cache-Control', 'no-store');
+    return c.body(
+      new Uint8Array(await readFile(new URL('../dist/assets/client.js', import.meta.url))),
+    );
+  });
+  app.get('/assets/analytics.js', async (c) => {
+    c.header('Content-Type', 'text/javascript; charset=utf-8');
+    c.header('Cache-Control', 'no-store');
+    return c.body(
+      new Uint8Array(await readFile(new URL('../dist/assets/analytics.js', import.meta.url))),
+    );
+  });
+  app.get('/assets/app.css', async (c) => {
+    c.header('Content-Type', 'text/css; charset=utf-8');
+    c.header('Cache-Control', 'no-cache');
+    return c.body(
+      new Uint8Array(await readFile(new URL('../dist/assets/app.css', import.meta.url))),
+    );
+  });
+  app.get('/assets/logo.svg', async (c) => {
+    c.header('Content-Type', 'image/svg+xml');
+    c.header('Cache-Control', 'public, max-age=3600');
+    return c.body(
+      new Uint8Array(await readFile(new URL('../dist/assets/logo.svg', import.meta.url))),
+    );
+  });
   app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw));
-  const internalAuthPost = async (c: AppContext, path: string, body: Record<string, unknown>) => { const headers = new Headers({ 'content-type': 'application/json', origin: config.appOrigin }); const cookie = c.req.header('cookie'); if (cookie) headers.set('cookie', cookie); return auth.handler(new Request(new URL(`/api/auth${path}`, config.appOrigin), { method: 'POST', headers, body: JSON.stringify(body) })); };
-  const copyCookies = (c: AppContext, response: Response) => { for (const cookie of response.headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true }); };
+  const internalAuthPost = async (c: AppContext, path: string, body: Record<string, unknown>) => {
+    const headers = new Headers({ 'content-type': 'application/json', origin: config.appOrigin });
+    const cookie = c.req.header('cookie');
+    if (cookie) headers.set('cookie', cookie);
+    return auth.handler(
+      new Request(new URL(`/api/auth${path}`, config.appOrigin), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      }),
+    );
+  };
+  const copyCookies = (c: AppContext, response: Response) => {
+    for (const cookie of response.headers.getSetCookie())
+      c.header('Set-Cookie', cookie, { append: true });
+  };
 
   const analyticsDocument = (c: AppContext): AnalyticsDocumentConfig | undefined => {
     if (!config.googleAnalyticsMeasurementId) return undefined;
@@ -128,143 +386,563 @@ export function createApp(options: CreateAppOptions) {
     c.set('analyticsNonce', nonce);
     return { measurementId: config.googleAnalyticsMeasurementId, nonce };
   };
-  const returnTo = (value: string | undefined) => value === '/account/agents' || /^\/agent\/authorize\?code=[A-F0-9]{10}$/u.test(value ?? '') ? (value ?? '/editor') : '/editor';
-  app.get('/auth/login', async (c) => await readSession(c, auth, config) ? c.redirect(returnTo(c.req.query('returnTo'))) : c.html(loginPage({ returnTo: returnTo(c.req.query('returnTo')), deleted: c.req.query('deleted') === '1', github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), sent: c.req.query('sent') === '1' }, analyticsDocument(c))));
+  const returnTo = (value: string | undefined) =>
+    value === '/account/agents' || /^\/agent\/authorize\?code=[A-F0-9]{10}$/u.test(value ?? '')
+      ? (value ?? '/editor')
+      : '/editor';
+  app.get('/auth/login', async (c) =>
+    (await readSession(c, auth, config))
+      ? c.redirect(returnTo(c.req.query('returnTo')))
+      : c.html(
+          loginPage(
+            {
+              returnTo: returnTo(c.req.query('returnTo')),
+              deleted: c.req.query('deleted') === '1',
+              github: Boolean(config.githubClientId),
+              google: Boolean(config.googleClientId),
+              sent: c.req.query('sent') === '1',
+            },
+            analyticsDocument(c),
+          ),
+        ),
+  );
   app.post('/auth/magic-link', async (c) => {
-    assertMutationOrigin(c, config); const body = await c.req.parseBody().catch(() => ({})); const parsed = emailInput.safeParse(formValue(body, 'email')?.trim().toLowerCase());
+    assertMutationOrigin(c, config);
+    const body = await c.req.parseBody().catch(() => ({}));
+    const parsed = emailInput.safeParse(formValue(body, 'email')?.trim().toLowerCase());
     const callbackURL = returnTo(formValue(body, 'returnTo'));
-    if (!parsed.success) return c.html(loginPage({ returnTo: callbackURL, github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Enter a valid email address.' }, analyticsDocument(c)), 400);
-    const response = await internalAuthPost(c, '/sign-in/magic-link', { email: parsed.data, name: parsed.data.split('@')[0], callbackURL });
-    if (response.status === 429) return c.html(loginPage({ returnTo: callbackURL, github: Boolean(config.githubClientId), google: Boolean(config.googleClientId), message: 'Please wait before requesting another link.' }, analyticsDocument(c)), 429);
-    if (!response.ok) throw new AppError('magic_link_failed', 'Could not send a sign-in link.', 502);
-    return c.redirect(callbackURL === '/editor' ? '/auth/login?sent=1' : `/auth/login?sent=1&returnTo=${encodeURIComponent(callbackURL)}`, 303);
+    if (!parsed.success)
+      return c.html(
+        loginPage(
+          {
+            returnTo: callbackURL,
+            github: Boolean(config.githubClientId),
+            google: Boolean(config.googleClientId),
+            message: 'Enter a valid email address.',
+          },
+          analyticsDocument(c),
+        ),
+        400,
+      );
+    const response = await internalAuthPost(c, '/sign-in/magic-link', {
+      email: parsed.data,
+      name: parsed.data.split('@')[0],
+      callbackURL,
+    });
+    if (response.status === 429)
+      return c.html(
+        loginPage(
+          {
+            returnTo: callbackURL,
+            github: Boolean(config.githubClientId),
+            google: Boolean(config.googleClientId),
+            message: 'Please wait before requesting another link.',
+          },
+          analyticsDocument(c),
+        ),
+        429,
+      );
+    if (!response.ok)
+      throw new AppError('magic_link_failed', 'Could not send a sign-in link.', 502);
+    return c.redirect(
+      callbackURL === '/editor'
+        ? '/auth/login?sent=1'
+        : `/auth/login?sent=1&returnTo=${encodeURIComponent(callbackURL)}`,
+      303,
+    );
   });
   app.post('/auth/oauth/:provider', async (c) => {
-    assertMutationOrigin(c, config); const provider = c.req.param('provider');
-    if ((provider !== 'github' || !config.githubClientId) && (provider !== 'google' || !config.googleClientId)) throw new AppError('oauth_unavailable', 'OAuth provider is unavailable.', 404);
-    const response = await internalAuthPost(c, '/sign-in/social', { provider, callbackURL: returnTo(formValue(await c.req.parseBody(), 'returnTo')) }); copyCookies(c, response);
-    const data = await response.json().catch(() => null) as { url?: string } | null; if (!response.ok || !data?.url) throw new AppError('oauth_failed', 'Could not start OAuth sign-in.', 502); return c.redirect(data.url);
+    assertMutationOrigin(c, config);
+    const provider = c.req.param('provider');
+    if (
+      (provider !== 'github' || !config.githubClientId) &&
+      (provider !== 'google' || !config.googleClientId)
+    )
+      throw new AppError('oauth_unavailable', 'OAuth provider is unavailable.', 404);
+    const response = await internalAuthPost(c, '/sign-in/social', {
+      provider,
+      callbackURL: returnTo(formValue(await c.req.parseBody(), 'returnTo')),
+    });
+    copyCookies(c, response);
+    const data = (await response.json().catch(() => null)) as { url?: string } | null;
+    if (!response.ok || !data?.url)
+      throw new AppError('oauth_failed', 'Could not start OAuth sign-in.', 502);
+    return c.redirect(data.url);
   });
   app.route(AGENT_API, agentRoutes(database, options.dispatcher, config.appOrigin, config));
-  const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => { const session = await readSession(c, auth, config); if (!session) return c.redirect(`/auth/login?returnTo=${encodeURIComponent(returnTo(c.req.path + new URL(c.req.url).search))}`); c.set('session', session); await next(); };
-  for (const path of ['/editor', '/onboarding', '/operations/*', '/actions/*', '/api/*', '/auth/logout', '/agent/authorize', '/account/agents', '/account/agents/*']) app.use(path, requireSession);
+  const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => {
+    const session = await readSession(c, auth, config);
+    if (!session)
+      return c.redirect(
+        `/auth/login?returnTo=${encodeURIComponent(returnTo(c.req.path + new URL(c.req.url).search))}`,
+      );
+    c.set('session', session);
+    await next();
+  };
+  for (const path of [
+    '/editor',
+    '/onboarding',
+    '/operations/*',
+    '/actions/*',
+    '/api/*',
+    '/auth/logout',
+    '/agent/authorize',
+    '/account/agents',
+    '/account/agents/*',
+  ])
+    app.use(path, requireSession);
   app.post('/auth/logout', async (c) => {
-    const body = await c.req.parseBody(); assertMutationOrigin(c, config); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken);
-    const response = await internalAuthPost(c, '/sign-out', {}); copyCookies(c, response);
+    const body = await c.req.parseBody();
+    assertMutationOrigin(c, config);
+    assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken);
+    const response = await internalAuthPost(c, '/sign-out', {});
+    copyCookies(c, response);
     const destination = returnTo(formValue(body, 'returnTo'));
-    return c.redirect(destination === '/editor' ? '/auth/login' : `/auth/login?returnTo=${encodeURIComponent(destination)}`, 303);
+    return c.redirect(
+      destination === '/editor'
+        ? '/auth/login'
+        : `/auth/login?returnTo=${encodeURIComponent(destination)}`,
+      303,
+    );
   });
-  app.get('/', async (c) => await readSession(c, auth, config) ? c.redirect('/editor') : c.html(landingPage(analyticsDocument(c), config.agentCliVersion ? onboardingPrompt(config.appOrigin, config.agentCliVersion) : undefined)));
+  app.get('/', async (c) =>
+    (await readSession(c, auth, config))
+      ? c.redirect('/editor')
+      : c.html(
+          landingPage(
+            analyticsDocument(c),
+            config.agentCliVersion
+              ? onboardingPrompt(config.appOrigin, config.agentCliVersion)
+              : undefined,
+          ),
+        ),
+  );
   const agentRepository = new AgentRepository(database);
   app.get('/agent-setup/prompt.md', (c) => {
-    if (!config.agentCliVersion) throw new AppError('not_found', 'Agent onboarding is not enabled yet.', 404);
-    c.header('Content-Type', 'text/markdown; charset=utf-8'); c.header('Cache-Control', 'no-cache');
+    if (!config.agentCliVersion)
+      throw new AppError('not_found', 'Agent onboarding is not enabled yet.', 404);
+    c.header('Content-Type', 'text/markdown; charset=utf-8');
+    c.header('Cache-Control', 'no-cache');
     return c.body(agentInstructions(config.appOrigin, config.agentCliVersion));
   });
   app.get('/agent/authorize', async (c) => {
     c.header('Cache-Control', 'private, no-store');
     const session = c.get('session');
-    return c.html(authorizationPage(session, await agentRepository.authorization(session.user.id, c.req.query('code') ?? '')));
+    return c.html(
+      authorizationPage(
+        session,
+        await agentRepository.authorization(session.user.id, c.req.query('code') ?? ''),
+      ),
+    );
   });
   app.post('/agent/authorize', async (c) => {
     const body = await mutationBody(c);
-    const input = z.object({ code: z.string().regex(/^[A-F0-9]{10}$/u), decision: z.enum(['approve', 'deny']) }).safeParse({ code: formValue(body, 'code'), decision: formValue(body, 'decision') });
-    if (!input.success) throw new AppError('invalid_pairing', 'Check the authorization code and decision.', 400);
-    await agentRepository.approve(c.get('session').user.id, input.data.code, input.data.decision === 'approve');
+    const input = z
+      .object({ code: z.string().regex(/^[A-F0-9]{10}$/u), decision: z.enum(['approve', 'deny']) })
+      .safeParse({ code: formValue(body, 'code'), decision: formValue(body, 'decision') });
+    if (!input.success)
+      throw new AppError('invalid_pairing', 'Check the authorization code and decision.', 400);
+    await agentRepository.approve(
+      c.get('session').user.id,
+      input.data.code,
+      input.data.decision === 'approve',
+    );
     return c.redirect(`/agent/authorize?code=${input.data.code}`, 303);
   });
   app.get('/account/agents', async (c) => {
     c.header('Cache-Control', 'private, no-store');
-    return c.html(grantsPage(c.get('session'), await agentRepository.grants(c.get('session').user.id), config.agentCliVersion ? onboardingPrompt(config.appOrigin, config.agentCliVersion) : undefined));
+    return c.html(
+      grantsPage(
+        c.get('session'),
+        await agentRepository.grants(c.get('session').user.id),
+        config.agentCliVersion
+          ? onboardingPrompt(config.appOrigin, config.agentCliVersion)
+          : undefined,
+      ),
+    );
   });
   app.post('/account/agents/revoke', async (c) => {
-    const body = await mutationBody(c); const id = z.uuid().safeParse(formValue(body, 'id'));
+    const body = await mutationBody(c);
+    const id = z.uuid().safeParse(formValue(body, 'id'));
     if (!id.success) throw new AppError('invalid_grant', 'Select a valid authorization.', 400);
     await agentRepository.revoke(c.get('session').user.id, id.data);
     return c.redirect('/account/agents', 303);
   });
-  app.get('/guide', async (c) => { const session = (await readSession(c, auth, config)) ?? undefined; return c.html(guidePage(session, session ? undefined : analyticsDocument(c))); });
-  function deletionError(value: string | undefined): DeletionError | undefined { return value === 'busy' || value === 'cleanup' || value === 'confirmation' ? value : undefined; }
-  app.get('/onboarding', async (c) => { const blog = await database.getBlogForUser(c.get('session').user.id); if (blog?.state === 'deleting' || blog?.draftArtifactId) return c.redirect('/editor'); const operation = blog ? await database.getActiveOperation(blog.id, blog.userId) : null; return c.html(onboardingPage(c.get('session'), blog, operation, config.appHostname, { deleted: c.req.query('deleted') === '1', deletionError: deletionError(c.req.query('deleteError')) })); });
+  app.get('/guide', async (c) => {
+    const session = (await readSession(c, auth, config)) ?? undefined;
+    return c.html(guidePage(session, session ? undefined : analyticsDocument(c)));
+  });
+  function deletionError(value: string | undefined): DeletionError | undefined {
+    return value === 'busy' || value === 'cleanup' || value === 'confirmation' ? value : undefined;
+  }
+  app.get('/onboarding', async (c) => {
+    const blog = await database.getBlogForUser(c.get('session').user.id);
+    if (blog?.state === 'deleting' || blog?.draftArtifactId) return c.redirect('/editor');
+    const operation = blog ? await database.getActiveOperation(blog.id, blog.userId) : null;
+    return c.html(
+      onboardingPage(c.get('session'), blog, operation, config.appHostname, {
+        deleted: c.req.query('deleted') === '1',
+        deletionError: deletionError(c.req.query('deleteError')),
+      }),
+    );
+  });
 
-  async function ownedBlog(c: AppContext): Promise<BlogRecord> { const blog = await database.getBlogForUser(c.get('session').user.id); if (!blog) throw new AppError('blog_not_found', 'Connect HackMD first.', 404); if (blog.state === 'deleting') throw new AppError('deletion_in_progress', 'Finish deleting the existing blog first.', 409); return blog; }
-  function redirectOrJson(c: AppContext, operationId: string, successUrl = '/editor') { const operationUrl = `/operations/${operationId}`; return c.req.header('accept')?.includes('application/json') ? c.json({ operationUrl, pollUrl: `/api/operations/${operationId}`, successUrl }, 202) : c.redirect(operationUrl, 303); }
-  async function mutationBody(c: AppContext) { assertMutationOrigin(c, config); const body = await c.req.parseBody(); assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken); return body; }
-  async function dispatchAndRedirect(c: AppContext, operation: OperationRecord, successUrl = '/editor') {
-    await options.dispatcher.dispatch().catch((error: unknown) => { console.error(`[operation:${operation.id}] immediate dispatch failed; outbox will retry`, error); });
+  async function ownedBlog(c: AppContext): Promise<BlogRecord> {
+    const blog = await database.getBlogForUser(c.get('session').user.id);
+    if (!blog) throw new AppError('blog_not_found', 'Connect HackMD first.', 404);
+    if (blog.state === 'deleting')
+      throw new AppError('deletion_in_progress', 'Finish deleting the existing blog first.', 409);
+    return blog;
+  }
+  function redirectOrJson(c: AppContext, operationId: string, successUrl = '/editor') {
+    const operationUrl = `/operations/${operationId}`;
+    return c.req.header('accept')?.includes('application/json')
+      ? c.json({ operationUrl, pollUrl: `/api/operations/${operationId}`, successUrl }, 202)
+      : c.redirect(operationUrl, 303);
+  }
+  async function mutationBody(c: AppContext) {
+    assertMutationOrigin(c, config);
+    const body = await c.req.parseBody();
+    assertCsrfToken(formValue(body, 'csrfToken'), c.get('session').csrfToken);
+    return body;
+  }
+  async function dispatchAndRedirect(
+    c: AppContext,
+    operation: OperationRecord,
+    successUrl = '/editor',
+  ) {
+    await options.dispatcher.dispatch().catch((error: unknown) => {
+      console.error(
+        `[operation:${operation.id}] immediate dispatch failed; outbox will retry`,
+        error,
+      );
+    });
     return redirectOrJson(c, operation.id, successUrl);
   }
-  async function enqueue(c: AppContext, type: OperationType, payload: Record<string, unknown> = {}) {
-    const blog = await ownedBlog(c); const previewPath = typeof payload.previewPath === 'string' ? payload.previewPath : '/';
+  async function enqueue(
+    c: AppContext,
+    type: OperationType,
+    payload: Record<string, unknown> = {},
+  ) {
+    const blog = await ownedBlog(c);
+    const previewPath = typeof payload.previewPath === 'string' ? payload.previewPath : '/';
     try {
-      const operation = type === 'generate_design' ? await database.createDesignOperation(blog.userId, blog.id, String(payload.prompt), String(payload.baseRevisionId), { userDailyLimit: config.aiUserDailyLimit, globalDailyLimit: config.aiGlobalDailyLimit }, previewPath)
-        : type === 'apply_design' ? await database.createApplyDesignOperation(blog.userId, blog.id, payload.design, previewPath)
-          : type === 'activate_design' ? await database.createActivateDesignOperation(blog.userId, blog.id, String(payload.designRevisionId), previewPath)
-            : type === 'publish' ? await database.createPublishOperation(blog.userId, blog.id, hashToken(String(payload.previewToken)), previewPath) : await database.createSyncOperation(blog.userId, blog.id, payload);
+      const operation =
+        type === 'generate_design'
+          ? await database.createDesignOperation(
+              blog.userId,
+              blog.id,
+              String(payload.prompt),
+              String(payload.baseRevisionId),
+              {
+                userDailyLimit: config.aiUserDailyLimit,
+                globalDailyLimit: config.aiGlobalDailyLimit,
+              },
+              previewPath,
+            )
+          : type === 'apply_design'
+            ? await database.createApplyDesignOperation(
+                blog.userId,
+                blog.id,
+                payload.design,
+                previewPath,
+              )
+            : type === 'activate_design'
+              ? await database.createActivateDesignOperation(
+                  blog.userId,
+                  blog.id,
+                  String(payload.designRevisionId),
+                  previewPath,
+                )
+              : type === 'publish'
+                ? await database.createPublishOperation(
+                    blog.userId,
+                    blog.id,
+                    hashToken(String(payload.previewToken)),
+                    previewPath,
+                  )
+                : await database.createSyncOperation(blog.userId, blog.id, payload);
       return await dispatchAndRedirect(c, operation, editorUrlWithPreviewPath(previewPath));
     } catch (error) {
-      if (error instanceof AiQuotaExceededError) throw new AppError('ai_quota_exceeded', 'Today’s AI design quota is exhausted.', 429, { 'Retry-After': String(error.retryAfter) });
-      if (error instanceof BlogConnectionConflictError) throw new AppError(error.code === 'draft_not_ready' ? 'preview_not_ready' : error.code, error.message, 409);
+      if (error instanceof AiQuotaExceededError)
+        throw new AppError('ai_quota_exceeded', 'Today’s AI design quota is exhausted.', 429, {
+          'Retry-After': String(error.retryAfter),
+        });
+      if (error instanceof BlogConnectionConflictError)
+        throw new AppError(
+          error.code === 'draft_not_ready' ? 'preview_not_ready' : error.code,
+          error.message,
+          409,
+        );
       const known: Record<string, [string, string, number]> = {
-        'Nothing to publish': ['nothing_to_publish', 'There are no unpublished changes.', 409], 'Nothing to update': ['nothing_to_update', 'The blog details are unchanged.', 409],
-        'Nothing to update article selection': ['nothing_to_update', 'The article selection is unchanged.', 409], 'No articles selected': ['no_articles_selected', 'Select at least one article.', 400],
-        'Unknown article selection': ['invalid_article_selection', 'The article selection is stale. Refresh and try again.', 409], 'Article selection unavailable': ['article_selection_unavailable', 'Finish the first content sync.', 409],
-        'Blog has no compiled draft. Sync the content first.': ['preview_not_ready', 'Finish the first content sync.', 409], 'Preview has unsaved design changes': ['unsaved_design', 'Save the design before publishing.', 409],
-        'Preview session expired or invalid': ['preview_session_expired', 'The preview expired. Refresh the editor.', 409],
-        'Active design changed before generation': ['design_changed', 'The saved design changed. Refresh the editor and try again.', 409],
+        'Nothing to publish': ['nothing_to_publish', 'There are no unpublished changes.', 409],
+        'Nothing to update': ['nothing_to_update', 'The blog details are unchanged.', 409],
+        'Nothing to update article selection': [
+          'nothing_to_update',
+          'The article selection is unchanged.',
+          409,
+        ],
+        'No articles selected': ['no_articles_selected', 'Select at least one article.', 400],
+        'Unknown article selection': [
+          'invalid_article_selection',
+          'The article selection is stale. Refresh and try again.',
+          409,
+        ],
+        'Article selection unavailable': [
+          'article_selection_unavailable',
+          'Finish the first content sync.',
+          409,
+        ],
+        'Blog has no compiled draft. Sync the content first.': [
+          'preview_not_ready',
+          'Finish the first content sync.',
+          409,
+        ],
+        'Preview has unsaved design changes': [
+          'unsaved_design',
+          'Save the design before publishing.',
+          409,
+        ],
+        'Preview session expired or invalid': [
+          'preview_session_expired',
+          'The preview expired. Refresh the editor.',
+          409,
+        ],
+        'Active design changed before generation': [
+          'design_changed',
+          'The saved design changed. Refresh the editor and try again.',
+          409,
+        ],
       };
       if (error instanceof Error) {
         const knownError = known[error.message];
-        if (knownError) { const [code, message, status] = knownError; throw new AppError(code, message, status === 400 ? 400 : 409); }
+        if (knownError) {
+          const [code, message, status] = knownError;
+          throw new AppError(code, message, status === 400 ? 400 : 409);
+        }
       }
-      if (error instanceof Error && (error.message.includes('unique') || error.message.includes('active operation'))) throw new AppError('operation_in_progress', 'Another operation is already running.', 409);
+      if (
+        error instanceof Error &&
+        (error.message.includes('unique') || error.message.includes('active operation'))
+      )
+        throw new AppError('operation_in_progress', 'Another operation is already running.', 409);
       throw error;
     }
   }
   app.post('/actions/blog/connect', async (c) => {
-    const body = await mutationBody(c); const input = z.object({ username: handleInput, hackmdUsername: hackmdInput.shape.hackmdUsername, language: blogLanguageSchema }).safeParse({ username: formValue(body, 'username'), hackmdUsername: formValue(body, 'hackmdUsername'), language: formValue(body, 'language') });
-    if (!input.success || RESERVED.has(input.data.username)) throw new AppError('invalid_blog_source', 'Check the blog handle, HackMD username, and language.', 400);
-    const session = c.get('session'); const blog = await database.getBlogForUser(session.user.id); if (blog?.draftArtifactId) throw new AppError('source_locked', 'The HackMD source cannot change after the first successful sync.', 409);
-    if (!blog && formValue(body, 'stateVersion')) throw new AppError('state_changed', 'The blog changed. Refresh before connecting.', 409);
+    const body = await mutationBody(c);
+    const input = z
+      .object({
+        username: handleInput,
+        hackmdUsername: hackmdInput.shape.hackmdUsername,
+        language: blogLanguageSchema,
+      })
+      .safeParse({
+        username: formValue(body, 'username'),
+        hackmdUsername: formValue(body, 'hackmdUsername'),
+        language: formValue(body, 'language'),
+      });
+    if (!input.success || RESERVED.has(input.data.username))
+      throw new AppError(
+        'invalid_blog_source',
+        'Check the blog handle, HackMD username, and language.',
+        400,
+      );
+    const session = c.get('session');
+    const blog = await database.getBlogForUser(session.user.id);
+    if (blog?.draftArtifactId)
+      throw new AppError(
+        'source_locked',
+        'The HackMD source cannot change after the first successful sync.',
+        409,
+      );
+    if (!blog && formValue(body, 'stateVersion'))
+      throw new AppError('state_changed', 'The blog changed. Refresh before connecting.', 409);
     let operation: OperationRecord;
     try {
-      operation = blog ? await database.retryInitialSync(session.user.id, { ...input.data, stateVersion: formValue(body, 'stateVersion') }) : (await database.createBlog(session.user.id, input.data.username, input.data.hackmdUsername, input.data.language)).operation;
+      operation = blog
+        ? await database.retryInitialSync(session.user.id, {
+            ...input.data,
+            stateVersion: formValue(body, 'stateVersion'),
+          })
+        : (
+            await database.createBlog(
+              session.user.id,
+              input.data.username,
+              input.data.hackmdUsername,
+              input.data.language,
+            )
+          ).operation;
     } catch (error) {
-      if (error instanceof BlogConnectionConflictError) throw new AppError(error.code, error.message, 409);
-      if (error instanceof BlogAddressTakenError) throw new AppError('blog_address_taken', 'That blog address is already taken. Choose another one.', 409);
-      if (error instanceof BlogAlreadyExistsError) throw new AppError('blog_already_connected', 'A blog was connected by another request. Refresh to continue.', 409);
+      if (error instanceof BlogConnectionConflictError)
+        throw new AppError(error.code, error.message, 409);
+      if (error instanceof BlogAddressTakenError)
+        throw new AppError(
+          'blog_address_taken',
+          'That blog address is already taken. Choose another one.',
+          409,
+        );
+      if (error instanceof BlogAlreadyExistsError)
+        throw new AppError(
+          'blog_already_connected',
+          'A blog was connected by another request. Refresh to continue.',
+          409,
+        );
       throw error;
     }
     return dispatchAndRedirect(c, operation);
   });
-  app.post('/actions/blog/sync', async (c) => { const body = await mutationBody(c); return enqueue(c, 'sync', { intent: 'content', previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
-  app.post('/actions/blog/identity', async (c) => { const body = await mutationBody(c); const input = blogIdentitySchema.safeParse({ title: formValue(body, 'title'), description: formValue(body, 'description') ?? '', language: formValue(body, 'language') }); if (!input.success) throw new AppError('invalid_blog_identity', 'Check the blog details.', 400); return enqueue(c, 'sync', { intent: 'identity', site: input.data, previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
-  app.post('/actions/blog/selection', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); if (!blog.contentManifest?.length) throw new AppError('article_selection_unavailable', 'Finish the first content sync.', 409); const included = new Set(Object.entries(body).filter(([name, value]) => name.startsWith('article:') && value === 'included').map(([name]) => name.slice(8))); const excludedSlugs = blog.contentManifest.filter((post) => !included.has(post.slug)).map((post) => post.slug); return enqueue(c, 'sync', { intent: 'selection', excludedSlugs, previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
+  app.post('/actions/blog/sync', async (c) => {
+    const body = await mutationBody(c);
+    return enqueue(c, 'sync', {
+      intent: 'content',
+      previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin),
+    });
+  });
+  app.post('/actions/blog/identity', async (c) => {
+    const body = await mutationBody(c);
+    const input = blogIdentitySchema.safeParse({
+      title: formValue(body, 'title'),
+      description: formValue(body, 'description') ?? '',
+      language: formValue(body, 'language'),
+    });
+    if (!input.success) throw new AppError('invalid_blog_identity', 'Check the blog details.', 400);
+    return enqueue(c, 'sync', {
+      intent: 'identity',
+      site: input.data,
+      previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin),
+    });
+  });
+  app.post('/actions/blog/selection', async (c) => {
+    const body = await mutationBody(c);
+    const blog = await ownedBlog(c);
+    if (!blog.contentManifest?.length)
+      throw new AppError('article_selection_unavailable', 'Finish the first content sync.', 409);
+    const included = new Set(
+      Object.entries(body)
+        .filter(([name, value]) => name.startsWith('article:') && value === 'included')
+        .map(([name]) => name.slice(8)),
+    );
+    const excludedSlugs = blog.contentManifest
+      .filter((post) => !included.has(post.slug))
+      .map((post) => post.slug);
+    return enqueue(c, 'sync', {
+      intent: 'selection',
+      excludedSlugs,
+      previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin),
+    });
+  });
   async function designFromBody(c: AppContext, body: Record<string, string | File>) {
-    const blog = await ownedBlog(c); const activeDesign = await database.getActiveDesign(blog.id); if (!activeDesign) throw new AppError('design_not_found', 'Design not found', 404);
-    try { return { blog, activeDesign, design: themeFromControls(activeDesign.config, body) }; }
-    catch { throw new AppError('invalid_design', 'Check the design controls and try again.', 400); }
+    const blog = await ownedBlog(c);
+    const activeDesign = await database.getActiveDesign(blog.id);
+    if (!activeDesign) throw new AppError('design_not_found', 'Design not found', 404);
+    try {
+      return { blog, activeDesign, design: themeFromControls(activeDesign.config, body) };
+    } catch {
+      throw new AppError('invalid_design', 'Check the design controls and try again.', 400);
+    }
   }
-  function readPreviewToken(body: Record<string, string | File>): string { const token = previewTokenInput.safeParse(formValue(body, 'previewToken')); if (!token.success) throw new AppError('preview_session_expired', 'The preview expired. Refresh the editor.', 409); return token.data; }
-  async function assertOwnedPreview(blog: BlogRecord, token: string): Promise<void> { const preview = await database.getPreviewSession(hashToken(token)); if (!preview || preview.userId !== blog.userId || preview.blogId !== blog.id) throw new AppError('preview_session_expired', 'The preview expired. Refresh the editor.', 409); }
+  function readPreviewToken(body: Record<string, string | File>): string {
+    const token = previewTokenInput.safeParse(formValue(body, 'previewToken'));
+    if (!token.success)
+      throw new AppError(
+        'preview_session_expired',
+        'The preview expired. Refresh the editor.',
+        409,
+      );
+    return token.data;
+  }
+  async function assertOwnedPreview(blog: BlogRecord, token: string): Promise<void> {
+    const preview = await database.getPreviewSession(hashToken(token));
+    if (!preview || preview.userId !== blog.userId || preview.blogId !== blog.id)
+      throw new AppError(
+        'preview_session_expired',
+        'The preview expired. Refresh the editor.',
+        409,
+      );
+  }
   app.post('/api/design/preview', async (c) => {
-    const body = await mutationBody(c); const token = readPreviewToken(body); const blog = await ownedBlog(c); const activeDesign = await database.getActiveDesign(blog.id);
+    const body = await mutationBody(c);
+    const token = readPreviewToken(body);
+    const blog = await ownedBlog(c);
+    const activeDesign = await database.getActiveDesign(blog.id);
     if (!activeDesign) throw new AppError('design_not_found', 'Design not found', 404);
     let design;
-    try { design = visualThemeFromControls(activeDesign.config, body); }
-    catch { throw new AppError('invalid_design', 'Check the design controls and try again.', 400); }
+    try {
+      design = visualThemeFromControls(activeDesign.config, body);
+    } catch {
+      throw new AppError('invalid_design', 'Check the design controls and try again.', 400);
+    }
     await database.updatePreviewDesign(hashToken(token), blog.userId, blog.id, design);
-    return c.json({ status: 'succeeded', message: 'Visual preview updated; changes are not saved' });
+    return c.json({
+      status: 'succeeded',
+      message: 'Visual preview updated; changes are not saved',
+    });
   });
-  app.post('/actions/design/apply', async (c) => { const body = await mutationBody(c); const { blog, design } = await designFromBody(c, body); await assertOwnedPreview(blog, readPreviewToken(body)); return enqueue(c, 'apply_design', { design, previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
-  app.post('/actions/design/generate', async (c) => { const body = await mutationBody(c); const input = designInput.safeParse({ prompt: formValue(body, 'prompt') }); if (!input.success) throw new AppError('invalid_design_prompt', 'Describe the design in 1–1000 characters.', 400); const blog = await ownedBlog(c); const activeDesign = await database.getActiveDesign(blog.id); if (!activeDesign) throw new AppError('design_not_found', 'Design not found', 404); await assertOwnedPreview(blog, readPreviewToken(body)); if (hasUnsavedFineTuneChanges(activeDesign.config, body)) throw new AppError('unsaved_design_changes', 'Save your Fine-tune changes before generating with AI.', 409); const previewPath = safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin); return enqueue(c, 'generate_design', { ...input.data, baseRevisionId: activeDesign.id, previewPath }); });
-  app.post('/actions/design/:id/activate', async (c) => { const body = await mutationBody(c); return enqueue(c, 'activate_design', { designRevisionId: uuidInput.parse(c.req.param('id')), previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
-  app.post('/actions/publish', async (c) => { const body = await mutationBody(c); return enqueue(c, 'publish', { previewToken: readPreviewToken(body), previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin) }); });
-  app.post('/actions/releases/:id/activate', async (c) => { const body = await mutationBody(c); const blog = await ownedBlog(c); const release = await database.getRelease(uuidInput.parse(c.req.param('id')), blog.id); if (!release || !(await database.getArtifact(release.artifactId))?.readyAt) throw new AppError('release_unavailable', 'This release artifact is unavailable.', 409); await database.activateExistingRelease(release.id, blog.id); return c.redirect(editorUrlWithPreviewPath(safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin)), 303); });
+  app.post('/actions/design/apply', async (c) => {
+    const body = await mutationBody(c);
+    const { blog, design } = await designFromBody(c, body);
+    await assertOwnedPreview(blog, readPreviewToken(body));
+    return enqueue(c, 'apply_design', {
+      design,
+      previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin),
+    });
+  });
+  app.post('/actions/design/generate', async (c) => {
+    const body = await mutationBody(c);
+    const input = designInput.safeParse({ prompt: formValue(body, 'prompt') });
+    if (!input.success)
+      throw new AppError('invalid_design_prompt', 'Describe the design in 1–1000 characters.', 400);
+    const blog = await ownedBlog(c);
+    const activeDesign = await database.getActiveDesign(blog.id);
+    if (!activeDesign) throw new AppError('design_not_found', 'Design not found', 404);
+    await assertOwnedPreview(blog, readPreviewToken(body));
+    if (hasUnsavedFineTuneChanges(activeDesign.config, body))
+      throw new AppError(
+        'unsaved_design_changes',
+        'Save your Fine-tune changes before generating with AI.',
+        409,
+      );
+    const previewPath = safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin);
+    return enqueue(c, 'generate_design', {
+      ...input.data,
+      baseRevisionId: activeDesign.id,
+      previewPath,
+    });
+  });
+  app.post('/actions/design/:id/activate', async (c) => {
+    const body = await mutationBody(c);
+    return enqueue(c, 'activate_design', {
+      designRevisionId: uuidInput.parse(c.req.param('id')),
+      previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin),
+    });
+  });
+  app.post('/actions/publish', async (c) => {
+    const body = await mutationBody(c);
+    return enqueue(c, 'publish', {
+      previewToken: readPreviewToken(body),
+      previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin),
+    });
+  });
+  app.post('/actions/releases/:id/activate', async (c) => {
+    const body = await mutationBody(c);
+    const blog = await ownedBlog(c);
+    const release = await database.getRelease(uuidInput.parse(c.req.param('id')), blog.id);
+    if (!release || !(await database.getArtifact(release.artifactId))?.readyAt)
+      throw new AppError('release_unavailable', 'This release artifact is unavailable.', 409);
+    await database.activateExistingRelease(release.id, blog.id);
+    return c.redirect(
+      editorUrlWithPreviewPath(
+        safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin),
+      ),
+      303,
+    );
+  });
   app.get('/api/export', async (c) => {
     const blog = await ownedBlog(c);
     const release = await database.getActiveRelease(blog.id);
-    if (!release) throw new AppError('export_unavailable', 'Publish a release before exporting.', 409);
+    if (!release)
+      throw new AppError('export_unavailable', 'Publish a release before exporting.', 409);
     try {
       const body = await createArtifactZip(options.artifactStore, release.artifactId);
       c.header('Content-Type', 'application/zip');
@@ -281,16 +959,23 @@ export function createApp(options: CreateAppOptions) {
     const session = c.get('session');
     const blog = await database.getBlogForUser(session.user.id);
     const confirmation = deletionConfirmationInput.safeParse(formValue(body, 'confirmation'));
-    const expected = kind === 'account' ? session.user.email : blog ? `${blog.username}.${config.appHostname}` : '';
+    const expected =
+      kind === 'account'
+        ? session.user.email
+        : blog
+          ? `${blog.username}.${config.appHostname}`
+          : '';
     const recoveryPath = blog ? '/editor' : '/onboarding';
-    if (!confirmation.success || confirmation.data.toLowerCase() !== expected.toLowerCase()) return c.redirect(`${recoveryPath}?deleteError=confirmation`, 303);
+    if (!confirmation.success || confirmation.data.toLowerCase() !== expected.toLowerCase())
+      return c.redirect(`${recoveryPath}?deleteError=confirmation`, 303);
     if (kind === 'blog' && !blog) return c.redirect('/onboarding', 303);
 
     let plan;
     try {
       plan = await database.beginBlogDeletion(session.user.id);
     } catch (error) {
-      if (error instanceof Error && error.message.includes('active operation')) return c.redirect(`${recoveryPath}?deleteError=busy`, 303);
+      if (error instanceof Error && error.message.includes('active operation'))
+        return c.redirect(`${recoveryPath}?deleteError=busy`, 303);
       throw error;
     }
 
@@ -301,15 +986,25 @@ export function createApp(options: CreateAppOptions) {
       }
       if (kind === 'account') {
         const key = emailRateLimitKey(config.betterAuthSecret, session.user.email);
-        await database.finishAccountDeletion(session.user.id, plan?.blogId ?? null, [`magic:minute:${key}`, `magic:hour:${key}`]);
-        setCookie(c, 'vibelog.session_token', '', { httpOnly: true, secure: config.secureCookies, sameSite: 'Lax', path: '/', maxAge: 0 });
+        await database.finishAccountDeletion(session.user.id, plan?.blogId ?? null, [
+          `magic:minute:${key}`,
+          `magic:hour:${key}`,
+        ]);
+        setCookie(c, 'vibelog.session_token', '', {
+          httpOnly: true,
+          secure: config.secureCookies,
+          sameSite: 'Lax',
+          path: '/',
+          maxAge: 0,
+        });
         return c.redirect('/auth/login?deleted=1', 303);
       }
       if (!plan) return c.redirect('/onboarding', 303);
       await database.finishBlogDeletion(session.user.id, plan.blogId);
       return c.redirect('/onboarding?deleted=1', 303);
     } catch {
-      if (plan) await database.noteBlogDeletionFailure(session.user.id, plan.blogId).catch(() => undefined);
+      if (plan)
+        await database.noteBlogDeletionFailure(session.user.id, plan.blogId).catch(() => undefined);
       console.error(`[deletion:${c.get('requestId')}] cleanup failed`);
       return c.redirect(`${plan ? '/editor' : '/onboarding'}?deleteError=cleanup`, 303);
     }
@@ -317,18 +1012,103 @@ export function createApp(options: CreateAppOptions) {
   app.post('/actions/blog/delete', (c) => runDeletion(c, 'blog'));
   app.post('/actions/account/delete', (c) => runDeletion(c, 'account'));
   app.get('/editor', async (c) => {
-    const blog = await database.getBlogForUser(c.get('session').user.id); if (!blog) return c.redirect('/onboarding');
-    if (blog.state === 'deleting') return c.html(deletionPage(c.get('session'), blog, config.appHostname, deletionError(c.req.query('deleteError')) ?? 'cleanup'));
+    const blog = await database.getBlogForUser(c.get('session').user.id);
+    if (!blog) return c.redirect('/onboarding');
+    if (blog.state === 'deleting')
+      return c.html(
+        deletionPage(
+          c.get('session'),
+          blog,
+          config.appHostname,
+          deletionError(c.req.query('deleteError')) ?? 'cleanup',
+        ),
+      );
     if (!blog.draftArtifactId) return c.redirect('/onboarding');
-    const designs = await database.listDesignRevisions(blog.id); const activeDesign = designs.find((design) => design.active); if (!activeDesign) throw new AppError('design_not_found', 'Design not found', 404);
-    const token = randomToken(); await database.createPreviewSession(hashToken(token), blog.userId, blog.id, new Date(Date.now() + 15 * 60_000).toISOString(), activeDesign.config);
-    const previewPath = safePreviewPath(c.req.query('previewPath'), config.previewOrigin); const accessUrl = new URL(`/preview-access/${encodeURIComponent(token)}`, config.previewOrigin); if (previewPath !== '/') accessUrl.searchParams.set('returnTo', previewPath);
-    const [published, releases, operation] = await Promise.all([database.getActiveRelease(blog.id), database.listReleases(blog.id), database.getActiveOperation(blog.id, blog.userId)]);
-    return c.html(editorPage({ session: c.get('session'), blog, designs, activeDesign, published, releases, previewUrl: accessUrl.toString(), previewToken: token, previewOrigin: config.previewOrigin, previewPath, publicUrl: siteUrl(config, blog.username), appHostname: config.appHostname, operation, deletionError: deletionError(c.req.query('deleteError')), agentPrompt: config.agentCliVersion ? onboardingPrompt(config.appOrigin, config.agentCliVersion) : undefined }));
+    const designs = await database.listDesignRevisions(blog.id);
+    const activeDesign = designs.find((design) => design.active);
+    if (!activeDesign) throw new AppError('design_not_found', 'Design not found', 404);
+    const token = randomToken();
+    await database.createPreviewSession(
+      hashToken(token),
+      blog.userId,
+      blog.id,
+      new Date(Date.now() + 15 * 60_000).toISOString(),
+      activeDesign.config,
+    );
+    const previewPath = safePreviewPath(c.req.query('previewPath'), config.previewOrigin);
+    const accessUrl = new URL(`/preview-access/${encodeURIComponent(token)}`, config.previewOrigin);
+    if (previewPath !== '/') accessUrl.searchParams.set('returnTo', previewPath);
+    const [published, releases, operation] = await Promise.all([
+      database.getActiveRelease(blog.id),
+      database.listReleases(blog.id),
+      database.getActiveOperation(blog.id, blog.userId),
+    ]);
+    return c.html(
+      editorPage({
+        session: c.get('session'),
+        blog,
+        designs,
+        activeDesign,
+        published,
+        releases,
+        previewUrl: accessUrl.toString(),
+        previewToken: token,
+        previewOrigin: config.previewOrigin,
+        previewPath,
+        publicUrl: siteUrl(config, blog.username),
+        appHostname: config.appHostname,
+        operation,
+        deletionError: deletionError(c.req.query('deleteError')),
+        agentPrompt: config.agentCliVersion
+          ? onboardingPrompt(config.appOrigin, config.agentCliVersion)
+          : undefined,
+      }),
+    );
   });
-  app.get('/operations/:id', async (c) => { const operation = await database.getOperation(uuidInput.parse(c.req.param('id')), c.get('session').user.id); if (!operation) throw new AppError('operation_not_found', 'Operation not found.', 404); const blog = await database.getBlog(operation.blogId); const previewPath = safePreviewPath(operation.payload.previewPath, config.previewOrigin); return c.html(operationPage(c.get('session'), operation, blog?.draftArtifactId ? '/editor' : '/onboarding', editorUrlWithPreviewPath(previewPath))); });
-  app.get('/api/session', (c) => c.json({ user: c.get('session').user, csrfToken: c.get('session').csrfToken }));
-  app.get('/api/operations/:id', async (c) => { const operation = await database.getOperation(uuidInput.parse(c.req.param('id')), c.get('session').user.id); if (!operation) throw new AppError('operation_not_found', 'Operation not found.', 404); return c.json({ status: operation.status, message: operationMessage(operation), progress: operationProgress(operation) }); });
-  app.get('/preview-access/:token', async (c) => { const preview = await database.getPreviewSession(hashToken(c.req.param('token'))); if (!preview) throw new AppError('preview_access_denied', 'Preview access expired or invalid', 403); setCookie(c, 'vibelog_preview', c.req.param('token'), { httpOnly: true, secure: config.secureCookies, sameSite: 'Lax', path: '/', maxAge: 900 }); return c.redirect(safePreviewPath(c.req.query('returnTo'), config.previewOrigin)); });
+  app.get('/operations/:id', async (c) => {
+    const operation = await database.getOperation(
+      uuidInput.parse(c.req.param('id')),
+      c.get('session').user.id,
+    );
+    if (!operation) throw new AppError('operation_not_found', 'Operation not found.', 404);
+    const blog = await database.getBlog(operation.blogId);
+    const previewPath = safePreviewPath(operation.payload.previewPath, config.previewOrigin);
+    return c.html(
+      operationPage(
+        c.get('session'),
+        operation,
+        blog?.draftArtifactId ? '/editor' : '/onboarding',
+        editorUrlWithPreviewPath(previewPath),
+      ),
+    );
+  });
+  app.get('/api/session', (c) =>
+    c.json({ user: c.get('session').user, csrfToken: c.get('session').csrfToken }),
+  );
+  app.get('/api/operations/:id', async (c) => {
+    const operation = await database.getOperation(
+      uuidInput.parse(c.req.param('id')),
+      c.get('session').user.id,
+    );
+    if (!operation) throw new AppError('operation_not_found', 'Operation not found.', 404);
+    return c.json({
+      status: operation.status,
+      message: operationMessage(operation),
+      progress: operationProgress(operation),
+    });
+  });
+  app.get('/preview-access/:token', async (c) => {
+    const preview = await database.getPreviewSession(hashToken(c.req.param('token')));
+    if (!preview)
+      throw new AppError('preview_access_denied', 'Preview access expired or invalid', 403);
+    setCookie(c, 'vibelog_preview', c.req.param('token'), {
+      httpOnly: true,
+      secure: config.secureCookies,
+      sameSite: 'Lax',
+      path: '/',
+      maxAge: 900,
+    });
+    return c.redirect(safePreviewPath(c.req.query('returnTo'), config.previewOrigin));
+  });
   return { app, auth, database, config };
 }

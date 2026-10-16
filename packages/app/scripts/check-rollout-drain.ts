@@ -12,8 +12,11 @@ try {
   `);
   const active = Number(result.rows[0]?.active ?? -1);
   const pendingOutbox = Number(result.rows[0]?.pending_outbox ?? -1);
-  console.info(JSON.stringify({ event: 'rollout_drain_check', activeOperations: active, pendingOutbox }));
-  if (active !== 0 || pendingOutbox !== 0) throw new Error('Operations and outbox must be empty before locking');
+  console.info(
+    JSON.stringify({ event: 'rollout_drain_check', activeOperations: active, pendingOutbox }),
+  );
+  if (active !== 0 || pendingOutbox !== 0)
+    throw new Error('Operations and outbox must be empty before locking');
 } finally {
   await client.end();
 }

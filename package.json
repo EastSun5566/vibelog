@@ -18,12 +18,14 @@
     "test": "pnpm --filter @vibelog/core build && vitest run",
     "test:e2e": "node e2e/run-local.mjs",
     "test:coverage": "pnpm --filter @vibelog/core build && vitest run --coverage",
+    "format": "oxfmt '**/*.{ts,tsx,mts,cts}'",
+    "format:check": "oxfmt --check '**/*.{ts,tsx,mts,cts}'",
     "lint": "pnpm --filter @vibelog/core build && pnpm --filter @vibelog/cli build && oxlint --type-aware --deny-warnings .",
     "lint:fix": "pnpm --filter @vibelog/core build && pnpm --filter @vibelog/cli build && oxlint --type-aware --fix .",
     "knip": "knip --no-config-hints --include files,dependencies,devDependencies,unlisted,binaries",
     "db:check": "pnpm --filter @vibelog/app db:check",
     "db:migrate": "pnpm --filter @vibelog/app db:migrate",
-    "check": "pnpm lint && pnpm knip && pnpm db:check && pnpm typecheck && pnpm test"
+    "check": "pnpm format:check && pnpm lint && pnpm knip && pnpm db:check && pnpm typecheck && pnpm test"
   },
   "keywords": [
     "blog-builder",
@@ -40,9 +42,10 @@
   "devDependencies": {
     "@playwright/test": "1.61.0",
     "@types/node": "^24.0.0",
-    "hono": "^4.12.34",
     "@vitest/coverage-v8": "4.1.11",
+    "hono": "^4.12.34",
     "knip": "6.26.0",
+    "oxfmt": "0.73.0",
     "oxlint": "1.74.0",
     "oxlint-tsgolint": "0.23.0",
     "typescript": "7.0.2",
