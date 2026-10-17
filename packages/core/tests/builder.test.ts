@@ -16,6 +16,7 @@ import {
 } from '../src/index.js';
 import type { ContentSource } from '../src/index.js';
 import { parseFrontMatter, stringifyFrontMatter } from '../src/core/frontmatter.js';
+import { rendererFingerprint, templateFingerprint } from '../src/core/build-fingerprints.js';
 
 const roots: string[] = [];
 const contentHash = (content: string) => createHash('sha256').update(content, 'utf8').digest('hex');
@@ -837,12 +838,52 @@ while (!await access(${JSON.stringify(release)}).then(() => true, () => false)) 
 
     expect(
       JSON.parse(await readFile(join(root, '.vibelog', '.vibelog-state.json'), 'utf8')),
-    ).toEqual({ templateVersion: 18 });
+    ).toEqual({ templateVersion: 18, templateFingerprint, rendererFingerprint });
     await expect(stat(join(root, '.vibelog', 'src', 'styles', 'global.css'))).rejects.toThrow();
     expect(await readFile(join(root, '.vibelog', 'public', 'global.css'), 'utf8')).not.toContain(
       'legacy custom copy',
     );
   });
+
+  it.each(['missing', 'old-template', 'old-renderer'])(
+    'refreshes a current-version draft with a %s fingerprint, but reuses an exact match',
+    async (marker) => {
+      const root = await mkdtemp(join(tmpdir(), 'vibelog-fingerprint-upgrade-'));
+      roots.push(root);
+      const builder = createDevBuilder({
+        root,
+        contentSource: {
+          name: ContentSourceName.HACKMD,
+          getAuthor: () => Promise.reject(new Error('No fetch expected')),
+          getPosts: () => Promise.reject(new Error('No fetch expected')),
+        },
+      });
+      await builder.prepare({ installDependencies: false });
+      const statePath = join(builder.vibelogDir, '.vibelog-state.json');
+      const exact = { templateVersion: 18, templateFingerprint, rendererFingerprint };
+      await writeFile(
+        statePath,
+        JSON.stringify(
+          marker === 'missing'
+            ? { templateVersion: 18 }
+            : {
+                ...exact,
+                ...(marker === 'old-template'
+                  ? { templateFingerprint: 'old' }
+                  : { rendererFingerprint: 'old' }),
+              },
+        ),
+      );
+      const cssPath = join(builder.vibelogDir, 'public/global.css');
+      await writeFile(cssPath, 'old generated output');
+      await builder.prepare({ installDependencies: false });
+      expect(JSON.parse(await readFile(statePath, 'utf8'))).toEqual(exact);
+      expect(await readFile(cssPath, 'utf8')).not.toContain('old generated output');
+      await writeFile(cssPath, 'sentinel for matching state');
+      await builder.prepare({ installDependencies: false });
+      expect(await readFile(cssPath, 'utf8')).toBe('sentinel for matching state');
+    },
+  );
 
   it(
     'builds the V12 reading experience with reliable descriptions, search, and machine-readable content',

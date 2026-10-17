@@ -33,9 +33,9 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "tsc -p tsconfig.build.json --watch",
+    "dev": "node --watch --watch-path=src --watch-path=template --watch-path=package.json --watch-path=scripts scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/build-math.mjs",
+    "build": "node scripts/build.mjs",
     "benchmark:design-build": "pnpm build && node scripts/benchmark-design-build.mjs"
   },
   "keywords": [

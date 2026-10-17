@@ -18,7 +18,7 @@ try {
     assert(/^package\/(?:dist\/|template\/|README\.md$|LICENSE$|package\.json$)/.test(entry), `Unexpected packed file: ${entry}`);
     assert(!/(?:^|\/)(?:node_modules|tests?|\.env[^/]*|\.git)(?:\/|$)/.test(entry), `Private or test file packed: ${entry}`);
   }
-  for (const file of ['dist/index.js', 'dist/index.d.ts', 'dist/migration-v1.js', 'dist/core/render-worker.js', 'dist/core/math-plugins.js', 'dist/core/math-plugins.json', 'dist/THIRD_PARTY_NOTICES.txt', 'template/package.json', 'template/src/pages/index.astro', 'LICENSE']) assert(entries.includes(`package/${file}`), `Missing packed asset: ${file}`);
+  for (const file of ['dist/index.js', 'dist/index.d.ts', 'dist/migration-v1.js', 'dist/core/render-worker.js', 'dist/core/build-fingerprints.json', 'dist/core/math-plugins.js', 'dist/core/math-plugins.json', 'dist/THIRD_PARTY_NOTICES.txt', 'template/package.json', 'template/src/pages/index.astro', 'LICENSE']) assert(entries.includes(`package/${file}`), `Missing packed asset: ${file}`);
   await writeFile(join(directory, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', resolve(directory, archive)]);
   const core = join(directory, 'node_modules/@vibelog/core');
@@ -36,7 +36,7 @@ try {
     if (path.endsWith('/katex')) assert.equal(dependency.version, '0.18.2');
     assert(!path.endsWith('/braces'), 'Build-only braces installed in consumer');
   }
-  for (const file of ['dist/core/math-plugins.js', 'dist/core/math-plugins.json', 'dist/THIRD_PARTY_NOTICES.txt']) {
+  for (const file of ['dist/core/build-fingerprints.json', 'dist/core/math-plugins.js', 'dist/core/math-plugins.json', 'dist/THIRD_PARTY_NOTICES.txt']) {
     assert(!/\/Users\/|\/home\/runner\/|\/private\/tmp\//.test(await readFile(join(core, file), 'utf8')), `Local path in ${file}`);
   }
   const notices = await readFile(join(core, 'dist/THIRD_PARTY_NOTICES.txt'), 'utf8');
