@@ -60,10 +60,6 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
           ),
         )
       : undefined;
-  const payload = `${timestamp}\n${incoming.host}\n${incoming.pathname}${incoming.search}${clientKey ? `\n${clientKey}` : ''}`;
-  const signature = base64url(
-    await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)),
-  );
   const payloadV2 = [
     'vibelog-edge-v2',
     timestamp,
@@ -80,7 +76,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   if (clientKey) headers.set('x-vibelog-client-key', clientKey);
   headers.set('x-vibelog-host', incoming.host);
   headers.set('x-vibelog-timestamp', timestamp);
-  headers.set('x-vibelog-signature', signature);
+  headers.delete('x-vibelog-signature');
   headers.set('x-vibelog-signature-v2', signatureV2);
   const init: RequestInit = {
     method: request.method,

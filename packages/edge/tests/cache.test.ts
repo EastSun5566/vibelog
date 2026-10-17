@@ -132,11 +132,7 @@ describe('anonymous agent client identity', () => {
     expect(clientKey).not.toContain(clientIp);
     expect(headers.get('x-vibelog-host')).toBe('example.com');
     expect(Number(headers.get('x-vibelog-timestamp'))).toBeGreaterThan(0);
-    expect(headers.get('x-vibelog-signature')).toBe(
-      await digest(
-        `${headers.get('x-vibelog-timestamp') ?? ''}\nexample.com\n/api/agent/v1/pairings\n${clientKey}`,
-      ),
-    );
+    expect(headers.has('x-vibelog-signature')).toBe(false);
     expect(headers.get('x-vibelog-signature-v2')).toBe(
       await digest(
         [
