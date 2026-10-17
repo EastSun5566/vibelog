@@ -669,7 +669,11 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     const request = (path: string, key: string, body = '{}') => {
       const timestamp = String(Math.floor(Date.now() / 1000));
       const signature = createHmac('sha256', secret)
-        .update(`${timestamp}\nvibelog.org\n/api/agent/v1${path}\n${key}`)
+        .update(
+          ['vibelog-edge-v2', timestamp, 'POST', 'vibelog.org', `/api/agent/v1${path}`, key].join(
+            '\n',
+          ),
+        )
         .digest('base64url');
       return app.request(`/api/agent/v1${path}`, {
         method: 'POST',
@@ -679,7 +683,7 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
           'x-vibelog-host': 'vibelog.org',
           'x-vibelog-timestamp': timestamp,
           'x-vibelog-client-key': key,
-          'x-vibelog-signature': signature,
+          'x-vibelog-signature-v2': signature,
         },
       });
     };

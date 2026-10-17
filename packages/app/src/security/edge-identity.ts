@@ -18,8 +18,7 @@ export function edgeIdentity(
       return next();
     }
     const timestamp = c.req.header('x-vibelog-timestamp');
-    const signatureV2 = c.req.header('x-vibelog-signature-v2');
-    const signature = signatureV2 ?? c.req.header('x-vibelog-signature');
+    const signature = c.req.header('x-vibelog-signature-v2');
     const clientKey = c.req.header('x-vibelog-client-key');
     if (
       !secret ||
@@ -34,18 +33,14 @@ export function edgeIdentity(
         'Cache-Control': 'no-store',
       });
     const url = new URL(c.req.url);
-    // A present V2 signature must verify; never downgrade to the legacy signature.
-    const payload =
-      signatureV2 !== undefined
-        ? [
-            'vibelog-edge-v2',
-            timestamp,
-            c.req.method,
-            host,
-            url.pathname + url.search,
-            clientKey ?? '',
-          ].join('\n')
-        : `${timestamp}\n${host}\n${url.pathname}${url.search}${clientKey ? `\n${clientKey}` : ''}`;
+    const payload = [
+      'vibelog-edge-v2',
+      timestamp,
+      c.req.method,
+      host,
+      url.pathname + url.search,
+      clientKey ?? '',
+    ].join('\n');
     const expected = createHmac('sha256', secret).update(payload).digest('base64url');
     const left = Buffer.from(signature);
     const right = Buffer.from(expected);

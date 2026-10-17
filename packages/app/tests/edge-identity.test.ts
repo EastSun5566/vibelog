@@ -13,12 +13,13 @@ function signed(
   client?: string,
   path = '/api/agent/v1/pairings',
   timestamp = String(Math.floor(Date.now() / 1000)),
+  method = 'GET',
 ) {
   return {
     'x-vibelog-host': 'vibelog.org',
     'x-vibelog-timestamp': timestamp,
-    'x-vibelog-signature': createHmac('sha256', secret)
-      .update(`${timestamp}\nvibelog.org\n${path}${client ? `\n${client}` : ''}`)
+    'x-vibelog-signature-v2': createHmac('sha256', secret)
+      .update(['vibelog-edge-v2', timestamp, method, 'vibelog.org', path, client ?? ''].join('\n'))
       .digest('base64url'),
     ...(client ? { 'x-vibelog-client-key': client } : {}),
   };
@@ -46,7 +47,7 @@ describe('verified edge client identity', () => {
       ).status,
     ).toBe(401);
   });
-  it('preserves the existing signed edge protocol', async () => {
+  it('accepts V2 without an optional client key', async () => {
     expect(
       await (await app.request('/api/agent/v1/pairings', { headers: signed() })).json(),
     ).toEqual({ host: 'vibelog.org' });
@@ -71,25 +72,38 @@ function signedV2(
   client?: string,
   timestamp = String(Math.floor(Date.now() / 1000)),
 ) {
-  return {
-    ...signed(client, path, timestamp),
-    'x-vibelog-signature-v2': createHmac('sha256', secret)
-      .update(['vibelog-edge-v2', timestamp, method, 'vibelog.org', path, client ?? ''].join('\n'))
-      .digest('base64url'),
-  };
+  return signed(client, path, timestamp, method);
 }
 
-describe('method-bound edge identity transition', () => {
+describe('required method-bound edge identity', () => {
   it.each(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])(
-    'accepts dual and V2-only signatures for %s',
+    'accepts V2 signatures for %s',
     async (method) => {
-      const headers: Record<string, string> = signedV2(method);
+      const headers = signedV2(method);
       const router = origin(secret);
-      expect((await router.request('/probe?b=2&a=%2F', { method, headers })).status).toBe(200);
-      delete headers['x-vibelog-signature'];
       expect((await router.request('/probe?b=2&a=%2F', { method, headers })).status).toBe(200);
     },
   );
+
+  it.each([undefined, '', 'invalid'])('rejects legacy-only or invalid V2: %j', async (v2) => {
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const headers: Record<string, string> = {
+      'x-vibelog-host': 'vibelog.org',
+      'x-vibelog-timestamp': timestamp,
+      'x-vibelog-signature': createHmac('sha256', secret)
+        .update(`${timestamp}\nvibelog.org\n/probe?b=2&a=%2F`)
+        .digest('base64url'),
+    };
+    if (v2 !== undefined) headers['x-vibelog-signature-v2'] = v2;
+    let reached = false;
+    const response = await origin(secret, () => {
+      reached = true;
+    }).request('/probe?b=2&a=%2F', { headers });
+    expect(response.status).toBe(401);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(reached).toBe(false);
+    expect(await response.json()).toMatchObject({ error: { code: 'edge_identity_invalid' } });
+  });
 
   it('does not require or validate the legacy signature when V2 is valid', async () => {
     const headers = { ...signedV2(), 'x-vibelog-signature': 'invalid' };
@@ -255,9 +269,9 @@ describe('hosted origin boundary', () => {
       { 'x-vibelog-host': 'vibelog.org' },
       {
         'x-vibelog-timestamp': valid['x-vibelog-timestamp'],
-        'x-vibelog-signature': valid['x-vibelog-signature'],
+        'x-vibelog-signature-v2': valid['x-vibelog-signature-v2'],
       },
-      { ...valid, 'x-vibelog-signature': 'invalid' },
+      { ...valid, 'x-vibelog-signature-v2': 'invalid' },
       { ...valid, 'x-vibelog-timestamp': 'not-a-timestamp' },
       { ...valid, 'x-vibelog-client-key': 'invalid' },
       signed(clientKey, '/api/agent/v1/pairings', String(Math.floor(Date.now() / 1000) - 301)),
