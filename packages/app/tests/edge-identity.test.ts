@@ -65,6 +65,119 @@ function origin(edgeSecret: string | undefined, reached?: () => void) {
   return router;
 }
 
+function signedV2(
+  method = 'GET',
+  path = '/probe?b=2&a=%2F',
+  client?: string,
+  timestamp = String(Math.floor(Date.now() / 1000)),
+) {
+  return {
+    ...signed(client, path, timestamp),
+    'x-vibelog-signature-v2': createHmac('sha256', secret)
+      .update(['vibelog-edge-v2', timestamp, method, 'vibelog.org', path, client ?? ''].join('\n'))
+      .digest('base64url'),
+  };
+}
+
+describe('method-bound edge identity transition', () => {
+  it.each(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])(
+    'accepts dual and V2-only signatures for %s',
+    async (method) => {
+      const headers: Record<string, string> = signedV2(method);
+      const router = origin(secret);
+      expect((await router.request('/probe?b=2&a=%2F', { method, headers })).status).toBe(200);
+      delete headers['x-vibelog-signature'];
+      expect((await router.request('/probe?b=2&a=%2F', { method, headers })).status).toBe(200);
+    },
+  );
+
+  it('does not require or validate the legacy signature when V2 is valid', async () => {
+    const headers = { ...signedV2(), 'x-vibelog-signature': 'invalid' };
+    expect((await origin(secret).request('/probe?b=2&a=%2F', { headers })).status).toBe(200);
+  });
+
+  it.each([
+    '',
+    'invalid',
+    'a'.repeat(43),
+    `${'a'.repeat(43)}=`,
+    `${'a'.repeat(43)},${'b'.repeat(43)}`,
+  ])('never downgrades a present invalid V2 signature: %j', async (signature) => {
+    let reached = false;
+    const response = await origin(secret, () => {
+      reached = true;
+    }).request('/probe?b=2&a=%2F', {
+      headers: { ...signedV2(), 'x-vibelog-signature-v2': signature },
+    });
+    expect(response.status).toBe(401);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(reached).toBe(false);
+    expect(await response.json()).toMatchObject({ error: { code: 'edge_identity_invalid' } });
+  });
+
+  it.each(['HEAD', 'POST'])(
+    'rejects a GET signature on %s before downstream work',
+    async (method) => {
+      let reached = false;
+      const response = await origin(secret, () => {
+        reached = true;
+      }).request('/probe?b=2&a=%2F', {
+        method,
+        headers: signedV2(),
+      });
+      expect(response.status).toBe(401);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(reached).toBe(false);
+    },
+  );
+
+  it('binds the host, raw path/query, timestamp and optional client key', async () => {
+    const router = origin(secret);
+    const headers = signedV2('GET', '/probe?b=2&a=%2F', clientKey);
+    expect(await (await router.request('/probe?b=2&a=%2F', { headers })).json()).toEqual({
+      host: 'vibelog.org',
+      client: clientKey,
+    });
+    for (const changed of [
+      { ...headers, 'x-vibelog-host': 'other.vibelog.org' },
+      { ...headers, 'x-vibelog-timestamp': String(Number(headers['x-vibelog-timestamp']) - 1) },
+      { ...headers, 'x-vibelog-client-key': 'a'.repeat(43) },
+      { ...headers, 'x-vibelog-client-key': '' },
+    ])
+      expect((await router.request('/probe?b=2&a=%2F', { headers: changed })).status).toBe(401);
+    const missingClient: Record<string, string> = { ...headers };
+    delete missingClient['x-vibelog-client-key'];
+    expect((await router.request('/probe?b=2&a=%2F', { headers: missingClient })).status).toBe(401);
+    for (const path of ['/changed?b=2&a=%2F', '/probe?a=%2F&b=2', '/probe?b=3&a=%2F'])
+      expect((await router.request(path, { headers })).status).toBe(401);
+  });
+
+  it.each([-301, 301])(
+    'rejects a correctly signed V2 timestamp outside the window: %i',
+    async (offset) => {
+      const timestamp = String(Math.floor(Date.now() / 1000) + offset);
+      const response = await origin(secret).request('/probe?b=2&a=%2F', {
+        headers: signedV2('GET', undefined, undefined, timestamp),
+      });
+      expect(response.status).toBe(401);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+    },
+  );
+
+  it('preserves signed health verification and rejects claimed V2 identity in self-hosting', async () => {
+    const headers = signedV2('GET', '/health');
+    expect((await origin(secret).request('/health', { headers })).status).toBe(200);
+    expect((await origin(undefined).request('/health', { headers })).status).toBe(401);
+    expect(
+      (
+        await origin(secret).request('/health', {
+          headers: { ...headers, 'x-vibelog-signature-v2': '' },
+        })
+      ).status,
+    ).toBe(401);
+  });
+});
+
 describe('hosted origin boundary', () => {
   it.each([
     '/',

@@ -11,7 +11,7 @@ function base64url(bytes: ArrayBuffer): string {
     .replace(/=+$/, '');
 }
 function isPublicBlogRequest(request: Request, url: URL, rootDomain: string): boolean {
-  if (request.method !== 'GET' && request.method !== 'HEAD') return false;
+  if (request.method !== 'GET') return false;
   const suffix = `.${rootDomain}`;
   if (!url.hostname.endsWith(suffix)) return false;
   const label = url.hostname.slice(0, -suffix.length);
@@ -64,18 +64,32 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const signature = base64url(
     await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)),
   );
+  const payloadV2 = [
+    'vibelog-edge-v2',
+    timestamp,
+    request.method,
+    incoming.host,
+    incoming.pathname + incoming.search,
+    clientKey ?? '',
+  ].join('\n');
+  const signatureV2 = base64url(
+    await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payloadV2)),
+  );
   const headers = new Headers(request.headers);
   headers.delete('x-vibelog-client-key');
   if (clientKey) headers.set('x-vibelog-client-key', clientKey);
   headers.set('x-vibelog-host', incoming.host);
   headers.set('x-vibelog-timestamp', timestamp);
   headers.set('x-vibelog-signature', signature);
+  headers.set('x-vibelog-signature-v2', signatureV2);
   const init: RequestInit = {
     method: request.method,
     headers,
     body: request.body,
     redirect: 'manual',
   };
+  // Cache misses can turn HEAD into GET upstream, invalidating the signed method.
+  if (request.method === 'HEAD') init.cache = 'no-store';
   if (isPublicBlogRequest(request, incoming, env.ROOT_DOMAIN))
     init.cf = {
       cacheEverything: true,

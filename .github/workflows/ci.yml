@@ -38,6 +38,8 @@ jobs:
           git diff --exit-code -- packages/app/src/drizzle
           test -z "$(git status --porcelain -- packages/app/src/drizzle)"
       - run: pnpm build
+      - name: Verify compiled edge signature compatibility
+        run: node .github/scripts/edge-signature-smoke.mjs
       - run: node .github/scripts/cli-pack-smoke.mjs
       - run: node .github/scripts/core-pack-smoke.mjs
       - run: pnpm exec playwright install --with-deps chromium

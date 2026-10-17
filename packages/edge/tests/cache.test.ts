@@ -23,6 +23,7 @@ describe('public blog edge cache', () => {
       cacheKey: 'https://writer.example.com/blog/post/?ref=home',
       cacheTtlByStatus: { '200-299': 60, '300-599': 0 },
     });
+    expect(init.cache).toBeUndefined();
   });
 
   it.each([
@@ -32,6 +33,18 @@ describe('public blog edge cache', () => {
     ['https://writer.example.com/', 'POST'],
   ])('bypasses cache for %s %s', async (url, method) => {
     expect((await forwarded(url, method)).cf).toBeUndefined();
+  });
+
+  it.each([
+    'https://writer.example.com/blog/post/',
+    'https://example.com/assets/client.js',
+    'https://preview.example.com/',
+    'https://example.com/health',
+  ])('preserves HEAD and explicitly bypasses cache for %s', async (url) => {
+    const init = await forwarded(url, 'HEAD');
+    expect(init.method).toBe('HEAD');
+    expect(init.cache).toBe('no-store');
+    expect(init.cf).toBeUndefined();
   });
 });
 
@@ -87,6 +100,10 @@ describe('anonymous agent client identity', () => {
           'cf-connecting-ip': clientIp,
           'x-vibelog-client-key': 'forged',
           'x-forwarded-for': '192.0.2.20',
+          'x-vibelog-host': 'forged.example.com',
+          'x-vibelog-timestamp': '0',
+          'x-vibelog-signature': 'forged',
+          'x-vibelog-signature-v2': 'forged',
         },
       }),
       env,
@@ -113,9 +130,23 @@ describe('anonymous agent client identity', () => {
     const clientKey = await digest(`agent-client\n${clientIp}`);
     expect(headers.get('x-vibelog-client-key')).toBe(clientKey);
     expect(clientKey).not.toContain(clientIp);
+    expect(headers.get('x-vibelog-host')).toBe('example.com');
+    expect(Number(headers.get('x-vibelog-timestamp'))).toBeGreaterThan(0);
     expect(headers.get('x-vibelog-signature')).toBe(
       await digest(
         `${headers.get('x-vibelog-timestamp') ?? ''}\nexample.com\n/api/agent/v1/pairings\n${clientKey}`,
+      ),
+    );
+    expect(headers.get('x-vibelog-signature-v2')).toBe(
+      await digest(
+        [
+          'vibelog-edge-v2',
+          headers.get('x-vibelog-timestamp') ?? '',
+          'POST',
+          'example.com',
+          '/api/agent/v1/pairings',
+          clientKey,
+        ].join('\n'),
       ),
     );
     await handleRequest(
