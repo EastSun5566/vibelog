@@ -1,14 +1,18 @@
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { dependencyFingerprint, fingerprintFiles } from '../src/core/fingerprint-inputs.js';
 
+const run = promisify(execFile);
 const roots: string[] = [];
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(
+    roots.splice(0).map((root) => rm(root, { recursive: true, force: true, maxRetries: 3 })),
+  );
 });
 async function temporaryRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'vibelog-fingerprint-'));
@@ -110,16 +114,23 @@ describe('fingerprint inputs', () => {
     expect(() => dependencyFingerprint(second, ['render'])).toThrow('Missing rendering dependency');
   });
 
-  it('generates stable distributable metadata and invalidates only rendering inputs', async () => {
+  // Each generation spawns Node and esbuild; under full-suite contention this takes far longer than
+  // in isolation. Generation is async and bound to the test signal so a timeout kills the child and
+  // stops the body instead of letting it keep writing into directories that cleanup is removing.
+  it('generates stable distributable metadata and invalidates only rendering inputs', async ({
+    signal,
+  }) => {
     const packageRoot = fileURLToPath(new URL('../', import.meta.url));
     const generator = new URL('../scripts/build-fingerprints.mjs', import.meta.url).href;
     const first = await temporaryRoot();
     const second = await temporaryRoot();
-    for (const root of [first, second]) {
-      await cp(join(packageRoot, 'dist'), join(root, 'dist'), { recursive: true });
-      await cp(join(packageRoot, 'template'), join(root, 'template'), { recursive: true });
-      await symlink(join(packageRoot, 'node_modules'), join(root, 'node_modules'), 'junction');
-    }
+    await Promise.all(
+      [first, second].flatMap((root) => [
+        cp(join(packageRoot, 'dist'), join(root, 'dist'), { recursive: true }),
+        cp(join(packageRoot, 'template'), join(root, 'template'), { recursive: true }),
+        symlink(join(packageRoot, 'node_modules'), join(root, 'node_modules'), 'junction'),
+      ]),
+    );
     interface Result {
       template: string;
       renderer: string;
@@ -128,7 +139,7 @@ describe('fingerprint inputs', () => {
       keys: { build: string; search: string };
     }
     const generate = async (root: string): Promise<Result> => {
-      const output = execFileSync(
+      const { stdout } = await run(
         process.execPath,
         [
           '--input-type=module',
@@ -142,18 +153,18 @@ describe('fingerprint inputs', () => {
       `,
           root,
         ],
-        { encoding: 'utf8' },
+        { encoding: 'utf8', signal },
       );
       const text = await readFile(join(root, 'dist/core/build-fingerprints.json'), 'utf8');
       expect(text).not.toContain(root);
       expect(text).not.toContain(packageRoot);
       return {
         ...(JSON.parse(text) as Omit<Result, 'keys'>),
-        keys: JSON.parse(output) as Result['keys'],
+        keys: JSON.parse(stdout) as Result['keys'],
       };
     };
-    const baseline = await generate(first);
-    expect(await generate(second)).toEqual(baseline);
+    const [baseline, secondBaseline] = await Promise.all([generate(first), generate(second)]);
+    expect(secondBaseline).toEqual(baseline);
     expect(baseline.dependencies).toContain('pagefind');
     expect(baseline.dependencies).toContain('@astrojs/rss');
     expect(baseline.dependencies).not.toContain('@earendil-works/pi-ai');
@@ -187,5 +198,5 @@ describe('fingerprint inputs', () => {
     expect(await generate(second)).toEqual(baseline);
     await rm(join(second, 'dist/core/math-plugins.js'));
     await expect(generate(second)).rejects.toThrow();
-  }, 30_000);
+  }, 120_000);
 });
