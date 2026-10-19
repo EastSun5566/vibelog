@@ -362,6 +362,15 @@ export function createApp(options: CreateAppOptions) {
       new Uint8Array(await readFile(new URL('../dist/assets/logo.svg', import.meta.url))),
     );
   });
+  for (const font of ['newsreader-latin-wght-normal.woff2', 'newsreader-latin-wght-italic.woff2']) {
+    app.get(`/assets/fonts/${font}`, async (c) => {
+      c.header('Content-Type', 'font/woff2');
+      c.header('Cache-Control', 'public, max-age=604800');
+      return c.body(
+        new Uint8Array(await readFile(new URL(`../dist/assets/fonts/${font}`, import.meta.url))),
+      );
+    });
+  }
   app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw));
   const internalAuthPost = async (c: AppContext, path: string, body: Record<string, unknown>) => {
     const headers = new Headers({ 'content-type': 'application/json', origin: config.appOrigin });

@@ -43,6 +43,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@fontsource-variable/newsreader": "5.3.0",
     "@tailwindcss/cli": "4.3.3",
     "@types/node": "^24.0.0",
     "@types/pg": "8.15.5",

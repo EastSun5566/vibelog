@@ -38,6 +38,13 @@ export function document(
         />
         <title>{title} · VibeLog</title>
         <link rel="icon" type="image/svg+xml" href="/assets/logo.svg" />
+        <link
+          rel="preload"
+          href="/assets/fonts/newsreader-latin-wght-normal.woff2"
+          as="font"
+          type="font/woff2"
+          crossorigin="anonymous"
+        />
         <link rel="stylesheet" href="/assets/app.css" />
       </head>
       <body>
@@ -184,7 +191,7 @@ export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: s
           <h1>
             Keep writing in HackMD.
             <br />
-            Publish a real blog.
+            <em>Publish a real blog.</em>
           </h1>
           <p class="landing-intro">
             Your public articles become a searchable blog with RSS, a sitemap, and llms.txt—without
@@ -2044,6 +2051,7 @@ export function editorPage(input: EditorPageInput) {
                   <PreviewPathInput value={input.previewPath} />
                   <button
                     class="btn"
+                    data-variant="publish"
                     type="submit"
                     data-publish-button
                     data-focus-key="publish"
