@@ -5,14 +5,16 @@ import {
   fauxToolCall,
 } from '@earendil-works/pi-ai';
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import {
   AiProviderRequestError,
   AiProviderTimeoutError,
   FallbackAiProvider,
   PiAiProvider,
   createAiProvider,
+  isBroadRedesignPrompt,
 } from '../src/adapters/ai/index.js';
+import { logger } from '../src/core/index.js';
 import type { AiProvider } from '../src/types.js';
 import { DEFAULT_DESIGN_V2 } from '../src/design/defaults-v2.js';
 import { designToolV2, refineDesignToolV2 } from '../src/adapters/ai/tool-v2.js';
@@ -28,7 +30,7 @@ const input = {
     mathUsage: 'none' as const,
   },
   currentDesign: DEFAULT_DESIGN_V2,
-  prompt: 'Editorial',
+  prompt: 'Redesign it as an editorial magazine',
 };
 function parseRequestBody(options?: RequestInit): unknown {
   if (typeof options?.body !== 'string') throw new Error('Expected a JSON request body');
@@ -112,7 +114,7 @@ describe('PiAiProvider design proposal', () => {
     });
     await expect(subject([response]).generate(input)).resolves.toEqual(DEFAULT_DESIGN_V2);
   });
-  it('lets the model choose a focused refinement in the same request', async () => {
+  it('sends only the refinement tool for a focused request', async () => {
     const response = fauxAssistantMessage(
       fauxToolCall('refine_design', {
         patches: [{ op: 'replace', path: '/theme/layout/radius', value: 'round' }],
@@ -124,6 +126,21 @@ describe('PiAiProvider design proposal', () => {
     expect(result.theme.layout.radius).toBe('round');
     expect(result.pages).toEqual(input.currentDesign.pages);
     expect(complete).toHaveBeenCalledOnce();
+    expect(complete.mock.calls[0]?.[1].tools?.map((tool) => tool.name)).toEqual(['refine_design']);
+    const systemPrompt = complete.mock.calls[0]?.[1].systemPrompt;
+    expect(systemPrompt).toContain('For refine_design, return only necessary JSON Patch');
+    expect(systemPrompt).not.toContain('propose_design');
+  });
+  it('lets the model choose a focused refinement when a broad redesign is requested', async () => {
+    const response = fauxAssistantMessage(
+      fauxToolCall('refine_design', {
+        patches: [{ op: 'replace', path: '/theme/layout/radius', value: 'round' }],
+      }),
+      { stopReason: 'toolUse' },
+    );
+    const { provider, complete } = instrumentedSubject('test', [response]);
+    const result = await provider.generate(input);
+    expect(result.theme.layout.radius).toBe('round');
     expect(complete.mock.calls[0]?.[1].tools?.map((tool) => tool.name)).toEqual([
       'propose_design',
       'refine_design',
@@ -131,6 +148,47 @@ describe('PiAiProvider design proposal', () => {
     expect(complete.mock.calls[0]?.[1].systemPrompt).toContain(
       'Prefer refine_design for a focused or ambiguous request',
     );
+  });
+  it('corrects a full proposal returned for a focused request with a refinement', async () => {
+    const proposal = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN_V2), {
+      stopReason: 'toolUse',
+    });
+    const refinement = fauxAssistantMessage(
+      fauxToolCall('refine_design', {
+        patches: [{ op: 'replace', path: '/theme/layout/radius', value: 'round' }],
+      }),
+      { stopReason: 'toolUse' },
+    );
+    const { provider, complete } = instrumentedSubject('test', [proposal, refinement]);
+    await expect(
+      provider.generate({ ...input, prompt: 'Make the corners softer' }),
+    ).resolves.toMatchObject({ theme: { layout: { radius: 'round' } } });
+    expect(complete.mock.calls.map((call) => call[1].tools?.map((tool) => tool.name))).toEqual([
+      ['refine_design'],
+      ['refine_design'],
+    ]);
+    expect(complete.mock.calls[1]?.[1].systemPrompt).toContain('unexpected design tool');
+  });
+  it('logs token usage for each model response', async () => {
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const response = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN_V2), {
+      stopReason: 'toolUse',
+    });
+    await subject([response]).generate(input, { sessionId: 'operation-1' });
+    const usage = info.mock.calls
+      .map(([message]) => (typeof message === 'string' ? message : ''))
+      .filter((message) => message.includes('ai_model_usage'))
+      .map((message) => JSON.parse(message) as Record<string, unknown>);
+    expect(usage).toEqual([
+      expect.objectContaining({
+        event: 'ai_model_usage',
+        operationId: 'operation-1',
+        model: 'model',
+        tools: ['propose_design', 'refine_design'],
+      }),
+    ]);
+    expect(typeof usage[0]?.inputTokens).toBe('number');
+    expect(typeof usage[0]?.outputTokens).toBe('number');
   });
   it('keeps the refinement mode during one correction', async () => {
     const bad = fauxAssistantMessage(
@@ -581,6 +639,7 @@ describe('PiAiProvider design proposal', () => {
     new AiProviderRequestError('unauthorized', { kind: 'http', retryable: false, status: 401 }),
     new AiProviderRequestError('forbidden', { kind: 'http', retryable: false, status: 403 }),
     new AiProviderRequestError('cancelled', { kind: 'cancelled', retryable: false }),
+    new AiProviderRequestError('no key', { kind: 'configuration', retryable: false }),
     new Error('invalid theme'),
   ])('does not fall back for permanent or validation failures: %s', async (failure) => {
     const primaryGenerate = vi.fn<AiProvider['generate']>(() => Promise.reject(failure));
@@ -690,5 +749,214 @@ describe('PiAiProvider design proposal', () => {
     await expect(provider.generate(input)).rejects.not.toThrow('No API key');
     expect(requestUrl).toBe('http://localhost:11434/v1/chat/completions');
     expect(requestHeaders?.has('authorization')).toBe(false);
+  });
+});
+describe('design tool selection', () => {
+  it.each([
+    'Redesign the whole blog',
+    'Give it a brand-new look',
+    'Start over from scratch',
+    'dark blue that feel like terminal',
+    'Make it look like a 90s zine',
+    'Something inspired by Swiss posters',
+    'cozy cafe vibes',
+    '整體改成極簡風格',
+    '重新设计首页',
+  ])('offers the full design tool for a broad request: %s', (prompt) => {
+    expect(isBroadRedesignPrompt(prompt)).toBe(true);
+  });
+  it.each([
+    'Make the corners softer',
+    'Use a serif font for headings',
+    'Move the tag cloud above recent posts',
+    'Change the accent color to teal',
+    'Editorial',
+    '把標題字體放大',
+  ])('offers only the refinement tool for a focused request: %s', (prompt) => {
+    expect(isBroadRedesignPrompt(prompt)).toBe(false);
+  });
+});
+
+interface ControlledCall {
+  signal?: AbortSignal;
+  resolve: (design: typeof DEFAULT_DESIGN_V2) => void;
+  reject: (error: unknown) => void;
+}
+function controlledModel(modelId: string) {
+  const calls: ControlledCall[] = [];
+  const generate = vi.fn<AiProvider['generate']>(
+    (_input, context) =>
+      new Promise((resolve, reject) => {
+        calls.push({ signal: context?.signal, resolve, reject });
+        context?.signal?.addEventListener(
+          'abort',
+          () => {
+            reject(new AiProviderRequestError('cancelled', { kind: 'cancelled' }));
+          },
+          { once: true },
+        );
+      }),
+  );
+  const provider: AiProvider = { name: 'opencode-go', modelId, generate };
+  return { provider, generate, calls };
+}
+function hedgedChain(models: ReturnType<typeof controlledModel>[], hedgeDelayMs = 20) {
+  const [primary, ...fallbacks] = models.map((model) => model.provider.modelId);
+  if (!primary) throw new Error('Missing primary test model');
+  return new FallbackAiProvider(
+    'opencode-go',
+    primary,
+    fallbacks,
+    (_name, modelId) => {
+      const model = models.find((candidate) => candidate.provider.modelId === modelId);
+      if (!model) throw new Error(`Missing test provider: ${modelId}`);
+      return model.provider;
+    },
+    60_000,
+    hedgeDelayMs,
+  );
+}
+function loggedEvents(...spies: MockInstance<(...messages: unknown[]) => void>[]) {
+  return spies
+    .flatMap((spy) => spy.mock.calls)
+    .map(([message]) => (typeof message === 'string' ? message : ''))
+    .filter((message) => message.startsWith('{'))
+    .map((message) => JSON.parse(message) as Record<string, unknown>)
+    .filter((event) => String(event.event).startsWith('ai_model_'));
+}
+describe('FallbackAiProvider hedging', () => {
+  function useHedgeTimers() {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    return {
+      info: vi.spyOn(logger, 'info').mockImplementation(() => undefined),
+      warn: vi.spyOn(logger, 'warn').mockImplementation(() => undefined),
+      error: vi.spyOn(logger, 'error').mockImplementation(() => undefined),
+    };
+  }
+  const rateLimited = () =>
+    new AiProviderRequestError('rate limited', { kind: 'http', retryable: true, status: 429 });
+
+  it('does not start another model when the primary answers before the hedge delay', async () => {
+    const { info } = useHedgeTimers();
+    const primary = controlledModel('qwen3.8-flash');
+    const fallback = controlledModel('glm-5.3-flash');
+    const pending = hedgedChain([primary, fallback]).generate(input, { sessionId: 'operation-1' });
+    primary.calls[0]?.resolve(DEFAULT_DESIGN_V2);
+    await expect(pending).resolves.toEqual(DEFAULT_DESIGN_V2);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fallback.generate).not.toHaveBeenCalled();
+    expect(loggedEvents(info)).toEqual([
+      expect.objectContaining({
+        event: 'ai_model_selected',
+        selectedModel: 'qwen3.8-flash',
+        fallback: false,
+        hedged: false,
+      }),
+    ]);
+  });
+  it('starts the next model after the hedge delay and aborts the slower one', async () => {
+    const { info, warn } = useHedgeTimers();
+    const primary = controlledModel('qwen3.8-flash');
+    const fallback = controlledModel('glm-5.3-flash');
+    const pending = hedgedChain([primary, fallback]).generate(input, { sessionId: 'operation-1' });
+    await vi.advanceTimersByTimeAsync(19);
+    expect(fallback.generate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fallback.generate).toHaveBeenCalledOnce();
+    expect(fallback.generate.mock.calls[0]?.[1]?.sessionId).toBe('operation-1');
+    fallback.calls[0]?.resolve(DEFAULT_DESIGN_V2);
+    await expect(pending).resolves.toEqual(DEFAULT_DESIGN_V2);
+    expect(primary.calls[0]?.signal?.aborted).toBe(true);
+    expect(fallback.calls[0]?.signal?.aborted).toBe(false);
+    expect(loggedEvents(warn, info)).toEqual([
+      expect.objectContaining({
+        event: 'ai_model_fallback',
+        failedModel: 'qwen3.8-flash',
+        nextModel: 'glm-5.3-flash',
+        reason: 'hedge',
+        hedged: true,
+      }),
+      expect.objectContaining({
+        event: 'ai_model_selected',
+        selectedModel: 'glm-5.3-flash',
+        fallback: true,
+        hedged: true,
+      }),
+    ]);
+  });
+  it('keeps the primary design when it answers after the hedge started', async () => {
+    useHedgeTimers();
+    const primary = controlledModel('qwen3.8-flash');
+    const fallback = controlledModel('glm-5.3-flash');
+    const pending = hedgedChain([primary, fallback]).generate(input, { sessionId: 'operation-1' });
+    await vi.advanceTimersByTimeAsync(20);
+    const primaryDesign = { ...DEFAULT_DESIGN_V2, description: 'primary' };
+    primary.calls[0]?.resolve(primaryDesign);
+    await expect(pending).resolves.toBe(primaryDesign);
+    expect(fallback.calls[0]?.signal?.aborted).toBe(true);
+  });
+  it('starts the next model at once after a retryable failure while a hedge runs', async () => {
+    useHedgeTimers();
+    const models = ['qwen3.8-flash', 'glm-5.3-flash', 'kimi-k3-mini'].map(controlledModel);
+    const [primary, second, third] = models;
+    const pending = hedgedChain(models).generate(input, { sessionId: 'operation-1' });
+    await vi.advanceTimersByTimeAsync(20);
+    expect(second?.generate).toHaveBeenCalledOnce();
+    expect(third?.generate).not.toHaveBeenCalled();
+    primary?.calls[0]?.reject(rateLimited());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(third?.generate).toHaveBeenCalledOnce();
+    third?.calls[0]?.resolve(DEFAULT_DESIGN_V2);
+    await expect(pending).resolves.toEqual(DEFAULT_DESIGN_V2);
+    expect(second?.calls[0]?.signal?.aborted).toBe(true);
+  });
+  it('fails fast on a configuration error even while a hedge runs', async () => {
+    useHedgeTimers();
+    const primary = controlledModel('qwen3.8-flash');
+    const fallback = controlledModel('glm-5.3-flash');
+    const pending = hedgedChain([primary, fallback]).generate(input, { sessionId: 'operation-1' });
+    await vi.advanceTimersByTimeAsync(20);
+    const failure = new AiProviderRequestError('no key', { kind: 'configuration' });
+    fallback.calls[0]?.reject(failure);
+    await expect(pending).rejects.toBe(failure);
+    expect(primary.calls[0]?.signal?.aborted).toBe(true);
+  });
+  it('lets a running hedge finish after a permanent failure but starts nothing new', async () => {
+    useHedgeTimers();
+    const models = ['qwen3.8-flash', 'glm-5.3-flash', 'kimi-k3-mini'].map(controlledModel);
+    const [primary, second, third] = models;
+    const pending = hedgedChain(models).generate(input, { sessionId: 'operation-1' });
+    await vi.advanceTimersByTimeAsync(20);
+    const failure = new AiProviderRequestError('bad request', { kind: 'http', status: 400 });
+    primary?.calls[0]?.reject(failure);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(third?.generate).not.toHaveBeenCalled();
+    second?.calls[0]?.reject(rateLimited());
+    await expect(pending).rejects.toBe(failure);
+  });
+  it('stops every model when the caller cancels', async () => {
+    useHedgeTimers();
+    const primary = controlledModel('qwen3.8-flash');
+    const fallback = controlledModel('glm-5.3-flash');
+    const controller = new AbortController();
+    const pending = hedgedChain([primary, fallback]).generate(input, {
+      sessionId: 'operation-1',
+      signal: controller.signal,
+    });
+    await vi.advanceTimersByTimeAsync(20);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ kind: 'cancelled' });
+    expect(fallback.calls[0]?.signal?.aborted).toBe(true);
+  });
+  it('rejects with the last failure when every model fails', async () => {
+    useHedgeTimers();
+    const primary = controlledModel('qwen3.8-flash');
+    const fallback = controlledModel('glm-5.3-flash');
+    const pending = hedgedChain([primary, fallback]).generate(input, { sessionId: 'operation-1' });
+    await vi.advanceTimersByTimeAsync(20);
+    primary.calls[0]?.reject(rateLimited());
+    const last = rateLimited();
+    fallback.calls[0]?.reject(last);
+    await expect(pending).rejects.toBe(last);
   });
 });

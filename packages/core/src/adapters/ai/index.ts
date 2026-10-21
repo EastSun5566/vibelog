@@ -35,6 +35,13 @@ const LEGACY_AZURE_PROVIDER = 'azure-openai-responses';
 const VIBELOG_USER_AGENT = 'VibeLog';
 const AI_GENERATION_TIMEOUT_MS = 120_000;
 const AI_FALLBACK_CANDIDATE_TIMEOUT_MS = 45_000;
+const AI_HEDGE_DELAY_MS = 12_000;
+// Leans inclusive: a false positive only costs the larger schema, a false negative limits the model to patches.
+const BROAD_REDESIGN_PATTERNS = [
+  /\b(?:re-?design|re-?style|re-?theme|overhaul|revamp|makeover|from scratch|start over|brand[- ]new|(?:fresh|new|different) (?:look|style|theme|design|vibe)|complete(?:ly)?|entire(?:ly)?|whole|total(?:ly)?)\b/iu,
+  /\b(?:looks?|feels?|looking|feeling) like\b|\b(?:inspired by|in the style of|vibes?|aesthetic)\b/iu,
+  /重新設計|重新设计|重做|全新|整體|整体|整個|整个|改版|風格|风格|氛圍|氛围|感覺|感觉/u,
+];
 function keylessOpenAICompletionsApi(): ProviderStreams {
   const api = openAICompletionsApi();
   const options = (input?: SimpleStreamOptions): SimpleStreamOptions => ({
@@ -160,10 +167,42 @@ export function getAiProviderNames(): string[] {
   return [...getBuiltinProviders(), LEGACY_AZURE_PROVIDER, OLLAMA_PROVIDER];
 }
 
+type DesignTool = typeof designToolV2 | typeof refineDesignToolV2;
+export function isBroadRedesignPrompt(prompt: string): boolean {
+  return BROAD_REDESIGN_PATTERNS.some((pattern) => pattern.test(prompt));
+}
+function initialDesignTools(prompt: string): DesignTool[] {
+  // The full design schema is ~27 KB; only offer it when the writer asks for a broad redesign.
+  return isBroadRedesignPrompt(prompt) ? [designToolV2, refineDesignToolV2] : [refineDesignToolV2];
+}
+function designSystemPrompt(tools: DesignTool[], previousError?: string): string {
+  const canPropose = tools.some((tool) => tool.name === DESIGN_TOOL_NAME);
+  const canRefine = tools.some((tool) => tool.name === REFINE_TOOL_NAME);
+  return [
+    "You are VibeLog's blog presentation designer. Call exactly one tool.",
+    canPropose && canRefine
+      ? `Prefer ${REFINE_TOOL_NAME} for a focused or ambiguous request; preserve every unrelated choice in the current saved design. Use ${DESIGN_TOOL_NAME} only when the writer clearly asks for a broad redesign.`
+      : canRefine
+        ? 'Preserve every unrelated choice in the current saved design.'
+        : '',
+    canRefine
+      ? `For ${REFINE_TOOL_NAME}, return only necessary JSON Patch operations; use move only for homepage region reordering.`
+      : '',
+    canPropose ? `For ${DESIGN_TOOL_NAME}, create a complete version 2 VibeLog design.` : '',
+    DESIGN_CATALOG_V2_INSTRUCTIONS,
+    'Ensure text and accent colors each have WCAG AA contrast against the background.',
+    previousError
+      ? `Previous proposal error: ${previousError}. Correct it with the available tool.`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 class AiDesignValidationError extends Error {
   constructor(
     message: string,
-    readonly selectedTool?: typeof DESIGN_TOOL_NAME | typeof REFINE_TOOL_NAME,
+    readonly selectedTool?: string,
     options?: ErrorOptions,
   ) {
     super(message, options);
@@ -269,20 +308,16 @@ export class PiAiProvider implements AiProvider {
     input: DesignProposalInput,
     sessionId: string,
     signal: AbortSignal,
+    tools: DesignTool[],
     previousError?: string,
-    selectedTool?: typeof DESIGN_TOOL_NAME | typeof REFINE_TOOL_NAME,
   ): Promise<BlogDesignSpecV2> {
-    const tools =
-      selectedTool === DESIGN_TOOL_NAME
-        ? [designToolV2]
-        : selectedTool === REFINE_TOOL_NAME
-          ? [refineDesignToolV2]
-          : [designToolV2, refineDesignToolV2];
+    const selectedTool = tools.length === 1 ? tools[0]?.name : undefined;
     const context: Context = {
-      systemPrompt: `You are VibeLog's blog presentation designer. Call exactly one tool. Prefer ${REFINE_TOOL_NAME} for a focused or ambiguous request; preserve every unrelated choice in the current saved design. Use ${DESIGN_TOOL_NAME} only when the writer clearly asks for a broad redesign. For ${REFINE_TOOL_NAME}, return only necessary JSON Patch operations; use move only for homepage region reordering. ${selectedTool === REFINE_TOOL_NAME ? '' : `For ${DESIGN_TOOL_NAME}, create a complete version 2 VibeLog design. `}${DESIGN_CATALOG_V2_INSTRUCTIONS} Ensure text and accent colors each have WCAG AA contrast against the background.${previousError ? ` Previous proposal error: ${previousError}. Correct it with the available tool.` : ''}`,
+      systemPrompt: designSystemPrompt(tools, previousError),
       messages: [{ role: 'user', content: JSON.stringify(input), timestamp: Date.now() }],
       tools,
     };
+    const startedAt = Date.now();
     let response;
     const openCode = OPENCODE_PROVIDERS.has(this.name);
     const requestMetadata: ProviderRequestMetadata = { networkFailure: false };
@@ -325,16 +360,29 @@ export class PiAiProvider implements AiProvider {
       }
       throw failure;
     }
+    logger.info(
+      JSON.stringify({
+        event: 'ai_model_usage',
+        operationId: sessionId,
+        provider: this.name,
+        model: this.modelId,
+        tools: tools.map((tool) => tool.name),
+        stopReason: response.stopReason,
+        inputTokens: response.usage.input,
+        outputTokens: response.usage.output,
+        cacheReadTokens: response.usage.cacheRead,
+        totalTokens: response.usage.totalTokens,
+        durationMs: Date.now() - startedAt,
+      }),
+    );
     if (response.stopReason === 'length')
       throw new Error('AI response exceeded the model output limit.');
     const toolCalls = response.content.filter((block) => block.type === 'toolCall');
     if (response.stopReason !== 'toolUse' || toolCalls.length !== 1)
       throw new AiDesignValidationError('AI must call exactly one design tool.', selectedTool);
     const [toolCall] = toolCalls;
-    if (toolCall.name !== DESIGN_TOOL_NAME && toolCall.name !== REFINE_TOOL_NAME)
+    if (!tools.some((tool) => tool.name === toolCall.name))
       throw new AiDesignValidationError('AI called an unexpected design tool.', selectedTool);
-    if (selectedTool && toolCall.name !== selectedTool)
-      throw new AiDesignValidationError('AI changed design mode during correction.', selectedTool);
     let candidate: unknown;
     try {
       candidate = validateToolCall(tools, toolCall);
@@ -363,17 +411,20 @@ export class PiAiProvider implements AiProvider {
   ): Promise<BlogDesignSpecV2> {
     const sessionId = context?.sessionId ?? randomUUID();
     const signal = context?.signal ?? AbortSignal.timeout(AI_GENERATION_TIMEOUT_MS);
+    const tools = initialDesignTools(input.prompt);
     try {
-      return await this.generateOnce(input, sessionId, signal);
+      return await this.generateOnce(input, sessionId, signal, tools);
     } catch (firstError) {
       if (firstError instanceof AiProviderRequestError) throw firstError;
+      const selectedTool =
+        firstError instanceof AiDesignValidationError ? firstError.selectedTool : undefined;
       try {
         return await this.generateOnce(
           input,
           sessionId,
           signal,
+          selectedTool ? tools.filter((tool) => tool.name === selectedTool) : tools,
           safeProviderError(firstError),
-          firstError instanceof AiDesignValidationError ? firstError.selectedTool : undefined,
         );
       } catch (secondError) {
         if (secondError instanceof AiProviderRequestError) throw secondError;
@@ -389,6 +440,10 @@ export function createAiProvider(name: string, modelId: string): PiAiProvider {
   return new PiAiProvider(name, modelId);
 }
 
+function hedgeDelayFromEnv(): number {
+  const value = Number(process.env.VIBELOG_AI_HEDGE_DELAY_MS);
+  return Number.isFinite(value) && value > 0 ? value : AI_HEDGE_DELAY_MS;
+}
 export class FallbackAiProvider implements AiProvider {
   readonly modelId: string;
   private readonly candidates: AiProvider[];
@@ -398,6 +453,7 @@ export class FallbackAiProvider implements AiProvider {
     fallbackModelIds: string[],
     factory: (name: string, modelId: string) => AiProvider = createAiProvider,
     private readonly candidateTimeoutMs = AI_FALLBACK_CANDIDATE_TIMEOUT_MS,
+    private readonly hedgeDelayMs = AI_HEDGE_DELAY_MS,
   ) {
     const modelIds = [primaryModelId, ...fallbackModelIds];
     if (modelIds.some((modelId) => modelId.trim().length === 0))
@@ -407,65 +463,122 @@ export class FallbackAiProvider implements AiProvider {
     this.modelId = primaryModelId;
     this.candidates = modelIds.map((modelId) => factory(name, modelId));
   }
-  async generate(
-    input: DesignProposalInput,
-    context?: AiGenerationContext,
-  ): Promise<BlogDesignSpecV2> {
+  /**
+   * Tries candidates in order. A retryable failure starts the next candidate at once, and a
+   * candidate still running after the hedge delay gets the next one started beside it. The first
+   * valid design wins; every other request still in flight is aborted.
+   */
+  generate(input: DesignProposalInput, context?: AiGenerationContext): Promise<BlogDesignSpecV2> {
     const operationId = context?.sessionId ?? randomUUID();
     const startedAt = Date.now();
-    for (const [index, candidate] of this.candidates.entries()) {
-      const timeoutSignal = AbortSignal.timeout(this.candidateTimeoutMs);
-      const signal = context?.signal
-        ? AbortSignal.any([context.signal, timeoutSignal])
-        : timeoutSignal;
-      try {
-        const theme = await candidate.generate(input, { sessionId: operationId, signal });
-        logger.info(
-          JSON.stringify({
-            event: 'ai_model_selected',
-            operationId,
-            primaryModel: this.modelId,
-            selectedModel: candidate.modelId,
-            fallback: index > 0,
-            durationMs: Date.now() - startedAt,
-          }),
-        );
-        return theme;
-      } catch (error) {
+    const running = new Map<number, AbortController>();
+    let nextIndex = 0;
+    let hedged = false;
+    let settled = false;
+    let stopLaunching = false;
+    let permanentFailure: unknown;
+    let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
+    const log = (level: 'info' | 'warn' | 'error', event: string, fields: object) => {
+      logger[level](
+        JSON.stringify({
+          event,
+          operationId,
+          primaryModel: this.modelId,
+          ...fields,
+          hedged,
+          durationMs: Date.now() - startedAt,
+        }),
+      );
+    };
+    return new Promise((resolve, reject) => {
+      const settle = () => {
+        settled = true;
+        clearTimeout(hedgeTimer);
+        for (const controller of running.values())
+          controller.abort(new DOMException('Another AI model answered first', 'AbortError'));
+        running.clear();
+      };
+      const fail = (failedModel: string, error: unknown) => {
         const failure = error instanceof AiProviderRequestError ? error : undefined;
-        const hasFallback = index + 1 < this.candidates.length;
-        if (failure?.retryable && hasFallback && !context?.signal?.aborted) {
-          logger.warn(
-            JSON.stringify({
-              event: 'ai_model_fallback',
-              operationId,
-              primaryModel: this.modelId,
+        log('error', 'ai_model_failed', {
+          failedModel,
+          reason: failure?.kind ?? 'validation',
+          status: failure?.status,
+        });
+        settle();
+        reject(error instanceof Error ? error : new Error(String(error)));
+      };
+      const canLaunch = () =>
+        !settled &&
+        !stopLaunching &&
+        !context?.signal?.aborted &&
+        nextIndex < this.candidates.length;
+      const launch = () => {
+        const index = nextIndex++;
+        const candidate = this.candidates[index];
+        if (!candidate) return;
+        const controller = new AbortController();
+        running.set(index, controller);
+        clearTimeout(hedgeTimer);
+        if (canLaunch())
+          hedgeTimer = setTimeout(() => {
+            if (!canLaunch() || nextIndex !== index + 1) return;
+            hedged = true;
+            log('warn', 'ai_model_fallback', {
               failedModel: candidate.modelId,
-              nextModel: this.candidates[index + 1]?.modelId,
-              reason: failure.kind,
-              status: failure.status,
-              durationMs: Date.now() - startedAt,
-            }),
-          );
-          continue;
-        }
-        logger.error(
-          JSON.stringify({
-            event: 'ai_model_failed',
-            operationId,
-            primaryModel: this.modelId,
-            failedModel: candidate.modelId,
-            reason: failure?.kind ?? 'validation',
-            status: failure?.status,
-            durationMs: Date.now() - startedAt,
-          }),
+              nextModel: this.candidates[nextIndex]?.modelId,
+              reason: 'hedge',
+            });
+            launch();
+          }, this.hedgeDelayMs);
+        const signal = AbortSignal.any([
+          controller.signal,
+          AbortSignal.timeout(this.candidateTimeoutMs),
+          ...(context?.signal ? [context.signal] : []),
+        ]);
+        const request = async () => candidate.generate(input, { sessionId: operationId, signal });
+        request().then(
+          (design) => {
+            if (settled) return;
+            log('info', 'ai_model_selected', {
+              selectedModel: candidate.modelId,
+              fallback: index > 0,
+            });
+            running.delete(index);
+            settle();
+            resolve(design);
+          },
+          (error: unknown) => {
+            if (settled) return;
+            running.delete(index);
+            const failure = error instanceof AiProviderRequestError ? error : undefined;
+            // A configuration error or caller cancellation would fail every candidate the same way.
+            if (failure?.kind === 'configuration' || context?.signal?.aborted) {
+              fail(candidate.modelId, error);
+              return;
+            }
+            if (!failure?.retryable) {
+              // Start nothing new, but let a hedge already in flight finish.
+              permanentFailure ??= error;
+              stopLaunching = true;
+              clearTimeout(hedgeTimer);
+            }
+            const [takeover] = running.keys();
+            if (!canLaunch() && takeover === undefined) {
+              fail(candidate.modelId, permanentFailure ?? error);
+              return;
+            }
+            log('warn', 'ai_model_fallback', {
+              failedModel: candidate.modelId,
+              nextModel: this.candidates[canLaunch() ? nextIndex : (takeover ?? index)]?.modelId,
+              reason: failure?.kind ?? 'validation',
+              status: failure?.status,
+            });
+            if (canLaunch()) launch();
+          },
         );
-        throw error;
-      }
-    }
-    throw new AiProviderRequestError('AI provider chain exhausted', {
-      kind: 'upstream',
-      retryable: false,
+      };
+      launch();
     });
   }
 }
@@ -476,5 +589,12 @@ export function createAiProviderChain(
 ): AiProvider {
   return fallbackModelIds.length === 0
     ? createAiProvider(name, primaryModelId)
-    : new FallbackAiProvider(name, primaryModelId, fallbackModelIds);
+    : new FallbackAiProvider(
+        name,
+        primaryModelId,
+        fallbackModelIds,
+        createAiProvider,
+        AI_FALLBACK_CANDIDATE_TIMEOUT_MS,
+        hedgeDelayFromEnv(),
+      );
 }
