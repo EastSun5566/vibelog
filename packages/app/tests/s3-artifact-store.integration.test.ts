@@ -61,4 +61,36 @@ describe.skipIf(!endpoint)('S3-compatible ArtifactStore', () => {
     await store.deleteArtifact(copyId);
     expect(await store.readObject(copyId, 'index.html')).toBeNull();
   });
+  it('round-trips more objects than the concurrency limit without losing or mixing content', async () => {
+    const manyId = `${prefix}/many`;
+    const manyCopyId = `${prefix}/many-copy`;
+    const local = await mkdtemp(join(tmpdir(), 'vibelog-artifact-many-'));
+    const out = await mkdtemp(join(tmpdir(), 'vibelog-artifact-many-out-'));
+    const paths = Array.from(
+      { length: 40 },
+      (_, index) => `section-${String(index % 4)}/page-${String(index)}.html`,
+    );
+    try {
+      for (const path of paths) {
+        await mkdir(join(local, ...path.split('/').slice(0, -1)), { recursive: true });
+        await writeFile(join(local, ...path.split('/')), `<p>${path}</p>`);
+      }
+      await store.uploadDirectory(manyId, local);
+      await store.copyArtifact(manyId, manyCopyId);
+      await expect(store.listObjects(manyCopyId)).resolves.toEqual(
+        [...paths].sort((left, right) => left.localeCompare(right)),
+      );
+      await store.materializeArtifact(manyCopyId, out);
+      for (const path of paths)
+        await expect(readFile(join(out, ...path.split('/')), 'utf8')).resolves.toBe(
+          `<p>${path}</p>`,
+        );
+    } finally {
+      await Promise.all([store.deleteArtifact(manyId), store.deleteArtifact(manyCopyId)]);
+      await Promise.all([
+        rm(local, { recursive: true, force: true }),
+        rm(out, { recursive: true, force: true }),
+      ]);
+    }
+  });
 });
