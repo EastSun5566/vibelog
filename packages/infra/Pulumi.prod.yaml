@@ -10,9 +10,9 @@ config:
   vibelog:minInstances: "0"
   vibelog:maxInstances: "3"
   vibelog:aiProvider: opencode-go
-  vibelog:aiModel: qwen3.8-flash
+  vibelog:aiModel: glm-5.3-flash
   vibelog:aiFallbackModels:
-    - glm-5.3-flash
+    - qwen3.8-flash
   vibelog:aiApiKeyEnv: OPENCODE_API_KEY
   vibelog:googleAnalyticsMeasurementId: G-51Q2T27PWS
   vibelog:agentCliVersion: 0.5.0
