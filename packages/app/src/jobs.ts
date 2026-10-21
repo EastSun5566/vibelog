@@ -7,6 +7,7 @@ import {
   HackMdSource,
   analyzeDesignImpact,
   buildBlog,
+  contentBuildIdentity,
   createAiProviderChain,
   createDevBuilder,
   isHackMdSourceError,
@@ -28,7 +29,7 @@ import type {
   OperationResult,
 } from './ports/operation-queue.js';
 import { createReleaseSnapshot } from './publication-diff.js';
-import { copyPresentationDraft } from './design-draft.js';
+import { copyPresentationDraft, draftHasContent, writeContentIdentity } from './design-draft.js';
 import { materializeSearchCache } from './search-cache.js';
 import { findReusableBuild } from './build-cache.js';
 
@@ -149,7 +150,16 @@ export class AppOperationExecutor implements OperationExecutor {
       throw new RetryableOperationError('Operation is still in progress', undefined, retryAfter);
     }
     try {
-      return await this.executeClaimed(operation);
+      const result = await this.executeClaimed(operation);
+      console.info(
+        JSON.stringify({
+          event: 'operation_total',
+          operationId: operation.id,
+          type: operation.type,
+          durationMs: Date.now() - Date.parse(operation.createdAt),
+        }),
+      );
+      return result;
     } catch (error) {
       if (error instanceof OperationLeaseLostError)
         throw new RetryableOperationError(error.message, { cause: error });
@@ -243,6 +253,10 @@ export class AppOperationExecutor implements OperationExecutor {
           ),
           onStageTiming: reportBuildStage(operation.id),
         });
+        await writeContentIdentity(
+          output,
+          contentBuildIdentity(sourceArtifact.id, activeDesign.config, publicSite),
+        );
         await measure(operation.id, 'upload-draft', () =>
           this.artifacts.uploadDirectory(draftArtifact.id, output),
         );
@@ -352,54 +366,38 @@ export class AppOperationExecutor implements OperationExecutor {
         });
         return { message: 'Design unchanged', revisionId: revision.id };
       }
-      let presentationDraft: string | undefined;
       if (
         impact === 'presentation' &&
         blog.draftArtifactId &&
         blog.draftDesignRevisionId === active.id
       ) {
+        const draftArtifactId = blog.draftArtifactId;
+        let reuseDraft = false;
         try {
-          const currentIdentity = structuralBuildIdentity(
-            currentSourceArtifactId,
-            active.config,
-            site,
-          );
-          presentationDraft = await findReusableBuild(
-            this.artifacts,
-            [blog.draftArtifactId],
-            currentIdentity,
+          reuseDraft = await measure(operation.id, 'draft-content-check', () =>
+            draftHasContent(
+              this.artifacts,
+              draftArtifactId,
+              contentBuildIdentity(currentSourceArtifactId, design, site),
+              structuralBuildIdentity(currentSourceArtifactId, active.config, site),
+            ),
           );
         } catch {
           /* An unreadable marker is a cache miss; rebuild from source. */
         }
-      }
-      if (presentationDraft) {
-        const draftArtifactId = presentationDraft;
-        const artifact = await this.database.createArtifact(blog.id, 'draft');
-        try {
-          await this.database.updateOperationProgress(
-            operation,
-            { kind: 'determinate', value: 1, max: 2 },
-            'Updating design styles',
-          );
-          await measure(operation.id, 'copy-and-compile-css', () =>
-            copyPresentationDraft(
-              this.artifacts,
-              draftArtifactId,
-              artifact.id,
+        if (reuseDraft) {
+          // Same HTML: the preview compiles design.css per request, and publishing restyles the
+          // release, so only the design revision changes here.
+          const revision = await measure(operation.id, 'commit-design', () =>
+            this.database.completeDesignOperation(
+              operation,
               design,
-              buildIdentity,
+              draftArtifactId,
+              { message: 'New design ready' },
+              { reuseDraft: true },
             ),
           );
-          const revision = await measure(operation.id, 'commit-draft', () =>
-            this.database.completeDesignOperation(operation, design, artifact.id, {
-              message: 'New design ready',
-            }),
-          );
           return { message: 'New design ready', revisionId: revision.id };
-        } catch (error) {
-          await this.database.markArtifactCleanup(artifact.id);
-          throw error;
         }
       }
       let reusable: string | undefined;
@@ -470,6 +468,10 @@ export class AppOperationExecutor implements OperationExecutor {
           buildIdentity,
           onStageTiming: reportBuildStage(operation.id),
         });
+        await writeContentIdentity(
+          output,
+          contentBuildIdentity(currentSourceArtifactId, design, site),
+        );
         await measure(operation.id, 'upload-draft', () =>
           this.artifacts.uploadDirectory(artifact.id, output),
         );
@@ -499,6 +501,9 @@ export class AppOperationExecutor implements OperationExecutor {
       blog.draftDesignRevisionId !== designRevisionId
     )
       throw new Error('Publish snapshot is invalid');
+    const releaseDesign = await this.database.getDesignRevision(designRevisionId, blog.id);
+    if (!releaseDesign) throw new Error('Design revision not found');
+    const site = publicOrigin(this.config, blog.username);
     const artifact = await this.database.createArtifact(blog.id, 'release');
     try {
       await this.database.updateOperationProgress(
@@ -506,8 +511,11 @@ export class AppOperationExecutor implements OperationExecutor {
         { kind: 'determinate', value: 0, max: 3 },
         'Copying draft',
       );
-      await this.artifacts.copyArtifact(draftArtifactId, artifact.id);
-      const result = { message: 'Site published', url: publicOrigin(this.config, blog.username) };
+      // Presentation-only edits leave the draft's design.css stale, so restyle the release.
+      await measure(operation.id, 'copy-release', () =>
+        copyPresentationDraft(this.artifacts, draftArtifactId, artifact.id, releaseDesign.config),
+      );
+      const result = { message: 'Site published', url: site };
       await this.database.completePublishOperation(
         operation,
         artifact.id,

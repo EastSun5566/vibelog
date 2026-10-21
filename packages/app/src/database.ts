@@ -676,6 +676,7 @@ export class AppDatabase {
     config: BlogDesignSpecV2,
     artifactId: string,
     result: Record<string, unknown>,
+    options: { reuseDraft?: boolean } = {},
   ): Promise<DesignRevisionRecord> {
     const validated = validateBlogDesignSpecV2(config);
     return this.db.transaction(async (tx) => {
@@ -723,19 +724,39 @@ export class AppDatabase {
         if (!active || active.id !== row.payload.baseRevisionId)
           throw new Error('Active design changed before design completion');
       }
-      const [artifact] = await tx
-        .update(schema.artifacts)
-        .set({ state: 'ready', readyAt: new Date() })
-        .where(
-          and(
-            eq(schema.artifacts.id, artifactId),
-            eq(schema.artifacts.blogId, row.blogId),
-            eq(schema.artifacts.kind, 'draft'),
-            eq(schema.artifacts.state, 'uploading'),
-          ),
-        )
-        .returning();
-      if (!artifact) throw new Error('Uploading draft artifact not found');
+      // Presentation-only edits keep serving the current ready draft instead of a new upload.
+      const [artifact] = options.reuseDraft
+        ? artifactId === blog.draftArtifactId
+          ? await tx
+              .select()
+              .from(schema.artifacts)
+              .where(
+                and(
+                  eq(schema.artifacts.id, artifactId),
+                  eq(schema.artifacts.blogId, row.blogId),
+                  eq(schema.artifacts.kind, 'draft'),
+                  eq(schema.artifacts.state, 'ready'),
+                ),
+              )
+          : []
+        : await tx
+            .update(schema.artifacts)
+            .set({ state: 'ready', readyAt: new Date() })
+            .where(
+              and(
+                eq(schema.artifacts.id, artifactId),
+                eq(schema.artifacts.blogId, row.blogId),
+                eq(schema.artifacts.kind, 'draft'),
+                eq(schema.artifacts.state, 'uploading'),
+              ),
+            )
+            .returning();
+      if (!artifact)
+        throw new Error(
+          options.reuseDraft
+            ? 'Current draft artifact not found'
+            : 'Uploading draft artifact not found',
+        );
       let revision: typeof schema.themeRevisions.$inferSelect | undefined;
       if (row.type === 'activate_design') {
         const revisionId = row.payload.designRevisionId;
@@ -794,7 +815,7 @@ export class AppDatabase {
           updatedAt: new Date(),
         })
         .where(eq(schema.blogs.id, row.blogId));
-      if (blog.draftArtifactId)
+      if (blog.draftArtifactId && blog.draftArtifactId !== artifact.id)
         await tx
           .update(schema.artifacts)
           .set({ state: 'cleanup_pending' })

@@ -5,9 +5,10 @@ export async function findReusableBuild(
   store: ArtifactStore,
   candidates: readonly string[],
   identity: string,
+  markerPath = 'build-identity.json',
 ): Promise<string | undefined> {
   for (const id of candidates) {
-    const marker = await store.readObject(id, 'build-identity.json');
+    const marker = await store.readObject(id, markerPath);
     if (!marker) continue;
     try {
       const value = (await new Response(marker.body).json()) as { identity?: unknown };

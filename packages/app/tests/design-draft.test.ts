@@ -4,7 +4,7 @@ import { copyPresentationDraft } from '../src/design-draft.js';
 import type { ArtifactStore } from '../src/ports/artifact-store.js';
 
 describe('presentation-only draft artifact', () => {
-  it('copies the ready static site and updates its design stylesheet and exact build identity', async () => {
+  it('copies the ready static site, restyles it and keeps the copied build markers', async () => {
     const calls: string[] = [];
     const copyArtifact = vi.fn(() => {
       calls.push('copy');
@@ -25,26 +25,15 @@ describe('presentation-only draft artifact', () => {
       readObject: vi.fn(),
       deleteArtifact: vi.fn(),
     };
-    await copyPresentationDraft(
-      store,
-      'ready-draft',
-      'candidate',
-      DEFAULT_DESIGN_V2,
-      'new-build-identity',
-    );
-    expect(calls).toEqual(['copy', 'put:design.css', 'put:build-identity.json']);
+    await copyPresentationDraft(store, 'ready-draft', 'candidate', DEFAULT_DESIGN_V2);
+    // build-identity.json must keep describing the copied HTML, never the current renderer.
+    expect(calls).toEqual(['copy', 'put:design.css']);
     expect(copyArtifact).toHaveBeenCalledWith('ready-draft', 'candidate');
     expect(putObject).toHaveBeenCalledWith(
       'candidate',
       'design.css',
       expect.stringContaining('--theme-background'),
       { contentType: 'text/css; charset=utf-8' },
-    );
-    expect(putObject).toHaveBeenCalledWith(
-      'candidate',
-      'build-identity.json',
-      '{"identity":"new-build-identity"}',
-      { contentType: 'application/json; charset=utf-8' },
     );
     expect(materializeArtifact).not.toHaveBeenCalled();
     expect(uploadDirectory).not.toHaveBeenCalled();
@@ -63,14 +52,12 @@ describe('presentation-only draft artifact', () => {
       deleteArtifact: vi.fn(),
     };
     await expect(
-      copyPresentationDraft(store, 'ready', 'candidate', DEFAULT_DESIGN_V2, 'identity'),
+      copyPresentationDraft(store, 'ready', 'candidate', DEFAULT_DESIGN_V2),
     ).rejects.toThrow('R2 unavailable');
     expect(putObject).not.toHaveBeenCalled();
     const invalid = structuredClone(DEFAULT_DESIGN_V2);
     invalid.theme.colors.text = invalid.theme.colors.background;
-    await expect(
-      copyPresentationDraft(store, 'ready', 'candidate', invalid, 'identity'),
-    ).rejects.toThrow();
+    await expect(copyPresentationDraft(store, 'ready', 'candidate', invalid)).rejects.toThrow();
     expect(copyArtifact).toHaveBeenCalledTimes(1);
   });
 });
