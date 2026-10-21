@@ -674,14 +674,8 @@ describe('AI operation execution', () => {
       expect.stringContaining('--theme-background'),
       { contentType: 'text/css; charset=utf-8' },
     );
-    expect(putObject).toHaveBeenCalledWith(
-      'release',
-      'build-identity.json',
-      JSON.stringify({
-        identity: structuralBuildIdentity('source', published, 'https://writer.vibelog.org'),
-      }),
-      { contentType: 'application/json; charset=utf-8' },
-    );
+    // Copied markers still describe the copied HTML, which may predate the current renderer.
+    expect(putObject).toHaveBeenCalledTimes(1);
     expect(buildBlog).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
   });

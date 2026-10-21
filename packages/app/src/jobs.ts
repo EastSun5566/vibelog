@@ -501,8 +501,6 @@ export class AppOperationExecutor implements OperationExecutor {
       blog.draftDesignRevisionId !== designRevisionId
     )
       throw new Error('Publish snapshot is invalid');
-    const sourceArtifactId = blog.sourceArtifactId;
-    if (!sourceArtifactId) throw new Error('Sync content before publishing');
     const releaseDesign = await this.database.getDesignRevision(designRevisionId, blog.id);
     if (!releaseDesign) throw new Error('Design revision not found');
     const site = publicOrigin(this.config, blog.username);
@@ -515,13 +513,7 @@ export class AppOperationExecutor implements OperationExecutor {
       );
       // Presentation-only edits leave the draft's design.css stale, so restyle the release.
       await measure(operation.id, 'copy-release', () =>
-        copyPresentationDraft(
-          this.artifacts,
-          draftArtifactId,
-          artifact.id,
-          releaseDesign.config,
-          structuralBuildIdentity(sourceArtifactId, releaseDesign.config, site),
-        ),
+        copyPresentationDraft(this.artifacts, draftArtifactId, artifact.id, releaseDesign.config),
       );
       const result = { message: 'Site published', url: site };
       await this.database.completePublishOperation(

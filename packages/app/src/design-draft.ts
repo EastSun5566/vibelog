@@ -19,25 +19,22 @@ export async function writeContentIdentity(outputDirectory: string, identity: st
   await writeFile(join(outputDirectory, CONTENT_IDENTITY_MARKER), contentIdentityMarker(identity));
 }
 
-/** Copies a ready static site and restyles it, e.g. when a draft becomes a release. */
+/**
+ * Copies a ready static site and restyles it, e.g. when a draft becomes a release. The copied
+ * identity markers are kept: they describe the copied HTML, which may predate the current
+ * renderer. A copied artifact's design.css is never trusted for previews or publishing.
+ */
 export async function copyPresentationDraft(
   store: ArtifactStore,
   sourceArtifactId: string,
   destinationArtifactId: string,
   design: BlogDesignSpecV2,
-  buildIdentity: string,
 ): Promise<void> {
   const css = compileDesignCss(design);
   await store.copyArtifact(sourceArtifactId, destinationArtifactId);
   await store.putObject(destinationArtifactId, 'design.css', css, {
     contentType: 'text/css; charset=utf-8',
   });
-  await store.putObject(
-    destinationArtifactId,
-    'build-identity.json',
-    JSON.stringify({ identity: buildIdentity }),
-    { contentType: JSON_TYPE },
-  );
 }
 
 /**
