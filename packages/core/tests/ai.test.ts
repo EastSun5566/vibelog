@@ -12,7 +12,6 @@ import {
   FallbackAiProvider,
   PiAiProvider,
   createAiProvider,
-  isBroadRedesignPrompt,
 } from '../src/adapters/ai/index.js';
 import { logger } from '../src/core/index.js';
 import type { AiProvider } from '../src/types.js';
@@ -30,7 +29,7 @@ const input = {
     mathUsage: 'none' as const,
   },
   currentDesign: DEFAULT_DESIGN_V2,
-  prompt: 'Redesign it as an editorial magazine',
+  prompt: 'Editorial',
 };
 function parseRequestBody(options?: RequestInit): unknown {
   if (typeof options?.body !== 'string') throw new Error('Expected a JSON request body');
@@ -114,7 +113,7 @@ describe('PiAiProvider design proposal', () => {
     });
     await expect(subject([response]).generate(input)).resolves.toEqual(DEFAULT_DESIGN_V2);
   });
-  it('sends only the refinement tool for a focused request', async () => {
+  it('lets the model choose a focused refinement in the same request', async () => {
     const response = fauxAssistantMessage(
       fauxToolCall('refine_design', {
         patches: [{ op: 'replace', path: '/theme/layout/radius', value: 'round' }],
@@ -126,21 +125,6 @@ describe('PiAiProvider design proposal', () => {
     expect(result.theme.layout.radius).toBe('round');
     expect(result.pages).toEqual(input.currentDesign.pages);
     expect(complete).toHaveBeenCalledOnce();
-    expect(complete.mock.calls[0]?.[1].tools?.map((tool) => tool.name)).toEqual(['refine_design']);
-    const systemPrompt = complete.mock.calls[0]?.[1].systemPrompt;
-    expect(systemPrompt).toContain('For refine_design, return only necessary JSON Patch');
-    expect(systemPrompt).not.toContain('propose_design');
-  });
-  it('lets the model choose a focused refinement when a broad redesign is requested', async () => {
-    const response = fauxAssistantMessage(
-      fauxToolCall('refine_design', {
-        patches: [{ op: 'replace', path: '/theme/layout/radius', value: 'round' }],
-      }),
-      { stopReason: 'toolUse' },
-    );
-    const { provider, complete } = instrumentedSubject('test', [response]);
-    const result = await provider.generate(input);
-    expect(result.theme.layout.radius).toBe('round');
     expect(complete.mock.calls[0]?.[1].tools?.map((tool) => tool.name)).toEqual([
       'propose_design',
       'refine_design',
@@ -148,26 +132,6 @@ describe('PiAiProvider design proposal', () => {
     expect(complete.mock.calls[0]?.[1].systemPrompt).toContain(
       'Prefer refine_design for a focused or ambiguous request',
     );
-  });
-  it('corrects a full proposal returned for a focused request with a refinement', async () => {
-    const proposal = fauxAssistantMessage(fauxToolCall('propose_design', DEFAULT_DESIGN_V2), {
-      stopReason: 'toolUse',
-    });
-    const refinement = fauxAssistantMessage(
-      fauxToolCall('refine_design', {
-        patches: [{ op: 'replace', path: '/theme/layout/radius', value: 'round' }],
-      }),
-      { stopReason: 'toolUse' },
-    );
-    const { provider, complete } = instrumentedSubject('test', [proposal, refinement]);
-    await expect(
-      provider.generate({ ...input, prompt: 'Make the corners softer' }),
-    ).resolves.toMatchObject({ theme: { layout: { radius: 'round' } } });
-    expect(complete.mock.calls.map((call) => call[1].tools?.map((tool) => tool.name))).toEqual([
-      ['refine_design'],
-      ['refine_design'],
-    ]);
-    expect(complete.mock.calls[1]?.[1].systemPrompt).toContain('unexpected design tool');
   });
   it('logs token usage for each model response', async () => {
     const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
@@ -751,32 +715,6 @@ describe('PiAiProvider design proposal', () => {
     expect(requestHeaders?.has('authorization')).toBe(false);
   });
 });
-describe('design tool selection', () => {
-  it.each([
-    'Redesign the whole blog',
-    'Give it a brand-new look',
-    'Start over from scratch',
-    'dark blue that feel like terminal',
-    'Make it look like a 90s zine',
-    'Something inspired by Swiss posters',
-    'cozy cafe vibes',
-    '整體改成極簡風格',
-    '重新设计首页',
-  ])('offers the full design tool for a broad request: %s', (prompt) => {
-    expect(isBroadRedesignPrompt(prompt)).toBe(true);
-  });
-  it.each([
-    'Make the corners softer',
-    'Use a serif font for headings',
-    'Move the tag cloud above recent posts',
-    'Change the accent color to teal',
-    'Editorial',
-    '把標題字體放大',
-  ])('offers only the refinement tool for a focused request: %s', (prompt) => {
-    expect(isBroadRedesignPrompt(prompt)).toBe(false);
-  });
-});
-
 interface ControlledCall {
   signal?: AbortSignal;
   resolve: (design: typeof DEFAULT_DESIGN_V2) => void;

@@ -36,12 +36,6 @@ const VIBELOG_USER_AGENT = 'VibeLog';
 const AI_GENERATION_TIMEOUT_MS = 120_000;
 const AI_FALLBACK_CANDIDATE_TIMEOUT_MS = 45_000;
 const AI_HEDGE_DELAY_MS = 12_000;
-// Leans inclusive: a false positive only costs the larger schema, a false negative limits the model to patches.
-const BROAD_REDESIGN_PATTERNS = [
-  /\b(?:re-?design|re-?style|re-?theme|overhaul|revamp|makeover|from scratch|start over|brand[- ]new|(?:fresh|new|different) (?:look|style|theme|design|vibe)|complete(?:ly)?|entire(?:ly)?|whole|total(?:ly)?)\b/iu,
-  /\b(?:looks?|feels?|looking|feeling) like\b|\b(?:inspired by|in the style of|vibes?|aesthetic)\b/iu,
-  /重新設計|重新设计|重做|全新|整體|整体|整個|整个|改版|風格|风格|氛圍|氛围|感覺|感觉/u,
-];
 function keylessOpenAICompletionsApi(): ProviderStreams {
   const api = openAICompletionsApi();
   const options = (input?: SimpleStreamOptions): SimpleStreamOptions => ({
@@ -168,13 +162,6 @@ export function getAiProviderNames(): string[] {
 }
 
 type DesignTool = typeof designToolV2 | typeof refineDesignToolV2;
-export function isBroadRedesignPrompt(prompt: string): boolean {
-  return BROAD_REDESIGN_PATTERNS.some((pattern) => pattern.test(prompt));
-}
-function initialDesignTools(prompt: string): DesignTool[] {
-  // The full design schema is ~27 KB; only offer it when the writer asks for a broad redesign.
-  return isBroadRedesignPrompt(prompt) ? [designToolV2, refineDesignToolV2] : [refineDesignToolV2];
-}
 function designSystemPrompt(tools: DesignTool[], previousError?: string): string {
   const canPropose = tools.some((tool) => tool.name === DESIGN_TOOL_NAME);
   const canRefine = tools.some((tool) => tool.name === REFINE_TOOL_NAME);
@@ -411,7 +398,8 @@ export class PiAiProvider implements AiProvider {
   ): Promise<BlogDesignSpecV2> {
     const sessionId = context?.sessionId ?? randomUUID();
     const signal = context?.signal ?? AbortSignal.timeout(AI_GENERATION_TIMEOUT_MS);
-    const tools = initialDesignTools(input.prompt);
+    // Offering both tools on every request benchmarked faster and more reliable than refine-only.
+    const tools: DesignTool[] = [designToolV2, refineDesignToolV2];
     try {
       return await this.generateOnce(input, sessionId, signal, tools);
     } catch (firstError) {
