@@ -86,7 +86,7 @@ export const DESIGN_PRESETS = {
         replace('/pages/index/item/variant', 'numbered'),
         replace(
           '/description',
-          'Minimal with a twist: notebook rules, monospace headings, a bold accent and numbered posts.',
+          'Minimal with a twist: notebook rules, monospace headings and numbered posts.',
         ),
       ];
     },
