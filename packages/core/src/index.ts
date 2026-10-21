@@ -8,6 +8,7 @@ export {
   SEARCH_SCHEMA_VERSION,
   searchIndexIdentity,
   structuralBuildIdentity,
+  contentBuildIdentity,
 } from './core/builder.js';
 export type {
   DevBuilderOptions,

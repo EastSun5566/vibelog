@@ -43,10 +43,37 @@ function key(artifactId: string, path?: string): string {
 function contentType(path: string): string {
   return MIME_TYPES[path.split('.').at(-1)?.toLowerCase() ?? ''] ?? 'application/octet-stream';
 }
+// Runs at most `limit` tasks at once. After the first failure no new tasks start; in-flight
+// tasks are awaited so nothing keeps writing after the call rejects with that first error.
+async function forEachLimit<T>(
+  items: readonly T[],
+  limit: number,
+  task: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  let failure: { error: unknown } | undefined;
+  const worker = async () => {
+    while (!failure && next < items.length) {
+      const item = items[next++];
+      try {
+        await task(item);
+      } catch (error) {
+        failure ??= { error };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  if (failure) throw failure.error;
+}
 
 export class S3ArtifactStore implements ArtifactStore {
   private readonly client: S3Client;
-  constructor(private readonly config: ObjectStoreConfig) {
+  private readonly concurrency: number;
+  constructor(
+    private readonly config: ObjectStoreConfig,
+    options: { concurrency?: number } = {},
+  ) {
+    this.concurrency = Math.max(1, options.concurrency ?? 16);
     this.client = new S3Client({
       endpoint: config.endpoint,
       region: config.region,
@@ -57,11 +84,14 @@ export class S3ArtifactStore implements ArtifactStore {
   async uploadDirectory(artifactId: string, localDirectory: string): Promise<void> {
     const root = resolve(localDirectory);
     const entries = await readdir(root, { recursive: true, withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isFile()) continue;
+    const files = entries.flatMap((entry) => {
+      if (!entry.isFile()) return [];
       const absolute = resolve(entry.parentPath, entry.name);
       const fromRoot = relative(root, absolute);
       if (fromRoot.startsWith(`..${sep}`)) throw new Error('Artifact file escaped upload root');
+      return [{ absolute, fromRoot }];
+    });
+    await forEachLimit(files, this.concurrency, async ({ absolute, fromRoot }) => {
       await this.client.send(
         new PutObjectCommand({
           Bucket: this.config.bucket,
@@ -70,23 +100,28 @@ export class S3ArtifactStore implements ArtifactStore {
           ContentType: contentType(fromRoot),
         }),
       );
-    }
+    });
   }
   async materializeArtifact(artifactId: string, localDirectory: string): Promise<void> {
     const root = resolve(localDirectory);
     await mkdir(root, { recursive: true });
-    for (const path of await this.listObjects(artifactId)) {
+    const files = (await this.listObjects(artifactId)).map((path) => {
       const safePath = cleanPath(path);
       const absolute = resolve(root, ...safePath.split('/'));
       const fromRoot = relative(root, absolute);
       if (!fromRoot || fromRoot.startsWith(`..${sep}`) || fromRoot === '..')
         throw new Error('Artifact object escaped materialization root');
+      return { safePath, absolute };
+    });
+    // Create every parent directory before the concurrent writes so they never race on mkdir.
+    for (const directory of new Set(files.map(({ absolute }) => resolve(absolute, '..'))))
+      await mkdir(directory, { recursive: true });
+    await forEachLimit(files, this.concurrency, async ({ safePath, absolute }) => {
       const object = await this.readObject(artifactId, safePath);
       if (!object)
         throw new Error(`Artifact object disappeared during materialization: ${safePath}`);
-      await mkdir(resolve(absolute, '..'), { recursive: true });
       await writeFile(absolute, Buffer.from(await new Response(object.body).arrayBuffer()));
-    }
+    });
   }
   async copyArtifact(sourceId: string, destinationId: string): Promise<void> {
     let token: string | undefined;
@@ -98,10 +133,10 @@ export class S3ArtifactStore implements ArtifactStore {
           ContinuationToken: token,
         }),
       );
-      for (const object of page.Contents ?? []) {
-        if (!object.Key) continue;
-        const destination = `${key(destinationId)}${object.Key.slice(key(sourceId).length)}`;
-        const source = [this.config.bucket, ...object.Key.split('/')]
+      const keys = (page.Contents ?? []).flatMap((object) => (object.Key ? [object.Key] : []));
+      await forEachLimit(keys, this.concurrency, async (objectKey) => {
+        const destination = `${key(destinationId)}${objectKey.slice(key(sourceId).length)}`;
+        const source = [this.config.bucket, ...objectKey.split('/')]
           .map(encodeURIComponent)
           .join('/');
         await this.client.send(
@@ -111,7 +146,7 @@ export class S3ArtifactStore implements ArtifactStore {
             CopySource: source,
           }),
         );
-      }
+      });
       token = page.NextContinuationToken;
     } while (token);
   }
