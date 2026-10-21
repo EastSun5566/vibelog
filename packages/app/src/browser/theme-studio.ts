@@ -100,15 +100,6 @@ export function initializeStudio(root: ClientRoot, dom: EditorDom): void {
       previewTimer = window.setTimeout(() => void updatePreview(), 250);
     });
   }
-  for (const starter of studio.querySelectorAll<HTMLElement>('[data-prompt-starter]')) {
-    starter.addEventListener('click', () => {
-      const prompt = studio.querySelector<HTMLTextAreaElement>('#prompt');
-      if (prompt) {
-        prompt.value = starter.dataset.promptStarter ?? '';
-        prompt.focus();
-      }
-    });
-  }
   const prompt = studio.querySelector<HTMLTextAreaElement>('#prompt');
   const generateButton = studio.querySelector<HTMLButtonElement>(
     '[data-operation-submit][data-feedback-target="ai"]',

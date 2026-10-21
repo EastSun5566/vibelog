@@ -77,6 +77,7 @@ export type {
 } from './design/resolve-v2.js';
 export { compileDesignCss } from './design/compile-css-v2.js';
 export { normalizeDesignV2 } from './design/normalize-v2.js';
+export { applyDesignPatchV2 } from './design/patch-v2.js';
 export { sanitizeMarkdown } from './markdown.js';
 
 export { ContentSourceName } from './consts.js';

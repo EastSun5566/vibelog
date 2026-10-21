@@ -293,12 +293,17 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   );
   await markPage(page);
 
-  await page.getByRole('button', { name: 'A restrained independent magazine' }).focus();
-  await page.keyboard.press('Enter');
-  await expect(page.getByLabel('Describe the reading experience')).toHaveValue(
+  const instantStyles = page.getByRole('group', { name: 'Instant styles' });
+  await expect(instantStyles).toHaveAccessibleDescription('Applies right away, no AI wait.');
+  await expect(instantStyles.getByRole('button')).toHaveText([
     'A restrained independent magazine',
-  );
-  await expect(page.getByLabel('Describe the reading experience')).toBeFocused();
+    'Make long articles easier to read',
+    'Keep it minimal but add personality',
+    'A dark design for night reading',
+  ]);
+  await expect(
+    instantStyles.getByRole('button', { name: 'A dark design for night reading' }),
+  ).toHaveAttribute('formaction', '/actions/design/preset');
   await expect(page.getByLabel('Describe the reading experience')).toHaveAttribute('required', '');
   await expect(page.getByLabel('Describe the reading experience')).toHaveAttribute(
     'minlength',
@@ -349,6 +354,9 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
         document.documentElement.dataset.aiSuccessFeedback = 'ai';
     }).observe(status, { childList: true, characterData: true, subtree: true });
   });
+  await page
+    .getByLabel('Describe the reading experience')
+    .fill('A restrained independent magazine');
   await page.getByLabel('Describe the reading experience').press('Control+Enter');
   const aiFeedback = page.locator('.studio-primary [data-feedback-slot="ai"]');
   await expect(aiFeedback.getByText('AI is shaping your design…')).toBeVisible();
