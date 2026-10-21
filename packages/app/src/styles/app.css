@@ -286,7 +286,12 @@ time { font-variant-numeric: tabular-nums; }
 .studio-primary > header { display: grid; gap: 0.2rem; }
 .studio-primary-body { display: grid; gap: 0.8rem; }
 .prompt-starters { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.design-presets { display: grid; gap: 0.45rem; padding-top: 0.8rem; border-top: 1px dashed var(--border); }
+.design-presets-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; margin: 0; }
+.design-presets-heading span { color: var(--muted-foreground); font: 600 0.72rem/1.4 var(--font-mono); }
 .prompt-chip { min-height: 2.25rem; border-radius: 999px; white-space: normal; text-align: start; }
+/* The bolt marks chips that apply a stored style instead of asking the AI. */
+.prompt-chip[data-design-preset]::before { content: "↯" / ""; margin-inline-end: 0.35rem; color: var(--pen-ink); }
 .studio-primary-action { width: 100%; }
 .shortcut-hint { margin: -0.45rem 0 0; color: var(--muted-foreground); font: 600 0.72rem/1.4 var(--font-mono); text-align: end; }
 

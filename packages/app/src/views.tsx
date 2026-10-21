@@ -11,6 +11,7 @@ import { blogStateVersion, canRecoverInitialSync } from './database.js';
 import { syncOperationIntent } from './blog-sync.js';
 import { operationLabel, operationMessage, operationProgress } from './operation-status.js';
 import { editorUrlWithPreviewPath } from './preview-path.js';
+import { DESIGN_PRESETS } from './design-presets.js';
 import { calculatePublicationDiff } from './publication-diff.js';
 import { PRESENTATION_OPTIONS, THEME_PALETTES, themeControlValues } from './theme-studio.js';
 
@@ -1558,24 +1559,6 @@ export function editorPage(input: EditorPageInput) {
                       ></textarea>
                       <p id="prompt-help">Starts from your saved design.</p>
                     </div>
-                    <div class="prompt-starters" aria-label="Prompt starters">
-                      {[
-                        'A restrained independent magazine',
-                        'Make long articles easier to read',
-                        'Keep it minimal but add personality',
-                        'A dark design for night reading',
-                      ].map((prompt) => (
-                        <button
-                          class="btn prompt-chip"
-                          data-variant="outline"
-                          data-size="compact"
-                          type="button"
-                          data-prompt-starter={prompt}
-                        >
-                          {prompt}
-                        </button>
-                      ))}
-                    </div>
                     <button
                       class="btn studio-primary-action"
                       type="submit"
@@ -1589,6 +1572,37 @@ export function editorPage(input: EditorPageInput) {
                       Generate with AI
                     </button>
                     <p class="shortcut-hint">⌘/Ctrl + Enter</p>
+                    <div
+                      class="design-presets"
+                      role="group"
+                      aria-labelledby="design-presets-title"
+                      aria-describedby="design-presets-help"
+                    >
+                      <p class="design-presets-heading">
+                        <strong id="design-presets-title">Instant styles</strong>
+                        <span id="design-presets-help">Applies right away, no AI wait.</span>
+                      </p>
+                      <div class="prompt-starters">
+                        {Object.entries(DESIGN_PRESETS).map(([id, preset]) => (
+                          <button
+                            class="btn prompt-chip"
+                            data-variant="outline"
+                            data-size="compact"
+                            type="submit"
+                            formaction="/actions/design/preset"
+                            formnovalidate
+                            name="preset"
+                            value={id}
+                            data-operation-submit
+                            data-feedback-target="ai"
+                            data-design-preset={id}
+                            disabled={busy}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <OperationOutput
                       operation={
                         input.operation?.type === 'generate_design' ? input.operation : undefined

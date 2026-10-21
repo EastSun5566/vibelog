@@ -29,6 +29,7 @@ import {
   type OperationRecord,
   type OperationType,
 } from './database.js';
+import { applyDesignPreset, DESIGN_PRESET_IDS } from './design-presets.js';
 import {
   AppError,
   assertCsrfToken,
@@ -79,6 +80,7 @@ const hackmdInput = z.object({
     .regex(/^[\p{L}\p{N}_.-]+$/u),
 });
 const designInput = z.object({ prompt: z.string().trim().min(1).max(1000) });
+const designPresetInput = z.enum(DESIGN_PRESET_IDS);
 const previewTokenInput = z.string().min(32).max(512);
 const uuidInput = z.uuid();
 const deletionConfirmationInput = z.string().trim().min(1).max(320);
@@ -894,6 +896,17 @@ export function createApp(options: CreateAppOptions) {
     await assertOwnedPreview(blog, readPreviewToken(body));
     return enqueue(c, 'apply_design', {
       design,
+      previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin),
+    });
+  });
+  app.post('/actions/design/preset', async (c) => {
+    const body = await mutationBody(c);
+    const preset = designPresetInput.safeParse(formValue(body, 'preset'));
+    if (!preset.success) throw new AppError('invalid_design_preset', 'Choose a listed style.', 400);
+    const { blog, design } = await designFromBody(c, body);
+    await assertOwnedPreview(blog, readPreviewToken(body));
+    return enqueue(c, 'apply_design', {
+      design: applyDesignPreset(design, preset.data),
       previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin),
     });
   });
