@@ -4,6 +4,11 @@ import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import type { CliProcessResult, CliProcessState } from './cli-process.js';
 
+// These tests share one stack: the first claims `alice`, later tests expect it taken, and
+// magic links are rate-limited per email. A retry would fail on that leftover state and
+// hide the original error, so failures are kept as-is with their trace instead.
+test.describe.configure({ retries: 0 });
+
 async function runCliProcess(
   args: string[],
   state: CliProcessState = { credentials: null, pairing: null },
