@@ -5,6 +5,7 @@ import {
   DEFAULT_DESIGN_V2,
   HackMdSourceError,
   buildBlog,
+  contentBuildIdentity,
   structuralBuildIdentity,
 } from '@vibelog/core';
 import type { AiProvider } from '@vibelog/core';
@@ -278,7 +279,7 @@ describe('AI operation execution', () => {
     expect(createArtifact).not.toHaveBeenCalled();
   });
 
-  it('changes only design.css for a presentation edit', async () => {
+  it('reuses the current draft without copying it for a presentation edit', async () => {
     const next = {
       ...DEFAULT_DESIGN_V2,
       theme: {
@@ -289,25 +290,30 @@ describe('AI operation execution', () => {
     const apply = operation('55555555-5555-4555-8555-555555555555');
     apply.type = 'apply_design';
     apply.payload.design = next;
+    const completeDesignOperation = vi.fn(() => Promise.resolve({ ...theme, config: next }));
+    const createArtifact = vi.fn();
     const database = {
       claimOperation: vi.fn(() => Promise.resolve(apply)),
       getBlog: vi.fn(() => Promise.resolve(blog)),
       getActiveDesign: vi.fn(() => Promise.resolve(theme)),
       updateOperationProgress: vi.fn(() => Promise.resolve()),
-      createArtifact: vi.fn(() => Promise.resolve({ id: 'css-draft' })),
-      completeDesignOperation: vi.fn(() => Promise.resolve({ ...theme, config: next })),
+      createArtifact,
+      completeDesignOperation,
       markArtifactCleanup: vi.fn(() => Promise.resolve()),
     } as unknown as AppDatabase;
     const copyArtifact = vi.fn(() => Promise.resolve());
     const putObject = vi.fn(() => Promise.resolve());
     const materializeArtifact = vi.fn();
-    const currentIdentity = structuralBuildIdentity(
-      'source',
-      theme.config,
-      'https://writer.vibelog.org',
-    );
-    const readObject = vi.fn(() =>
-      Promise.resolve({ body: new Response(JSON.stringify({ identity: currentIdentity })).body }),
+    const site = 'https://writer.vibelog.org';
+    const markers: Record<string, string> = {
+      'build-identity.json': structuralBuildIdentity('source', theme.config, site),
+    };
+    const readObject = vi.fn((_id: string, path: string) =>
+      Promise.resolve(
+        markers[path]
+          ? { body: new Response(JSON.stringify({ identity: markers[path] })).body }
+          : null,
+      ),
     );
     const artifacts = {
       copyArtifact,
@@ -317,15 +323,31 @@ describe('AI operation execution', () => {
     } as unknown as ArtifactStore;
     vi.mocked(buildBlog).mockClear();
     await new AppOperationExecutor(database, artifacts, config).execute(apply.id);
-    expect(copyArtifact).toHaveBeenCalledWith('draft', 'css-draft');
-    expect(putObject).toHaveBeenCalledWith(
-      'css-draft',
-      'design.css',
-      expect.stringContaining('font'),
-      { contentType: 'text/css; charset=utf-8' },
-    );
+    expect(copyArtifact).not.toHaveBeenCalled();
+    expect(createArtifact).not.toHaveBeenCalled();
     expect(materializeArtifact).not.toHaveBeenCalled();
     expect(buildBlog).not.toHaveBeenCalled();
+    // A draft built before content markers is upgraded so later edits skip the legacy check.
+    expect(putObject).toHaveBeenCalledWith(
+      'draft',
+      'content-identity.json',
+      JSON.stringify({ identity: contentBuildIdentity('source', next, site) }),
+      { contentType: 'application/json; charset=utf-8' },
+    );
+    expect(completeDesignOperation).toHaveBeenCalledWith(
+      apply,
+      next,
+      'draft',
+      { message: 'New design ready' },
+      { reuseDraft: true },
+    );
+
+    putObject.mockClear();
+    markers['build-identity.json'] = 'stale-after-earlier-presentation-edits';
+    markers['content-identity.json'] = contentBuildIdentity('source', theme.config, site);
+    await new AppOperationExecutor(database, artifacts, config).execute(apply.id);
+    expect(putObject).not.toHaveBeenCalled();
+    expect(completeDesignOperation).toHaveBeenCalledTimes(2);
   });
 
   it.each([
@@ -605,7 +627,7 @@ describe('AI operation execution', () => {
     );
   });
 
-  it('publishes by copying the fenced draft without rebuilding or calling AI', async () => {
+  it('publishes a restyled copy of the fenced draft without rebuilding or calling AI', async () => {
     const publish = operation('44444444-4444-4444-8444-444444444444');
     publish.type = 'publish';
     publish.payload = {
@@ -614,16 +636,26 @@ describe('AI operation execution', () => {
       draftArtifactId: blog.draftArtifactId,
     };
     const copyArtifact = vi.fn(() => Promise.resolve());
+    const putObject = vi.fn(() => Promise.resolve());
     const generate = vi.fn<AiProvider['generate']>();
+    const published = {
+      ...DEFAULT_DESIGN_V2,
+      theme: {
+        ...DEFAULT_DESIGN_V2.theme,
+        typography: { ...DEFAULT_DESIGN_V2.theme.typography, scale: 'large' as const },
+      },
+    };
+    const getDesignRevision = vi.fn(() => Promise.resolve({ ...theme, config: published }));
     const database = {
       claimOperation: vi.fn(() => Promise.resolve(publish)),
       getBlog: vi.fn(() => Promise.resolve(blog)),
+      getDesignRevision,
       updateOperationProgress: vi.fn(() => Promise.resolve()),
       createArtifact: vi.fn(() => Promise.resolve({ id: 'release' })),
       completePublishOperation: vi.fn(() => Promise.resolve()),
       markArtifactCleanup: vi.fn(() => Promise.resolve()),
     } as unknown as AppDatabase;
-    const artifacts = { copyArtifact } as unknown as ArtifactStore;
+    const artifacts = { copyArtifact, putObject } as unknown as ArtifactStore;
     const executor = new AppOperationExecutor(database, artifacts, config, {
       aiProvider: () => ({ name: 'test', modelId: 'model', generate }),
     });
@@ -634,6 +666,22 @@ describe('AI operation execution', () => {
     });
 
     expect(copyArtifact).toHaveBeenCalledWith('draft', 'release');
+    // The draft may still carry an earlier design.css after presentation-only edits.
+    expect(getDesignRevision).toHaveBeenCalledWith(blog.draftDesignRevisionId, blog.id);
+    expect(putObject).toHaveBeenCalledWith(
+      'release',
+      'design.css',
+      expect.stringContaining('--theme-background'),
+      { contentType: 'text/css; charset=utf-8' },
+    );
+    expect(putObject).toHaveBeenCalledWith(
+      'release',
+      'build-identity.json',
+      JSON.stringify({
+        identity: structuralBuildIdentity('source', published, 'https://writer.vibelog.org'),
+      }),
+      { contentType: 'application/json; charset=utf-8' },
+    );
     expect(buildBlog).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
   });

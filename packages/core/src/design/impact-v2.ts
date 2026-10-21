@@ -35,6 +35,11 @@ function structural(value: unknown): unknown {
   return value;
 }
 
+/** The parts of a design that change rendered HTML; equal for presentation-only edits. */
+export function structuralDesignV2(design: BlogDesignSpecV2): unknown {
+  return structural(normalizeDesignV2(design));
+}
+
 export function analyzeDesignImpact(
   previous: BlogDesignSpecV2,
   next: BlogDesignSpecV2,

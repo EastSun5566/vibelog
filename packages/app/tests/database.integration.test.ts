@@ -578,6 +578,57 @@ describe.skipIf(!url)('operation crash recovery', () => {
     expect((await database.getActiveDesign(blog.id))?.id).toBe(initial.id);
     expect((await database.getBlog(blog.id))?.draftArtifactId).toBe(draft.id);
   });
+  it('keeps serving the current ready draft for a presentation-only design', async () => {
+    const { operation: syncOperation, blog } = await fixture();
+    const syncLease = await database.claimOperation(syncOperation.id);
+    if (!syncLease) throw new Error('Missing sync claim');
+    const initial = await database.getActiveDesign(blog.id);
+    if (!initial) throw new Error('Missing initial design');
+    const source = await database.createArtifact(blog.id, 'source');
+    const draft = await database.createArtifact(blog.id, 'draft');
+    await database.completeSyncOperation(
+      syncLease,
+      {
+        title: 'Writer',
+        description: '',
+        author: 'Writer',
+        sourceArtifactId: source.id,
+        draftArtifactId: draft.id,
+        designRevisionId: initial.id,
+        contentProfile: {
+          postCount: 0,
+          tagCount: 0,
+          averageLength: 'short',
+          codeUsage: 'none',
+          imageUsage: 'none',
+          mathUsage: 'none',
+        },
+      },
+      {},
+    );
+    const next = structuredClone(DEFAULT_DESIGN_V2);
+    next.theme.typography.scale = 'large';
+    const apply = await database.createApplyDesignOperation(blog.userId, blog.id, next);
+    const lease = await database.claimOperation(apply.id);
+    if (!lease) throw new Error('Missing apply claim');
+    // Only the blog's current draft may be reused; any other artifact is refused.
+    const other = await database.createArtifact(blog.id, 'draft');
+    await expect(
+      database.completeDesignOperation(lease, next, other.id, {}, { reuseDraft: true }),
+    ).rejects.toThrow('Current draft artifact not found');
+    const revision = await database.completeDesignOperation(
+      lease,
+      next,
+      draft.id,
+      {},
+      { reuseDraft: true },
+    );
+    const updated = await database.getBlog(blog.id);
+    expect(updated?.draftArtifactId).toBe(draft.id);
+    expect(updated?.draftDesignRevisionId).toBe(revision.id);
+    expect((await database.getActiveDesign(blog.id))?.id).toBe(revision.id);
+    expect((await database.getArtifact(draft.id))?.state).toBe('ready');
+  });
   it('runs the deployment smoke fixture through real DB execution and removes it afterwards', async () => {
     let operationId = '';
     const request: typeof fetch = async (_input, init) => {

@@ -19,6 +19,7 @@ import { resolvePostDescription } from '../description.js';
 import { ContentSourceName } from '../consts.js';
 import { createContentProfile } from '../design/profile.js';
 import { compileDesignCss } from '../design/compile-css-v2.js';
+import { structuralDesignV2 } from '../design/impact-v2.js';
 import { resolveHomeComposition, type ResolvablePost } from '../design/resolve-v2.js';
 import { validateBlogDesignSpecV2, type BlogDesignSpecV2 } from '../design/schema-v2.js';
 import type { ContentProfile, SourceSnapshotV1 } from '../design/types.js';
@@ -65,6 +66,27 @@ export function structuralBuildIdentity(
         canonical({
           sourceArtifactId,
           design: validateBlogDesignSpecV2(design),
+          site: new URL(site).origin,
+          templateVersion: TEMPLATE_VERSION,
+          searchSchemaVersion: SEARCH_SCHEMA_VERSION,
+          rendererFingerprint,
+        }),
+      ),
+    )
+    .digest('hex');
+}
+/** Identifies a build's HTML and assets; presentation-only design edits keep it unchanged. */
+export function contentBuildIdentity(
+  sourceArtifactId: string,
+  design: BlogDesignSpecV2,
+  site: string,
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify(
+        canonical({
+          sourceArtifactId,
+          structure: structuralDesignV2(validateBlogDesignSpecV2(design)),
           site: new URL(site).origin,
           templateVersion: TEMPLATE_VERSION,
           searchSchemaVersion: SEARCH_SCHEMA_VERSION,
