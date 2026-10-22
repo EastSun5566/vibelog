@@ -317,11 +317,6 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(page.locator('.studio-primary [data-feedback-slot="ai"]')).not.toContainText(
     'Choose a listed style',
   );
-  // Chrome marks the empty prompt :user-invalid after any submit; it must not look like an error.
-  await expect(page.getByLabel('Describe the reading experience')).not.toHaveCSS(
-    'border-color',
-    'rgb(180, 35, 24)',
-  );
   await expect(page.getByLabel('Describe the reading experience')).toHaveAttribute('required', '');
   await expect(page.getByLabel('Describe the reading experience')).toHaveAttribute(
     'minlength',
@@ -535,8 +530,14 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
       body: JSON.stringify({ error: { message: 'Could not save the design' } }),
     }),
   );
+  const prompt = page.getByLabel('Describe the reading experience');
+  await prompt.fill('');
   await page.getByRole('button', { name: 'Save design version' }).click();
   await expect(fineTuneFeedback).toContainText('Could not save the design');
+  // The failed save keeps this DOM. Chrome marks the empty prompt :user-invalid after any submit,
+  // even with formnovalidate, but only Generate needs a prompt, so it must not look like an error.
+  expect(await prompt.evaluate((field) => field.matches(':user-invalid'))).toBe(true);
+  await expect(prompt).not.toHaveCSS('border-color', 'rgb(180, 35, 24)');
   await expect(page.locator('.studio-primary [data-feedback-slot="ai"]')).not.toContainText(
     'Could not save the design',
   );
