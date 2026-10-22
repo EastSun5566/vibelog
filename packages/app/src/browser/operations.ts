@@ -55,6 +55,8 @@ export function initializeOperations(root: ClientRoot, dom: EditorDom): void {
       const button = submitter instanceof HTMLButtonElement ? submitter : buttons[0];
       const statusNode = dom.feedbackStatus(form, button);
       const buttonLabel = button?.textContent;
+      // Read the form before disabling buttons: a disabled submitter drops its name/value.
+      const body = new FormData(form, button);
       form.setAttribute('aria-busy', 'true');
       for (const item of buttons) item.disabled = true;
       if (button) button.textContent = 'Working…';
@@ -64,7 +66,7 @@ export function initializeOperations(root: ClientRoot, dom: EditorDom): void {
       const action = button?.hasAttribute('formaction') ? button.formAction : form.action;
       void fetch(action, {
         method: 'POST',
-        body: new FormData(form, button),
+        body,
         headers: { accept: 'application/json' },
         credentials: 'same-origin',
       })
@@ -122,6 +124,8 @@ export function initializeEditorSubmits(root: ClientRoot, dom: EditorDom): void 
           ? submitter
           : form.querySelector<HTMLButtonElement>('button[type="submit"]');
       const label = button?.textContent;
+      // Read the form before disabling the button: a disabled submitter drops its name/value.
+      const body = new FormData(form, button);
       form.setAttribute('aria-busy', 'true');
       if (button) {
         button.disabled = true;
@@ -130,7 +134,7 @@ export function initializeEditorSubmits(root: ClientRoot, dom: EditorDom): void 
       dom.rememberPreviewPath(dom.getPreviewPath());
       void fetch(form.action, {
         method: 'POST',
-        body: new FormData(form, button),
+        body,
         headers: { accept: 'text/html' },
         credentials: 'same-origin',
       })

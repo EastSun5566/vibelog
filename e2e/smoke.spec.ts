@@ -309,6 +309,19 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(
     instantStyles.getByRole('button', { name: 'A dark design for night reading' }),
   ).toHaveAttribute('formaction', '/actions/design/preset');
+  // Fine-tune's "Layout preset" radios share this form, so a chip must still apply its own style.
+  await expectPartialRefresh(
+    page,
+    instantStyles.getByRole('button', { name: 'A dark design for night reading' }),
+  );
+  await expect(page.locator('.studio-primary [data-feedback-slot="ai"]')).not.toContainText(
+    'Choose a listed style',
+  );
+  // Chrome marks the empty prompt :user-invalid after any submit; it must not look like an error.
+  await expect(page.getByLabel('Describe the reading experience')).not.toHaveCSS(
+    'border-color',
+    'rgb(180, 35, 24)',
+  );
   await expect(page.getByLabel('Describe the reading experience')).toHaveAttribute('required', '');
   await expect(page.getByLabel('Describe the reading experience')).toHaveAttribute(
     'minlength',
@@ -530,6 +543,14 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await page.unroute('**/actions/design/apply');
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Save design version' }));
   await expectPreviewPath(page, '/blog/hello-vibelog/');
+
+  // Section actions only work if the clicked button's name/value reaches the server.
+  await openDisclosure(page, 'fine-tune');
+  const homeSections = page.getByRole('group', { name: 'Homepage sections' }).locator('ol > li');
+  const sectionCount = await homeSections.count();
+  await page.getByLabel('Add section').selectOption('author');
+  await expectPartialRefresh(page, page.getByRole('button', { name: 'Add section' }));
+  await expect(homeSections).toHaveCount(sectionCount + 1);
 
   await openDisclosure(page, 'design-history');
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Preview version' }).first());
