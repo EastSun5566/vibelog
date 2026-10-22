@@ -1591,7 +1591,7 @@ export function editorPage(input: EditorPageInput) {
                             type="submit"
                             formaction="/actions/design/preset"
                             formnovalidate
-                            name="preset"
+                            name="designPreset"
                             value={id}
                             data-operation-submit
                             data-feedback-target="ai"

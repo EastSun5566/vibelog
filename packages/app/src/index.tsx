@@ -901,7 +901,7 @@ export function createApp(options: CreateAppOptions) {
   });
   app.post('/actions/design/preset', async (c) => {
     const body = await mutationBody(c);
-    const preset = designPresetInput.safeParse(formValue(body, 'preset'));
+    const preset = designPresetInput.safeParse(formValue(body, 'designPreset'));
     if (!preset.success) throw new AppError('invalid_design_preset', 'Choose a listed style.', 400);
     const { blog, design } = await designFromBody(c, body);
     await assertOwnedPreview(blog, readPreviewToken(body));

@@ -309,6 +309,14 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(
     instantStyles.getByRole('button', { name: 'A dark design for night reading' }),
   ).toHaveAttribute('formaction', '/actions/design/preset');
+  // Fine-tune's "Layout preset" radios share this form, so a chip must still apply its own style.
+  await expectPartialRefresh(
+    page,
+    instantStyles.getByRole('button', { name: 'A dark design for night reading' }),
+  );
+  await expect(page.locator('.studio-primary [data-feedback-slot="ai"]')).not.toContainText(
+    'Choose a listed style',
+  );
   await expect(page.getByLabel('Describe the reading experience')).toHaveAttribute('required', '');
   await expect(page.getByLabel('Describe the reading experience')).toHaveAttribute(
     'minlength',
@@ -522,14 +530,28 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
       body: JSON.stringify({ error: { message: 'Could not save the design' } }),
     }),
   );
+  const prompt = page.getByLabel('Describe the reading experience');
+  await prompt.fill('');
   await page.getByRole('button', { name: 'Save design version' }).click();
   await expect(fineTuneFeedback).toContainText('Could not save the design');
+  // The failed save keeps this DOM. Chrome marks the empty prompt :user-invalid after any submit,
+  // even with formnovalidate, but only Generate needs a prompt, so it must not look like an error.
+  expect(await prompt.evaluate((field) => field.matches(':user-invalid'))).toBe(true);
+  await expect(prompt).not.toHaveCSS('border-color', 'rgb(180, 35, 24)');
   await expect(page.locator('.studio-primary [data-feedback-slot="ai"]')).not.toContainText(
     'Could not save the design',
   );
   await page.unroute('**/actions/design/apply');
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Save design version' }));
   await expectPreviewPath(page, '/blog/hello-vibelog/');
+
+  // Section actions only work if the clicked button's name/value reaches the server.
+  await openDisclosure(page, 'fine-tune');
+  const homeSections = page.getByRole('group', { name: 'Homepage sections' }).locator('ol > li');
+  const sectionCount = await homeSections.count();
+  await page.getByLabel('Add section').selectOption('author');
+  await expectPartialRefresh(page, page.getByRole('button', { name: 'Add section' }));
+  await expect(homeSections).toHaveCount(sectionCount + 1);
 
   await openDisclosure(page, 'design-history');
   await expectPartialRefresh(page, page.getByRole('button', { name: 'Preview version' }).first());

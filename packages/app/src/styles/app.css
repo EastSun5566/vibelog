@@ -285,6 +285,9 @@ time { font-variant-numeric: tabular-nums; }
 .studio-primary { display: grid; gap: 0.9rem; padding: 1rem; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--paper) 55%, var(--sheet)); }
 .studio-primary > header { display: grid; gap: 0.2rem; }
 .studio-primary-body { display: grid; gap: 0.8rem; }
+/* Chips and Fine-tune saves share this form and skip validation, yet Chrome still marks the empty
+   prompt :user-invalid on their submit. Only Generate needs a prompt, and its native check says so. */
+.studio-primary .field > textarea:user-invalid:placeholder-shown { border-color: var(--input); box-shadow: none; }
 .prompt-starters { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .design-presets { display: grid; gap: 0.45rem; padding-top: 0.8rem; border-top: 1px dashed var(--border); }
 .design-presets-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; margin: 0; }
