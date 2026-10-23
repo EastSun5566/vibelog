@@ -18,5 +18,13 @@ overrides:
   "smol-toml@<1.9.0": 1.9.0
   "svgo@>=4.0.0 <4.1.0": 4.1.0
 
-onlyBuiltDependencies:
-  - "@pulumi/neon"
+strictDepBuilds: true
+allowBuilds:
+  "@google/genai": false
+  "@parcel/watcher": false
+  "@pulumi/command": false
+  "@pulumi/docker-build": false
+  # Local file dependencies require their full source ID, not just the package name.
+  "@pulumi/neon@file:packages/infra/sdks/neon": true
+  esbuild: false
+  protobufjs: false

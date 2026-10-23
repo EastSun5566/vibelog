@@ -16,7 +16,7 @@ Content changes never update the live site until the writer publishes. Failed sy
 
 ## Run locally
 
-Requirements: Node.js 24, pnpm 10, Docker, and Chromium for Playwright.
+Development requirements: Node.js 26.12.1 (see `.node-version`), pnpm 12.15.0, Docker, and Chromium for Playwright. The published `@vibelog/core` and `@vibelog/cli` packages still support Node.js 24+.
 
 ```sh
 cp .env.example .env
