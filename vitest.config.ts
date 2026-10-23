@@ -2,7 +2,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    exclude: [...configDefaults.exclude, 'e2e/**', '**/.vibelog/**'],
+    exclude: [...configDefaults.exclude, 'e2e/**', '**/.vibelog/**', '.agents/**', '.claude/**'],
     testTimeout: 15_000,
   },
 });

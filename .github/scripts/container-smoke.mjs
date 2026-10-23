@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const port = Number(process.env.PORT ?? 34123);
 const image = process.env.VIBELOG_APP_IMAGE;
 if (!image) throw new Error('VIBELOG_APP_IMAGE is required');
+const expectedNodeVersion = readFileSync(new URL('../../.node-version', import.meta.url), 'utf8').trim();
 
 const docker = (args, options = {}) => {
   const output = execFileSync('docker', args, {
@@ -53,6 +54,14 @@ docker(['compose', 'exec', '-T', 'postgres', 'psql', '-U', 'vibelog', '-d', 'vib
 if (docker(['image', 'inspect', image, '--format', '{{json .Config.Cmd}}']) !== '["node","dist/web-main.js"]') {
   throw new Error('Unexpected image command');
 }
+for (const service of ['web', 'worker']) {
+  if (docker(['compose', 'exec', '-T', service, 'node', '-p', 'process.versions.node']) !== expectedNodeVersion) {
+    throw new Error(`${service} container does not use Node ${expectedNodeVersion}`);
+  }
+  if (docker(['compose', 'exec', '-T', service, 'node', '-p', 'process.getuid()']) === '0') {
+    throw new Error(`${service} container runs as root`);
+  }
+}
 docker(['run', '--rm', '--network', 'none', '--entrypoint', 'node', image, '--input-type=module', '--eval', `
   import assert from 'node:assert/strict';
   import { readFileSync, readdirSync } from 'node:fs';
@@ -72,9 +81,6 @@ docker(['run', '--rm', '--network', 'none', '--entrypoint', 'node', image, '--in
 docker(['run', '--rm', '--network', 'none', '--entrypoint', 'node', image, '--input-type=module', '--eval', readFileSync(new URL('../../packages/core/scripts/math-bundle-smoke.mjs', import.meta.url), 'utf8')]);
 const volumes = docker(['image', 'inspect', image, '--format', '{{json .Config.Volumes}}']);
 if (volumes !== 'null' && volumes.includes('/data')) throw new Error('Image declares a persistent /data volume');
-if (docker(['compose', 'exec', '-T', 'web', 'node', '-p', 'process.getuid()']) === '0') {
-  throw new Error('Web container runs as root');
-}
 docker(['compose', 'exec', '-T', 'web', 'node', '-e', "if (require('node:fs').existsSync('/data')) process.exit(1)"]);
 
 docker([
