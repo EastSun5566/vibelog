@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "skills": {
+    "better-auth-best-practices": {
+      "source": "better-auth/skills",
+      "sourceType": "github",
+      "skillPath": "better-auth/best-practices/SKILL.md",
+      "computedHash": "0c30be0e118c2b7a0c4c57bd9e63bf110c7e420a79ec6ce7997153f3b1e066ee"
+    },
+    "cloud-run-basics": {
+      "source": "google/skills",
+      "sourceType": "github",
+      "skillPath": "skills/cloud/cloud-run-basics/SKILL.md",
+      "computedHash": "0c1323791e24cc34e977e7b4f41b016863c0faec9dc855a590db402dfb3ab7c5"
+    },
+    "cloudflare": {
+      "source": "cloudflare/skills",
+      "sourceType": "github",
+      "skillPath": "skills/cloudflare/SKILL.md",
+      "computedHash": "f08c8c1be96dfad7f9d5418b1345477dd2e55af58c8da01326c9a2616c7ed721"
+    },
+    "gcloud": {
+      "source": "google/skills",
+      "sourceType": "github",
+      "skillPath": "skills/cloud/gcloud/SKILL.md",
+      "computedHash": "69c99f4cb4d35fbdfa62c5e7a93a38341bee58e07a6679525cbd686b346270e4"
+    },
+    "neon": {
+      "source": "neondatabase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/neon/SKILL.md",
+      "computedHash": "1be07bf84ddf85b14f1f26a4d782d1374c480b378f1716a155d4ac3d31389ca2"
+    },
+    "neon-postgres": {
+      "source": "neondatabase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/neon-postgres/SKILL.md",
+      "computedHash": "0d936096676b18674d47828a87b21fcabf37cf0d7e3ed002e46e169eb7e0a7da"
+    },
+    "pulumi-best-practices": {
+      "source": "pulumi/agent-skills",
+      "sourceType": "github",
+      "skillPath": "pulumi/skills/pulumi-best-practices/SKILL.md",
+      "computedHash": "fe72db4c8d462495bcc5ca6ae5f5fd7ba05318f4668ccb011dce5a7c1c24fa6c"
+    },
+    "pulumi-esc": {
+      "source": "pulumi/agent-skills",
+      "sourceType": "github",
+      "skillPath": "pulumi/skills/pulumi-esc/SKILL.md",
+      "computedHash": "d34704ec6219287d66de3340bf9403670c5380eed604dfef5f809ab66e2fabdb"
+    },
+    "pulumi-overview": {
+      "source": "pulumi/agent-skills",
+      "sourceType": "github",
+      "skillPath": "pulumi/skills/pulumi-overview/SKILL.md",
+      "computedHash": "cf9c02b1a12ea7f5ae8efc4b32fa80b238a4addef6d3a958e21ad9ff6127d9f8"
+    },
+    "resend": {
+      "source": "resend/resend-skills",
+      "sourceType": "github",
+      "skillPath": "skills/resend/SKILL.md",
+      "computedHash": "e12ac96a3c05509aabf1b03f40a3112e710e1bda060161b6495f851b7ac18f34"
+    },
+    "resend-cli": {
+      "source": "resend/resend-skills",
+      "sourceType": "github",
+      "skillPath": "skills/resend-cli/SKILL.md",
+      "computedHash": "32c729456e8b6384e7d581d3aef289c4755cb85ba44c963137cc41531506023c"
+    },
+    "web-perf": {
+      "source": "cloudflare/skills",
+      "sourceType": "github",
+      "skillPath": "skills/web-perf/SKILL.md",
+      "computedHash": "72d0dd9706147e19bf3c1a36fdc02570f77685541d89d901a3a2f570824ba3cb"
+    },
+    "workers-best-practices": {
+      "source": "cloudflare/skills",
+      "sourceType": "github",
+      "skillPath": "skills/workers-best-practices/SKILL.md",
+      "computedHash": "e12970301753ed7eaa5ca375d4b98e0e36c9554e8f2809cb4b543c2ea7d9b4b8"
+    },
+    "workers-profiling": {
+      "source": "cloudflare/skills",
+      "sourceType": "github",
+      "skillPath": "skills/workers-profiling/SKILL.md",
+      "computedHash": "310220bfad691100e6c2549628437c03873bdf870cbfacbd2e2cb5c125538864"
+    }
+  }
+}
