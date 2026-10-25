@@ -36,11 +36,11 @@
     "@vibelog/core": "workspace:*",
     "better-auth": "1.6.23",
     "drizzle-orm": "0.45.2",
-    "hono": "^4.12.34",
+    "hono": "^4.13.13",
     "pg": "8.23.0",
     "resend": "6.25.0",
     "zip-stream": "7.0.5",
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@fontsource-variable/newsreader": "5.3.0",
