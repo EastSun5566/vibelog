@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24-slim AS base
+FROM node:26.12.1-bookworm-slim AS base
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=/pnpm:$PATH
 
-RUN corepack enable && corepack prepare pnpm@10.12.1 --activate
+RUN npm install --global pnpm@12.15.0
 
 WORKDIR /app
 
@@ -22,11 +22,12 @@ FROM dependencies AS build
 
 COPY . .
 
-RUN pnpm --filter @vibelog/core build \
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+  pnpm --filter @vibelog/core build \
   && pnpm --filter @vibelog/app build \
   && pnpm --filter @vibelog/app deploy --prod /runtime
 
-FROM node:24-slim AS runtime
+FROM node:26.12.1-bookworm-slim AS runtime
 
 LABEL org.opencontainers.image.title="VibeLog App"
 LABEL org.opencontainers.image.description="Hosted HackMD-to-Astro AI design editor"

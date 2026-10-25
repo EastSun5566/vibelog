@@ -13,6 +13,8 @@
     "builtin": true
   },
   "ignorePatterns": [
+    ".agents/skills/**",
+    ".claude/skills/**",
     ".github/scripts/**",
     "packages/core/template/**",
     "packages/infra/sdks/**"

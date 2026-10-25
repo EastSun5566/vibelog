@@ -35,7 +35,7 @@ services:
       timeout: 2s
       retries: 20
   hackmd-fixture:
-    image: node:24-slim
+    image: node:26.12.1-bookworm-slim
     profiles: ["e2e"]
     command: ["node", "/fixtures/fixture-hackmd.mjs"]
     volumes:
