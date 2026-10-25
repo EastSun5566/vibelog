@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.12.0](https://github.com/EastSun5566/vibelog/compare/v0.11.2...v0.12.0) (2026-10-26)
+
+### Runtime and tooling
+
+* Application containers and development now use Node 26.12.1 and pnpm 12.15.0; published core and CLI packages retain Node 24 support.
+* Update Astro, Zod, Hono, Vite, Undici and related dependencies to patched versions.
+
+### Features
+
+* **agent:** add explicit publish permission and CLI publishing ([#40](https://github.com/EastSun5566/vibelog/issues/40)) ([bec74f7](https://github.com/EastSun5566/vibelog/commit/bec74f77d153bf3b92876246f793893c8b6b16b0))
+* **agent:** make draft onboarding a primary flow ([#31](https://github.com/EastSun5566/vibelog/issues/31)) ([b534f24](https://github.com/EastSun5566/vibelog/commit/b534f24a34a2637124f508016b24e470811489d5))
+* **agent:** simplify approval and preview handoff ([#41](https://github.com/EastSun5566/vibelog/issues/41)) ([9b1aa08](https://github.com/EastSun5566/vibelog/commit/9b1aa08577bb337ae130048ac0e5554e2a1fadfc))
+* **app:** apply prompt starter chips as instant design presets ([#55](https://github.com/EastSun5566/vibelog/issues/55)) ([e3c2996](https://github.com/EastSun5566/vibelog/commit/e3c299639f5c187333f21d63bc2bbbcdd4fc2e44))
+* **app:** refresh management UI with an editorial proof style ([#52](https://github.com/EastSun5566/vibelog/issues/52)) ([cd318c5](https://github.com/EastSun5566/vibelog/commit/cd318c57f6820f5b0abd7b04372fdfbde1ed0704))
+* **content:** support larger HackMD archives ([#47](https://github.com/EastSun5566/vibelog/issues/47)) ([d03bace](https://github.com/EastSun5566/vibelog/commit/d03bace02b65ad1fb2cc56a464d9ace89b3b4c45))
+
+### Bug Fixes
+
+* **agent:** resume login and recover initial sync ([bd2fe35](https://github.com/EastSun5566/vibelog/commit/bd2fe352f5e7731317234c178f8c0a1530a5f86a))
+* **app:** require verified edge identity on hosted origins ([#46](https://github.com/EastSun5566/vibelog/issues/46)) ([2135193](https://github.com/EastSun5566/vibelog/commit/2135193e219a62418515564e0cb46842e00e8236))
+* **app:** send the clicked button's value with editor submits ([#59](https://github.com/EastSun5566/vibelog/issues/59)) ([d516b5d](https://github.com/EastSun5566/vibelog/commit/d516b5de3b035394e4842608abdfafad37d156fd))
+* **ci:** wait for published core registry metadata ([#37](https://github.com/EastSun5566/vibelog/issues/37)) ([e767d39](https://github.com/EastSun5566/vibelog/commit/e767d39b1760629fa96e1e333d97dbfbffbd148c))
+* **core:** fingerprint renderer build inputs ([#49](https://github.com/EastSun5566/vibelog/issues/49)) ([54760b1](https://github.com/EastSun5566/vibelog/commit/54760b168b59fc82bdc78fb88d248867a8e3977d))
+* **core:** prepare secure standalone package ([#35](https://github.com/EastSun5566/vibelog/issues/35)) ([84117ea](https://github.com/EastSun5566/vibelog/commit/84117ea68d541f83fedde9adf15c5451c2adc3cd))
+* **deps:** patch KaTeX and invalidate stale render builds ([#34](https://github.com/EastSun5566/vibelog/issues/34)) ([c2c8693](https://github.com/EastSun5566/vibelog/commit/c2c86938113c1c1b4c02075b7d3ccd3d88ea7840))
+* **deps:** patch release dependency advisories ([#61](https://github.com/EastSun5566/vibelog/issues/61)) ([3821f56](https://github.com/EastSun5566/vibelog/commit/3821f567a7097f874eb2d00d188394695380facf))
+* **deps:** patch transitive build dependencies ([#30](https://github.com/EastSun5566/vibelog/issues/30)) ([60ba135](https://github.com/EastSun5566/vibelog/commit/60ba1356a83d0379aaf929e13257fbc13f315e2b))
+* **edge:** add method-bound signatures with safe transition ([#50](https://github.com/EastSun5566/vibelog/issues/50)) ([2c73929](https://github.com/EastSun5566/vibelog/commit/2c73929996014e880bf9c257e10e86a35a878853))
+* **edge:** require method-bound V2 signatures ([#51](https://github.com/EastSun5566/vibelog/issues/51)) ([46b162c](https://github.com/EastSun5566/vibelog/commit/46b162c513eb45dd49cd2fa06014e9aa33b6b5f5))
+* **infra:** isolate runtime database privileges ([#28](https://github.com/EastSun5566/vibelog/issues/28)) ([5fe4c62](https://github.com/EastSun5566/vibelog/commit/5fe4c621faa1540a7e9b2ca46f5a2c3084dd6d25))
 ## [0.11.2](https://github.com/EastSun5566/vibelog/compare/v0.11.1...v0.11.2) (2026-10-04)
 
 ### Bug Fixes
