@@ -135,16 +135,13 @@ export function agentPromptEntry(prompt: string, primary = false) {
   const promptField = (
     <div class="field">
       <label for="agent-prompt">Agent prompt</label>
-      <textarea id="agent-prompt" readonly rows={4} aria-describedby="agent-prompt-help">
+      <textarea id="agent-prompt" readonly rows={4}>
         {prompt}
       </textarea>
     </div>
   );
   const content = (
     <div class="stack">
-      <p class="field-hint" id="agent-prompt-help">
-        Paste this into your coding agent, approve access in your browser, then review and publish.
-      </p>
       {primary ? null : promptField}
       <div class="agent-prompt-actions">
         <button
@@ -188,16 +185,11 @@ export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: s
     <>
       <section class="landing">
         <header class="landing-hero">
-          <p class="auth-kicker">Open beta</p>
           <h1>
             Keep writing in HackMD.
             <br />
             <em>Publish a real blog.</em>
           </h1>
-          <p class="landing-intro">
-            Your public articles become a searchable blog with RSS, a sitemap, and llms.txt—without
-            changing how you write.
-          </p>
           {agentPrompt ? (
             agentPromptEntry(agentPrompt, true)
           ) : (
@@ -208,20 +200,6 @@ export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: s
             </div>
           )}
         </header>
-        <ul class="landing-points">
-          <li>
-            <strong>Design with AI</strong>
-            <span>Make the layout, type, and colors your own.</span>
-          </li>
-          <li>
-            <strong>Review privately</strong>
-            <span>Try changes in your draft before going live.</span>
-          </li>
-          <li>
-            <strong>Publish when ready</strong>
-            <span>You decide what readers see and when.</span>
-          </li>
-        </ul>
       </section>
       <footer class="landing-footer">
         <a
@@ -258,25 +236,24 @@ export function loginPage(
   },
   analytics?: AnalyticsDocumentConfig,
 ) {
-  const hasSocialLogin = input.github || input.google;
   const agentLogin = /^\/agent\/authorize\?code=[A-F0-9]{10}$/u.test(input.returnTo ?? '');
   if (input.sent)
     return document(
       'Check your email',
       <section class="auth-shell card">
         <header>
-          <p class="auth-kicker">One more step</p>
           <h1>Check your email</h1>
         </header>
         <section class="stack">
           <div class="alert" role="status">
             <section>We sent a one-time sign-in link. It expires in 10 minutes.</section>
           </div>
-          <p class="muted">
-            {agentLogin
-              ? 'Open the link to sign in, then approve your agent’s draft access. You can close this tab.'
-              : 'You can close this tab after opening the link.'}
-          </p>
+          {agentLogin ? (
+            <p class="muted">
+              Open the link to sign in, then approve your agent’s draft access. You can close this
+              tab.
+            </p>
+          ) : null}
           <a
             href={
               input.returnTo
@@ -296,15 +273,10 @@ export function loginPage(
     'Sign in',
     <section class="auth-shell card">
       <header>
-        <p class="auth-kicker">{agentLogin ? 'Agent setup' : 'Welcome back'}</p>
         <h1>Sign in to VibeLog</h1>
-        <p>
-          {agentLogin
-            ? 'Sign in first, then approve your agent’s access to your private draft.'
-            : hasSocialLogin
-              ? 'Choose an account or use a one-time email link.'
-              : 'We’ll email you a one-time sign-in link.'}
-        </p>
+        {agentLogin ? (
+          <p>Sign in first, then approve your agent’s access to your private draft.</p>
+        ) : null}
       </header>
       <section class="stack">
         {input.deleted ? (
@@ -363,9 +335,7 @@ export function guidePage(session?: AppSession, analytics?: AnalyticsDocumentCon
     'Guide',
     <article class="guide">
       <header>
-        <p class="auth-kicker">Writer guide</p>
         <h1>From HackMD to your own blog</h1>
-        <p>Connect your public writing, review the result, and decide when it goes live.</p>
         <a class="btn" href={session ? '/editor' : '/auth/login'}>
           {session ? 'Open your editor' : 'Start publishing'}
         </a>
@@ -471,7 +441,6 @@ const LANGUAGE_SUGGESTIONS = [
 ];
 
 function BlogLanguageField({ value, id, listId }: { value: string; id: string; listId: string }) {
-  const helpId = `${id}-help`;
   return (
     <div class="field">
       <label for={id}>Blog language</label>
@@ -485,14 +454,12 @@ function BlogLanguageField({ value, id, listId }: { value: string; id: string; l
         autocomplete="off"
         autocapitalize="none"
         spellcheck={false}
-        aria-describedby={helpId}
       />
       <datalist id={listId}>
         {LANGUAGE_SUGGESTIONS.map((language) => (
           <option value={language} />
         ))}
       </datalist>
-      <p id={helpId}>Choose a suggestion or enter any valid language tag.</p>
     </div>
   );
 }
@@ -600,9 +567,7 @@ export function onboardingPage(
     'Connect HackMD',
     <section class="auth-shell card">
       <header>
-        <p class="auth-kicker">Start publishing</p>
         <h1>Connect your HackMD</h1>
-        <p id="hackmd-help">VibeLog imports only published articles anyone can read.</p>
       </header>
       <section class="stack">
         {options.deleted ? (
@@ -642,6 +607,7 @@ export function onboardingPage(
               autocapitalize="none"
               spellcheck={false}
               data-blog-handle
+              aria-describedby="blog-address-preview"
               aria-errormessage="blog-address-error"
             />
             <span
@@ -650,12 +616,10 @@ export function onboardingPage(
               data-blog-address-error
               hidden
             ></span>
-            <p>
-              Your site will be{' '}
-              <strong data-blog-hostname data-host-suffix={appHostname}>
+            <p class="field-preview" id="blog-address-preview">
+              <span data-blog-hostname data-host-suffix={appHostname}>
                 {blog?.username ?? 'your-name'}.{appHostname}
-              </strong>
-              .
+              </span>
             </p>
           </div>
           <div class="field">
@@ -669,9 +633,9 @@ export function onboardingPage(
               autocomplete="off"
               autocapitalize="none"
               spellcheck={false}
-              aria-describedby={`hackmd-help${failed ? ' hackmd-error' : ''}`}
+              aria-describedby={failed ? 'hackmd-error' : undefined}
             />
-            <p>
+            <p class="field-preview">
               <a
                 data-hackmd-profile
                 href={
@@ -706,7 +670,6 @@ export function onboardingPage(
         >
           <summary>
             <span>Danger zone</span>
-            <small>Permanent actions</small>
           </summary>
           <div class="disclosure-body">
             <DeletionForms
@@ -1106,23 +1069,19 @@ function PublicationSummary({
 }) {
   const diff = calculatePublicationDiff(blog, activeDesign, published);
   const articleChangeCount = diff.added.length + diff.updated.length + diff.removed.length;
-  const identityLabels = {
-    title: 'title',
-    description: 'description',
-    author: 'author',
-    language: 'language',
-  } as const;
+  if (diff.mode === 'tracked' && !hasChanges) return null;
 
   return (
-    <section class="publication-summary" aria-labelledby="publication-summary-title">
-      <h3 id="publication-summary-title">This release includes</h3>
+    <section class="publication-summary" aria-label="Release changes">
       {diff.mode === 'first' ? (
-        <div class="publication-copy">
-          <p>
-            <strong>Your first release</strong> includes {diff.includedCount} articles.
-          </p>
+        <>
+          <div class="publication-badges">
+            <span class="badge" data-variant="added">
+              {diff.includedCount} articles
+            </span>
+          </div>
           <p>Design: {activeDesign.description}</p>
-        </div>
+        </>
       ) : null}
       {diff.mode === 'legacy' ? (
         <div class="alert">
@@ -1141,67 +1100,53 @@ function PublicationSummary({
       ) : null}
       {diff.mode === 'tracked' ? (
         <>
-          {!hasChanges ? (
-            <p class="muted">There are no unpublished changes.</p>
-          ) : (
-            <>
-              <div class="publication-badges" aria-label="Release change types">
-                {diff.added.length ? (
-                  <span class="badge" data-variant="added">
-                    Added {diff.added.length}
-                  </span>
-                ) : null}
-                {diff.updated.length ? (
-                  <span class="badge" data-variant="updated">
-                    Updated {diff.updated.length}
-                  </span>
-                ) : null}
-                {diff.removed.length ? (
-                  <span class="badge" data-variant="removed">
-                    Removed {diff.removed.length}
-                  </span>
-                ) : null}
-                {diff.identityChanges.length ? (
-                  <span class="badge" data-variant="neutral">
-                    Blog details
-                  </span>
-                ) : null}
-                {diff.themeChanged ? (
-                  <span class="badge" data-variant="neutral">
-                    Design
-                  </span>
-                ) : null}
-                {diff.rebuilt ? (
-                  <span class="badge" data-variant="neutral">
-                    Draft rebuilt
-                  </span>
-                ) : null}
+          <div class="publication-badges" aria-label="Release change types">
+            {diff.added.length ? (
+              <span class="badge" data-variant="added">
+                Added {diff.added.length}
+              </span>
+            ) : null}
+            {diff.updated.length ? (
+              <span class="badge" data-variant="updated">
+                Updated {diff.updated.length}
+              </span>
+            ) : null}
+            {diff.removed.length ? (
+              <span class="badge" data-variant="removed">
+                Removed {diff.removed.length}
+              </span>
+            ) : null}
+            {diff.identityChanges.length ? (
+              <span class="badge" data-variant="neutral">
+                Blog details
+              </span>
+            ) : null}
+            {diff.themeChanged ? (
+              <span class="badge" data-variant="neutral">
+                Design
+              </span>
+            ) : null}
+            {diff.rebuilt ? (
+              <span class="badge" data-variant="neutral">
+                Draft rebuilt
+              </span>
+            ) : null}
+          </div>
+          {diff.themeChanged ? (
+            <p>
+              Design: {liveDesign?.description ?? 'Published design'} → {activeDesign.description}
+            </p>
+          ) : null}
+          {articleChangeCount ? (
+            <details class="publication-details">
+              <summary>Article changes ({articleChangeCount})</summary>
+              <div class="publication-change-list">
+                <PublicationArticles label="Added" posts={diff.added} variant="added" />
+                <PublicationArticles label="Updated" posts={diff.updated} variant="updated" />
+                <PublicationArticles label="Removed" posts={diff.removed} variant="removed" />
               </div>
-              {diff.identityChanges.length ? (
-                <p>
-                  Blog {diff.identityChanges.map((field) => identityLabels[field]).join(', ')}{' '}
-                  changed.
-                </p>
-              ) : null}
-              {diff.themeChanged ? (
-                <p>
-                  Design: {liveDesign?.description ?? 'Published design'} →{' '}
-                  {activeDesign.description}
-                </p>
-              ) : null}
-              {diff.rebuilt ? <p>The draft was rebuilt, including template upgrades.</p> : null}
-              {articleChangeCount ? (
-                <details class="publication-details">
-                  <summary>Article changes ({articleChangeCount})</summary>
-                  <div class="publication-change-list">
-                    <PublicationArticles label="Added" posts={diff.added} variant="added" />
-                    <PublicationArticles label="Updated" posts={diff.updated} variant="updated" />
-                    <PublicationArticles label="Removed" posts={diff.removed} variant="removed" />
-                  </div>
-                </details>
-              ) : null}
-            </>
-          )}
+            </details>
+          ) : null}
         </>
       ) : null}
     </section>
@@ -1264,33 +1209,18 @@ export function editorPage(input: EditorPageInput) {
               </span>
             </div>
           </div>
-          <div class="workspace-status">
-            <p class="workspace-meta">
-              <a
-                href={`https://hackmd.io/@${encodeURIComponent(blog.hackmdUsername)}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                @{blog.hackmdUsername} on HackMD
-              </a>{' '}
-              ·{' '}
-              {blog.state === 'syncing'
-                ? 'Syncing'
-                : blog.lastError
-                  ? 'Last sync failed; your existing draft is safe'
-                  : 'Content synced'}
-            </p>
-            {published ? (
-              <div class="workspace-links">
-                <a href={input.publicUrl} target="_blank" rel="noreferrer">
-                  View live site
-                </a>
-                <span class="muted">
-                  Published {new Date(published.createdAt).toLocaleString('en')}
-                </span>
-              </div>
-            ) : null}
-          </div>
+          {published ? (
+            <a
+              class="btn"
+              data-variant="outline"
+              data-size="compact"
+              href={input.publicUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View live site <span aria-hidden="true">↗</span>
+            </a>
+          ) : null}
           {blog.lastError ? (
             <div class="alert" data-variant="destructive" role="alert">
               <section>{blog.lastError}</section>
@@ -1299,11 +1229,7 @@ export function editorPage(input: EditorPageInput) {
         </header>
 
         <section class="preview-panel" aria-label="Blog preview">
-          <div class="preview-heading">
-            <div>
-              <p class="preview-label">Draft preview</p>
-              <small class="muted">Design changes preview here; sync to update articles.</small>
-            </div>
+          <div class="preview-heading" aria-hidden="true">
             <span class="preview-address">
               {blog.username}.{input.appHostname}
             </span>
@@ -1341,19 +1267,20 @@ export function editorPage(input: EditorPageInput) {
             <div class="card workflow-card">
               <section class="action-row">
                 <div>
-                  <strong>HackMD source</strong>
-                  <p class="muted">
-                    {blog.lastSyncedAt ? (
-                      <>
-                        Last synced{' '}
-                        <time datetime={blog.lastSyncedAt}>
-                          {new Date(blog.lastSyncedAt).toLocaleString('en')}
-                        </time>
-                      </>
-                    ) : (
-                      'No successful sync yet.'
-                    )}
-                  </p>
+                  <a
+                    href={`https://hackmd.io/@${encodeURIComponent(blog.hackmdUsername)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    @{blog.hackmdUsername} on HackMD
+                  </a>
+                  {blog.lastSyncedAt ? (
+                    <p class="muted">
+                      <time datetime={blog.lastSyncedAt}>
+                        {new Date(blog.lastSyncedAt).toLocaleString('en')}
+                      </time>
+                    </p>
+                  ) : null}
                 </div>
                 <form
                   class="compact-stack action-form"
@@ -1396,7 +1323,7 @@ export function editorPage(input: EditorPageInput) {
                       <PreviewPathInput value={input.previewPath} />
                       {blog.contentManifest.length > 0 ? (
                         <fieldset class="fieldset content-list">
-                          <legend>Select articles for the blog</legend>
+                          <legend class="visually-hidden">Select articles for the blog</legend>
                           {blog.contentManifest.map((post) => (
                             <label class="content-choice">
                               <input
@@ -1408,7 +1335,6 @@ export function editorPage(input: EditorPageInput) {
                               <span class="content-choice-main">
                                 <span>{post.title}</span>
                                 <span class="content-dates">
-                                  Published{' '}
                                   <time datetime={post.publishedAt}>
                                     {new Date(post.publishedAt).toLocaleDateString('en')}
                                   </time>
@@ -1438,7 +1364,6 @@ export function editorPage(input: EditorPageInput) {
                       ) : (
                         <p class="muted">This sync contains no articles.</p>
                       )}
-                      <p class="field-hint">New public articles are included by default.</p>
                       <button
                         class="btn"
                         type="submit"
@@ -1456,7 +1381,6 @@ export function editorPage(input: EditorPageInput) {
               <details class="editor-disclosure" data-disclosure-key="blog-details">
                 <summary>
                   <span>Blog details</span>
-                  <small>Title, description, and language</small>
                 </summary>
                 <div class="disclosure-body">
                   <form
@@ -1476,25 +1400,17 @@ export function editorPage(input: EditorPageInput) {
                         minlength={1}
                         maxlength={80}
                         value={blog.title ?? ''}
-                        aria-describedby="blog-title-help"
                         aria-errormessage="blog-title-error"
                       />
                       <span id="blog-title-error" class="validation-error">
                         <span aria-hidden="true">!</span> Enter a title between 1 and 80 characters.
                       </span>
-                      <p id="blog-title-help">Up to 80 characters.</p>
                     </div>
                     <div class="field">
                       <label for="blogDescription">Blog description</label>
-                      <textarea
-                        id="blogDescription"
-                        name="description"
-                        maxlength={240}
-                        aria-describedby="blog-description-help"
-                      >
+                      <textarea id="blogDescription" name="description" maxlength={240}>
                         {blog.description ?? ''}
                       </textarea>
-                      <p id="blog-description-help">Optional, up to 240 characters.</p>
                     </div>
                     <BlogLanguageField
                       id="editorBlogLanguage"
@@ -1542,9 +1458,6 @@ export function editorPage(input: EditorPageInput) {
                 <PreviewPathInput value={input.previewPath} />
 
                 <section class="studio-primary">
-                  <header>
-                    <strong>Generate with AI</strong>
-                  </header>
                   <div class="studio-primary-body">
                     <div class="field">
                       <label for="prompt">Describe the reading experience</label>
@@ -1555,9 +1468,7 @@ export function editorPage(input: EditorPageInput) {
                         minlength={1}
                         maxlength={1000}
                         placeholder="A restrained independent magazine for long articles"
-                        aria-describedby="prompt-help"
                       ></textarea>
-                      <p id="prompt-help">Starts from your saved design.</p>
                     </div>
                     <button
                       class="btn studio-primary-action"
@@ -1569,18 +1480,11 @@ export function editorPage(input: EditorPageInput) {
                       aria-keyshortcuts="Meta+Enter Control+Enter"
                       disabled={busy}
                     >
-                      Generate with AI
+                      Generate with AI <kbd aria-hidden="true">⌘/Ctrl + Enter</kbd>
                     </button>
-                    <p class="shortcut-hint">⌘/Ctrl + Enter</p>
-                    <div
-                      class="design-presets"
-                      role="group"
-                      aria-labelledby="design-presets-title"
-                      aria-describedby="design-presets-help"
-                    >
-                      <p class="design-presets-heading">
-                        <strong id="design-presets-title">Instant styles</strong>
-                        <span id="design-presets-help">Applies right away, no AI wait.</span>
+                    <div class="design-presets" role="group" aria-labelledby="design-presets-title">
+                      <p class="design-presets-heading" id="design-presets-title">
+                        Instant styles
                       </p>
                       <div class="prompt-starters">
                         {Object.entries(DESIGN_PRESETS).map(([id, preset]) => (
@@ -1616,7 +1520,6 @@ export function editorPage(input: EditorPageInput) {
                 <details class="editor-disclosure" data-disclosure-key="fine-tune">
                   <summary>
                     <span>Fine-tune design</span>
-                    <small>Pages, type, color, and spacing</small>
                   </summary>
                   <div class="disclosure-body theme-control-stack">
                     <fieldset class="fieldset">
@@ -1820,9 +1723,6 @@ export function editorPage(input: EditorPageInput) {
                     />
                     <fieldset class="fieldset">
                       <legend>Color palette</legend>
-                      {!controls.palette ? (
-                        <p class="muted">Choose a palette to replace the current AI colors.</p>
-                      ) : null}
                       <div class="choice-grid">
                         {Object.entries(THEME_PALETTES).map(([name, palette]) => (
                           <label class={`choice palette-choice palette-${name}`}>
@@ -1894,7 +1794,6 @@ export function editorPage(input: EditorPageInput) {
                     >
                       <summary>
                         <span>Presentation details</span>
-                        <small>Per-section styling</small>
                       </summary>
                       <div class="disclosure-body style-rule-list">
                         <PresentationControls
@@ -1988,7 +1887,10 @@ export function editorPage(input: EditorPageInput) {
               <details class="editor-disclosure history" data-disclosure-key="design-history">
                 <summary>
                   <span>Design history</span>
-                  <small>{designs.length} versions</small>
+                  <small>
+                    {designs.length}
+                    <span class="visually-hidden"> versions</span>
+                  </small>
                 </summary>
                 <div class="disclosure-body revision-list">
                   {designs.map((theme) => (
@@ -2077,14 +1979,11 @@ export function editorPage(input: EditorPageInput) {
                   </button>
                   <p class="publish-destination">
                     {published ? (
-                      <>
-                        Live at{' '}
-                        <a href={input.publicUrl} target="_blank" rel="noreferrer">
-                          {input.publicUrl}
-                        </a>
-                      </>
+                      <a href={input.publicUrl} target="_blank" rel="noreferrer">
+                        {input.publicUrl}
+                      </a>
                     ) : (
-                      <>Will publish at {input.publicUrl}</>
+                      input.publicUrl
                     )}
                   </p>
                   {published ? (
@@ -2106,7 +2005,10 @@ export function editorPage(input: EditorPageInput) {
                 <details class="editor-disclosure history" data-disclosure-key="release-history">
                   <summary>
                     <span>Release history</span>
-                    <small>{releases.length} saved</small>
+                    <small>
+                      {releases.length}
+                      <span class="visually-hidden"> saved</span>
+                    </small>
                   </summary>
                   <div class="disclosure-body revision-list">
                     {releases.map((release) => {
@@ -2171,7 +2073,6 @@ export function editorPage(input: EditorPageInput) {
           >
             <summary>
               <span>Danger zone</span>
-              <small>Delete this blog or account</small>
             </summary>
             <div class="disclosure-body">
               <DeletionForms
@@ -2200,12 +2101,8 @@ export function deletionPage(
     'Finish deletion',
     <section class="auth-shell card">
       <header>
-        <p class="auth-kicker">Deletion paused</p>
         <h1>Finish removing your data</h1>
-        <p>
-          The public blog is already offline. Retry to remove the remaining stored files and
-          records.
-        </p>
+        <p>The public blog is already offline.</p>
       </header>
       <DeletionForms session={session} blog={blog} appHostname={appHostname} error={error} />
     </section>,
@@ -2225,9 +2122,7 @@ export function operationPage(
     label,
     <section class="auth-shell card">
       <header>
-        <p class="auth-kicker">Background operation</p>
         <h1>{label}</h1>
-        <p>Wait here or return to the editor and check again later.</p>
       </header>
       <section class="stack">
         <OperationOutput operation={operation} successUrl={successUrl} />

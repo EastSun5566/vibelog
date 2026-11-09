@@ -135,9 +135,9 @@ describe('agent design contract', () => {
     expect(sent).toContain('Open the link to sign in, then approve');
     expect(sent).not.toContain('name="email"');
     expect(sent).toContain('returnTo=%2Fagent%2Fauthorize%3Fcode%3DAABBCCDDEE');
-    expect(await htmlOf(loginPage({ github: false, google: false }))).toContain(
-      'We’ll email you a one-time sign-in link.',
-    );
+    const plain = await htmlOf(loginPage({ github: false, google: false }));
+    expect(plain).toContain('Email me a sign-in link');
+    expect(plain).not.toContain('We’ll email you a one-time sign-in link.');
     expect(await htmlOf(loginPage({ ...input, returnTo: 'https://example.com' }))).not.toContain(
       'Sign in first, then approve',
     );
@@ -301,9 +301,10 @@ describe('agent design contract', () => {
     expect(html).toContain('@vibelog/cli@0.1.0');
     expect(html).toContain('<details class="agent-prompt"><summary>View prompt</summary>');
     expect(html).not.toContain('Start publishing');
-    expect(html).toContain('Design with AI');
-    expect(html).toContain('Review privately');
-    expect(html).toContain('Publish when ready');
+    for (const tagline of ['Design with AI', 'Review privately', 'Publish when ready']) {
+      expect(html).not.toContain(tagline);
+    }
+    expect(html).not.toContain('auth-kicker');
     expect(html.match(/data-copy-agent-prompt/gu) ?? []).toHaveLength(1);
   });
   it('keeps the guide concise without removing publishing or hosted AI boundaries', async () => {
