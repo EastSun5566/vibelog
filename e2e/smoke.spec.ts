@@ -805,15 +805,14 @@ test('agent primary entry supports copy, fallback, keyboard and no JavaScript', 
   await page.goto('/');
   const prompt = page.getByLabel('Agent prompt');
   const button = page.getByRole('button', { name: 'Copy agent prompt' });
-  const disclosure = page.locator('.agent-prompt-primary details');
-  const summary = disclosure.locator('summary');
-  await expect(prompt).toBeHidden();
+  const editorLink = page.getByRole('link', { name: 'Use the editor' });
+  await expect(prompt).toBeVisible();
+  await expect(prompt).toHaveJSProperty('readOnly', true);
   await expect(button).toBeVisible();
-  await expect(disclosure).not.toHaveAttribute('open', '');
-  await page.screenshot({
-    path: testInfo.outputPath('agent-entry-collapsed-desktop.png'),
-    fullPage: true,
-  });
+  await expect(page.locator('.agent-prompt-primary details')).toHaveCount(0);
+  await expect(page.getByText('View prompt')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('agent-entry-desktop.png'), fullPage: true });
+  const layoutBefore = await editorLink.boundingBox();
   await button.focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('[data-agent-copy-status]')).toHaveText(
@@ -824,19 +823,15 @@ test('agent primary entry supports copy, fallback, keyboard and no JavaScript', 
       () => (window as typeof window & { agentClipboard?: string }).agentClipboard,
     ),
   ).toBe(await prompt.inputValue());
-  await expect(prompt).toBeHidden();
-  await summary.focus();
-  await page.keyboard.press('Enter');
-  await expect(prompt).toBeVisible();
-  await summary.press('Enter');
-  await expect(prompt).toBeHidden();
+  // Copy feedback has a reserved row, so nothing below it moves.
+  expect(await editorLink.boundingBox()).toEqual(layoutBefore);
   await page.evaluate(() => {
     (window as typeof window & { agentCopyFails?: boolean }).agentCopyFails = true;
   });
   await button.click();
   await expect(prompt).toBeFocused();
-  await expect(disclosure).toHaveAttribute('open', '');
   await expect(page.locator('[data-agent-copy-status]')).toHaveText('Select and copy the prompt.');
+  expect(await editorLink.boundingBox()).toEqual(layoutBefore);
   expect(
     await prompt.evaluate((node: HTMLTextAreaElement) => node.selectionEnd - node.selectionStart),
   ).toBe((await prompt.inputValue()).length);
@@ -845,18 +840,11 @@ test('agent primary entry supports copy, fallback, keyboard and no JavaScript', 
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
   await expect(button).toBeVisible();
-  await expect(prompt).toBeHidden();
-  await page.screenshot({
-    path: testInfo.outputPath('agent-entry-collapsed-mobile.png'),
-    fullPage: true,
-  });
-  await summary.click();
   await expect(prompt).toBeVisible();
   await expect(prompt).toHaveCSS('font-size', '16px');
   await page.screenshot({ path: testInfo.outputPath('agent-entry-mobile.png'), fullPage: true });
   await page.setViewportSize({ width: 1280, height: 720 });
   await expectNoHorizontalOverflow(page);
-  await page.screenshot({ path: testInfo.outputPath('agent-entry-desktop.png'), fullPage: true });
   await page.evaluate(() => {
     document.documentElement.style.zoom = '2';
   });
@@ -888,10 +876,6 @@ test('agent primary entry supports copy, fallback, keyboard and no JavaScript', 
   try {
     const native = await noJs.newPage();
     await native.goto('/');
-    await expect(native.getByLabel('Agent prompt')).toBeHidden();
-    const nativeSummary = native.locator('summary').filter({ hasText: 'View prompt' });
-    await nativeSummary.focus();
-    await native.keyboard.press('Enter');
     await expect(native.getByLabel('Agent prompt')).toBeVisible();
     await expect(native.getByLabel('Agent prompt')).toContainText('@vibelog/cli@0.5.0');
     await native.getByRole('link', { name: 'Use the editor' }).click();
@@ -1347,9 +1331,11 @@ test('agent draft access supports human publish and explicit publishing upgrade'
   await page.goto('/account/agents');
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
-  const promptSummary = page.locator('summary').filter({ hasText: 'Continue with your agent' });
-  await promptSummary.focus();
-  await page.keyboard.press('Enter');
+  // Agent access is the prompt's own page, so it shows without a disclosure.
+  await expect(page.locator('summary').filter({ hasText: 'Continue with your agent' })).toHaveCount(
+    0,
+  );
+  await expect(page.getByLabel('Agent prompt')).toBeVisible();
   await expect(page.getByLabel('Agent prompt')).toContainText(
     'Reuse my existing blog and saved design',
   );

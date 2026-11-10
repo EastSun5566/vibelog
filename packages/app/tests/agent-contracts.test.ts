@@ -271,7 +271,7 @@ describe('agent design contract', () => {
     expect(grants).toContain('data-copy-agent-prompt');
     expect(grants).toContain('/assets/client.js');
     expect(grants).toContain('@vibelog/cli@0.1.0');
-    expect(grants.match(/<details/gu) ?? []).toHaveLength(1);
+    expect(grants).not.toContain('<details');
     expect(grants).not.toContain('View prompt');
     expect(await htmlOf(grantsPage(session, []))).not.toContain('data-copy-agent-prompt');
   });
@@ -294,12 +294,15 @@ describe('agent design contract', () => {
     );
     expect(html).toContain('Keep writing in HackMD.');
     expect(html).toContain('Publish a real blog.');
-    expect(html).toContain('Copy agent prompt');
+    expect(html).toContain('Copy<span class="visually-hidden"> agent prompt</span>');
     expect(html).toContain('Use the editor');
     expect(html).toContain('href="/auth/login"');
     expect(html).toContain('readonly');
     expect(html).toContain('@vibelog/cli@0.1.0');
-    expect(html).toContain('<details class="agent-prompt"><summary>View prompt</summary>');
+    expect(html).toContain('<textarea id="agent-prompt" readonly');
+    expect(html).not.toContain('View prompt');
+    expect(html).not.toContain('<details');
+    expect(html).toContain('aria-label="VibeLog source code on GitHub"');
     expect(html).not.toContain('Start publishing');
     for (const tagline of ['Design with AI', 'Review privately', 'Publish when ready']) {
       expect(html).not.toContain(tagline);

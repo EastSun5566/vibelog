@@ -117,6 +117,10 @@ time { font-variant-numeric: tabular-nums; }
 
 .auth-shell { width: min(100%, 31rem); margin: clamp(2rem, 8vh, 6rem) auto 0; }
 .auth-shell h1 { font-size: 2rem; line-height: 1.1; }
+/* Every action in an auth card spans the card, so sign-in options and decisions line up. */
+.auth-shell form > .btn { width: 100%; }
+/* The pairing code is compared character by character with the CLI. */
+.pairing-code { font: 600 1.6rem/1.2 var(--font-mono); letter-spacing: 0.12em; }
 .auth-shell header > p:last-child { color: var(--muted-foreground); }
 
 .landing { width: min(100%, 66rem); margin: clamp(3rem, 10vh, 7rem) auto 0; }
@@ -126,9 +130,8 @@ time { font-variant-numeric: tabular-nums; }
 .landing-actions { margin-block-start: 2rem; }
 .landing-actions .btn { min-width: 9rem; }
 /* Numbered newspaper columns: heavy ink rule on top, hairline below. */
-.landing-footer { display: flex; justify-content: flex-end; width: min(100%, 66rem); margin: 2rem auto 0; }
-.github-link { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; color: var(--muted-foreground); border-radius: 50%; }
-.github-link:hover { color: var(--foreground); background: var(--muted); }
+.github-link { width: 2.15rem; padding: 0; color: var(--muted-foreground); }
+.github-link:hover { color: var(--foreground); }
 .github-link svg { display: block; }
 
 .analytics-consent {
@@ -179,10 +182,18 @@ time { font-variant-numeric: tabular-nums; }
 .agent-prompt > summary { padding-block: 0.75rem; cursor: pointer; font-weight: 680; }
 /* Let copy fallback focus the prompt immediately after opening it. */
 .agent-prompt::details-content { transition: none; }
-.agent-prompt-primary { margin-block-start: 1.5rem; max-width: 43rem; }
-.agent-prompt textarea { field-sizing: fixed; font-family: var(--font-mono); font-size: 0.86rem; }
-.agent-prompt-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
-.agent-prompt [data-agent-copy-status]:empty { display: none; }
+.agent-prompt-body { display: grid; gap: 0.5rem; }
+.agent-prompt-primary { display: grid; gap: 0.5rem; max-width: 43rem; margin-block-start: 2rem; }
+/* The prompt reads like a code snippet: always visible at a fixed height, with its copy button attached. */
+.prompt-block { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+.prompt-block:has(textarea:focus-visible) { outline: 0.18rem solid var(--ring); outline-offset: 0.18rem; }
+.prompt-block-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.45rem 0.45rem 0.25rem 0.85rem; }
+.prompt-block-bar label { color: var(--muted-foreground); font-size: 0.82rem; font-weight: 600; }
+.prompt-block textarea { display: block; width: 100%; height: 7.5rem; margin: 0; padding: 0 0.85rem 0.75rem; border: 0; outline: 0; background: transparent; box-shadow: none; color: var(--foreground); font: 0.86rem/1.6 var(--font-mono); resize: none; field-sizing: fixed; overflow-y: auto; mask-image: linear-gradient(to bottom, #000 calc(100% - 2rem), transparent); }
+/* Reserve the row so copy feedback never shifts the page. */
+.agent-prompt-footer { display: flex; align-items: center; gap: 0.75rem; min-height: 2.15rem; }
+.agent-prompt-footer output { flex: 1; min-width: 0; color: var(--muted-foreground); font-size: 0.82rem; }
+.agent-prompt-footer .btn { margin-inline-start: auto; }
 .compact-stack { display: grid; gap: 0.6rem; }
 .field { display: grid; gap: 0.38rem; }
 .field > label, .field > span:first-child, .fieldset > legend { color: var(--foreground); font-size: 0.88rem; font-weight: 680; }
@@ -286,9 +297,13 @@ time { font-variant-numeric: tabular-nums; }
 .grant-times dt { color: var(--muted-foreground); }
 .grant-times dd { margin: 0; }
 .revision > div:first-child { min-width: 0; }
-.composition-fields { display: grid; grid-template-columns: repeat(3, minmax(6rem, 1fr)); gap: 0.55rem; margin-block-start: 0.65rem; }
+.composition-list { display: grid; gap: 0.9rem; margin: 0; padding: 0; list-style: none; }
+.composition-item { display: grid; gap: 0.4rem; min-width: 0; }
+.composition-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.composition-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr)); gap: 0.55rem; }
 .composition-fields .field { font-size: 0.78rem; }
-.composition-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.35rem; }
+.composition-actions { display: flex; flex: none; gap: 0.15rem; }
+.composition-actions .btn { width: 2.15rem; padding: 0; }
 .advanced-styles { margin-inline: -1rem; }
 .style-rule-list { gap: 0; }
 .style-rule-controls { min-width: 0; margin: 0; padding: 0.85rem 0; border: 0; }
@@ -349,12 +364,11 @@ time { font-variant-numeric: tabular-nums; }
   .workspace-summary > .btn { justify-self: start; }
   .preview { min-height: 23rem; }
   .choice-grid { grid-template-columns: 1fr; }
+  .prompt-block textarea { font-size: 1rem; }
   .action-row, .theme-summary, .revision, .grant { align-items: flex-start; flex-direction: column; }
   .action-form, .action-form .btn, .revision form, .revision .btn { width: 100%; }
   /* In a column the 13rem basis would become a height. */
   .action-form { flex: none; }
-  .composition-fields { grid-template-columns: 1fr; width: 100%; }
-  .composition-actions { display: grid; grid-template-columns: 1fr; width: 100%; }
   .analytics-consent { align-items: stretch; flex-direction: column; }
   .analytics-consent > footer { justify-content: flex-end; }
 }
