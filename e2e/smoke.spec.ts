@@ -260,7 +260,8 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(page.getByRole('heading', { name: 'Design', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Publish', exact: true })).toBeVisible();
   await expect(page.locator('.workflow-heading p')).toHaveCount(0);
-  await expect(page.locator('#prompt-help')).toHaveText('Starts from your saved design.');
+  await expect(page.locator('#prompt-help')).toHaveCount(0);
+  await expect(page.locator('.auth-kicker')).toHaveCount(0);
   await expect(page.getByText('Current draft design', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('link', { name: '@alice-hackmd on HackMD' })).toHaveAttribute(
     'href',
@@ -273,7 +274,7 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   const appUrl = new URL(page.url());
   const publicSiteUrl = `${appUrl.protocol}//alice.${appUrl.host}`;
   const publishDestination = page.locator('#publish .publish-destination');
-  await expect(publishDestination).toHaveText(`Will publish at ${publicSiteUrl}`);
+  await expect(publishDestination).toHaveText(publicSiteUrl);
   await expect(publishDestination.getByRole('link')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Download site ZIP' })).toHaveCount(0);
   const iframe = page.locator('iframe[data-preview-url]');
@@ -299,7 +300,6 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await markPage(page);
 
   const instantStyles = page.getByRole('group', { name: 'Instant styles' });
-  await expect(instantStyles).toHaveAccessibleDescription('Applies right away, no AI wait.');
   await expect(instantStyles.getByRole('button')).toHaveText([
     'A restrained independent magazine',
     'Make long articles easier to read',
@@ -326,7 +326,9 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
     'aria-keyshortcuts',
     'Meta+Enter Control+Enter',
   );
-  await expect(page.getByText('⌘/Ctrl + Enter')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Generate with AI' }).locator('kbd')).toHaveText(
+    '⌘/Ctrl + Enter',
+  );
 
   let aiPolls = 0;
   await page.route('**/actions/design/generate', (route) =>

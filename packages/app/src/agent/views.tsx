@@ -108,30 +108,43 @@ export function grantsPage(
     <section class="auth-shell card">
       <header>
         <h1>Agent access</h1>
-        <p>Access lasts up to 12 hours. Revoke it at any time.</p>
       </header>
       <section class="stack">
         {grants.length ? (
-          grants.map((grant) => (
-            <section class="stack">
-              <p>
-                {grant.canPublish ? 'Draft and publishing access' : 'Draft access only'}
-                <br />
-                Authorized {grant.createdAt.toISOString()}
-                <br />
-                Expires {grant.expiresAt.toISOString()}
-              </p>
-              <form method="post" action="/account/agents/revoke">
-                <input type="hidden" name="csrfToken" value={session.csrfToken} />
-                <input type="hidden" name="id" value={grant.id} />
-                <button class="btn" data-variant="outline">
-                  Revoke access
-                </button>
-              </form>
-            </section>
-          ))
+          <ul class="grant-list">
+            {grants.map((grant) => (
+              <li class="grant">
+                <div>
+                  <span class="badge" data-variant={grant.canPublish ? 'live' : 'neutral'}>
+                    {grant.canPublish ? 'Draft + publish' : 'Draft only'}
+                  </span>
+                  <dl class="grant-times">
+                    <dt>Authorized</dt>
+                    <dd>
+                      <time datetime={grant.createdAt.toISOString()}>
+                        {grant.createdAt.toLocaleString('en')}
+                      </time>
+                    </dd>
+                    <dt>Expires</dt>
+                    <dd>
+                      <time datetime={grant.expiresAt.toISOString()}>
+                        {grant.expiresAt.toLocaleString('en')}
+                      </time>
+                    </dd>
+                  </dl>
+                </div>
+                <form method="post" action="/account/agents/revoke">
+                  <input type="hidden" name="csrfToken" value={session.csrfToken} />
+                  <input type="hidden" name="id" value={grant.id} />
+                  <button class="btn" data-variant="outline" data-size="compact">
+                    Revoke access
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
         ) : (
-          <p>No active authorizations.</p>
+          <p class="muted">No active authorizations.</p>
         )}
         {prompt ? agentPromptEntry(prompt) : null}
         <a href="/editor">Return to editor</a>
