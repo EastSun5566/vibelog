@@ -223,9 +223,8 @@ time { font-variant-numeric: tabular-nums; }
 .deletion-action { display: grid; gap: 0.9rem; }
 .deletion-action p { margin: 0.25rem 0 0; }
 .workflow-section { display: grid; gap: 0.7rem; scroll-margin-top: 1rem; }
-.workflow-heading { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr); gap: 0.5rem; align-items: baseline; }
+.workflow-heading { display: block; }
 .workflow-heading h2 { margin: 0; font-size: 1.45rem; line-height: 1.15; }
-.step-number { color: var(--muted-foreground); font: italic 500 1.45rem/1.15 var(--font-display); font-variant-numeric: lining-nums; }
 .workflow-card { overflow: hidden; }
 .workflow-card form { display: grid; gap: 0.8rem; }
 .workflow-card > section { padding: 1rem; }
@@ -265,8 +264,6 @@ time { font-variant-numeric: tabular-nums; }
 .design-presets { display: grid; gap: 0.45rem; padding-top: 0.4rem; }
 .design-presets-heading { margin: 0; color: var(--foreground); font-size: 0.82rem; font-weight: 680; }
 .prompt-chip { min-height: 2.25rem; border-radius: 999px; white-space: normal; text-align: start; }
-/* The bolt marks chips that apply a stored style instead of asking the AI. */
-.prompt-chip[data-design-preset]::before { content: "↯" / ""; margin-inline-end: 0.35rem; color: var(--muted-foreground); }
 .studio-primary-action { width: 100%; }
 .btn kbd { margin-inline-start: 0.5rem; padding: 0 0.35rem; border: 1px solid color-mix(in srgb, currentColor 35%, transparent); border-radius: 0.25rem; font: 600 0.68rem/1.5 var(--font-mono); opacity: 0.8; }
 @media (hover: none) { .btn kbd { display: none; } }

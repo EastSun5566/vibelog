@@ -1018,8 +1018,6 @@ function PresentationControls({
   );
 }
 
-const SOURCE_LABEL = { system: 'Initial', ai: 'AI', manual: 'Manual', agent: 'Agent' } as const;
-
 function isUpdatedOnAnotherUtcDate(publishedAt: string, updatedAt?: string): updatedAt is string {
   return Boolean(
     updatedAt &&
@@ -1257,9 +1255,6 @@ export function editorPage(input: EditorPageInput) {
           {input.agentPrompt ? agentPromptEntry(input.agentPrompt) : null}
           <section class="workflow-section" id="content" aria-labelledby="content-title">
             <header class="workflow-heading">
-              <span class="step-number" aria-hidden="true">
-                1
-              </span>
               <div>
                 <h2 id="content-title">Content</h2>
               </div>
@@ -1429,21 +1424,13 @@ export function editorPage(input: EditorPageInput) {
 
           <section class="workflow-section" id="appearance" aria-labelledby="appearance-title">
             <header class="workflow-heading">
-              <span class="step-number" aria-hidden="true">
-                2
-              </span>
               <div>
                 <h2 id="appearance-title">Design</h2>
               </div>
             </header>
             <div class="card workflow-card">
               <section class="theme-summary">
-                <div>
-                  <strong>{activeDesign.description}</strong>
-                </div>
-                <span class="badge" data-variant="neutral">
-                  {SOURCE_LABEL[activeDesign.source]}
-                </span>
+                <strong>{activeDesign.description}</strong>
               </section>
               <form
                 method="post"
@@ -1884,70 +1871,66 @@ export function editorPage(input: EditorPageInput) {
                 </p>
               </form>
 
-              <details class="editor-disclosure history" data-disclosure-key="design-history">
-                <summary>
-                  <span>Design history</span>
-                  <small>
-                    {designs.length}
-                    <span class="visually-hidden"> versions</span>
-                  </small>
-                </summary>
-                <div class="disclosure-body revision-list">
-                  {designs.map((theme) => (
-                    <div class="revision">
-                      <div>
-                        <strong>{theme.description}</strong>
-                        <div class="markers">
-                          <span class="badge" data-variant="neutral">
-                            {SOURCE_LABEL[theme.source]}
-                          </span>
-                          {theme.active ? (
-                            <span class="badge" data-variant="pending">
-                              Previewing
-                            </span>
-                          ) : null}
-                          {published?.themeRevisionId === theme.id ? (
-                            <span class="badge" data-variant="live">
-                              Published
-                            </span>
-                          ) : null}
+              {designs.length > 1 ? (
+                <details class="editor-disclosure history" data-disclosure-key="design-history">
+                  <summary>
+                    <span>Design history</span>
+                    <small>
+                      {designs.length}
+                      <span class="visually-hidden"> versions</span>
+                    </small>
+                  </summary>
+                  <div class="disclosure-body revision-list">
+                    {designs.map((theme) => (
+                      <div class="revision">
+                        <div>
+                          <strong>{theme.description}</strong>
+                          <div class="markers">
+                            {theme.active ? (
+                              <span class="badge" data-variant="pending">
+                                Previewing
+                              </span>
+                            ) : null}
+                            {published?.themeRevisionId === theme.id ? (
+                              <span class="badge" data-variant="live">
+                                Published
+                              </span>
+                            ) : null}
+                          </div>
+                          <small class="muted">
+                            {new Date(theme.createdAt).toLocaleString('en')}
+                          </small>
                         </div>
-                        <small class="muted">
-                          {new Date(theme.createdAt).toLocaleString('en')}
-                        </small>
-                      </div>
-                      {theme.active ? null : (
-                        <form
-                          method="post"
-                          action={`/actions/design/${theme.id}/activate`}
-                          data-operation
-                        >
-                          <input type="hidden" name="csrfToken" value={input.session.csrfToken} />
-                          <PreviewPathInput value={input.previewPath} />
-                          <button
-                            class="btn"
-                            data-variant="outline"
-                            data-size="compact"
-                            type="submit"
-                            disabled={busy}
-                            data-focus-key="activate-theme"
+                        {theme.active ? null : (
+                          <form
+                            method="post"
+                            action={`/actions/design/${theme.id}/activate`}
+                            data-operation
                           >
-                            Preview version
-                          </button>
-                        </form>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </details>
+                            <input type="hidden" name="csrfToken" value={input.session.csrfToken} />
+                            <PreviewPathInput value={input.previewPath} />
+                            <button
+                              class="btn"
+                              data-variant="outline"
+                              data-size="compact"
+                              type="submit"
+                              disabled={busy}
+                              data-focus-key="activate-theme"
+                            >
+                              Preview version
+                            </button>
+                          </form>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
             </div>
           </section>
 
           <section class="workflow-section" id="publish" aria-labelledby="publish-title">
             <header class="workflow-heading">
-              <span class="step-number" aria-hidden="true">
-                3
-              </span>
               <div>
                 <h2 id="publish-title">Publish</h2>
               </div>
@@ -2001,7 +1984,7 @@ export function editorPage(input: EditorPageInput) {
                   />
                 </form>
               </section>
-              {releases.length > 0 ? (
+              {releases.length > 1 ? (
                 <details class="editor-disclosure history" data-disclosure-key="release-history">
                   <summary>
                     <span>Release history</span>
@@ -2018,11 +2001,6 @@ export function editorPage(input: EditorPageInput) {
                           <div>
                             <strong>{theme?.description ?? 'Published design'}</strong>
                             <div class="markers">
-                              {theme ? (
-                                <span class="badge" data-variant="neutral">
-                                  {SOURCE_LABEL[theme.source]}
-                                </span>
-                              ) : null}
                               {release.active ? (
                                 <span class="badge" data-variant="live">
                                   Live now
