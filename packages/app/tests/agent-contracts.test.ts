@@ -271,7 +271,7 @@ describe('agent design contract', () => {
     expect(grants).toContain('data-copy-agent-prompt');
     expect(grants).toContain('/assets/client.js');
     expect(grants).toContain('@vibelog/cli@0.1.0');
-    expect(grants.match(/<details/gu) ?? []).toHaveLength(1);
+    expect(grants).not.toContain('<details');
     expect(grants).not.toContain('View prompt');
     expect(await htmlOf(grantsPage(session, []))).not.toContain('data-copy-agent-prompt');
   });

@@ -58,7 +58,7 @@ export function authorizationPage(session: AppSession, pairing: AgentAuthorizati
         {pairing?.status === 'pending' ? (
           <>
             <p>Approve only if you started this request. Confirm that your CLI shows this code:</p>
-            <strong>{pairing.userCode}</strong>
+            <strong class="pairing-code">{pairing.userCode}</strong>
             <p>
               {pairing.canPublish
                 ? 'Your agent can change your private draft and publish your blog for 12 hours. Ask it explicitly before publishing. It cannot restore, export or delete your blog. You can revoke access at any time.'
@@ -146,7 +146,7 @@ export function grantsPage(
         ) : (
           <p class="muted">No active authorizations.</p>
         )}
-        {prompt ? agentPromptEntry(prompt) : null}
+        {prompt ? agentPromptEntry(prompt, 'page') : null}
         <a href="/editor">Return to editor</a>
       </section>
     </section>,

@@ -117,6 +117,10 @@ time { font-variant-numeric: tabular-nums; }
 
 .auth-shell { width: min(100%, 31rem); margin: clamp(2rem, 8vh, 6rem) auto 0; }
 .auth-shell h1 { font-size: 2rem; line-height: 1.1; }
+/* Every action in an auth card spans the card, so sign-in options and decisions line up. */
+.auth-shell form > .btn { width: 100%; }
+/* The pairing code is compared character by character with the CLI. */
+.pairing-code { font: 600 1.6rem/1.2 var(--font-mono); letter-spacing: 0.12em; }
 .auth-shell header > p:last-child { color: var(--muted-foreground); }
 
 .landing { width: min(100%, 66rem); margin: clamp(3rem, 10vh, 7rem) auto 0; }

@@ -1331,9 +1331,11 @@ test('agent draft access supports human publish and explicit publishing upgrade'
   await page.goto('/account/agents');
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
-  const promptSummary = page.locator('summary').filter({ hasText: 'Continue with your agent' });
-  await promptSummary.focus();
-  await page.keyboard.press('Enter');
+  // Agent access is the prompt's own page, so it shows without a disclosure.
+  await expect(page.locator('summary').filter({ hasText: 'Continue with your agent' })).toHaveCount(
+    0,
+  );
+  await expect(page.getByLabel('Agent prompt')).toBeVisible();
   await expect(page.getByLabel('Agent prompt')).toContainText(
     'Reuse my existing blog and saved design',
   );

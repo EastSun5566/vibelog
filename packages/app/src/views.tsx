@@ -148,19 +148,13 @@ export function document(
   );
 }
 
-export function agentPromptEntry(prompt: string, primary = false) {
+export function agentPromptEntry(prompt: string, placement: 'landing' | 'editor' | 'page') {
   const content = (
     <>
       <div class="prompt-block">
         <div class="prompt-block-bar">
           <label for="agent-prompt">Agent prompt</label>
-          <button
-            class="btn"
-            data-variant={primary ? undefined : 'outline'}
-            data-size="compact"
-            type="button"
-            data-copy-agent-prompt
-          >
+          <button class="btn" data-size="compact" type="button" data-copy-agent-prompt>
             Copy<span class="visually-hidden"> agent prompt</span>
           </button>
         </div>
@@ -170,7 +164,7 @@ export function agentPromptEntry(prompt: string, primary = false) {
       </div>
       <div class="agent-prompt-footer">
         <output data-agent-copy-status aria-live="polite"></output>
-        {primary ? (
+        {placement === 'landing' ? (
           <a class="btn" data-variant="ghost" data-size="compact" href="/auth/login">
             Use the editor
           </a>
@@ -178,15 +172,18 @@ export function agentPromptEntry(prompt: string, primary = false) {
       </div>
     </>
   );
-  return primary ? (
-    <section class="agent-prompt agent-prompt-primary" data-agent-prompt>
-      {content}
-    </section>
-  ) : (
+  return placement === 'editor' ? (
     <details class="agent-prompt" data-agent-prompt data-disclosure-key="agent">
       <summary>Continue with your agent</summary>
       <div class="agent-prompt-body">{content}</div>
     </details>
+  ) : (
+    <section
+      class={`agent-prompt ${placement === 'landing' ? 'agent-prompt-primary' : 'agent-prompt-body'}`}
+      data-agent-prompt
+    >
+      {content}
+    </section>
   );
 }
 
@@ -201,7 +198,7 @@ export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: s
           <em>Publish a real blog.</em>
         </h1>
         {agentPrompt ? (
-          agentPromptEntry(agentPrompt, true)
+          agentPromptEntry(agentPrompt, 'landing')
         ) : (
           <div class="landing-actions">
             <a class="btn" href="/auth/login">
@@ -1244,7 +1241,7 @@ export function editorPage(input: EditorPageInput) {
         </section>
 
         <section class="controls" aria-label="Blog controls">
-          {input.agentPrompt ? agentPromptEntry(input.agentPrompt) : null}
+          {input.agentPrompt ? agentPromptEntry(input.agentPrompt, 'editor') : null}
           <section class="workflow-section" id="content" aria-labelledby="content-title">
             <header class="workflow-heading">
               <div>
@@ -2080,7 +2077,9 @@ export function deletionPage(
         <h1>Finish removing your data</h1>
         <p>The public blog is already offline.</p>
       </header>
-      <DeletionForms session={session} blog={blog} appHostname={appHostname} error={error} />
+      <section>
+        <DeletionForms session={session} blog={blog} appHostname={appHostname} error={error} />
+      </section>
     </section>,
     session,
   );
