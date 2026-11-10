@@ -62,6 +62,23 @@ export function document(
               <a class="btn" data-variant="ghost" data-size="compact" href="/guide">
                 Guide
               </a>
+              <a
+                class="btn github-link"
+                data-variant="ghost"
+                data-size="compact"
+                href="https://github.com/EastSun5566/vibelog"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="VibeLog source code on GitHub"
+                title="VibeLog is open source on GitHub"
+              >
+                <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.5-2.01.38-2.53-.5-2.69-.96-.09-.24-.48-.97-.82-1.16-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.83.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.21-3.64-.91-3.64-4.02 0-.89.31-1.62.82-2.19-.08-.21-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.45 7.45 0 0 1 8 3.91c.68 0 1.36.09 2 .27 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.95.08 2.16.51.57.82 1.3.82 2.19 0 3.12-1.87 3.81-3.65 4.02.29.25.54.74.54 1.5 0 1.08-.01 1.95-.01 2.22 0 .22.15.47.55.39A8.14 8.14 0 0 0 16 8.13C16 3.64 12.42 0 8 0Z"
+                  />
+                </svg>
+              </a>
               {session ? (
                 <>
                   <a class="btn" data-variant="ghost" data-size="compact" href="/account/agents">
@@ -132,40 +149,34 @@ export function document(
 }
 
 export function agentPromptEntry(prompt: string, primary = false) {
-  const promptField = (
-    <div class="field">
-      <label for="agent-prompt">Agent prompt</label>
-      <textarea id="agent-prompt" readonly rows={4}>
-        {prompt}
-      </textarea>
-    </div>
-  );
   const content = (
-    <div class="stack">
-      {primary ? null : promptField}
-      <div class="agent-prompt-actions">
-        <button
-          class="btn"
-          data-variant={primary ? undefined : 'outline'}
-          type="button"
-          data-copy-agent-prompt
-        >
-          Copy agent prompt
-        </button>
+    <>
+      <div class="prompt-block">
+        <div class="prompt-block-bar">
+          <label for="agent-prompt">Agent prompt</label>
+          <button
+            class="btn"
+            data-variant={primary ? undefined : 'outline'}
+            data-size="compact"
+            type="button"
+            data-copy-agent-prompt
+          >
+            Copy<span class="visually-hidden"> agent prompt</span>
+          </button>
+        </div>
+        <textarea id="agent-prompt" readonly rows={5} spellcheck={false}>
+          {prompt}
+        </textarea>
+      </div>
+      <div class="agent-prompt-footer">
+        <output data-agent-copy-status aria-live="polite"></output>
         {primary ? (
-          <a class="btn" data-variant="outline" href="/auth/login">
+          <a class="btn" data-variant="ghost" data-size="compact" href="/auth/login">
             Use the editor
           </a>
         ) : null}
       </div>
-      <output data-agent-copy-status aria-live="polite"></output>
-      {primary ? (
-        <details class="agent-prompt">
-          <summary>View prompt</summary>
-          {promptField}
-        </details>
-      ) : null}
-    </div>
+    </>
   );
   return primary ? (
     <section class="agent-prompt agent-prompt-primary" data-agent-prompt>
@@ -174,7 +185,7 @@ export function agentPromptEntry(prompt: string, primary = false) {
   ) : (
     <details class="agent-prompt" data-agent-prompt data-disclosure-key="agent">
       <summary>Continue with your agent</summary>
-      {content}
+      <div class="agent-prompt-body">{content}</div>
     </details>
   );
 }
@@ -182,43 +193,24 @@ export function agentPromptEntry(prompt: string, primary = false) {
 export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: string) {
   return document(
     'Publish your HackMD as a blog',
-    <>
-      <section class="landing">
-        <header class="landing-hero">
-          <h1>
-            Keep writing in HackMD.
-            <br />
-            <em>Publish a real blog.</em>
-          </h1>
-          {agentPrompt ? (
-            agentPromptEntry(agentPrompt, true)
-          ) : (
-            <div class="landing-actions">
-              <a class="btn" href="/auth/login">
-                Start publishing
-              </a>
-            </div>
-          )}
-        </header>
-      </section>
-      <footer class="landing-footer">
-        <a
-          class="github-link"
-          href="https://github.com/EastSun5566/vibelog"
-          target="_blank"
-          rel="noreferrer"
-          aria-label="VibeLog source code on GitHub"
-          title="VibeLog is open source on GitHub"
-        >
-          <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.5-2.01.38-2.53-.5-2.69-.96-.09-.24-.48-.97-.82-1.16-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.83.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.21-3.64-.91-3.64-4.02 0-.89.31-1.62.82-2.19-.08-.21-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.45 7.45 0 0 1 8 3.91c.68 0 1.36.09 2 .27 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.95.08 2.16.51.57.82 1.3.82 2.19 0 3.12-1.87 3.81-3.65 4.02.29.25.54.74.54 1.5 0 1.08-.01 1.95-.01 2.22 0 .22.15.47.55.39A8.14 8.14 0 0 0 16 8.13C16 3.64 12.42 0 8 0Z"
-            />
-          </svg>
-        </a>
-      </footer>
-    </>,
+    <section class="landing">
+      <header class="landing-hero">
+        <h1>
+          Keep writing in HackMD.
+          <br />
+          <em>Publish a real blog.</em>
+        </h1>
+        {agentPrompt ? (
+          agentPromptEntry(agentPrompt, true)
+        ) : (
+          <div class="landing-actions">
+            <a class="btn" href="/auth/login">
+              Start publishing
+            </a>
+          </div>
+        )}
+      </header>
+    </section>,
     undefined,
     Boolean(agentPrompt),
     analytics,
@@ -1521,66 +1513,72 @@ export function editorPage(input: EditorPageInput) {
                           ['magazine', 'Magazine'],
                         ]}
                       />
-                      <ol class="revision-list">
+                      <ol class="composition-list">
                         {homeEntries.map(
                           ({ id, index, region, count, section }) =>
                             section && (
-                              <li class="revision">
-                                <div>
+                              <li class="composition-item">
+                                <div class="composition-head">
                                   <strong>
                                     {section.type} · {id}
                                   </strong>
-                                  <HomeSectionControls
-                                    id={id}
-                                    section={section}
-                                    region={region}
-                                    regions={Object.keys(home.regions)}
-                                  />
+                                  <span class="composition-actions">
+                                    <button
+                                      class="btn"
+                                      data-variant="ghost"
+                                      data-size="compact"
+                                      type="submit"
+                                      formnovalidate
+                                      name="compositionAction"
+                                      value={`up:${id}`}
+                                      title="Move up"
+                                      data-operation-submit
+                                      data-feedback-target="fine-tune"
+                                      disabled={busy || index === 0}
+                                    >
+                                      <span aria-hidden="true">↑</span>
+                                      <span class="visually-hidden">Move up</span>
+                                    </button>
+                                    <button
+                                      class="btn"
+                                      data-variant="ghost"
+                                      data-size="compact"
+                                      type="submit"
+                                      formnovalidate
+                                      name="compositionAction"
+                                      value={`down:${id}`}
+                                      title="Move down"
+                                      data-operation-submit
+                                      data-feedback-target="fine-tune"
+                                      disabled={busy || index === count - 1}
+                                    >
+                                      <span aria-hidden="true">↓</span>
+                                      <span class="visually-hidden">Move down</span>
+                                    </button>
+                                    <button
+                                      class="btn"
+                                      data-variant="ghost"
+                                      data-size="compact"
+                                      type="submit"
+                                      formnovalidate
+                                      name="compositionAction"
+                                      value={`remove:${id}`}
+                                      title="Remove"
+                                      data-operation-submit
+                                      data-feedback-target="fine-tune"
+                                      disabled={busy}
+                                    >
+                                      <span aria-hidden="true">✕</span>
+                                      <span class="visually-hidden">Remove</span>
+                                    </button>
+                                  </span>
                                 </div>
-                                <span class="composition-actions">
-                                  <button
-                                    class="btn"
-                                    data-variant="outline"
-                                    data-size="compact"
-                                    type="submit"
-                                    formnovalidate
-                                    name="compositionAction"
-                                    value={`up:${id}`}
-                                    data-operation-submit
-                                    data-feedback-target="fine-tune"
-                                    disabled={busy || index === 0}
-                                  >
-                                    Move up
-                                  </button>
-                                  <button
-                                    class="btn"
-                                    data-variant="outline"
-                                    data-size="compact"
-                                    type="submit"
-                                    formnovalidate
-                                    name="compositionAction"
-                                    value={`down:${id}`}
-                                    data-operation-submit
-                                    data-feedback-target="fine-tune"
-                                    disabled={busy || index === count - 1}
-                                  >
-                                    Move down
-                                  </button>
-                                  <button
-                                    class="btn"
-                                    data-variant="ghost"
-                                    data-size="compact"
-                                    type="submit"
-                                    formnovalidate
-                                    name="compositionAction"
-                                    value={`remove:${id}`}
-                                    data-operation-submit
-                                    data-feedback-target="fine-tune"
-                                    disabled={busy}
-                                  >
-                                    Remove
-                                  </button>
-                                </span>
+                                <HomeSectionControls
+                                  id={id}
+                                  section={section}
+                                  region={region}
+                                  regions={Object.keys(home.regions)}
+                                />
                               </li>
                             ),
                         )}
