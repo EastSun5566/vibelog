@@ -242,16 +242,15 @@ function reject(code: string, message: string) {
   };
 }
 /**
- * These routes have always read their body as JSON whatever the Content-Type said. Label such a
- * request as JSON before the generated media-type check, which would otherwise reject it with 415.
+ * These routes have always read their body as JSON whatever the Content-Type said. Normalize the
+ * header before the generated media-type check, which would otherwise reject some requests with
+ * 415. No pattern matching: any header the check might refuse would reintroduce a gap.
  */
 const lenientJsonBody: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
-  if (!/^application\/([a-z-.]+\+)?json\b/iu.test(c.req.header('content-type') ?? '')) {
-    const body = await c.req.text();
-    const headers = new Headers(c.req.raw.headers);
-    headers.set('content-type', 'application/json');
-    c.req.raw = new Request(c.req.raw.url, { method: c.req.method, headers, body });
-  }
+  const body = await c.req.text();
+  const headers = new Headers(c.req.raw.headers);
+  headers.set('content-type', 'application/json');
+  c.req.raw = new Request(c.req.raw.url, { method: c.req.method, headers, body });
   await next();
 };
 /** Hono rejects unparseable JSON itself; report it as the route's own validation error. */

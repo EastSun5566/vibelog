@@ -226,6 +226,15 @@ describe('agent API errors keep their codes', () => {
     expect(createPairing).toHaveBeenLastCalledWith(true);
     expect((await post('/pairings', '{}', {})).status).toBe(201);
     expect(createPairing).toHaveBeenLastCalledWith(false);
+    for (const type of [
+      'application/json ;charset=utf-8',
+      'application/json-patch',
+      'APPLICATION/JSON',
+    ])
+      expect(
+        (await post('/pairings', '{"canPublish":true}', { 'Content-Type': type })).status,
+        type,
+      ).toBe(201);
     expect(await errorOf(await post('/pairings', 'garbage', plain))).toEqual({
       status: 400,
       code: 'invalid_pairing',
