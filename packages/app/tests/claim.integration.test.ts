@@ -216,5 +216,6 @@ describe.skipIf(!url)('claiming /@name with a HackMD token', () => {
       body: new URLSearchParams({ hackmdToken: `token-for-${name}`, username: 'fine-name' }),
     });
     expect(forged.status).toBe(403);
+    expect((await app.request('/@%E0%A4%A/edit', { headers })).status).toBe(404);
   });
 });

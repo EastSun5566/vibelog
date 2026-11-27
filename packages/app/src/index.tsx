@@ -660,9 +660,14 @@ export function createApp(options: CreateAppOptions) {
   });
   /** The /@name the writer wants to claim, or a 404 for anything that is not a HackMD name. */
   const claimedName = (c: AppContext) => {
-    const parsed = hackmdNameSchema.safeParse(
-      decodeURIComponent(c.req.param('handle')?.slice(1) ?? ''),
-    );
+    let raw: string;
+    try {
+      raw = decodeURIComponent(c.req.param('handle')?.slice(1) ?? '');
+    } catch {
+      // A malformed percent-escape is just another name that does not exist.
+      throw new AppError('not_found', 'Page not found', 404);
+    }
+    const parsed = hackmdNameSchema.safeParse(raw);
     if (!parsed.success) throw new AppError('not_found', 'Page not found', 404);
     return parsed.data;
   };
