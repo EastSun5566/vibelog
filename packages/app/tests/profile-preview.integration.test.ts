@@ -28,6 +28,7 @@ const result = (draft: string) => ({
   draftArtifactId: draft,
   design: DEFAULT_DESIGN_V2,
   designSource: 'preset' as const,
+  language: 'en',
   title: "Alice's blog",
   author: 'Alice',
   contentProfile,

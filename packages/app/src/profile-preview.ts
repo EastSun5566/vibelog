@@ -82,6 +82,7 @@ export interface ProfilePreviewRecord {
   draftArtifactId: string | null;
   design: BlogDesignSpecV2 | null;
   designSource: 'preset' | 'ai' | null;
+  language: string | null;
   title: string | null;
   author: string | null;
   contentProfile: ContentProfile | null;
@@ -95,6 +96,7 @@ export interface CompletedPreview {
   draftArtifactId: string;
   design: BlogDesignSpecV2;
   designSource: 'preset' | 'ai';
+  language: string;
   title: string;
   author: string;
   contentProfile: ContentProfile;
@@ -122,6 +124,7 @@ function mapPreview(row: typeof schema.profilePreviews.$inferSelect): ProfilePre
     draftArtifactId: row.draftArtifactId,
     design: row.design ? validateBlogDesignSpecV2(row.design) : null,
     designSource: row.designSource,
+    language: row.language,
     title: row.title,
     author: row.author,
     contentProfile: row.contentProfile ? contentProfileSchema.parse(row.contentProfile) : null,
@@ -337,6 +340,7 @@ export class ProfilePreviewStore {
           draftArtifactId: result.draftArtifactId,
           design: validateBlogDesignSpecV2(result.design),
           designSource: result.designSource,
+          language: result.language,
           title: result.title,
           author: result.author,
           contentProfile: result.contentProfile,

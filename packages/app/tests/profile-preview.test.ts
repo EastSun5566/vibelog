@@ -49,6 +49,7 @@ const record = (overrides: Partial<ProfilePreviewRecord> = {}): ProfilePreviewRe
   draftArtifactId: null,
   design: null,
   designSource: null,
+  language: null,
   title: null,
   author: null,
   contentProfile: null,

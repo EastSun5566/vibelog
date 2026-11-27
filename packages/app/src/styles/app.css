@@ -387,6 +387,7 @@ time { font-variant-numeric: tabular-nums; }
 .profile-preview-status > h1 { padding-block-start: 1.1rem; font-family: var(--font-display); font-size: 1.6rem; font-weight: 560; letter-spacing: -0.015em; line-height: 1.15; }
 .profile-preview-status > p { padding-block: 0.6rem 1.1rem; color: var(--muted-foreground); }
 .profile-preview-status > progress { display: block; width: calc(100% - 2.2rem); height: 0.3rem; margin: 0.9rem 1.1rem 0; padding: 0; border: 0; accent-color: var(--foreground); }
+.claim-steps { display: grid; gap: 0.4rem; margin: 0; padding-inline-start: 1.25rem; color: var(--muted-foreground); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }

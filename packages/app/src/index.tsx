@@ -26,12 +26,14 @@ import { findArtifactObject } from './artifact-serving.js';
 import { createAuth, emailRateLimitKey, readSession, type AppVariables } from './auth.js';
 import { blogIdentitySchema, blogLanguageSchema } from './blog-sync.js';
 import { loadAppConfig, type AppConfig } from './config.js';
+import { HackmdTokenError, hackmdTokenOwner } from './hackmd-identity.js';
 import {
   AiQuotaExceededError,
   AppDatabase,
   BlogAddressTakenError,
   BlogAlreadyExistsError,
   BlogConnectionConflictError,
+  HackmdAlreadyClaimedError,
   type BlogRecord,
   type OperationRecord,
   type OperationType,
@@ -74,6 +76,7 @@ import {
   landingPage,
   loginPage,
   onboardingPage,
+  claimPage,
   operationPage,
   profilePreviewPage,
   type AnalyticsDocumentConfig,
@@ -453,7 +456,9 @@ export function createApp(options: CreateAppOptions) {
     return { measurementId: config.googleAnalyticsMeasurementId, nonce };
   };
   const returnTo = (value: string | undefined) =>
-    value === '/account/agents' || /^\/agent\/authorize\?code=[A-F0-9]{10}$/u.test(value ?? '')
+    value === '/account/agents' ||
+    /^\/agent\/authorize\?code=[A-F0-9]{10}$/u.test(value ?? '') ||
+    /^\/@[A-Za-z0-9_.~%-]{1,300}\/edit$/u.test(value ?? '')
       ? (value ?? '/editor')
       : '/editor';
   app.get('/auth/login', async (c) =>
@@ -653,12 +658,137 @@ export function createApp(options: CreateAppOptions) {
           stage: preview?.stage,
           message: preview?.errorMessage,
           frameUrl: ready && frameOrigin ? `${frameOrigin}/` : undefined,
-          claimUrl: '/editor',
+          claimUrl: `/@${encodeURIComponent(preview?.hackmdUsername ?? name)}/edit`,
         },
         analyticsDocument(c),
       ),
       limited ? 429 : 200,
     );
+  });
+  /** The /@name the writer wants to claim, or a 404 for anything that is not a HackMD name. */
+  const claimedName = (c: AppContext) => {
+    const parsed = hackmdNameSchema.safeParse(
+      decodeURIComponent(c.req.param('handle')?.slice(1) ?? ''),
+    );
+    if (!parsed.success) throw new AppError('not_found', 'Page not found', 404);
+    return parsed.data;
+  };
+  const claimSession = async (c: AppContext) => {
+    const session = await readSession(c, auth, config);
+    if (session) c.set('session', session);
+    return session;
+  };
+  /** Where a signed-in writer goes for /@name/edit, or the claim page state to show. */
+  const claimState = async (userId: string, name: string) => {
+    const blog = await database.getBlogForUser(userId);
+    if (blog)
+      return previewNameKey(blog.hackmdUsername) === previewNameKey(name)
+        ? ('editor' as const)
+        : ('other-blog' as const);
+    return (await database.getVerifiedBlogByHackmd(name))
+      ? ('claimed' as const)
+      : ('verify' as const);
+  };
+  const suggestedHandle = (name: string) => {
+    const handle = previewNameKey(name)
+      .replaceAll(/[^a-z0-9-]+/gu, '-')
+      .replaceAll(/^-+|-+$/gu, '');
+    return handleInput.safeParse(handle).success && !isReservedBlogHandle(handle)
+      ? handle
+      : undefined;
+  };
+  app.get('/:handle{@[^/]+}/edit', async (c) => {
+    const name = claimedName(c);
+    const session = await claimSession(c);
+    if (!session) return c.redirect(`/auth/login?returnTo=${encodeURIComponent(c.req.path)}`);
+    c.header('Cache-Control', 'private, no-store');
+    const state = await claimState(session.user.id, name);
+    if (state === 'editor') return c.redirect('/editor');
+    const preview = await previews.get(previewNameKey(name));
+    return c.html(
+      claimPage(session, {
+        name: preview?.hackmdUsername ?? name,
+        state,
+        appHostname: config.appHostname,
+        handle: suggestedHandle(name),
+        language: preview?.language ?? undefined,
+      }),
+    );
+  });
+  app.post('/:handle{@[^/]+}/edit', async (c) => {
+    const name = claimedName(c);
+    const session = await claimSession(c);
+    if (!session) throw new AppError('unauthorized', 'Sign in to continue.', 401);
+    const body = await mutationBody(c);
+    c.header('Cache-Control', 'private, no-store');
+    const state = await claimState(session.user.id, name);
+    if (state === 'editor') return c.redirect('/editor', 303);
+    const preview = await previews.get(previewNameKey(name));
+    const input = z
+      .object({
+        hackmdToken: z.string().trim().min(8).max(512),
+        username: handleInput,
+        language: blogLanguageSchema,
+      })
+      .safeParse({
+        hackmdToken: formValue(body, 'hackmdToken'),
+        username: formValue(body, 'username'),
+        language: formValue(body, 'language'),
+      });
+    const view = {
+      name: preview?.hackmdUsername ?? name,
+      state,
+      appHostname: config.appHostname,
+      handle: formValue(body, 'username')?.trim()
+        ? formValue(body, 'username')
+        : suggestedHandle(name),
+      language: formValue(body, 'language') ?? preview?.language ?? undefined,
+    };
+    const fail = (error: string, status: 400 | 403 | 409 | 429 | 502) =>
+      c.html(claimPage(session, { ...view, error }), status);
+    if (state !== 'verify') return c.html(claimPage(session, view), 409);
+    if (!input.success || isReservedBlogHandle(input.data.username))
+      return fail(
+        'Paste the token and choose a blog address of 3 to 32 letters, digits or hyphens.',
+        400,
+      );
+    if (!(await database.consumeRateLimit(`claim:${session.user.id}`, 10, 60 * 60)))
+      return fail('Too many attempts. Please wait an hour and try again.', 429);
+    let owner: string;
+    try {
+      owner = await hackmdTokenOwner(input.data.hackmdToken, { apiUrl: config.hackmdApiUrl });
+    } catch (error) {
+      if (error instanceof HackmdTokenError)
+        return fail(error.message, error.reason === 'invalid' ? 403 : 502);
+      throw error;
+    }
+    if (previewNameKey(owner) !== previewNameKey(name))
+      return fail(`This token belongs to @${owner}, not @${name}. Use a token from @${name}.`, 403);
+    try {
+      const { operation } = await database.createBlog(
+        session.user.id,
+        input.data.username,
+        owner,
+        input.data.language,
+        preview?.design
+          ? {
+              design: {
+                config: preview.design,
+                source: preview.designSource === 'ai' ? 'ai' : 'system',
+              },
+            }
+          : {},
+      );
+      return await dispatchAndRedirect(c, operation);
+    } catch (error) {
+      if (error instanceof BlogAddressTakenError)
+        return fail('That blog address is taken. Choose another one.', 409);
+      if (error instanceof HackmdAlreadyClaimedError)
+        return c.html(claimPage(session, { ...view, state: 'claimed' }), 409);
+      if (error instanceof BlogAlreadyExistsError)
+        return c.html(claimPage(session, { ...view, state: 'other-blog' }), 409);
+      throw error;
+    }
   });
   const agentRepository = new AgentRepository(database);
   app.get('/agent-setup/prompt.md', (c) => {

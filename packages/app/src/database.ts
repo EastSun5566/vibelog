@@ -54,6 +54,8 @@ export interface BlogRecord {
   contentProfile: ContentProfile | null;
   contentManifest: SyncedPostSummary[] | null;
   lastSyncedAt: string | null;
+  /** When the writer proved they own the HackMD account; null for older blogs. */
+  hackmdVerifiedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -258,6 +260,7 @@ const mapBlog = (row: typeof schema.blogs.$inferSelect): BlogRecord => ({
   contentProfile: row.contentProfile ? contentProfileSchema.parse(row.contentProfile) : null,
   contentManifest: row.contentManifest ? contentManifestSchema.parse(row.contentManifest) : null,
   lastSyncedAt: iso(row.lastSyncedAt),
+  hackmdVerifiedAt: iso(row.hackmdVerifiedAt),
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
 });
@@ -321,6 +324,28 @@ function newOperation(
     createdAt: timestamp,
     updatedAt: timestamp,
   };
+}
+function violates(error: unknown, constraint: string): boolean {
+  const cause = error instanceof Error && error.cause ? error.cause : error;
+  return Boolean(
+    cause &&
+    typeof cause === 'object' &&
+    'code' in cause &&
+    cause.code === '23505' &&
+    'constraint' in cause &&
+    cause.constraint === constraint,
+  );
+}
+export class HackmdAlreadyClaimedError extends Error {
+  constructor() {
+    super('This HackMD account already backs another VibeLog blog');
+    this.name = 'HackmdAlreadyClaimedError';
+  }
+}
+/** Options for a blog whose writer proved they own the HackMD account. */
+export interface VerifiedBlogOptions {
+  /** The design the writer already saw in their /@name preview. */
+  design?: { config: BlogDesignSpecV2; source: 'system' | 'ai' };
 }
 function hasBlogAddressConflict(error: unknown): boolean {
   const cause = error instanceof Error && error.cause ? error.cause : error;
@@ -397,9 +422,39 @@ export class AppDatabase {
     username: string,
     hackmdUsername: string,
     language = 'en',
+    verified?: VerifiedBlogOptions,
   ): Promise<{ blog: BlogRecord; operation: OperationRecord }> {
     const id = randomUUID();
     const op = newOperation(userId, id, 'sync', { intent: 'content', excludedSlugs: [] });
+    const design = verified?.design
+      ? { ...verified.design, config: validateBlogDesignSpecV2(verified.design.config) }
+      : { config: DEFAULT_DESIGN_V2, source: 'system' as const };
+    try {
+      return await this.insertBlog(
+        userId,
+        id,
+        username,
+        hackmdUsername,
+        language,
+        op,
+        design,
+        verified,
+      );
+    } catch (error) {
+      if (violates(error, 'blogs_verified_hackmd_unique')) throw new HackmdAlreadyClaimedError();
+      throw error;
+    }
+  }
+  private insertBlog(
+    userId: string,
+    id: string,
+    username: string,
+    hackmdUsername: string,
+    language: string,
+    op: ReturnType<typeof newOperation>,
+    design: { config: BlogDesignSpecV2; source: 'system' | 'ai' },
+    verified: VerifiedBlogOptions | undefined,
+  ): Promise<{ blog: BlogRecord; operation: OperationRecord }> {
     return this.db.transaction(async (tx) => {
       // Share the agent admission lock while allowing existing operations' foreign-key checks.
       await tx
@@ -414,22 +469,43 @@ export class AppDatabase {
       if (existing) throw new BlogAlreadyExistsError();
       const [blog] = await tx
         .insert(schema.blogs)
-        .values({ id, userId, username, hackmdUsername, language, state: 'syncing' })
+        .values({
+          id,
+          userId,
+          username,
+          hackmdUsername,
+          language,
+          state: 'syncing',
+          hackmdVerifiedAt: verified ? new Date() : null,
+        })
         .onConflictDoNothing({ target: schema.blogs.username })
         .returning();
       if (!blog) throw new BlogAddressTakenError(username);
       await tx.insert(schema.themeRevisions).values({
         id: randomUUID(),
         blogId: id,
-        config: DEFAULT_DESIGN_V2,
-        description: DEFAULT_DESIGN_V2.description,
-        source: 'system',
+        config: design.config,
+        description: design.config.description,
+        source: design.source,
         active: true,
       });
       const [operation] = await tx.insert(schema.operations).values(op).returning();
       await insertOutbox(tx, operation.id);
       return { blog: mapBlog(blog), operation: mapOperation(operation) };
     });
+  }
+  /** The blog whose writer proved they own this HackMD account, if any. */
+  async getVerifiedBlogByHackmd(hackmdUsername: string): Promise<BlogRecord | null> {
+    const [row] = await this.db
+      .select()
+      .from(schema.blogs)
+      .where(
+        and(
+          sql`lower(${schema.blogs.hackmdUsername}) = lower(${hackmdUsername})`,
+          sql`${schema.blogs.hackmdVerifiedAt} is not null`,
+        ),
+      );
+    return row ? mapBlog(row) : null;
   }
   async getBlogForUser(userId: string): Promise<BlogRecord | null> {
     const [row] = await this.db.select().from(schema.blogs).where(eq(schema.blogs.userId, userId));

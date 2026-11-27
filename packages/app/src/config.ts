@@ -47,6 +47,8 @@ export interface AppConfig extends OperationRuntimeConfig {
   googleClientSecret?: string;
   googleAnalyticsMeasurementId?: string;
   agentCliVersion?: string;
+  /** HackMD API v1 base, used once per claim to learn whose API token a writer pasted. */
+  hackmdApiUrl: string;
   email: EmailConfig;
   emailFrom: string;
   emailReplyTo: string;
@@ -210,6 +212,10 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     googleClientSecret: optional(env, 'GOOGLE_CLIENT_SECRET'),
     googleAnalyticsMeasurementId,
     agentCliVersion,
+    hackmdApiUrl: new URL(env.HACKMD_API_URL ?? 'https://api.hackmd.io/v1').href.replace(
+      /\/$/u,
+      '',
+    ),
     email,
     emailFrom: required(env, 'EMAIL_FROM'),
     emailReplyTo: env.EMAIL_REPLY_TO ?? 'support@example.com',

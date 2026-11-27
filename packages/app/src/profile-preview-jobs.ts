@@ -142,6 +142,7 @@ export class ProfilePreviewExecutor implements OperationExecutor {
       draftArtifactId,
       design,
       designSource,
+      language: site.language,
       title: site.title,
       author: summary.author.name,
       contentProfile: summary.contentProfile,
