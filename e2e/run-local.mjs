@@ -47,7 +47,8 @@ async function waitForWeb() {
 
 let failed = false;
 try {
-  run('docker', ['compose', '--profile', 'e2e', 'build', 'migrate']);
+  // CI builds the image beforehand with a layer cache; local runs build it here.
+  if (process.env.VIBELOG_E2E_PREBUILT !== '1') run('docker', ['compose', '--profile', 'e2e', 'build', 'migrate']);
   run('docker', ['compose', '--profile', 'e2e', 'up', '--detach']);
   await waitForWeb();
   run('pnpm', ['exec', 'playwright', 'test']);

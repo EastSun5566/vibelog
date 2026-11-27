@@ -34,26 +34,23 @@ jobs:
     timeout-minutes: 45
     environment: production
     steps:
-      - name: Require successful CI for the selected main commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          ci_passed="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
-            -f branch=main -f event=push -f head_sha="$DEPLOY_SHA" -F per_page=1 \
-            --jq '.workflow_runs[0] | .status == "completed" and .conclusion == "success"')"
-          if test "$ci_passed" != true; then
-            echo "::error::CI must finish successfully for ${DEPLOY_SHA} on main before deployment."
-            exit 1
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ env.DEPLOY_SHA }}
+      # A squash merge of an up-to-date pull request has the same tree as the tested head, so its
+      # pull_request CI verified exactly these bytes; otherwise wait for main's own CI.
+      - name: Require successful CI for the selected main commit or an identical tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/require-verified-tree.mjs
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .node-version
           cache: pnpm
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      # Lets the Pulumi image build reuse layers from the GitHub Actions cache.
+      - uses: ./.github/actions/actions-cache-runtime
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vibelog/core build
       - run: pnpm --filter @vibelog/app build

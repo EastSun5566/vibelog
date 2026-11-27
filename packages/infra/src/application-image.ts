@@ -5,7 +5,12 @@ import * as pulumi from '@pulumi/pulumi';
 export interface ApplicationImageArgs {
   repository: pulumi.Input<string>;
   environment: string;
+  /** Reuse and store layers in the GitHub Actions cache (needs the Actions runtime credentials). */
+  githubActionsCache?: boolean;
 }
+
+/** CI and deploys share one scope, so a deploy reuses layers its pull request already built. */
+const CACHE_SCOPE = 'app-image';
 
 /** Builds and pushes the immutable application image consumed by both Cloud Run services. */
 export class ApplicationImage extends pulumi.ComponentResource {
@@ -27,6 +32,15 @@ export class ApplicationImage extends pulumi.ComponentResource {
         tags: [tag],
         push: true,
         buildOnPreview: false,
+        ...(args.githubActionsCache
+          ? {
+              cacheFrom: [{ gha: { scope: CACHE_SCOPE } }],
+              // A cache that cannot be written must never fail a deploy.
+              cacheTo: [
+                { gha: { scope: CACHE_SCOPE, mode: dockerBuild.CacheMode.Max, ignoreError: true } },
+              ],
+            }
+          : {}),
       },
       {
         parent: this,
