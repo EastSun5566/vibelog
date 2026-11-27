@@ -32,6 +32,8 @@ export interface OperationRuntimeConfig {
   aiProvider: string;
   aiModel: string;
   aiFallbackModels: string[];
+  /** AI designs for anonymous /@name previews per day, separate from writers' AI budget. */
+  previewAiDailyLimit: number;
 }
 export interface AppConfig extends OperationRuntimeConfig {
   appOrigin: string;
@@ -162,6 +164,11 @@ function loadOperationRuntimeConfig(env: NodeJS.ProcessEnv): OperationRuntimeCon
     aiProvider,
     aiModel,
     aiFallbackModels,
+    previewAiDailyLimit: positiveInteger(
+      env.VIBELOG_PREVIEW_AI_DAILY_LIMIT,
+      100,
+      'VIBELOG_PREVIEW_AI_DAILY_LIMIT',
+    ),
   };
 }
 export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): OperationRuntimeConfig {

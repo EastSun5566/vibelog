@@ -388,6 +388,27 @@ export class ProfilePreviewStore {
       .flatMap((row) => [row.sourceArtifactId, row.draftArtifactId])
       .filter((id): id is string => typeof id === 'string');
   }
+  /** Counts one AI design against the previews' own daily budget; false once it is spent. */
+  async consumeAiBudget(limit: number, at = new Date()): Promise<boolean> {
+    const [usage] = await this.db
+      .insert(schema.aiDailyUsage)
+      .values({
+        usageDate: at.toISOString().slice(0, 10),
+        scope: 'global',
+        subject: 'preview',
+        count: 1,
+      })
+      .onConflictDoUpdate({
+        target: [
+          schema.aiDailyUsage.usageDate,
+          schema.aiDailyUsage.scope,
+          schema.aiDailyUsage.subject,
+        ],
+        set: { count: sql`${schema.aiDailyUsage.count} + 1` },
+      })
+      .returning({ count: schema.aiDailyUsage.count });
+    return Boolean(usage && usage.count <= limit);
+  }
   private owned(lease: ProfilePreviewRecord) {
     return and(
       eq(schema.profilePreviews.id, lease.id),
