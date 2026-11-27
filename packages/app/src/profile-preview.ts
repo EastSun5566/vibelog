@@ -394,6 +394,7 @@ export class ProfilePreviewStore {
   }
   /** Counts one AI design against the previews' own daily budget; false once it is spent. */
   async consumeAiBudget(limit: number, at = new Date()): Promise<boolean> {
+    if (limit < 1) return false;
     const [usage] = await this.db
       .insert(schema.aiDailyUsage)
       .values({

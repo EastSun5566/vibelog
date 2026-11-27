@@ -192,7 +192,7 @@ export function agentPromptEntry(prompt: string, placement: 'landing' | 'editor'
   );
 }
 
-export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: string) {
+export function landingPage(appHostname: string, analytics?: AnalyticsDocumentConfig) {
   return document(
     'Publish your HackMD as a blog',
     <section class="landing">
@@ -202,19 +202,14 @@ export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: s
           <br />
           <em>Publish a real blog.</em>
         </h1>
-        {agentPrompt ? (
-          agentPromptEntry(agentPrompt, 'landing')
-        ) : (
-          <div class="landing-actions">
-            <a class="btn" href="/auth/login">
-              Start publishing
-            </a>
-          </div>
-        )}
+        <p class="landing-swap">
+          Go to <code>hackmd.io/@you</code>, change <code>hackmd.io</code> to{' '}
+          <code>{appHostname}</code>, and see the magic.
+        </p>
       </header>
     </section>,
     undefined,
-    Boolean(agentPrompt),
+    false,
     analytics,
   );
 }
@@ -324,7 +319,12 @@ export function loginPage(
   );
 }
 
-export function guidePage(session?: AppSession, analytics?: AnalyticsDocumentConfig) {
+export function guidePage(
+  appHostname: string,
+  session?: AppSession,
+  analytics?: AnalyticsDocumentConfig,
+  agentPrompt?: string,
+) {
   return document(
     'Guide',
     <article class="guide">
@@ -338,14 +338,23 @@ export function guidePage(session?: AppSession, analytics?: AnalyticsDocumentCon
         <h2 id="first-release">Get started</h2>
         <ol>
           <li>
-            Copy the <a href="/">agent prompt</a> or{' '}
-            <a href={session ? '/editor' : '/auth/login'}>use the editor</a>. Connect a public
-            HackMD profile and choose a blog address.
+            Open <code>{appHostname}/@you</code>, your HackMD profile address with{' '}
+            <code>hackmd.io</code> swapped for <code>{appHostname}</code>, to see your blog.
+          </li>
+          <li>
+            Choose <strong>Make it yours</strong>, sign in, and confirm the HackMD account with a
+            temporary HackMD API token.
           </li>
           <li>Choose articles, set the blog details, and review the private preview.</li>
           <li>Generate a design with AI or fine-tune it, then publish when the draft is ready.</li>
         </ol>
         <p>Only public, published HackMD notes are imported.</p>
+        {agentPrompt ? (
+          <>
+            <p>Prefer a coding agent? Give it this prompt instead.</p>
+            {agentPromptEntry(agentPrompt, 'landing')}
+          </>
+        ) : null}
       </section>
       <section aria-labelledby="updates">
         <h2 id="updates">Update and publish</h2>
@@ -365,12 +374,13 @@ export function guidePage(session?: AppSession, analytics?: AnalyticsDocumentCon
         </p>
         <p>
           Hosted AI receives blog details, a content profile, your saved design, and prompt—not
-          article bodies.
+          article bodies. The first design of a <code>/@you</code> preview also uses the titles,
+          tags and a short excerpt of your 12 newest public notes.
         </p>
       </section>
     </article>,
     session,
-    false,
+    Boolean(agentPrompt),
     analytics,
   );
 }

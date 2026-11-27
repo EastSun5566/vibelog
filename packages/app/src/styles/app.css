@@ -127,6 +127,8 @@ time { font-variant-numeric: tabular-nums; }
 .landing-hero { max-width: 50rem; }
 .landing h1 { max-width: 16ch; margin: 0; font-size: clamp(2.9rem, 8vw, 5.75rem); font-weight: 520; line-height: 0.98; letter-spacing: -0.03em; }
 .landing h1 em { font-weight: 440; }
+.landing-swap { max-width: 36rem; margin: 2rem 0 0; color: var(--muted-foreground); font-size: clamp(1.1rem, 2.2vw, 1.35rem); line-height: 1.5; }
+.landing-swap code { color: var(--proof-ink); font-size: 0.95em; overflow-wrap: anywhere; }
 .landing-actions { margin-block-start: 2rem; }
 .landing-actions .btn { min-width: 9rem; }
 /* Numbered newspaper columns: heavy ink rule on top, hairline below. */

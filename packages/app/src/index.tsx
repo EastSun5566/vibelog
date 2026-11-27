@@ -580,14 +580,7 @@ export function createApp(options: CreateAppOptions) {
   app.get('/', async (c) =>
     (await readSession(c, auth, config))
       ? c.redirect('/editor')
-      : c.html(
-          landingPage(
-            analyticsDocument(c),
-            config.agentCliVersion
-              ? onboardingPrompt(config.appOrigin, config.agentCliVersion)
-              : undefined,
-          ),
-        ),
+      : c.html(landingPage(config.appHostname, analyticsDocument(c))),
   );
   const enqueuePreview = async (preview: ProfilePreviewRecord) => {
     if (!options.previewQueue) return;
@@ -898,7 +891,16 @@ export function createApp(options: CreateAppOptions) {
   });
   app.get('/guide', async (c) => {
     const session = (await readSession(c, auth, config)) ?? undefined;
-    return c.html(guidePage(session, session ? undefined : analyticsDocument(c)));
+    return c.html(
+      guidePage(
+        config.appHostname,
+        session,
+        session ? undefined : analyticsDocument(c),
+        config.agentCliVersion
+          ? onboardingPrompt(config.appOrigin, config.agentCliVersion)
+          : undefined,
+      ),
+    );
   });
   function deletionError(value: string | undefined): DeletionError | undefined {
     return value === 'busy' || value === 'cleanup' || value === 'confirmation' ? value : undefined;

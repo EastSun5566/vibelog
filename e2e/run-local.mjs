@@ -15,6 +15,9 @@ const environment = {
   VIBELOG_APP_IMAGE: appImage,
   APP_ORIGIN: appOrigin,
   HACKMD_BASE_URL: 'http://hackmd-fixture:4400',
+  HACKMD_API_URL: 'http://hackmd-fixture:4400/v1',
+  // No AI key in the local stack: previews use the content-based preset.
+  VIBELOG_PREVIEW_AI_DAILY_LIMIT: '0',
   GOOGLE_ANALYTICS_MEASUREMENT_ID: 'G-TEST123',
   VIBELOG_AGENT_CLI_VERSION: '0.5.0',
   PORT: String(appPort),

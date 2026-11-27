@@ -40,6 +40,13 @@ const server = createServer((request, response) => {
     response.writeHead(200).end('ok');
     return;
   }
+  if (request.url === '/v1/me') {
+    // A HackMD API token that belongs to the fixture profile, for claiming /@alice-hackmd.
+    const owned = request.headers.authorization === 'Bearer alice-hackmd-api-token';
+    response.writeHead(owned ? 200 : 401, { 'content-type': 'application/json' });
+    response.end(owned ? JSON.stringify({ id: 'alice', userPath: 'alice-hackmd', email: null }) : '{}');
+    return;
+  }
   const fixture = responses.get(request.url ?? '');
   if (!fixture) {
     response.writeHead(404).end('not found');
