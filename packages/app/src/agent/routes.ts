@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import { isReservedBlogHandle } from '../profile-preview.js';
 import { blogs } from '../schema.js';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import type { Context, MiddlewareHandler } from 'hono';
@@ -54,7 +55,6 @@ const connect = z
   })
   .strict()
   .openapi('ConnectRequest');
-const reserved = new Set(['preview', 'www', 'api', 'admin', 'assets']);
 type Variables = AppVariables & {
   agentUserId: string;
   agentGrantId: string;
@@ -795,7 +795,7 @@ export function agentRoutes(
           async (db, blog) => {
             if (action === 'connect') {
               const input = connect.parse(body);
-              if (reserved.has(input.username))
+              if (isReservedBlogHandle(input.username))
                 throw new AppError('invalid_blog_address', 'Choose another blog address.', 400);
               if (!blog && input.stateVersion !== undefined)
                 throw new AppError(

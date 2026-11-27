@@ -155,6 +155,18 @@ describe('anonymous agent client identity', () => {
       clientKey,
     );
   });
+  it('keys anonymous /@name previews by visitor but nothing else on the app host', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
+    const clientIp = '192.0.2.10';
+    for (const path of ['/@alice', '/editor'])
+      await handleRequest(
+        new Request(`https://example.com${path}`, { headers: { 'cf-connecting-ip': clientIp } }),
+        env,
+      );
+    const [preview, editor] = fetch.mock.calls.map((call) => new Headers(call[1]?.headers));
+    expect(preview?.get('x-vibelog-client-key')).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+    expect(editor?.has('x-vibelog-client-key')).toBe(false);
+  });
   it('removes a forged client key when Cloudflare supplies no client address', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
     await handleRequest(

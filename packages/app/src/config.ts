@@ -52,6 +52,10 @@ export interface AppConfig extends OperationRuntimeConfig {
   edgeSharedSecret?: string;
   aiUserDailyLimit: number;
   aiGlobalDailyLimit: number;
+  /** New anonymous /@name previews one visitor IP may start per hour. */
+  previewIpHourlyLimit: number;
+  /** New anonymous /@name previews all visitors may start per day. */
+  previewGlobalDailyLimit: number;
   aiProvider: string;
   aiModel: string;
   secureCookies: boolean;
@@ -212,6 +216,16 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       env.VIBELOG_AI_GLOBAL_DAILY_LIMIT,
       200,
       'VIBELOG_AI_GLOBAL_DAILY_LIMIT',
+    ),
+    previewIpHourlyLimit: positiveInteger(
+      env.VIBELOG_PREVIEW_IP_HOURLY_LIMIT,
+      5,
+      'VIBELOG_PREVIEW_IP_HOURLY_LIMIT',
+    ),
+    previewGlobalDailyLimit: positiveInteger(
+      env.VIBELOG_PREVIEW_GLOBAL_DAILY_LIMIT,
+      200,
+      'VIBELOG_PREVIEW_GLOBAL_DAILY_LIMIT',
     ),
     secureCookies: origin.protocol === 'https:',
   };

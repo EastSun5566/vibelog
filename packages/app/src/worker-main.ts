@@ -30,16 +30,20 @@ app.post('/tasks/operations', (c) =>
 app.post('/tasks/outbox', async (c) =>
   c.json({ dispatched: await dependencies.dispatcher.dispatch() }),
 );
-app.post('/tasks/maintenance', async (c) =>
-  c.json({ removed: await dependencies.executor.cleanupPending() }),
+app.post('/tasks/previews', (c) =>
+  handleOperationTask(c.req.raw, verifier, dependencies.previewExecutor),
 );
+const cleanup = async () =>
+  (await dependencies.executor.cleanupPending()) +
+  (await dependencies.previewExecutor.cleanupExpired());
+app.post('/tasks/maintenance', async (c) => c.json({ removed: await cleanup() }));
 const server = startHttpServer(app.fetch);
 const pollController = new AbortController();
 const polling =
   'durableWorker' in dependencies
     ? pollOutbox(
         dependencies.durableWorker,
-        dependencies.executor.cleanupPending.bind(dependencies.executor),
+        cleanup,
         pollController.signal,
         config.operationPollIntervalMs,
       )

@@ -11,7 +11,11 @@ export interface CloudTasksQueueConfig {
 }
 export class CloudTasksOperationQueue implements OperationQueue {
   private readonly client = new CloudTasksClient();
-  constructor(private readonly config: CloudTasksQueueConfig) {}
+  /** `path` is the worker route that runs the job; previews use their own route. */
+  constructor(
+    private readonly config: CloudTasksQueueConfig,
+    private readonly path: '/tasks/operations' | '/tasks/previews' = '/tasks/operations',
+  ) {}
   async enqueue(message: OperationMessage): Promise<void> {
     const parent = this.client.queuePath(
       this.config.project,
@@ -25,7 +29,7 @@ export class CloudTasksOperationQueue implements OperationQueue {
       this.config.project,
       this.config.location,
       this.config.queue,
-      `operation-${deliveryId}`,
+      `${this.path === '/tasks/previews' ? 'preview' : 'operation'}-${deliveryId}`,
     );
     try {
       await this.client.createTask({
@@ -34,7 +38,7 @@ export class CloudTasksOperationQueue implements OperationQueue {
           name,
           httpRequest: {
             httpMethod: 'POST',
-            url: `${this.config.workerUrl.replace(/\/$/, '')}/tasks/operations`,
+            url: `${this.config.workerUrl.replace(/\/$/, '')}${this.path}`,
             headers: { 'Content-Type': 'application/json' },
             body: Buffer.from(JSON.stringify(message)).toString('base64'),
             oidcToken: {

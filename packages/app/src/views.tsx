@@ -27,12 +27,17 @@ export function document(
   session?: AppSession,
   editor = false,
   analytics?: AnalyticsDocumentConfig,
+  head: { robots?: string; refreshSeconds?: number } = {},
 ) {
   return (
     <html lang="en">
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {head.robots ? <meta name="robots" content={head.robots} /> : null}
+        {head.refreshSeconds ? (
+          <meta http-equiv="refresh" content={String(head.refreshSeconds)} />
+        ) : null}
         <meta
           name="description"
           content="Publish your HackMD articles as a searchable blog with AI-designed styles, RSS, a sitemap, and llms.txt."
@@ -2115,5 +2120,67 @@ export function operationPage(
     </section>,
     session,
     true,
+  );
+}
+
+export interface ProfilePreviewView {
+  name: string;
+  state: 'ready' | 'pending' | 'failed' | 'limited';
+  stage?: string | null;
+  message?: string | null;
+  frameUrl?: string;
+  claimUrl: string;
+}
+
+/** vibelog.org/@name: the blog VibeLog would build from that HackMD user's public notes. */
+export function profilePreviewPage(view: ProfilePreviewView, analytics?: AnalyticsDocumentConfig) {
+  const handle = `@${view.name}`;
+  const pending = view.state === 'pending';
+  return document(
+    `${handle} on VibeLog`,
+    <section class="profile-preview" data-state={view.state}>
+      <header class="profile-preview-bar">
+        <p>
+          A preview built from <a href={`https://hackmd.io/${handle}`}>{handle}</a>&rsquo;s public
+          HackMD notes. Not published by the author.
+        </p>
+        <a class="btn" data-size="compact" href={view.claimUrl}>
+          Make it yours
+        </a>
+      </header>
+      {view.state === 'ready' && view.frameUrl ? (
+        <iframe
+          class="profile-preview-frame"
+          src={view.frameUrl}
+          title={`Blog preview for ${handle}`}
+        ></iframe>
+      ) : (
+        <section class="profile-preview-status card" aria-live="polite">
+          <h1>
+            {pending
+              ? `Building ${handle}`
+              : view.state === 'limited'
+                ? 'Too many new previews right now'
+                : `We could not build ${handle}`}
+          </h1>
+          {pending ? (
+            <>
+              <progress aria-label="Building the preview"></progress>
+              <p>{view.stage ?? 'Waiting to start'}</p>
+            </>
+          ) : (
+            <p>
+              {view.state === 'limited'
+                ? 'Please try again in a few minutes.'
+                : (view.message ?? 'Please try again later.')}
+            </p>
+          )}
+        </section>
+      )}
+    </section>,
+    undefined,
+    false,
+    analytics,
+    { robots: 'noindex, nofollow', refreshSeconds: pending ? 3 : undefined },
   );
 }
