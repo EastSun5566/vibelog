@@ -241,6 +241,19 @@ function reject(code: string, message: string) {
     return undefined;
   };
 }
+/**
+ * These routes have always read their body as JSON whatever the Content-Type said. Label such a
+ * request as JSON before the generated media-type check, which would otherwise reject it with 415.
+ */
+const lenientJsonBody: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
+  if (!/^application\/([a-z-.]+\+)?json\b/iu.test(c.req.header('content-type') ?? '')) {
+    const body = await c.req.text();
+    const headers = new Headers(c.req.raw.headers);
+    headers.set('content-type', 'application/json');
+    c.req.raw = new Request(c.req.raw.url, { method: c.req.method, headers, body });
+  }
+  await next();
+};
 /** Hono rejects unparseable JSON itself; report it as the route's own validation error. */
 function onMalformedJson(error: AppError): MiddlewareHandler<{ Variables: Variables }> {
   return async (c, next) => {
@@ -268,6 +281,9 @@ export function agentRoutes(
     const malformed = c.get('malformedJson');
     if (error instanceof HTTPException && error.status === 400 && malformed)
       return jsonError(c, malformed);
+    // Any other request error from the framework is the caller's, never an internal error.
+    if (error instanceof HTTPException && error.status === 415)
+      return jsonError(c, new AppError('invalid_content_type', 'Use application/json.', 415));
     if (error instanceof BlogConnectionConflictError)
       return jsonError(c, new AppError(error.code, error.message, 409));
     if (error instanceof BlogAddressTakenError)
@@ -336,6 +352,7 @@ export function agentRoutes(
       security: [],
       middleware: [
         onMalformedJson(invalidPairing),
+        lenientJsonBody,
         async (c, next) => {
           // An empty body has always meant a draft-only request.
           // Hono caches bodies as promises (its typings say `string`); `json()` parses this text.
@@ -398,7 +415,7 @@ export function agentRoutes(
       description:
         'Poll no more than once every `interval` seconds. Returns `pending` until the human approves, then the token once.',
       security: [],
-      middleware: [onMalformedJson(invalidDeviceCode)],
+      middleware: [onMalformedJson(invalidDeviceCode), lenientJsonBody],
       request: {
         body: {
           required: true,
@@ -674,7 +691,7 @@ export function agentRoutes(
       summary: 'Validate a complete design without building',
       description: 'Free: no build quota is used. Fix errors locally before `POST /design`.',
       security,
-      middleware: [onMalformedJson(invalidDesignInput)],
+      middleware: [onMalformedJson(invalidDesignInput), lenientJsonBody],
       request: {
         body: {
           required: true,

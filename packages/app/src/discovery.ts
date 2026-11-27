@@ -78,7 +78,7 @@ export function apiCatalog(origin: string, cliVersion?: string) {
       { anchor: at(origin, '/.well-known/api-catalog'), item: [{ href: api }] },
       {
         anchor: api,
-        'service-desc': [{ href: at(origin, '/openapi.json'), type: 'application/openapi+json' }],
+        'service-desc': [{ href: at(origin, '/openapi.json'), type: 'application/json' }],
         'service-doc': [
           { href: at(origin, '/guide'), type: 'text/html' },
           ...(cliVersion

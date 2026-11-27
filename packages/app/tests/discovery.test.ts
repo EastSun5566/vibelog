@@ -217,6 +217,32 @@ describe('agent API errors keep their codes', () => {
     });
   });
 
+  it('reads pairing and validation bodies as JSON whatever the Content-Type says', async () => {
+    const { api, createPairing } = agentApi();
+    const post = (path: string, body: string, headers: Record<string, string>) =>
+      api.request(path, { method: 'POST', headers: { ...token, ...headers }, body });
+    const plain = { 'Content-Type': 'text/plain' };
+    expect((await post('/pairings', '{"canPublish":true}', plain)).status).toBe(201);
+    expect(createPairing).toHaveBeenLastCalledWith(true);
+    expect((await post('/pairings', '{}', {})).status).toBe(201);
+    expect(createPairing).toHaveBeenLastCalledWith(false);
+    expect(await errorOf(await post('/pairings', 'garbage', plain))).toEqual({
+      status: 400,
+      code: 'invalid_pairing',
+    });
+    expect(await errorOf(await post('/pairings/token', '{}', plain))).toEqual({
+      status: 400,
+      code: 'invalid_pairing',
+    });
+    const invalid = await post('/design/validate', '{"design":{}}', plain);
+    expect(invalid.status).toBe(422);
+    expect(await invalid.json()).toMatchObject({ valid: false });
+    expect(await errorOf(await post('/design/validate', 'garbage', {}))).toEqual({
+      status: 400,
+      code: 'invalid_input',
+    });
+  });
+
   it('rejects bad offsets and operation ids with their existing errors', async () => {
     const { api } = agentApi();
     for (const offset of ['-1', 'a', '1.5'])
@@ -292,6 +318,15 @@ describe('discovery routes', () => {
       expect(response.headers.get('content-type'), path).toBe(type);
       expect(response.headers.get('cache-control'), path).toBe('public, max-age=3600');
     }
+  });
+
+  it('advertises the OpenAPI document with the media type it is served as', async () => {
+    const catalog = (await (await get('/.well-known/api-catalog')).json()) as {
+      linkset: { 'service-desc'?: { href: string; type: string }[] }[];
+    };
+    const [description] = catalog.linkset.flatMap((entry) => entry['service-desc'] ?? []);
+    const served = await get(new URL(description.href).pathname);
+    expect(served.headers.get('content-type')?.split(';')[0]).toBe(description.type);
   });
 
   it('answers HEAD on the API catalog with its Link header', async () => {
