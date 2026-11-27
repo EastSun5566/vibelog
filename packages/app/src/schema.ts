@@ -270,6 +270,48 @@ export const aiDailyUsage = pgTable(
   ],
 );
 
+/**
+ * Anonymous previews of a public HackMD profile, shared by every visitor of vibelog.org/@name.
+ * The row is also its own job: `generation` increments for each rebuild and the lease guards it.
+ * Its artifacts live in object storage under their own IDs, outside the per-blog artifacts table.
+ */
+export const profilePreviews = pgTable(
+  'profile_previews',
+  {
+    id: uuid('id').primaryKey(),
+    nameKey: text('name_key').notNull().unique(),
+    hackmdUsername: text('hackmd_username').notNull(),
+    label: text('label').notNull().unique(),
+    state: text('state', { enum: ['queued', 'building', 'ready', 'failed'] }).notNull(),
+    stage: text('stage'),
+    generation: integer('generation').notNull().default(1),
+    attempts: integer('attempts').notNull().default(0),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    sourceArtifactId: uuid('source_artifact_id'),
+    draftArtifactId: uuid('draft_artifact_id'),
+    design: jsonb('design').$type<BlogDesignSpecV2 | null>(),
+    designSource: text('design_source', { enum: ['preset', 'ai'] }),
+    title: text('title'),
+    author: text('author'),
+    contentProfile: jsonb('content_profile').$type<ContentProfile | null>(),
+    errorMessage: text('error_message'),
+    generatedAt: timestamp('generated_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    index('profile_previews_state_idx').on(table.state, table.updatedAt),
+    check(
+      'profile_previews_state_check',
+      sql`${table.state} in ('queued','building','ready','failed')`,
+    ),
+    check(
+      'profile_previews_design_source_check',
+      sql`${table.designSource} is null or ${table.designSource} in ('preset','ai')`,
+    ),
+  ],
+);
+
 export const authSchema = { user, session, account, verification, rateLimit };
 
 export const agentPairings = pgTable('agent_pairings', {

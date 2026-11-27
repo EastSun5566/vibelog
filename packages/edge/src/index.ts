@@ -50,8 +50,12 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     ['sign'],
   );
   const clientIp = request.headers.get('cf-connecting-ip');
+  // A pseudonymous per-IP key for the routes the app rate-limits by visitor: agent pairing and
+  // anonymous /@name previews.
   const clientKey =
-    incoming.pathname.startsWith('/api/agent/v1/pairings') && clientIp
+    (incoming.pathname.startsWith('/api/agent/v1/pairings') ||
+      incoming.pathname.startsWith('/@')) &&
+    clientIp
       ? base64url(
           await crypto.subtle.sign(
             'HMAC',

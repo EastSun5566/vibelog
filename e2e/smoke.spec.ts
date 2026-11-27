@@ -1515,3 +1515,29 @@ test('browser-approved agent publishes its first release through the CLI', async
   await expect(page).toHaveURL(/\/auth\/login\?deleted=1$/u);
   expect(errors).toEqual([]);
 });
+
+test('an anonymous visitor swaps hackmd.io for the app origin and sees the blog', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const browserErrors: string[] = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  const first = await page.goto('/@alice-hackmd');
+  expect(first?.headers()['x-robots-tag']).toBe('noindex, nofollow');
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow');
+  // The page refreshes itself until the shared preview build is ready.
+  const frame = page.locator('iframe.profile-preview-frame');
+  await expect(frame).toBeVisible({ timeout: 200_000 });
+  const src = await frame.getAttribute('src');
+  expect(src).toMatch(/^http:\/\/try-[0-9a-f]{12}\./u);
+  await expect(page.getByRole('link', { name: 'Make it yours' })).toBeVisible();
+  await expect(
+    page.frameLocator('iframe.profile-preview-frame').getByRole('link').first(),
+  ).toBeVisible();
+  expect(browserErrors).toEqual([]);
+  // The browser resolves *.localtest.me to this machine; open the preview host directly.
+  const site = await page.goto(src ?? '');
+  expect(site?.ok()).toBe(true);
+  expect(site?.headers()['x-robots-tag']).toBe('noindex, nofollow');
+  expect(site?.headers()['content-security-policy']).toContain('frame-ancestors');
+});

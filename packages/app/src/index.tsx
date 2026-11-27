@@ -44,7 +44,17 @@ import {
   jsonError,
   requestContext,
 } from './http.js';
-import type { OperationDispatcher } from './ports/operation-queue.js';
+import type { OperationDispatcher, OperationQueue } from './ports/operation-queue.js';
+import {
+  ProfilePreviewStore,
+  hackmdNameSchema,
+  isPreviewLabel,
+  isReservedBlogHandle,
+  previewNameKey,
+  previewSiteOrigin,
+  previewVisitAction,
+  type ProfilePreviewRecord,
+} from './profile-preview.js';
 import { operationMessage, operationProgress } from './operation-status.js';
 import { blocksRequest, maintenanceResponse } from './maintenance.js';
 import type { ArtifactStore } from './ports/artifact-store.js';
@@ -65,11 +75,11 @@ import {
   loginPage,
   onboardingPage,
   operationPage,
+  profilePreviewPage,
   type AnalyticsDocumentConfig,
   type DeletionError,
 } from './views.js';
 
-const RESERVED = new Set(['preview', 'www', 'api', 'admin', 'assets']);
 const handleInput = z
   .string()
   .trim()
@@ -92,7 +102,7 @@ const previewTokenInput = z.string().min(32).max(512);
 const uuidInput = z.uuid();
 const deletionConfirmationInput = z.string().trim().min(1).max(320);
 interface AppEnv {
-  Variables: AppVariables & { analyticsNonce?: string };
+  Variables: AppVariables & { analyticsNonce?: string; frameOrigin?: string };
 }
 type AppContext = Context<AppEnv>;
 interface CreateAppOptions {
@@ -101,6 +111,8 @@ interface CreateAppOptions {
   artifactStore: ArtifactStore;
   emailSender: TransactionalEmailSender;
   dispatcher: OperationDispatcher;
+  /** Sends anonymous preview builds to the worker; null when the worker polls for them. */
+  previewQueue?: OperationQueue | null;
 }
 const formValue = (body: Record<string, string | File>, key: string) =>
   typeof body[key] === 'string' ? body[key] : undefined;
@@ -118,7 +130,14 @@ function publicUsername(c: AppContext, config: AppConfig): string | null {
   const host = hostName(c);
   if (!host.endsWith(suffix)) return null;
   const label = host.slice(0, -suffix.length);
-  return /^[a-z0-9-]{3,32}$/.test(label) && !RESERVED.has(label) ? label : null;
+  return /^[a-z0-9-]{3,32}$/.test(label) && !isReservedBlogHandle(label) ? label : null;
+}
+function previewHostLabel(c: AppContext, config: AppConfig): string | null {
+  const suffix = `.${config.appHostname}`;
+  const host = hostName(c);
+  if (!host.endsWith(suffix)) return null;
+  const label = host.slice(0, -suffix.length);
+  return isPreviewLabel(label) ? label : null;
 }
 function cookieValue(header: string | undefined, name: string): string | undefined {
   return header
@@ -211,6 +230,7 @@ export function createApp(options: CreateAppOptions) {
   const database = options.database ?? new AppDatabase(config.databaseUrl);
   const auth = createAuth(database, config, options.emailSender);
   const app = new Hono<AppEnv>();
+  const previews = new ProfilePreviewStore(database);
   app.use('*', requestContext());
   app.use('*', edgeIdentity(config.edgeSharedSecret));
   for (const path of ['/auth/*', '/api/auth/*']) {
@@ -301,6 +321,34 @@ export function createApp(options: CreateAppOptions) {
         (html) => injectPreviewBridge(html, previewBridge(config.appOrigin, nonce)),
       );
     }
+    const previewLabel = previewHostLabel(c, config);
+    if (previewLabel) {
+      const preview = await previews.getByLabel(previewLabel);
+      if (!preview?.draftArtifactId || !preview.design)
+        throw new AppError('site_not_found', 'This preview is not ready', 404);
+      // Generated from someone's public notes without their consent: never indexed.
+      c.header('X-Robots-Tag', 'noindex, nofollow');
+      const previewScripts = usesSearchScripts(c.req.path)
+        ? "'self' 'wasm-unsafe-eval'; worker-src 'self' blob:"
+        : "'none'";
+      c.header(
+        'Content-Security-Policy',
+        `default-src 'self'; script-src ${previewScripts}; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; frame-ancestors ${config.appOrigin}`,
+      );
+      if (c.req.path === '/design.css') {
+        c.header('Content-Type', 'text/css; charset=utf-8');
+        c.header('Cache-Control', 'public, max-age=60');
+        return c.body(compileDesignCss(preview.design));
+      }
+      return artifactResponse(
+        c,
+        options.artifactStore,
+        preview.draftArtifactId,
+        c.req.path,
+        'public, max-age=60',
+        releaseEtag(preview.draftArtifactId, c.req.path),
+      );
+    }
     const username = publicUsername(c, config);
     if (username) {
       const blog = await database.getBlogByUsername(username);
@@ -340,7 +388,7 @@ export function createApp(options: CreateAppOptions) {
       : "'self'";
     c.header(
       'Content-Security-Policy',
-      `default-src 'self'; script-src ${scriptSources}; style-src 'self'; img-src ${imageSources}; connect-src ${connectSources}; frame-src ${config.previewOrigin}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
+      `default-src 'self'; script-src ${scriptSources}; style-src 'self'; img-src ${imageSources}; connect-src ${connectSources}; frame-src ${[config.previewOrigin, c.get('frameOrigin')].filter(Boolean).join(' ')}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
     );
   });
   app.get('/assets/client.js', async (c) => {
@@ -536,6 +584,82 @@ export function createApp(options: CreateAppOptions) {
           ),
         ),
   );
+  const enqueuePreview = async (preview: ProfilePreviewRecord) => {
+    if (!options.previewQueue) return;
+    try {
+      await options.previewQueue.enqueue({
+        version: 1,
+        operationId: preview.id,
+        traceId: randomUUID(),
+        createdAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      // The next visit sends it again once the job counts as unclaimed.
+      console.error(`[preview:${preview.id}] enqueue failed`, error);
+    }
+  };
+  /** New builds cost a HackMD crawl and a worker run, so each visitor and the day are capped. */
+  const allowNewPreview = async (c: AppContext) => {
+    const clientKey = c.get('edgeClientKey');
+    if (
+      clientKey &&
+      !(await database.consumeRateLimit(
+        `preview-ip:${clientKey}`,
+        config.previewIpHourlyLimit,
+        60 * 60,
+      ))
+    )
+      return false;
+    return database.consumeRateLimit(
+      'preview-global',
+      config.previewGlobalDailyLimit,
+      24 * 60 * 60,
+    );
+  };
+  app.get('/:handle{@[^/]+}', async (c) => {
+    let name: string;
+    try {
+      name = hackmdNameSchema.parse(decodeURIComponent(c.req.param('handle').slice(1)));
+    } catch {
+      throw new AppError('not_found', 'Page not found', 404);
+    }
+    c.header('X-Robots-Tag', 'noindex, nofollow');
+    c.header('Cache-Control', 'private, no-store');
+    let preview = await previews.get(previewNameKey(name));
+    let limited = false;
+    const action = previewVisitAction(preview);
+    if (action === 'create' || action === 'refresh') {
+      if (await allowNewPreview(c)) {
+        const next = preview ? await previews.refresh(preview) : await previews.create(name);
+        if (next) await enqueuePreview(next);
+        preview = next ?? (await previews.get(previewNameKey(name)));
+      } else limited = !preview;
+    } else if (action === 'redispatch' && preview && (await previews.requeue(preview)))
+      await enqueuePreview(preview);
+    const frameOrigin = preview ? previewSiteOrigin(config.appOrigin, preview.label) : undefined;
+    const ready = Boolean(preview?.draftArtifactId);
+    if (ready && frameOrigin) c.set('frameOrigin', frameOrigin);
+    return c.html(
+      profilePreviewPage(
+        {
+          name: preview?.hackmdUsername ?? name,
+          state: ready
+            ? 'ready'
+            : limited
+              ? 'limited'
+              : preview?.state === 'failed'
+                ? 'failed'
+                : 'pending',
+          stage: preview?.stage,
+          message: preview?.errorMessage,
+          frameUrl: ready && frameOrigin ? `${frameOrigin}/` : undefined,
+          claimUrl: '/editor',
+        },
+        analyticsDocument(c),
+      ),
+      limited ? 429 : 200,
+    );
+  });
   const agentRepository = new AgentRepository(database);
   app.get('/agent-setup/prompt.md', (c) => {
     if (!config.agentCliVersion)
@@ -816,7 +940,7 @@ export function createApp(options: CreateAppOptions) {
         hackmdUsername: formValue(body, 'hackmdUsername'),
         language: formValue(body, 'language'),
       });
-    if (!input.success || RESERVED.has(input.data.username))
+    if (!input.success || isReservedBlogHandle(input.data.username))
       throw new AppError(
         'invalid_blog_source',
         'Check the blog handle, HackMD username, and language.',

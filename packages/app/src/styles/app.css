@@ -377,6 +377,17 @@ time { font-variant-numeric: tabular-nums; }
   .btn, .choice, .content-choice, summary { min-height: 3rem; }
 }
 
+/* vibelog.org/@name: a one-line notice above the generated blog, which gets the rest of the view. */
+.profile-preview { display: grid; gap: 0.75rem; }
+.profile-preview-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
+.profile-preview-bar p { margin: 0; color: var(--muted-foreground); font-size: 0.92rem; }
+.profile-preview-frame { display: block; width: 100%; height: calc(100dvh - 9.5rem); min-height: 28rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--proof-paper); }
+.profile-preview-status { width: min(100%, 31rem); margin: clamp(2rem, 8vh, 6rem) auto 0; }
+.profile-preview-status > :is(h1, p, progress) { margin: 0; padding-inline: 1.1rem; }
+.profile-preview-status > h1 { padding-block-start: 1.1rem; font-family: var(--font-display); font-size: 1.6rem; font-weight: 560; letter-spacing: -0.015em; line-height: 1.15; }
+.profile-preview-status > p { padding-block: 0.6rem 1.1rem; color: var(--muted-foreground); }
+.profile-preview-status > progress { display: block; width: calc(100% - 2.2rem); height: 0.3rem; margin: 0.9rem 1.1rem 0; padding: 0; border: 0; accent-color: var(--foreground); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
   .operation-feedback .operation-indicator { animation: none !important; }
