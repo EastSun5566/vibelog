@@ -33,6 +33,7 @@
     "@aws-sdk/client-s3": "3.1121.0",
     "@google-cloud/tasks": "7.0.0",
     "@hono/node-server": "^1.19.15",
+    "@hono/zod-openapi": "1.6.3",
     "@vibelog/core": "workspace:*",
     "better-auth": "1.6.23",
     "drizzle-orm": "0.45.2",

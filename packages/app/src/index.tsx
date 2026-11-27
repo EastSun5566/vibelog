@@ -1,5 +1,12 @@
 import { AGENT_API } from './agent/contracts.js';
 import { agentRoutes } from './agent/routes.js';
+import {
+  API_CATALOG_PROFILE,
+  agentSkill,
+  agentSkillsIndex,
+  apiCatalog,
+  llmsTxt,
+} from './discovery.js';
 import { AgentRepository } from './agent/repository.js';
 import {
   agentInstructions,
@@ -480,7 +487,8 @@ export function createApp(options: CreateAppOptions) {
       throw new AppError('oauth_failed', 'Could not start OAuth sign-in.', 502);
     return c.redirect(data.url);
   });
-  app.route(AGENT_API, agentRoutes(database, options.dispatcher, config.appOrigin, config));
+  const agentApi = agentRoutes(database, options.dispatcher, config.appOrigin, config);
+  app.route(AGENT_API, agentApi);
   const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => {
     const session = await readSession(c, auth, config);
     if (!session)
@@ -535,6 +543,61 @@ export function createApp(options: CreateAppOptions) {
     c.header('Content-Type', 'text/markdown; charset=utf-8');
     c.header('Cache-Control', 'no-cache');
     return c.body(agentInstructions(config.appOrigin, config.agentCliVersion));
+  });
+  // Agent discovery documents (llms.txt, RFC 9727, OpenAPI, agent skills) describe only what this
+  // app serves. They are public and change only with a deploy or a new CLI version.
+  const discoveryCache = 'public, max-age=3600';
+  app.get('/llms.txt', (c) => {
+    c.header('Content-Type', 'text/plain; charset=utf-8');
+    c.header('Cache-Control', discoveryCache);
+    return c.body(llmsTxt(config.appOrigin, config.agentCliVersion));
+  });
+  app.get('/.well-known/api-catalog', (c) => {
+    c.header('Content-Type', `application/linkset+json; profile="${API_CATALOG_PROFILE}"`);
+    c.header('Link', '</.well-known/api-catalog>; rel="api-catalog"');
+    c.header('Cache-Control', discoveryCache);
+    return c.body(JSON.stringify(apiCatalog(config.appOrigin, config.agentCliVersion)));
+  });
+  let openApiDocument: string | undefined;
+  app.get('/openapi.json', (c) => {
+    openApiDocument ??= JSON.stringify(
+      agentApi.getOpenAPI31Document({
+        openapi: '3.1.0',
+        info: {
+          title: 'VibeLog Agent API',
+          version: 'v1',
+          license: {
+            name: 'MIT',
+            url: 'https://github.com/EastSun5566/vibelog/blob/main/LICENSE',
+          },
+          description:
+            'Prepare a private VibeLog draft from public HackMD notes, and publish it only with browser-approved permission and an explicit request from the writer.',
+        },
+        servers: [{ url: new URL(AGENT_API, config.appOrigin).href }],
+        externalDocs: { url: new URL('/guide', config.appOrigin).href },
+      }),
+    );
+    c.header('Content-Type', 'application/json; charset=utf-8');
+    c.header('Cache-Control', discoveryCache);
+    return c.body(openApiDocument);
+  });
+  const requireAgentCli = () => {
+    if (!config.agentCliVersion)
+      throw new AppError('not_found', 'Agent onboarding is not enabled yet.', 404);
+    return config.agentCliVersion;
+  };
+  app.get('/.well-known/agent-skills/index.json', (c) => {
+    const index = agentSkillsIndex(config.appOrigin, requireAgentCli());
+    c.header('Cache-Control', discoveryCache);
+    return c.json(index);
+  });
+  app.get('/.well-known/agent-skills/:name/SKILL.md', (c) => {
+    const skill = agentSkill(config.appOrigin, requireAgentCli());
+    if (c.req.param('name') !== skill.name)
+      throw new AppError('not_found', 'Agent skill not found.', 404);
+    c.header('Content-Type', 'text/markdown; charset=utf-8');
+    c.header('Cache-Control', discoveryCache);
+    return c.body(skill.markdown);
   });
   app.get('/agent/authorize', async (c) => {
     c.header('Cache-Control', 'private, no-store');
