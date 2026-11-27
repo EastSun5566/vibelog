@@ -75,6 +75,7 @@ function createApplication() {
   const image = new ApplicationImage('application-image', {
     repository: config.require('containerImageRepository'),
     environment,
+    githubActionsCache: Boolean(process.env.ACTIONS_RUNTIME_TOKEN),
   });
   const migration = new DatabaseMigration(
     'database-migration',

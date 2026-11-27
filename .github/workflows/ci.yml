@@ -9,8 +9,13 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same pull request supersedes its running CI; main runs always finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  verify:
+  check:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -58,13 +63,38 @@ jobs:
         run: |
           node .github/scripts/cli-pack-smoke.mjs "$RUNNER_TEMP/package-smoke"/vibelog-cli-*.tgz
           node .github/scripts/core-pack-smoke.mjs "$RUNNER_TEMP/package-smoke"/vibelog-core-*.tgz
-      - name: Restore project Node version
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - name: Stop integration services
+        if: always()
+        run: docker compose down --volumes
+
+  # The browser suite is the slowest part of CI, so it runs beside the checks instead of after them.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .node-version
-          package-manager-cache: false
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The CLI scenarios import packages/cli/dist; the post-suite migration check imports @vibelog/core.
+      - run: pnpm --filter @vibelog/core --filter @vibelog/cli build
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Build the application image with the shared layer cache
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: packages/app/Dockerfile
+          tags: vibelog-app:e2e
+          load: true
+          # Read-only: the container job, which is off the critical path, writes the shared cache.
+          cache-from: type=gha,scope=app-image
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
+        env:
+          VIBELOG_E2E_PREBUILT: '1'
       - name: Upload Playwright traces
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -76,6 +106,18 @@ jobs:
       - name: Stop integration services
         if: always()
         run: docker compose down --volumes
+
+  # Keeps the single `verify` status that branch protection and reviewers already expect.
+  verify:
+    if: always()
+    needs: [check, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the checks and the browser suite
+        env:
+          RESULTS: ${{ needs.check.result }} ${{ needs.e2e.result }}
+        run: test "$RESULTS" = "success success"
 
   pulumi:
     runs-on: ubuntu-latest
@@ -104,7 +146,17 @@ jobs:
         run: |
           docker compose config --quiet
           docker compose --env-file .env.selfhost.example -f compose.selfhost.yml config --quiet
-      - name: Build and smoke test stateless application containers
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Build the application image with the shared layer cache
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: packages/app/Dockerfile
+          tags: vibelog-app:ci
+          load: true
+          cache-from: type=gha,scope=app-image
+          cache-to: type=gha,scope=app-image,mode=max,ignore-error=true
+      - name: Smoke test stateless application containers
         env:
           VIBELOG_APP_IMAGE: vibelog-app:ci
           NODE_ENV: production
@@ -115,5 +167,5 @@ jobs:
           PORT: 34123
         run: |
           trap 'docker compose down --volumes' EXIT
-          docker compose up --detach --build postgres s3mock migrate web worker
+          docker compose up --detach --no-build postgres s3mock migrate web worker
           node .github/scripts/container-smoke.mjs

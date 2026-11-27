@@ -57,7 +57,7 @@ pulumi preview --cwd packages/infra
 
 Review every preview before `pulumi up`. The repository guard rejects protected-resource deletion or replacement, public worker access, and public R2 exposure.
 
-The **Deploy production** GitHub workflow is the normal delivery path. It accepts a manual dispatch from `main`, requires successful CI for that exact commit, performs one guarded update, then checks the public app and private worker transport. Pushing code alone never deploys production.
+The **Deploy production** GitHub workflow is the normal delivery path. It accepts a manual dispatch from `main`, requires successful CI for that exact commit or for a pull request with the identical git tree (an up-to-date squash merge), performs one guarded update, then checks the public app and private worker transport. Pushing code alone never deploys production.
 
 Do not deploy Cloud Run separately with `gcloud run deploy`; Pulumi must remain the only owner of revision configuration.
 

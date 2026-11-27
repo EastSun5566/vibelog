@@ -1,0 +1,5 @@
+name: Expose the Actions cache runtime
+description: Export the GitHub Actions cache credentials to later steps so BuildKit can read and write the gha cache outside docker/build-push-action
+runs:
+  using: node24
+  main: index.mjs
