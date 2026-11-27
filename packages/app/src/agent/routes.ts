@@ -242,15 +242,19 @@ function reject(code: string, message: string) {
   };
 }
 /**
- * These routes have always read their body as JSON whatever the Content-Type said. Normalize the
- * header before the generated media-type check, which would otherwise reject some requests with
- * 415. No pattern matching: any header the check might refuse would reintroduce a gap.
+ * Mark a request as JSON once the agent API has decided to read it as JSON, before the generated
+ * media-type check runs. That check is stricter than the agent API has ever been, and any header it
+ * refuses would otherwise become a 415 these routes never returned.
  */
-const lenientJsonBody: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
+async function treatAsJson(c: Context<{ Variables: Variables }>) {
   const body = await c.req.text();
   const headers = new Headers(c.req.raw.headers);
   headers.set('content-type', 'application/json');
   c.req.raw = new Request(c.req.raw.url, { method: c.req.method, headers, body });
+}
+/** These routes have always read their body as JSON whatever the Content-Type said. */
+const lenientJsonBody: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
+  await treatAsJson(c);
   await next();
 };
 /** Hono rejects unparseable JSON itself; report it as the route's own validation error. */
@@ -735,6 +739,8 @@ export function agentRoutes(
           400,
         );
       c.set('malformedJson', invalidMutationInput);
+      // The guard above has always been the only Content-Type rule for mutations.
+      await treatAsJson(c);
       await next();
     };
     app.openapi(

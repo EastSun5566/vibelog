@@ -289,6 +289,12 @@ describe('agent API errors keep their codes', () => {
         code: 'invalid_request_key',
       },
     );
+    // As on main, any type starting with application/json passes the guard and reaches validation.
+    for (const type of ['application/json ;charset=utf-8', 'application/json-patch'])
+      expect(await errorOf(await post('/sync', { 'Content-Type': type, ...key }))).toEqual({
+        status: 400,
+        code: 'invalid_input',
+      });
     for (const body of ['{', '{}', '{"stateVersion":"x"}'])
       expect(await errorOf(await post('/sync', { ...jsonType, ...key }, body))).toEqual({
         status: 400,
