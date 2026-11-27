@@ -22,9 +22,12 @@ export const hackmdNameSchema = z
 export const PREVIEW_LABEL_PREFIX = 'try-';
 
 const RESERVED_HANDLES = new Set(['preview', 'www', 'api', 'admin', 'assets']);
-/** Subdomains a blog may not claim: app hosts, and the prefix that serves anonymous previews. */
+/**
+ * Subdomains a blog may not claim: app hosts, and the exact shape of anonymous preview hosts.
+ * Other `try-` handles stay valid, so blogs that already use one keep being served.
+ */
 export function isReservedBlogHandle(handle: string): boolean {
-  return RESERVED_HANDLES.has(handle) || handle.startsWith(PREVIEW_LABEL_PREFIX);
+  return RESERVED_HANDLES.has(handle) || isPreviewLabel(handle);
 }
 
 export function previewNameKey(name: string): string {

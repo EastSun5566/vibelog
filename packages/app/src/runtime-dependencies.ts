@@ -66,9 +66,10 @@ export function createWorkerRuntimeDependencies(config: OperationRuntimeConfig) 
   if (config.queueMode === 'postgres') {
     const dispatcher = new DurableOutboxWorker(core.database, core.executor);
     const previewWorker = new DurablePreviewWorker(core.previews, core.previewExecutor);
+    // Writers' own operations go first; an anonymous preview only runs when none are waiting.
     const durableWorker = {
       dispatch: async (limit?: number) =>
-        (await dispatcher.dispatch(limit)) + (await previewWorker.dispatch()),
+        (await dispatcher.dispatch(limit)) || (await previewWorker.dispatch()),
     };
     return { ...core, dispatcher, durableWorker };
   }

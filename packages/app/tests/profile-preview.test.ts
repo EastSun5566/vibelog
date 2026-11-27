@@ -76,8 +76,10 @@ describe('preview naming', () => {
       expect(hackmdNameSchema.safeParse(name).success).toBe(false);
   });
   it('keeps blogs off preview hosts and app hosts', () => {
-    expect(isReservedBlogHandle('try-anything')).toBe(true);
+    expect(isReservedBlogHandle(previewLabel('alice'))).toBe(true);
     expect(isReservedBlogHandle('preview')).toBe(true);
+    // Existing blogs with other try- handles keep working.
+    expect(isReservedBlogHandle('try-anything')).toBe(false);
     expect(isReservedBlogHandle('trying')).toBe(false);
   });
 });
