@@ -36,6 +36,15 @@ import {
 } from '../src/schema.js';
 
 const url = process.env.TEST_DATABASE_URL;
+/**
+ * Other integration test files share this database in parallel, so outbox checks are scoped to the
+ * operations a test owns rather than the whole table.
+ */
+async function pendingOutbox(database: AppDatabase, operationId: string) {
+  return (await database.listPendingOutbox(1000)).filter(
+    (event) => event.operationId === operationId,
+  );
+}
 describe.skipIf(!url)('PostgreSQL operation repository', () => {
   const database = new AppDatabase(url ?? 'postgresql://unused');
   const userId = randomUUID();
@@ -59,9 +68,7 @@ describe.skipIf(!url)('PostgreSQL operation repository', () => {
       `writer-${userId.slice(0, 6)}`,
       'writer',
     );
-    expect((await database.listPendingOutbox()).map((event) => event.operationId)).toContain(
-      operation.id,
-    );
+    expect(await pendingOutbox(database, operation.id)).toHaveLength(1);
     const [first, second] = await Promise.all([
       database.claimOperation(operation.id),
       database.claimOperation(operation.id),
@@ -88,7 +95,12 @@ describe.skipIf(!url)('PostgreSQL operation repository', () => {
     });
     expect(await dispatcher.dispatch()).toBeGreaterThan(0);
     expect(sent[0]).toMatchObject({ version: 1 });
-    expect(await database.listPendingOutbox()).toHaveLength(0);
+    const dispatched = new Set(
+      sent.map((message) => (message as { operationId: string }).operationId),
+    );
+    expect(
+      (await database.listPendingOutbox(1000)).filter((event) => dispatched.has(event.operationId)),
+    ).toEqual([]);
   });
   it('serializes concurrent email rate-limit consumption and resets after the window', async () => {
     const at = new Date('2026-08-29T00:00:00.000Z');
@@ -352,7 +364,7 @@ describe.skipIf(!url)('operation crash recovery', () => {
     const { operation, blog } = await fixture();
     const first = await database.claimOperation(operation.id);
     if (!first) throw new Error('Missing first claim');
-    const [event] = await database.listPendingOutbox();
+    const [event] = await pendingOutbox(database, operation.id);
     if (!event) throw new Error('Missing outbox');
     await database.markOutboxDispatched(event.id, event.message.traceId);
     await expect(executor().execute(operation.id)).rejects.toBeInstanceOf(RetryableOperationError);
@@ -368,11 +380,11 @@ describe.skipIf(!url)('operation crash recovery', () => {
         ])
       ).reduce((a, b) => a + b),
     ).toBe(1);
-    const [recovered] = await database.listPendingOutbox();
+    const [recovered] = await pendingOutbox(database, operation.id);
     expect(recovered?.message.traceId).not.toBe(event.message.traceId);
     // A late ACK from the original dispatcher cannot hide the recovery delivery.
     await database.markOutboxDispatched(event.id, event.message.traceId);
-    expect(await database.listPendingOutbox()).toHaveLength(1);
+    expect(await pendingOutbox(database, operation.id)).toHaveLength(1);
     const current = await database.claimOperation(operation.id);
     if (!current) throw new Error('Missing recovered claim');
     expect(current.attempts).toBe(2);
@@ -415,7 +427,7 @@ describe.skipIf(!url)('operation crash recovery', () => {
   });
   it('recovers stranded queued tasks and terminates after the execution retry budget', async () => {
     const { operation, blog } = await fixture();
-    const [event] = await database.listPendingOutbox();
+    const [event] = await pendingOutbox(database, operation.id);
     if (!event) throw new Error('Missing outbox');
     await database.markOutboxDispatched(event.id, event.message.traceId);
     await database.db
@@ -423,7 +435,7 @@ describe.skipIf(!url)('operation crash recovery', () => {
       .set({ updatedAt: expired })
       .where(eq(operations.id, operation.id));
     expect(await database.recoverExpiredOperations()).toBe(1);
-    expect((await database.listPendingOutbox())[0]?.message.traceId).not.toBe(
+    expect((await pendingOutbox(database, operation.id))[0]?.message.traceId).not.toBe(
       event.message.traceId,
     );
     await database.claimOperation(operation.id);
@@ -434,7 +446,7 @@ describe.skipIf(!url)('operation crash recovery', () => {
     expect(await database.recoverExpiredOperations()).toBe(1);
     expect((await database.getOperation(operation.id))?.status).toBe('failed');
     expect((await database.getBlog(blog.id))?.state).toBe('failed');
-    expect(await database.listPendingOutbox()).toHaveLength(0);
+    expect(await pendingOutbox(database, operation.id)).toEqual([]);
     expect(await database.claimOperation(operation.id)).toBeNull();
   });
   it.each(['apply_design', 'publish'] as const)(
@@ -637,7 +649,14 @@ describe.skipIf(!url)('operation crash recovery', () => {
       const { task } = JSON.parse(init.body) as { task: { httpRequest: { body: string } } };
       const body = Buffer.from(task.httpRequest.body, 'base64').toString();
       operationId = (JSON.parse(body) as { operationId: string }).operationId;
-      expect(await database.listPendingOutbox()).toHaveLength(0);
+      // The smoke operation never gets an outbox row, so only this explicit task can run it.
+      // Scope the check to this operation: other test files share the database in parallel.
+      expect(
+        await database.db
+          .select({ id: operationOutbox.id })
+          .from(operationOutbox)
+          .where(eq(operationOutbox.operationId, operationId)),
+      ).toEqual([]);
       const response = await handleOperationTask(
         new Request('http://worker/tasks/operations', {
           method: 'POST',
@@ -1310,11 +1329,7 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
       state: 'syncing',
       contentVersion: 0,
     });
-    expect(
-      (await database.listPendingOutbox()).filter(
-        (event) => event.operationId === accepted.operationId,
-      ),
-    ).toHaveLength(1);
+    expect(await pendingOutbox(database, accepted.operationId)).toHaveLength(1);
     expect(await database.listDesignRevisions(blog.id)).toHaveLength(1);
     expect(
       (await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id)))[0]
@@ -1954,8 +1969,6 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
       await database.db.select().from(agentDailyUsage).where(eq(agentDailyUsage.subject, id)),
     ).toHaveLength(0);
     expect((await database.getOperation(operation.id))?.status).toBe('queued');
-    expect(
-      (await database.listPendingOutbox()).some((row) => row.operationId === operation.id),
-    ).toBe(true);
+    expect(await pendingOutbox(database, operation.id)).toHaveLength(1);
   });
 });

@@ -198,6 +198,31 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
     'href',
     '/auth/login',
   );
+  // Agent discovery documents are public, typed and cacheable on the app origin.
+  const discovery = {
+    '/llms.txt': 'text/plain',
+    '/.well-known/api-catalog': 'application/linkset+json',
+    '/openapi.json': 'application/json',
+    '/.well-known/agent-skills/index.json': 'application/json',
+  };
+  for (const [path, type] of Object.entries(discovery)) {
+    const response = await request.get(path);
+    expect(response.status(), path).toBe(200);
+    expect(response.headers()['content-type'], path).toContain(type);
+    expect(response.headers()['cache-control'], path).toBe('public, max-age=3600');
+  }
+  const openapi = (await (await request.get('/openapi.json')).json()) as {
+    openapi: string;
+    paths: Record<string, unknown>;
+  };
+  expect(openapi.openapi).toBe('3.1.0');
+  expect(Object.keys(openapi.paths)).toContain('/context');
+  const skills = (await (await request.get('/.well-known/agent-skills/index.json')).json()) as {
+    skills: { url: string }[];
+  };
+  const skill = await request.get(skills.skills[0].url);
+  expect(skill.headers()['content-type']).toContain('text/markdown');
+  expect(await skill.text()).toContain('@vibelog/cli@0.5.0');
   const sourceLink = page.getByRole('link', { name: 'VibeLog source code on GitHub' });
   await expect(sourceLink).toHaveAttribute('href', 'https://github.com/EastSun5566/vibelog');
   await expect(sourceLink).toHaveAttribute('target', '_blank');
