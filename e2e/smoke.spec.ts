@@ -1570,4 +1570,9 @@ test('an anonymous visitor swaps hackmd.io for the app origin, sees the blog and
   await expect(page).toHaveURL(/\/editor/u, { timeout: 120_000 });
   await page.goto('/@alice-hackmd/edit');
   await expect(page).toHaveURL(/\/editor/u);
+  // The migration rehearsal that follows uses Alice's retained blog as its only fixture.
+  await openDisclosure(page, 'danger-zone');
+  await page.getByLabel('Type claimer@example.com to confirm').fill('claimer@example.com');
+  await page.getByRole('button', { name: 'Delete account' }).click();
+  await expect(page).toHaveURL(/\/auth\/login\?deleted=1$/u);
 });
