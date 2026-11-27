@@ -9,7 +9,10 @@ export interface ApplicationImageArgs {
   githubActionsCache?: boolean;
 }
 
-/** CI and deploys share one scope, so a deploy reuses layers its pull request already built. */
+/**
+ * CI and deploys share one scope. GitHub isolates caches by ref: a deploy from main reads only
+ * what main CI and earlier deploys stored, never a pull request's own cache entries.
+ */
 const CACHE_SCOPE = 'app-image';
 
 /** Builds and pushes the immutable application image consumed by both Cloud Run services. */
