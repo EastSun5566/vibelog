@@ -4,7 +4,7 @@ import { AgentClient, CliError } from './client.js';
 import { secureStore, type CredentialStore } from './credentials.js';
 import { login } from './login.js';
 
-export const HELP = `VibeLog CLI 0.5.1 (@vibelog/cli) — private drafts and human-requested publishing
+export const HELP = `VibeLog CLI 0.6.0 (@vibelog/cli) — private drafts and human-requested publishing
 Usage: vibelog <command> [options]
   login                 Request browser-approved draft and publishing access
   login --no-wait       Start or resume approval without waiting; run again after approving

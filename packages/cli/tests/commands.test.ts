@@ -935,6 +935,9 @@ describe('agent CLI', () => {
     ['rate_limited', 429, 'wait_retry_after'],
     ['internal_error', 503, 'check_service'],
     ['deletion_in_progress', 409, 'open_editor'],
+    ['hackmd_locked', 409, 'open_editor'],
+    ['claim_required', 409, 'confirm_hackmd'],
+    ['hackmd_verification_required', 403, 'confirm_hackmd'],
   ])(
     'preserves HTTP diagnostics for %s and never retries automatically',
     async (code, status, action) => {
