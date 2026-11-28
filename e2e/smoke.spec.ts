@@ -1553,8 +1553,37 @@ test('an anonymous visitor swaps hackmd.io for the app origin and sees the blog'
   // in through the button sees that it is claimed instead of a token form.
   const mailpitUrl = process.env.E2E_MAILPIT_URL;
   if (!mailpitUrl) throw new Error('E2E_MAILPIT_URL is required');
+  await page.route('https://www.googletagmanager.com/gtag/js**', (route) =>
+    route.fulfill({ contentType: 'text/javascript', body: '' }),
+  );
   await page.goto('/@alice-hackmd');
-  await page.getByRole('link', { name: 'Make it yours' }).click();
+  await page
+    .getByRole('region', { name: 'Allow Google Analytics?' })
+    .getByRole('button', { name: 'Allow', exact: true })
+    .click();
+  // GA sees the funnel step and the page type, never the HackMD name.
+  const gaCommands = () =>
+    page.evaluate(() =>
+      ((window as typeof window & { dataLayer?: IArguments[] }).dataLayer ?? []).map((entry) =>
+        JSON.stringify(Array.from(entry)),
+      ),
+    );
+  await expect.poll(gaCommands).toContainEqual('["event","preview_ready"]');
+  expect((await gaCommands()).join()).toContain('/@name');
+  expect((await gaCommands()).join()).not.toContain('alice');
+  const claim = page.getByRole('link', { name: 'Make it yours' });
+  await claim.evaluate((link) => {
+    link.addEventListener(
+      'click',
+      (event) => {
+        event.preventDefault();
+      },
+      { once: true },
+    );
+  });
+  await claim.click();
+  await expect.poll(gaCommands).toContainEqual('["event","claim_start"]');
+  await claim.click();
   await expect(page).toHaveURL(/\/auth\/login\?returnTo=%2F%40alice-hackmd%2Fedit$/u);
   const magicLink = await requestMagicLink(
     page,

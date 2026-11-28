@@ -24,6 +24,24 @@ if (
 ) {
   const analyticsWindow = window as unknown as AnalyticsWindow & Record<string, unknown>;
   let started = false;
+  let enabled = false;
+
+  // GA gets page types, not people: /@someone becomes /@name, and query strings (which can carry
+  // a HackMD name in returnTo) and other sites' paths are dropped.
+  const redactPath = (path: string): string => path.replace(/^\/@[^/]+/u, '/@name');
+  const redactedReferrer = (): string => {
+    try {
+      const referrer = new URL(document.referrer);
+      return referrer.origin === location.origin
+        ? `${referrer.origin}${redactPath(referrer.pathname)}`
+        : referrer.origin;
+    } catch {
+      return '';
+    }
+  };
+  const track = (event: string): void => {
+    if (enabled) analyticsWindow.gtag('event', event);
+  };
 
   const readConsent = (): AnalyticsConsent | undefined => {
     try {
@@ -61,6 +79,7 @@ if (
 
   const enableAnalytics = (): void => {
     analyticsWindow[`ga-disable-${measurementId}`] = false;
+    enabled = true;
     if (started) {
       analyticsWindow.gtag('consent', 'update', { analytics_storage: 'granted' });
       return;
@@ -78,7 +97,13 @@ if (
     analyticsWindow.gtag('config', measurementId, {
       allow_ad_personalization_signals: false,
       allow_google_signals: false,
+      page_location: `${location.origin}${redactPath(location.pathname)}`,
+      page_referrer: redactedReferrer(),
     });
+    // Funnel steps: a page marks what viewing it means, and links mark what clicking them means.
+    const view =
+      document.querySelector<HTMLElement>('[data-analytics-view]')?.dataset.analyticsView;
+    if (view) track(view);
 
     const script = document.createElement('script');
     script.async = true;
@@ -89,6 +114,7 @@ if (
   };
 
   const disableAnalytics = (): void => {
+    enabled = false;
     if (started) analyticsWindow.gtag('consent', 'update', { analytics_storage: 'denied' });
     analyticsWindow[`ga-disable-${measurementId}`] = true;
   };
@@ -104,6 +130,10 @@ if (
     hideBanner();
   });
   settings.addEventListener('click', showBanner);
+  for (const link of document.querySelectorAll<HTMLElement>('[data-analytics-event]'))
+    link.addEventListener('click', () => {
+      track(link.dataset.analyticsEvent ?? '');
+    });
 
   const consent = readConsent();
   if (consent === 'granted') {

@@ -2170,13 +2170,17 @@ export function profilePreviewPage(view: ProfilePreviewView, analytics?: Analyti
   const pending = view.state === 'pending';
   return document(
     `${handle} on VibeLog`,
-    <section class="profile-preview" data-state={view.state}>
+    <section
+      class="profile-preview"
+      data-state={view.state}
+      data-analytics-view={view.state === 'ready' ? 'preview_ready' : undefined}
+    >
       <header class="profile-preview-bar">
         <p>
           A preview built from <a href={`https://hackmd.io/${handle}`}>{handle}</a>&rsquo;s public
           HackMD notes. Not published by the author.
         </p>
-        <a class="btn" data-size="compact" href={view.claimUrl}>
+        <a class="btn" data-size="compact" href={view.claimUrl} data-analytics-event="claim_start">
           Make it yours
         </a>
       </header>
