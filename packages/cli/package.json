@@ -1,6 +1,6 @@
 {
   "name": "@vibelog/cli",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "VibeLog private drafts and optional publishing for coding agents",
   "type": "module",
   "bin": { "vibelog": "dist/main.js" },

@@ -11,6 +11,7 @@ interface Recovery {
     | 'retry_read'
     | 'resume_wait'
     | 'open_editor'
+    | 'confirm_hackmd'
     | 'check_request'
     | 'check_service'
     | 'restart_login';
@@ -38,7 +39,10 @@ function recoveryFor(code: string, status?: number): Recovery {
     ].includes(code)
   )
     return { action: 'read_context' };
-  if (code === 'deletion_in_progress') return { action: 'open_editor' };
+  if (code === 'deletion_in_progress' || code === 'hackmd_locked') return { action: 'open_editor' };
+  // The writer proves HackMD ownership in the browser; the error message carries the link.
+  if (code === 'claim_required' || code === 'hackmd_verification_required')
+    return { action: 'confirm_hackmd' };
   if (code === 'pairing_expired' || code === 'pairing_denied') return { action: 'restart_login' };
   if (status === 429) return { action: 'wait_retry_after' };
   return { action: status && status >= 500 ? 'check_service' : 'check_request' };
