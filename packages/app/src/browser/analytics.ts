@@ -52,9 +52,12 @@ if (
     settings.hidden = false;
   };
 
-  const gtag = (...args: unknown[]): void => {
-    analyticsWindow.dataLayer.push(args);
-  };
+  // gtag.js only acts on Arguments objects in dataLayer; pushing an array is silently ignored,
+  // which kept every page view from being sent. This mirrors Google's own snippet.
+  const gtag = function (): void {
+    // oxlint-disable-next-line prefer-rest-params
+    analyticsWindow.dataLayer.push(arguments);
+  } as (...args: unknown[]) => void;
 
   const enableAnalytics = (): void => {
     analyticsWindow[`ga-disable-${measurementId}`] = false;

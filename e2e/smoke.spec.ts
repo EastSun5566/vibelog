@@ -241,6 +241,19 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await page.getByRole('button', { name: 'Analytics settings' }).click();
   await analyticsConsent.getByRole('button', { name: 'Allow analytics' }).click();
   await expect.poll(() => analyticsScriptRequests).toBe(1);
+  // gtag.js ignores array commands, so a page view is only sent for Arguments objects.
+  expect(
+    await page.evaluate(() =>
+      (window as typeof window & { dataLayer?: unknown[] }).dataLayer?.map((entry) =>
+        Object.prototype.toString.call(entry),
+      ),
+    ),
+  ).toEqual(expect.arrayContaining(['[object Arguments]']));
+  expect(
+    await page.evaluate(() =>
+      (window as typeof window & { dataLayer?: unknown[] }).dataLayer?.some(Array.isArray),
+    ),
+  ).toBe(false);
   await expect(analyticsConsent).toBeHidden();
   await page.goto('/guide');
   await expect.poll(() => analyticsScriptRequests).toBe(2);
