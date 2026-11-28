@@ -51,23 +51,4 @@ export function initializeHandles(root: ClientRoot): void {
     blogHandle.addEventListener('input', update);
     update();
   }
-
-  const hackmdHandle = root.querySelector<HTMLInputElement>('#hackmdUsername');
-  const hackmdProfile = root.querySelector<HTMLAnchorElement>('[data-hackmd-profile]');
-  if (hackmdHandle && hackmdProfile && !hackmdHandle.dataset.profileBound) {
-    hackmdHandle.dataset.profileBound = 'true';
-    const update = () => {
-      const username = hackmdHandle.value.trim();
-      hackmdProfile.textContent = `https://hackmd.io/@${username || 'username'}`;
-      if (username) {
-        hackmdProfile.href = `https://hackmd.io/@${encodeURIComponent(username)}`;
-        hackmdProfile.removeAttribute('aria-disabled');
-      } else {
-        hackmdProfile.removeAttribute('href');
-        hackmdProfile.setAttribute('aria-disabled', 'true');
-      }
-    };
-    hackmdHandle.addEventListener('input', update);
-    update();
-  }
 }

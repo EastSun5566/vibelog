@@ -1303,7 +1303,7 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     if (!initial) throw new Error('Missing blog');
     const input = {
       username: `fixed-${id.slice(0, 8)}`,
-      hackmdUsername: 'alice',
+      hackmdUsername: 'wrong-profile',
       language: 'zh-Hant',
       stateVersion: stateVersion(initial),
     };
@@ -1313,6 +1313,10 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
         headers: { ...headers, 'Idempotency-Key': key },
         body: JSON.stringify(body),
       });
+    // Only a proven owner attaches a HackMD account, so a correction cannot swap it.
+    const swapped = await connect(randomUUID(), { ...input, hackmdUsername: 'alice' });
+    expect(swapped.status).toBe(409);
+    expect(await swapped.json()).toHaveProperty('error.code', 'hackmd_locked');
     const missing = await connect(randomUUID(), { ...input, stateVersion: undefined });
     expect(missing.status).toBe(409);
     expect(await missing.json()).toHaveProperty('error.code', 'state_changed');
@@ -1324,7 +1328,7 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     expect(await (await connect(key, input)).json()).toEqual(accepted);
     expect(await database.getBlog(blog.id)).toMatchObject({
       username: input.username,
-      hackmdUsername: 'alice',
+      hackmdUsername: 'wrong-profile',
       language: 'zh-Hant',
       state: 'syncing',
       contentVersion: 0,
@@ -1373,7 +1377,7 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     if (!initial) throw new Error('Missing blog');
     const input = {
       username: taken,
-      hackmdUsername: 'alice',
+      hackmdUsername: 'wrong-profile',
       language: 'en',
       stateVersion: stateVersion(initial),
     };
@@ -1676,7 +1680,14 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     const id = await owner();
     const approved = await grant(id, true);
     const draftOnly = await grant(id);
-    const { blog, operation } = await database.createBlog(id, `publish-${id.slice(0, 8)}`, 'alice');
+    // Publishing needs a writer who proved the HackMD account; each fixture uses its own.
+    const { blog, operation } = await database.createBlog(
+      id,
+      `publish-${id.slice(0, 8)}`,
+      `publisher-${id.slice(0, 8)}`,
+      'en',
+      {},
+    );
     const lease = await database.claimOperation(operation.id);
     if (!lease) throw new Error('Missing sync claim');
     const initial = await database.getActiveDesign(blog.id);
@@ -1797,6 +1808,41 @@ describe.skipIf(!url)('Agent grants and atomic draft admission', () => {
     await f.finish(republish.operationId);
     expect(await f.context()).toHaveProperty('publication.status', 'current');
     expect(await database.listReleases(f.blog.id)).toHaveLength(2);
+  });
+  it('sends agents to the browser claim and keeps unconfirmed accounts from publishing', async () => {
+    const id = await owner();
+    const approved = await grant(id);
+    const router = agentRoutes(
+      database,
+      { dispatch: () => Promise.resolve(0) },
+      'https://vibelog.org',
+      { betterAuthSecret: 'test-secret' },
+    );
+    const connect = await router.request('/connect', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${approved.token}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': randomUUID(),
+      },
+      body: JSON.stringify({
+        username: `new-${id.slice(0, 8)}`,
+        hackmdUsername: 'someone',
+        language: 'en',
+      }),
+    });
+    expect(connect.status).toBe(409);
+    const body = (await connect.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('claim_required');
+    expect(body.error.message).toContain('https://vibelog.org/@someone/edit');
+    expect(await database.getBlogForUser(id)).toBeNull();
+
+    const f = await publishFixture();
+    await database.db.update(blogs).set({ hackmdVerifiedAt: null }).where(eq(blogs.id, f.blog.id));
+    const unconfirmed = await f.publish({ stateVersion: stateVersion(await f.read()) });
+    expect(unconfirmed.status).toBe(403);
+    expect(await unconfirmed.json()).toHaveProperty('error.code', 'hackmd_verification_required');
+    expect(await database.getActiveOperation(f.blog.id, f.id)).toBeNull();
   });
   it('rejects incomplete/deleting drafts and active work, preserving the live release on worker failure', async () => {
     const f = await publishFixture();

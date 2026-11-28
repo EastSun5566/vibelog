@@ -68,9 +68,7 @@ async function requestMagicLink(
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await expect(page).toHaveURL(/\/auth\/login\?sent=1(?:&returnTo=.*)?$/u);
   await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
-  await expect(page.getByRole('status')).toContainText(
-    'We sent a one-time sign-in link. It expires in 10 minutes.',
-  );
+  await expect(page.getByRole('status')).toContainText('The sign-in link expires in 10 minutes.');
   await expect(page.getByLabel('Email')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Use a different email' })).toBeVisible();
 
@@ -99,6 +97,17 @@ async function requestMagicLink(
   )?.[0];
   expect(magicLink).toBeTruthy();
   return magicLink ?? '';
+}
+
+/** Claims a HackMD profile through /@name/edit; the fixture accepts the token "token-for-<name>". */
+async function claimBlog(page: Page, hackmd: string, handle: string, language = 'en') {
+  await page.goto(`/@${hackmd}/edit`);
+  await expect(page.getByRole('heading', { name: `Make @${hackmd} yours` })).toBeVisible();
+  await page.getByLabel(`HackMD API token for @${hackmd}`).fill(`token-for-${hackmd}`);
+  await page.getByLabel('Blog address').fill(handle);
+  await page.getByLabel('Blog language').fill(language);
+  await page.getByRole('button', { name: 'Verify and open the editor' }).click();
+  await expect(page).toHaveURL(/\/editor(?:\?|$)/u, { timeout: 120_000 });
 }
 
 async function markPage(page: Page): Promise<void> {
@@ -232,15 +241,28 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await page.keyboard.press('Enter');
   await expect(page.locator('#main-content')).toBeFocused();
   await page.setViewportSize({ width: 1280, height: 720 });
-  const analyticsConsent = page.getByRole('region', { name: 'Allow analytics?' });
+  const analyticsConsent = page.getByRole('region', { name: 'Allow Google Analytics?' });
   await expect(analyticsConsent).toBeVisible();
   expect(analyticsScriptRequests).toBe(0);
-  await analyticsConsent.getByRole('button', { name: 'Not now' }).click();
+  await analyticsConsent.getByRole('button', { name: 'No thanks' }).click();
   await expect(analyticsConsent).toBeHidden();
   expect(analyticsScriptRequests).toBe(0);
   await page.getByRole('button', { name: 'Analytics settings' }).click();
-  await analyticsConsent.getByRole('button', { name: 'Allow analytics' }).click();
+  await analyticsConsent.getByRole('button', { name: 'Allow', exact: true }).click();
   await expect.poll(() => analyticsScriptRequests).toBe(1);
+  // gtag.js ignores array commands, so a page view is only sent for Arguments objects.
+  expect(
+    await page.evaluate(() =>
+      (window as typeof window & { dataLayer?: unknown[] }).dataLayer?.map((entry) =>
+        Object.prototype.toString.call(entry),
+      ),
+    ),
+  ).toEqual(expect.arrayContaining(['[object Arguments]']));
+  expect(
+    await page.evaluate(() =>
+      (window as typeof window & { dataLayer?: unknown[] }).dataLayer?.some(Array.isArray),
+    ),
+  ).toBe(false);
   await expect(analyticsConsent).toBeHidden();
   await page.goto('/guide');
   await expect.poll(() => analyticsScriptRequests).toBe(2);
@@ -261,20 +283,21 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await expect(page).toHaveURL(/\/onboarding$/u);
   await expect(page.locator('[data-analytics-loader]')).toHaveCount(0);
   expect(analyticsScriptRequests).toBe(analyticsRequestsBeforeSignIn);
+  // A new writer starts from their HackMD username and confirms it on /@name/edit.
+  await page.getByLabel('Your HackMD username').fill('alice-hackmd');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page).toHaveURL(/\/@alice-hackmd\/edit$/u);
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
   await expect(page.getByLabel('Blog address')).toHaveCSS('font-size', '16px');
   await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(page.getByLabel('Blog address')).toHaveValue('alice-hackmd');
   await page.getByLabel('Blog address').fill('alice');
   await expect(page.locator('[data-blog-hostname]')).toHaveText(/alice\./u);
-  const profile = page.locator('[data-hackmd-profile]');
-  await expect(profile).toHaveAttribute('aria-disabled', 'true');
-  await page.getByLabel('HackMD username').fill('alice-hackmd');
-  await expect(profile).toHaveText('https://hackmd.io/@alice-hackmd');
-  await expect(profile).toHaveAttribute('href', 'https://hackmd.io/@alice-hackmd');
   await expect(page.locator('#language-suggestions option')).toHaveCount(12);
   await page.getByLabel('Blog language').fill('en-US');
-  await page.getByRole('button', { name: 'Sync and build preview' }).click();
+  await page.getByLabel('HackMD API token for @alice-hackmd').fill('token-for-alice-hackmd');
+  await page.getByRole('button', { name: 'Verify and open the editor' }).click();
 
   await expect(page).toHaveURL(/\/editor(?:\?|$)/u, { timeout: 120_000 });
   await expect(page.getByRole('heading', { name: "Alice Writer's blog" })).toBeVisible();
@@ -759,18 +782,18 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
     'second-writer@example.com',
   );
   await page.goto(secondMagicLink);
+  // Another writer cannot take a confirmed HackMD account or a used blog address.
+  await page.goto('/@alice-hackmd/edit');
+  await expect(
+    page.getByRole('heading', { name: '@alice-hackmd is already claimed' }),
+  ).toBeVisible();
+  await page.goto('/@alice-zh-hackmd/edit');
+  await page.getByLabel('HackMD API token for @alice-zh-hackmd').fill('token-for-alice-zh-hackmd');
   await page.getByLabel('Blog address').fill('alice');
-  await page.getByLabel('HackMD username').fill('alice-hackmd');
-  await page.getByRole('button', { name: 'Sync and build preview' }).click();
-  await expect(page.locator('[data-blog-address-error]')).toHaveText(
-    'That blog address is already taken. Choose another one.',
-  );
-  await expect(page.getByLabel('Blog address')).toHaveAttribute('aria-invalid', 'true');
-  await expect(page).toHaveURL(/\/onboarding$/u);
-  await page.getByLabel('Blog address').fill('alice-zh');
-  await page.getByLabel('Blog language').fill('zh-Hant');
-  await page.getByRole('button', { name: 'Sync and build preview' }).click();
-  await expect(page).toHaveURL(/\/editor(?:\?|$)/u, { timeout: 120_000 });
+  await page.getByRole('button', { name: 'Verify and open the editor' }).click();
+  await expect(page.getByRole('alert')).toContainText('That blog address is taken.');
+  await expect(page).toHaveURL(/\/@alice-zh-hackmd\/edit$/u);
+  await claimBlog(page, 'alice-zh-hackmd', 'alice-zh', 'zh-Hant');
   await markPage(page);
   const chinesePreview = page.frameLocator('iframe[data-preview-url]');
   await chinesePreview.getByRole('link', { name: '搜尋' }).click();
@@ -864,7 +887,7 @@ test('agent primary entry supports copy, fallback, keyboard and no JavaScript', 
     await prompt.evaluate((node: HTMLTextAreaElement) => node.selectionEnd - node.selectionStart),
   ).toBe((await prompt.inputValue()).length);
   await page.reload();
-  await page.getByRole('button', { name: 'Not now', exact: true }).click();
+  await page.getByRole('button', { name: 'No thanks', exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
   await expect(button).toBeVisible();
@@ -1057,76 +1080,50 @@ test('agent draft access supports human publish and explicit publishing upgrade'
   expect(session.permission).toBe('draft:read-write');
   expect(Date.parse(session.expiresAt)).toBeGreaterThan(Date.now());
   const username = `agent-${String(Date.now())}`;
-  const key = `connect-${String(Date.now())}-request`;
-  const failedSetup = await request.post('/api/agent/v1/connect', {
-    headers: { ...headers, 'Idempotency-Key': `wrong-profile-${String(Date.now())}` },
-    data: {
-      username: `wrong-${String(Date.now())}`,
-      hackmdUsername: 'missing-public-profile',
-      language: 'en',
-    },
+  const hackmd = `${username}-hackmd`;
+  const connect = { username, hackmdUsername: hackmd, language: 'en' };
+  // Agents cannot create a blog: the writer confirms the HackMD account in the browser first.
+  const unclaimed = await request.post('/api/agent/v1/connect', {
+    headers: { ...headers, 'Idempotency-Key': `connect-unclaimed-${String(Date.now())}` },
+    data: connect,
   });
-  expect(failedSetup.status()).toBe(202);
-  const failedWork = (await failedSetup.json()) as { operationId: string };
+  expect(unclaimed.status()).toBe(409);
+  const claimRequired = (await unclaimed.json()) as { error: { code: string; message: string } };
+  expect(claimRequired.error.code).toBe('claim_required');
+  expect(claimRequired.error.message).toContain(`${origin}/@${hackmd}/edit`);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/@${hackmd}/edit`);
+  await expectNoHorizontalOverflow(page);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await claimBlog(page, hackmd, username);
   await expect
     .poll(
       async () =>
         (
-          (await (
-            await request.get(`/api/agent/v1/operations/${failedWork.operationId}`, { headers })
-          ).json()) as { status: string }
-        ).status,
-      { timeout: 30_000, intervals: [1000] },
+          (await (await request.get('/api/agent/v1/context', { headers })).json()) as {
+            draftReady: boolean;
+          }
+        ).draftReady,
+      { timeout: 90_000, intervals: [2000] },
     )
-    .toBe('failed');
-  const failedContext = (await (
-    await request.get('/api/agent/v1/context', { headers })
-  ).json()) as { stateVersion: string };
-  await page.goto('/onboarding');
-  await expect(page.getByLabel('Blog address')).toBeEditable();
-  await expect(page.locator('input[name="stateVersion"]')).toHaveValue(failedContext.stateVersion);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expectNoHorizontalOverflow(page);
-  await page.getByLabel('Blog address').focus();
-  await expect(page.getByLabel('Blog address')).toBeFocused();
-  await page.getByLabel('Blog address').fill('alice');
-  await page.getByLabel('HackMD username').fill('alice-hackmd');
-  await page.getByRole('button', { name: 'Retry sync', exact: true }).click();
-  await expect(page.locator('[data-blog-address-error]')).toHaveText(
-    'That blog address is already taken. Choose another one.',
-  );
-  await expect(page.getByLabel('Blog address')).toHaveValue('alice');
-  expect(await (await request.get('/api/agent/v1/context', { headers })).json()).toMatchObject({
-    stateVersion: failedContext.stateVersion,
-    sourceReady: false,
-    draftReady: false,
-    operationId: null,
-  });
-  await page.setViewportSize({ width: 1280, height: 720 });
-  const connect = { username, hackmdUsername: 'alice-hackmd', language: 'en' };
-  const recovery = { ...connect, stateVersion: failedContext.stateVersion };
-  const result = await request.post('/api/agent/v1/connect', {
+    .toBe(true);
+  const key = `connect-${String(Date.now())}-request`;
+  const unchangedConnect = await request.post('/api/agent/v1/connect', {
     headers: { ...headers, 'Idempotency-Key': key },
-    data: recovery,
+    data: connect,
   });
-  expect(result.status()).toBe(202);
-  const accepted = (await result.json()) as { operationId: string };
+  expect(await unchangedConnect.json()).toEqual({ status: 'unchanged' });
   const replay = await request.post('/api/agent/v1/connect', {
     headers: { ...headers, 'Idempotency-Key': key },
-    data: recovery,
+    data: connect,
   });
-  expect(await replay.json()).toEqual(accepted);
-  await expect
-    .poll(
-      async () =>
-        (
-          (await (
-            await request.get(`/api/agent/v1/operations/${accepted.operationId}`, { headers })
-          ).json()) as { status: string }
-        ).status,
-      { timeout: 90_000, intervals: [5000] },
-    )
-    .toBe('succeeded');
+  expect(await replay.json()).toEqual({ status: 'unchanged' });
+  // The confirmed HackMD account cannot be swapped by an agent.
+  const swapped = await request.post('/api/agent/v1/connect', {
+    headers: { ...headers, 'Idempotency-Key': `connect-swap-${String(Date.now())}` },
+    data: { ...connect, hackmdUsername: 'alice-hackmd' },
+  });
+  expect(swapped.status()).toBe(409);
   const context = (await (await request.get('/api/agent/v1/context', { headers })).json()) as {
     stateVersion: string;
     design: BlogDesignSpecV2;
@@ -1142,11 +1139,6 @@ test('agent draft access supports human publish and explicit publishing upgrade'
       action,
     })),
   });
-  const unchanged = await request.post('/api/agent/v1/connect', {
-    headers: { ...headers, 'Idempotency-Key': `connect-again-${String(Date.now())}` },
-    data: connect,
-  });
-  expect(await unchanged.json()).toEqual({ status: 'unchanged' });
   expect(context.editorUrl).toBe(`${origin}/editor`);
   expect(JSON.stringify(context)).not.toContain('/preview-access/');
   expect(JSON.stringify(context)).not.toContain('This article came through');
@@ -1441,15 +1433,27 @@ test('browser-approved agent publishes its first release through the CLI', async
       input === undefined ? undefined : JSON.stringify(input),
     );
   const username = `publisher-${String(Date.now())}`;
-  const connected = await cli(
+  const hackmd = `${username}-hackmd`;
+  const connectBody = { username, hackmdUsername: hackmd, language: 'en' };
+  // The CLI cannot create a blog; it points the writer to the browser claim instead.
+  const unclaimed = await cli(
     ['connect', '--file', '-', '--request-key', `connect-${String(Date.now())}`],
-    { username, hackmdUsername: 'alice-hackmd', language: 'en' },
+    connectBody,
   );
-  expect(connected.exitCode).toBe(0);
-  const connect = connected.output[0] as { operationId: string };
-  expect((await cli(['wait', connect.operationId])).output[0]).toMatchObject({
-    status: 'succeeded',
-  });
+  expect(unclaimed.exitCode).not.toBe(0);
+  expect(JSON.stringify(unclaimed.output)).toContain('claim_required');
+  await claimBlog(page, hackmd, username);
+  await expect
+    .poll(async () => ((await cli(['context'])).output[0] as { draftReady?: boolean }).draftReady, {
+      timeout: 90_000,
+      intervals: [2000],
+    })
+    .toBe(true);
+  const connected = await cli(
+    ['connect', '--file', '-', '--request-key', `connect-${String(Date.now())}-ready`],
+    connectBody,
+  );
+  expect(connected.output[0]).toMatchObject({ status: 'unchanged' });
   const before = (await cli(['context'])).output[0] as {
     stateVersion: string;
     design: BlogDesignSpecV2;
@@ -1519,7 +1523,7 @@ test('browser-approved agent publishes its first release through the CLI', async
   expect(errors).toEqual([]);
 });
 
-test('an anonymous visitor swaps hackmd.io for the app origin, sees the blog and claims it', async ({
+test('an anonymous visitor swaps hackmd.io for the app origin and sees the blog', async ({
   page,
   request,
 }) => {
@@ -1545,7 +1549,8 @@ test('an anonymous visitor swaps hackmd.io for the app origin, sees the blog and
   expect(site?.headers()['x-robots-tag']).toBe('noindex, nofollow');
   expect(site?.headers()['content-security-policy']).toContain('frame-ancestors');
 
-  // Make it yours: sign in, prove the HackMD account with an API token, land in the editor.
+  // Make it yours: the first writer already confirmed @alice-hackmd, so another visitor who signs
+  // in through the button sees that it is claimed instead of a token form.
   const mailpitUrl = process.env.E2E_MAILPIT_URL;
   if (!mailpitUrl) throw new Error('E2E_MAILPIT_URL is required');
   await page.goto('/@alice-hackmd');
@@ -1559,20 +1564,8 @@ test('an anonymous visitor swaps hackmd.io for the app origin, sees the blog and
     '/@alice-hackmd/edit',
   );
   await page.goto(magicLink);
-  await expect(page.getByRole('heading', { name: 'Make @alice-hackmd yours' })).toBeVisible();
-  await expect(page.getByLabel('Blog address')).toHaveValue('alice-hackmd');
-  await page.getByLabel('HackMD API token for @alice-hackmd').fill('not-this-account');
-  await page.getByRole('button', { name: 'Verify and open the editor' }).click();
-  await expect(page.getByRole('alert')).toContainText('HackMD did not accept this token');
-  await expect(page.getByLabel('HackMD API token for @alice-hackmd')).toHaveValue('');
-  await page.getByLabel('HackMD API token for @alice-hackmd').fill('alice-hackmd-api-token');
-  await page.getByRole('button', { name: 'Verify and open the editor' }).click();
-  await expect(page).toHaveURL(/\/editor/u, { timeout: 120_000 });
-  await page.goto('/@alice-hackmd/edit');
-  await expect(page).toHaveURL(/\/editor/u);
-  // The migration rehearsal that follows uses Alice's retained blog as its only fixture.
-  await openDisclosure(page, 'danger-zone');
-  await page.getByLabel('Type claimer@example.com to confirm').fill('claimer@example.com');
-  await page.getByRole('button', { name: 'Delete account' }).click();
-  await expect(page).toHaveURL(/\/auth\/login\?deleted=1$/u);
+  await expect(
+    page.getByRole('heading', { name: '@alice-hackmd is already claimed' }),
+  ).toBeVisible();
+  await expect(page.getByLabel(/HackMD API token/u)).toHaveCount(0);
 });

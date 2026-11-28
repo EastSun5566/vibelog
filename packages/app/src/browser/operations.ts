@@ -97,7 +97,7 @@ export function initializeOperations(root: ClientRoot, dom: EditorDom): void {
         .catch((error: unknown) => {
           dom.showStatus(
             statusNode,
-            error instanceof Error ? error.message : 'The operation failed. Please try again.',
+            error instanceof Error ? error.message : 'This step failed. Try again.',
             'failed',
           );
         })
@@ -155,7 +155,7 @@ export function initializeEditorSubmits(root: ClientRoot, dom: EditorDom): void 
             const errorNode = document.createElement('p');
             errorNode.className = 'inline-error';
             errorNode.setAttribute('role', 'alert');
-            errorNode.textContent = 'Could not save the change. Please try again.';
+            errorNode.textContent = 'Could not save the change. Try again.';
             form.append(errorNode);
           }
         })

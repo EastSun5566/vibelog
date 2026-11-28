@@ -23,7 +23,7 @@ export class AgentRepository {
 
   async limited(key: string, limit: number, seconds: number): Promise<void> {
     if (!(await this.database.consumeRateLimit(`agent:${key}`, limit, seconds)))
-      throw new AppError('rate_limited', 'Please wait before trying again.', 429, {
+      throw new AppError('rate_limited', 'Wait a moment, then try again.', 429, {
         'Retry-After': String(seconds),
       });
   }

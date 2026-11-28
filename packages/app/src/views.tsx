@@ -116,23 +116,18 @@ export function document(
               class="analytics-consent card"
               role="region"
               aria-labelledby="analytics-consent-title"
-              aria-describedby="analytics-consent-description"
               data-analytics-consent
               hidden
             >
               <section>
-                <strong id="analytics-consent-title">Allow analytics?</strong>
-                <p id="analytics-consent-description">
-                  Help us understand visits and improve VibeLog. Google Analytics stays off unless
-                  you allow it.
-                </p>
+                <strong id="analytics-consent-title">Allow Google Analytics?</strong>
               </section>
               <footer>
                 <button class="btn" data-variant="ghost" type="button" data-analytics-deny>
-                  Not now
+                  No thanks
                 </button>
                 <button class="btn" type="button" data-analytics-allow>
-                  Allow analytics
+                  Allow
                 </button>
               </footer>
             </aside>
@@ -153,7 +148,7 @@ export function document(
   );
 }
 
-export function agentPromptEntry(prompt: string, placement: 'landing' | 'editor' | 'page') {
+export function agentPromptEntry(prompt: string, placement: 'guide' | 'editor' | 'page') {
   const content = (
     <>
       <div class="prompt-block">
@@ -169,7 +164,7 @@ export function agentPromptEntry(prompt: string, placement: 'landing' | 'editor'
       </div>
       <div class="agent-prompt-footer">
         <output data-agent-copy-status aria-live="polite"></output>
-        {placement === 'landing' ? (
+        {placement === 'guide' ? (
           <a class="btn" data-variant="ghost" data-size="compact" href="/auth/login">
             Use the editor
           </a>
@@ -184,7 +179,7 @@ export function agentPromptEntry(prompt: string, placement: 'landing' | 'editor'
     </details>
   ) : (
     <section
-      class={`agent-prompt ${placement === 'landing' ? 'agent-prompt-primary' : 'agent-prompt-body'}`}
+      class={`agent-prompt ${placement === 'guide' ? 'agent-prompt-primary' : 'agent-prompt-body'}`}
       data-agent-prompt
     >
       {content}
@@ -235,7 +230,7 @@ export function loginPage(
         </header>
         <section class="stack">
           <div class="alert" role="status">
-            <section>We sent a one-time sign-in link. It expires in 10 minutes.</section>
+            <section>The sign-in link expires in 10 minutes.</section>
           </div>
           {agentLogin ? (
             <p class="muted">
@@ -338,44 +333,43 @@ export function guidePage(
         <h2 id="first-release">Get started</h2>
         <ol>
           <li>
-            Open <code>{appHostname}/@you</code>, your HackMD profile address with{' '}
-            <code>hackmd.io</code> swapped for <code>{appHostname}</code>, to see your blog.
+            Open <code>{appHostname}/@you</code> to see your blog.
           </li>
           <li>
-            Choose <strong>Make it yours</strong>, sign in, and confirm the HackMD account with a
-            temporary HackMD API token.
+            Select <strong>Make it yours</strong>, sign in and confirm your HackMD account with a
+            temporary API token.
           </li>
           <li>Choose articles, set the blog details, and review the private preview.</li>
           <li>Generate a design with AI or fine-tune it, then publish when the draft is ready.</li>
         </ol>
-        <p>Only public, published HackMD notes are imported.</p>
+        <p>VibeLog imports only public, published HackMD notes.</p>
         {agentPrompt ? (
           <>
-            <p>Prefer a coding agent? Give it this prompt instead.</p>
-            {agentPromptEntry(agentPrompt, 'landing')}
+            <p>To use a coding agent instead, give it this prompt.</p>
+            {agentPromptEntry(agentPrompt, 'guide')}
           </>
         ) : null}
       </section>
       <section aria-labelledby="updates">
         <h2 id="updates">Update and publish</h2>
         <p>
-          Sync to refresh articles in your private draft, then publish from the editor. A failed
-          sync keeps your last working draft and live site unchanged. Release history lets you
-          restore an earlier live version without changing the draft.
+          Select <strong>Sync now</strong> to refresh articles in your private draft, then publish
+          from the editor. If a sync fails, your draft and live site stay as they were.{' '}
+          <strong>Release history</strong> restores an earlier live version without changing the
+          draft.
         </p>
       </section>
       <section aria-labelledby="blog-features">
         <h2 id="blog-features">Design and built-in features</h2>
         <p>Every blog includes search, RSS, a sitemap, llms.txt, and per-post Markdown.</p>
         <p>
-          AI proposes layout, typography, colors, and spacing through Presentation IR, a design
-          specification that VibeLog validates and builds. Article routes, search, and feeds are
-          built by VibeLog, not generated by the model.
+          AI chooses the layout, typography, colors and spacing. VibeLog checks the design and
+          builds the pages, search and feeds itself.
         </p>
         <p>
-          Hosted AI receives blog details, a content profile, your saved design, and prompt—not
-          article bodies. The first design of a <code>/@you</code> preview also uses the titles,
-          tags and a short excerpt of your 12 newest public notes.
+          AI sees your blog details, content statistics, saved design and prompt, not full articles.
+          For a <code>/@you</code> preview, it also reads the titles, tags and first 300 characters
+          of your 12 newest public notes.
         </p>
       </section>
     </article>,
@@ -576,9 +570,7 @@ export function onboardingPage(
       <section class="stack">
         {options.deleted ? (
           <div class="alert" role="status">
-            <section>
-              Your previous blog was deleted. You can start again whenever you are ready.
-            </section>
+            <section>Your previous blog was deleted.</section>
           </div>
         ) : null}
         {failed ? (
@@ -586,87 +578,105 @@ export function onboardingPage(
             <section>{failed}</section>
           </div>
         ) : null}
-        <form
-          class="stack"
-          method="post"
-          action="/actions/blog/connect"
-          data-operation
-          data-success-url="/editor"
-          aria-busy={busy ? 'true' : undefined}
-        >
-          <input type="hidden" name="csrfToken" value={session.csrfToken} />
-          {blog ? <input type="hidden" name="stateVersion" value={blogStateVersion(blog)} /> : null}
-          <div class="field">
-            <label for="username">Blog address</label>
-            <input
-              id="username"
-              name="username"
-              required
-              minlength={3}
-              maxlength={32}
-              pattern={'[a-z0-9](?:[a-z0-9\\-]{1,30}[a-z0-9])'}
-              value={blog?.username ?? ''}
-              readonly={Boolean(blog && (!canRecoverInitialSync(blog) || busy))}
-              autocomplete="off"
-              autocapitalize="none"
-              spellcheck={false}
-              data-blog-handle
-              aria-describedby="blog-address-preview"
-              aria-errormessage="blog-address-error"
+        {blog ? (
+          <form
+            class="stack"
+            method="post"
+            action="/actions/blog/connect"
+            data-operation
+            data-success-url="/editor"
+            aria-busy={busy ? 'true' : undefined}
+          >
+            <input type="hidden" name="csrfToken" value={session.csrfToken} />
+            <input type="hidden" name="stateVersion" value={blogStateVersion(blog)} />
+            <div class="field">
+              <label for="username">Blog address</label>
+              <input
+                id="username"
+                name="username"
+                required
+                minlength={3}
+                maxlength={32}
+                pattern={'[a-z0-9](?:[a-z0-9\\-]{1,30}[a-z0-9])'}
+                value={blog.username}
+                readonly={!canRecoverInitialSync(blog) || busy}
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck={false}
+                data-blog-handle
+                aria-describedby="blog-address-preview"
+                aria-errormessage="blog-address-error"
+              />
+              <span
+                id="blog-address-error"
+                class="inline-error"
+                data-blog-address-error
+                hidden
+              ></span>
+              <p class="field-preview" id="blog-address-preview">
+                <span data-blog-hostname data-host-suffix={appHostname}>
+                  {blog.username}.{appHostname}
+                </span>
+              </p>
+            </div>
+            <div class="field">
+              <label for="hackmdUsername">HackMD username</label>
+              <input
+                id="hackmdUsername"
+                name="hackmdUsername"
+                required
+                maxlength={100}
+                value={blog.hackmdUsername}
+                readonly
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck={false}
+                aria-describedby={failed ? 'hackmd-error' : undefined}
+              />
+              <p class="field-preview">
+                <a
+                  href={`https://hackmd.io/@${encodeURIComponent(blog.hackmdUsername)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  https://hackmd.io/@{blog.hackmdUsername}
+                </a>
+              </p>
+            </div>
+            <BlogLanguageField
+              id="blogLanguage"
+              listId="language-suggestions"
+              value={blog.language}
             />
-            <span
-              id="blog-address-error"
-              class="inline-error"
-              data-blog-address-error
-              hidden
-            ></span>
-            <p class="field-preview" id="blog-address-preview">
-              <span data-blog-hostname data-host-suffix={appHostname}>
-                {blog?.username ?? 'your-name'}.{appHostname}
-              </span>
-            </p>
-          </div>
-          <div class="field">
-            <label for="hackmdUsername">HackMD username</label>
-            <input
-              id="hackmdUsername"
-              name="hackmdUsername"
-              required
-              maxlength={100}
-              value={blog?.hackmdUsername ?? ''}
-              autocomplete="off"
-              autocapitalize="none"
-              spellcheck={false}
-              aria-describedby={failed ? 'hackmd-error' : undefined}
-            />
-            <p class="field-preview">
-              <a
-                data-hackmd-profile
-                href={
-                  blog?.hackmdUsername
-                    ? `https://hackmd.io/@${encodeURIComponent(blog.hackmdUsername)}`
-                    : undefined
-                }
-                aria-disabled={!blog?.hackmdUsername}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {blog?.hackmdUsername
-                  ? `https://hackmd.io/@${blog.hackmdUsername}`
-                  : 'https://hackmd.io/@username'}
-              </a>
-            </p>
-          </div>
-          <BlogLanguageField
-            id="blogLanguage"
-            listId="language-suggestions"
-            value={blog?.language ?? 'en'}
-          />
-          <button class="btn" type="submit" disabled={busy}>
-            {blog ? 'Retry sync' : 'Sync and build preview'}
-          </button>
-          <OperationOutput operation={operation ?? undefined} />
-        </form>
+            <button class="btn" type="submit" disabled={busy}>
+              Retry sync
+            </button>
+            <OperationOutput operation={operation ?? undefined} />
+          </form>
+        ) : (
+          <form class="stack" method="get" action="/onboarding">
+            <div class="field">
+              <label for="hackmd">Your HackMD username</label>
+              <input
+                id="hackmd"
+                name="hackmd"
+                required
+                maxlength={100}
+                placeholder="you"
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck={false}
+                aria-describedby="hackmd-claim-hint"
+              />
+              <p class="field-preview" id="hackmd-claim-hint">
+                hackmd.io/@you becomes {appHostname}/@you
+              </p>
+            </div>
+            <button class="btn" type="submit">
+              Continue
+            </button>
+          </form>
+        )}
         <details
           class="editor-disclosure danger-zone"
           data-disclosure-key="danger-zone"
@@ -1088,9 +1098,7 @@ function PublicationSummary({
       {diff.mode === 'legacy' ? (
         <div class="alert">
           <section>
-            <p>
-              This live release predates change tracking. Publish again to enable itemized diffs.
-            </p>
+            <p>This release has no change list. Publish again to track changes.</p>
             {diff.themeChanged ? (
               <p>
                 Design: {liveDesign?.description ?? 'Previous design'} → {activeDesign.description}
@@ -1954,6 +1962,16 @@ export function editorPage(input: EditorPageInput) {
                   liveDesign={liveDesign}
                   hasChanges={hasChanges}
                 />
+                {blog.hackmdVerifiedAt ? null : (
+                  <div class="alert" role="status">
+                    <section>
+                      Confirm your HackMD account to publish.{' '}
+                      <a href={`/@${encodeURIComponent(blog.hackmdUsername)}/edit`}>
+                        Confirm @{blog.hackmdUsername}
+                      </a>
+                    </section>
+                  </div>
+                )}
                 <form class="stack" method="post" action="/actions/publish" data-operation>
                   <input type="hidden" name="csrfToken" value={input.session.csrfToken} />
                   <input type="hidden" name="previewToken" value={input.previewToken} />
@@ -1965,7 +1983,11 @@ export function editorPage(input: EditorPageInput) {
                     data-publish-button
                     data-focus-key="publish"
                     disabled={
-                      !blog.sourceArtifactId || !blog.draftArtifactId || !hasChanges || busy
+                      !blog.hackmdVerifiedAt ||
+                      !blog.sourceArtifactId ||
+                      !blog.draftArtifactId ||
+                      !hasChanges ||
+                      busy
                     }
                   >
                     {publishLabel}
@@ -2038,7 +2060,7 @@ export function editorPage(input: EditorPageInput) {
                                 data-variant="outline"
                                 data-size="compact"
                                 type="submit"
-                                disabled={busy}
+                                disabled={busy || !blog.hackmdVerifiedAt}
                                 data-focus-key="restore-release"
                               >
                                 Restore live
@@ -2171,7 +2193,7 @@ export function profilePreviewPage(view: ProfilePreviewView, analytics?: Analyti
               ? `Building ${handle}`
               : view.state === 'limited'
                 ? 'Too many new previews right now'
-                : `We could not build ${handle}`}
+                : `Could not build ${handle}`}
           </h1>
           {pending ? (
             <>
@@ -2181,8 +2203,8 @@ export function profilePreviewPage(view: ProfilePreviewView, analytics?: Analyti
           ) : (
             <p>
               {view.state === 'limited'
-                ? 'Please try again in a few minutes.'
-                : (view.message ?? 'Please try again later.')}
+                ? 'Try again in a few minutes.'
+                : (view.message ?? 'Try again later.')}
             </p>
           )}
         </section>
@@ -2197,7 +2219,10 @@ export function profilePreviewPage(view: ProfilePreviewView, analytics?: Analyti
 
 export interface ClaimView {
   name: string;
-  state: 'verify' | 'other-blog' | 'claimed';
+  /** verify: a new blog; confirm: an existing blog connected before verification existed. */
+  state: 'verify' | 'confirm' | 'other-blog' | 'claimed';
+  /** The viewer already has a blog, for example one connected to this name before verification. */
+  hasBlog?: boolean;
   appHostname: string;
   handle?: string;
   language?: string;
@@ -2215,14 +2240,29 @@ export function claimPage(session: AppSession, view: ClaimView) {
         <h1>
           {view.state === 'verify'
             ? `Make ${handle} yours`
-            : view.state === 'claimed'
-              ? `${handle} is already claimed`
-              : 'You already have a blog'}
+            : view.state === 'confirm'
+              ? `Confirm ${handle} is yours`
+              : view.state === 'claimed'
+                ? `${handle} is already claimed`
+                : 'You already have a blog'}
         </h1>
       </header>
       <section class="stack">
         {view.state === 'claimed' ? (
-          <p>Another VibeLog writer proved they own this HackMD account.</p>
+          <>
+            <p>Another VibeLog writer proved they own this HackMD account.</p>
+            {view.hasBlog ? (
+              <>
+                <p>
+                  Your blog can no longer publish from it. Delete that blog in the editor to start
+                  over with your own HackMD account.
+                </p>
+                <a class="btn" href="/editor">
+                  Open your blog
+                </a>
+              </>
+            ) : null}
+          </>
         ) : view.state === 'other-blog' ? (
           <>
             <p>Each account has one blog. Open yours, or delete it there to start over.</p>
@@ -2245,7 +2285,7 @@ export function claimPage(session: AppSession, view: ClaimView) {
                 </a>{' '}
                 and create a token.
               </li>
-              <li>Paste it below. It is used once to confirm the account and never stored.</li>
+              <li>Paste it below. VibeLog uses it once and never stores it.</li>
               <li>Delete the token in HackMD afterwards.</li>
             </ol>
             <form class="stack" method="post" action={action}>
@@ -2264,35 +2304,39 @@ export function claimPage(session: AppSession, view: ClaimView) {
                   aria-describedby={view.error ? 'claim-error' : undefined}
                 />
               </div>
-              <div class="field">
-                <label for="username">Blog address</label>
-                <input
-                  id="username"
-                  name="username"
-                  required
-                  minlength={3}
-                  maxlength={32}
-                  pattern={'[a-z0-9](?:[a-z0-9\\-]{1,30}[a-z0-9])'}
-                  value={view.handle ?? ''}
-                  autocomplete="off"
-                  autocapitalize="none"
-                  spellcheck={false}
-                  data-blog-handle
-                  aria-describedby="blog-address-preview"
-                />
-                <p class="field-preview" id="blog-address-preview">
-                  <span data-blog-hostname data-host-suffix={view.appHostname}>
-                    {view.handle ?? 'your-name'}.{view.appHostname}
-                  </span>
-                </p>
-              </div>
-              <BlogLanguageField
-                id="blogLanguage"
-                listId="language-suggestions"
-                value={view.language ?? 'en'}
-              />
+              {view.state === 'verify' ? (
+                <>
+                  <div class="field">
+                    <label for="username">Blog address</label>
+                    <input
+                      id="username"
+                      name="username"
+                      required
+                      minlength={3}
+                      maxlength={32}
+                      pattern={'[a-z0-9](?:[a-z0-9\\-]{1,30}[a-z0-9])'}
+                      value={view.handle ?? ''}
+                      autocomplete="off"
+                      autocapitalize="none"
+                      spellcheck={false}
+                      data-blog-handle
+                      aria-describedby="blog-address-preview"
+                    />
+                    <p class="field-preview" id="blog-address-preview">
+                      <span data-blog-hostname data-host-suffix={view.appHostname}>
+                        {view.handle ?? 'your-name'}.{view.appHostname}
+                      </span>
+                    </p>
+                  </div>
+                  <BlogLanguageField
+                    id="blogLanguage"
+                    listId="language-suggestions"
+                    value={view.language ?? 'en'}
+                  />
+                </>
+              ) : null}
               <button class="btn" type="submit">
-                Verify and open the editor
+                {view.state === 'verify' ? 'Verify and open the editor' : 'Confirm and continue'}
               </button>
             </form>
           </>

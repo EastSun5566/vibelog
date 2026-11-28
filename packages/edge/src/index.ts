@@ -26,9 +26,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     incoming.pathname !== '/health'
   ) {
     return new Response(
-      request.method === 'HEAD'
-        ? null
-        : 'VibeLog is temporarily unavailable for maintenance. Please try again shortly.',
+      request.method === 'HEAD' ? null : 'VibeLog is down for maintenance. Try again soon.',
       {
         status: 503,
         headers: {

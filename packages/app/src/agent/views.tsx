@@ -9,8 +9,7 @@ const AUTHORIZATION_COPY: Record<
   pending: { title: 'Authorize your agent' },
   approved: {
     title: 'Draft access approved',
-    message:
-      'Return to your agent to finish connecting and continue preparing your private draft. You’ll review it before publishing.',
+    message: 'Return to your agent to continue. You review the draft before anything is published.',
   },
   consumed: {
     title: 'Agent connected',
@@ -19,8 +18,7 @@ const AUTHORIZATION_COPY: Record<
   },
   denied: {
     title: 'Access denied',
-    message:
-      'No access was granted. Return to your agent, or start a new CLI login if you want to try again.',
+    message: 'No access was granted. To try again, start a new CLI login.',
   },
   expired: {
     title: 'Request expired',
@@ -37,7 +35,7 @@ export function authorizationPage(session: AppSession, pairing: AgentAuthorizati
               ? 'Draft and publishing access approved'
               : 'Agent connected',
           message:
-            'Return to your agent to continue. Publishing access is enabled; ask it explicitly before publishing. You can revoke access at any time.',
+            'Return to your agent to continue. It publishes only when you ask. You can revoke access at any time.',
         }
       : pairing
         ? AUTHORIZATION_COPY[pairing.status]
@@ -61,8 +59,8 @@ export function authorizationPage(session: AppSession, pairing: AgentAuthorizati
             <strong class="pairing-code">{pairing.userCode}</strong>
             <p>
               {pairing.canPublish
-                ? 'Your agent can change your private draft and publish your blog for 12 hours. Ask it explicitly before publishing. It cannot restore, export or delete your blog. You can revoke access at any time.'
-                : 'Your agent can connect HackMD and change your private draft for 12 hours. It cannot publish or delete your blog. You can revoke access at any time.'}
+                ? 'For 12 hours, your agent can change your private draft and publish your blog when you ask. It can’t restore, export or delete your blog.'
+                : 'For 12 hours, your agent can change your private draft. It can’t publish or delete your blog.'}
             </p>
             <form class="stack" method="post" action="/agent/authorize">
               <input type="hidden" name="csrfToken" value={session.csrfToken} />
@@ -165,7 +163,7 @@ function supportsPublish(version: string) {
 }
 
 export function onboardingPrompt(origin: string, version: string) {
-  return `Help me set up or update my VibeLog blog.\nUse the pinned CLI: npx --yes @vibelog/cli@${version}. Read ${origin}/agent-setup/prompt.md first and follow its security and publishing boundaries. Run status first, then read context before making changes; use nextActions to continue safely. ${supportsCombinedLogin(version) ? 'Use login --no-wait for browser-approved draft and publishing access at the start, unless I explicitly request draft-only work. Upgrade an existing draft-only grant before starting the main flow; preserve any pending request first. ' : ''}Reuse my existing blog and saved design; ask for my public HackMD profile, blog address and language only if I have no blog, or need my explicit correction after a failed first sync. Never guess them from my OS username, email or folders. Ask what I want to change, validate the complete Presentation IR v2 design, and build a private draft only when needed. After every successful connect, sync or design, reread context and immediately show the clickable editorUrl, selected / total article count and publication state. Keep replies in my language with 2–3 actual changes, not the IR or a menu of options. Ask one short question about design adjustments; do not require reviewing the preview before continuing. ${supportsPublish(version) ? 'Do not publish automatically. Only publish when I explicitly ask, after checking browser-approved publishing access. Otherwise return the editor link for review.' : 'Do not publish; return the authenticated editor link so I can review and publish myself.'}`;
+  return `Help me set up or update my VibeLog blog.\nUse the pinned CLI: npx --yes @vibelog/cli@${version}. Read ${origin}/agent-setup/prompt.md first and follow its security and publishing boundaries. Run status first, then read context before making changes; use nextActions to continue safely. ${supportsCombinedLogin(version) ? 'Use login --no-wait for browser-approved draft and publishing access at the start, unless I explicitly request draft-only work. Upgrade an existing draft-only grant before starting the main flow; preserve any pending request first. ' : ''}Reuse my existing blog and saved design; if I have no blog, ask only for my public HackMD username and send me to ${origin}/@<username>/edit to confirm it in the browser; ask for corrections only after a failed first sync. Never guess them from my OS username, email or folders. Ask what I want to change, validate the complete Presentation IR v2 design, and build a private draft only when needed. After every successful connect, sync or design, reread context and immediately show the clickable editorUrl, selected / total article count and publication state. Keep replies in my language with 2–3 actual changes, not the IR or a menu of options. Ask one short question about design adjustments; do not require reviewing the preview before continuing. ${supportsPublish(version) ? 'Do not publish automatically. Only publish when I explicitly ask, after checking browser-approved publishing access. Otherwise return the editor link for review.' : 'Do not publish; return the authenticated editor link so I can review and publish myself.'}`;
 }
 
 export function agentInstructions(origin: string, version: string) {
@@ -194,7 +192,7 @@ Read \`context\` before asking for setup details. It returns blog identity, save
 
 \`nextActions\` contains objects with a fixed \`action\`, not shell commands. Use these as workflow guidance, not permission to act without the human's intent. The server still validates every mutation:
 
-- \`connect\`: ask for missing setup details for a new blog. With \`reason: initial_sync_recovery\`, retain existing settings unless the human explicitly corrects them; corrections require the latest stateVersion.
+- \`connect\`: with no blog, the writer first confirms their HackMD account in the browser (see below). With \`reason: initial_sync_recovery\`, retain existing settings unless the human explicitly corrects the address or language; corrections require the latest stateVersion. The HackMD account cannot change.
 - \`wait\`: resume its \`operationId\`, then reread context. Do not create replacement work.
 - \`design\`, \`identity\`, \`selection\`, \`sync\`: only perform the action the human requested. Available \`sync\` is not a request to refresh articles.
 - \`open_editor\`: use \`editorUrl\`. If its reason is \`deletion_in_progress\` or \`draft_recovery_required\`, stop agent mutations and hand off recovery.
@@ -203,9 +201,9 @@ If an older server omits \`nextActions\`, use the readiness rules below. Do not 
 
 - If the blog is deleting, stop and return the editor link; do not create a replacement blog.
 - If an operation is active, run \`wait <operation-id>\`, then reread context. A failed operation does not automatically require a rebuild.
-- If there is no blog, ask for the public HackMD username, desired blog handle and language together. Never guess profile or address from an OS username, email, folder or a response such as “new blog”. Do not add an account-choice menu first. Before submitting, briefly show https://hackmd.io/@<profile> and the planned address <handle>.${new URL(origin).hostname} using only the human's supplied values, then submit without an extra confirmation round. Ask again only when values are unclear or the human says the account is wrong. Run \`connect --file - --request-key <uuid>\` with {"username":"blog-handle","hackmdUsername":"public-profile","language":"en"} on stdin. Never import private notes.
+- If there is no blog, ask only for the public HackMD username. Never guess it from an OS username, email, folder or a response such as “new blog”. Then give the clickable link ${origin}/@<profile>/edit: there the human sees the preview, signs in, confirms the account with a temporary HackMD API token and picks the blog address. Never ask for or handle that token yourself. When they say it is done, reread context and continue with the existing blog. A \`claim_required\` error means this step has not happened yet. Never import private notes.
 - If a blog exists, briefly show its address and connected profile and continue with the requested change; ask again only if the target is unclear or the human says it is wrong. Do not silently switch accounts, reconnect, or ask for those details again. If this is the wrong account, stop and ask the human to authorize the intended account instead.
-- If neither source nor draft is ready and no operation is active, retry \`connect\` using existing settings only when the human requests it. If the human explicitly corrects a failed first sync, include the latest stateVersion with their corrected username, HackMD username and language, using a new request key. A source_locked error means hand off to the editor, not delete/recreate. If only one is ready, stop and return the editor for recovery.
+- If neither source nor draft is ready and no operation is active, retry \`connect\` using existing settings only when the human requests it. If the human explicitly corrects the address or language after a failed first sync, include the latest stateVersion with the corrected username and language and the unchanged HackMD username, using a new request key. A source_locked or hackmd_locked error means hand off to the editor, not delete/recreate. If only one is ready, stop and return the editor for recovery.
 - If source and draft are ready, reuse them even when a later operation failed. Run \`sync\` only when the human requests an article refresh, not on every login.
 
 After every connect or sync, wait for success, reread context and immediately provide the draft handoff below before considering a design change. If it failed, retain the last working draft and report the error; do not loop over new operations. If \`wait\` returns pending after ten minutes or its read is interrupted, retain the ID and resume later. Do not create a replacement operation.
@@ -245,7 +243,7 @@ Browser-approved canPublish is a permission, not proof of a human request for ea
 
 Read context after the successful build. If the human explicitly asks to publish and canPublish is false, run ${loginCommand} and obtain a new browser approval; keep existing draft access until the new grant is saved. Never replace a pending pairing with different permissions. If the service lacks publication or canPublish, return the editor rather than guessing.
 
-Submit publish --file - --request-key <uuid> with {"stateVersion":"from latest context"}. Wait for its original operation ID; unchanged has no operation. Do not retry with new keys after uncertain results. Publishing does not charge build quota. If it fails, retain the previous live release and report the failure.
+Submit publish --file - --request-key <uuid> with {"stateVersion":"from latest context"}. A \`hackmd_verification_required\` error means the human must first confirm their HackMD account at the link it gives; return that link and stop, then retry only after they confirm. Wait for its original operation ID; unchanged has no operation. Do not retry with new keys after uncertain results. Publishing does not charge build quota. If it fails, retain the previous live release and report the failure.
 
 After success, reread context and only then show publication.publicUrl as the live link. Before first publication show only the editor link and say “Your private draft is ready. These changes have not been published.” Existing live sites can take up to 60 seconds to show the new release at the edge.
 `

@@ -6,7 +6,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { emailRateLimitKey } from '../src/auth.js';
 import { loadAppConfig } from '../src/config.js';
-import { AppDatabase } from '../src/database.js';
+import { AppDatabase, blogStateVersion } from '../src/database.js';
 import { applyDesignPreset } from '../src/design-presets.js';
 import { createApp } from '../src/index.js';
 import type { ArtifactStore } from '../src/ports/artifact-store.js';
@@ -14,6 +14,7 @@ import type { TransactionalEmailSender } from '../src/ports/transactional-email.
 import { ProfilePreviewStore, previewNameKey } from '../src/profile-preview.js';
 import {
   blogs,
+  operations,
   profilePreviews,
   rateLimit,
   themeRevisions,
@@ -217,5 +218,106 @@ describe.skipIf(!url)('claiming /@name with a HackMD token', () => {
     });
     expect(forged.status).toBe(403);
     expect((await app.request('/@%E0%A4%A/edit', { headers })).status).toBe(404);
+  });
+
+  it('starts new blogs only through the claim and lets older blogs confirm before publishing', async () => {
+    const name = hackmdName();
+    const writer = await signIn();
+    const cookie = { ...headers, Cookie: writer.cookie };
+    // The onboarding form hands a HackMD username to the claim page.
+    const onboarding = await app.request(`/onboarding?hackmd=%40${name}`, { headers: cookie });
+    expect(onboarding.headers.get('location')).toBe(`/@${name}/edit`);
+    expect(await (await app.request('/onboarding', { headers: cookie })).text()).toContain(
+      'Your HackMD username',
+    );
+    // The old connect form can no longer create a blog without proof.
+    const direct = await app.request('/actions/blog/connect', {
+      method: 'POST',
+      headers: { ...cookie, Accept: 'application/json' },
+      body: new URLSearchParams({
+        csrfToken: writer.csrfToken,
+        username: previewNameKey(name),
+        hackmdUsername: name,
+        language: 'en',
+      }),
+    });
+    expect(direct.status).toBe(409);
+    expect(await direct.json()).toHaveProperty('error.code', 'claim_required');
+
+    // A blog connected before verification existed keeps working but must confirm to publish.
+    // Typed in the old form with a different case than HackMD uses.
+    const { blog, operation } = await database.createBlog(
+      writer.userId,
+      previewNameKey(name),
+      name.toUpperCase(),
+      'en',
+    );
+    const publish = await app.request('/actions/publish', {
+      method: 'POST',
+      headers: { ...cookie, Accept: 'application/json' },
+      body: new URLSearchParams({ csrfToken: writer.csrfToken, previewToken: randomUUID() }),
+    });
+    expect(publish.status).toBe(403);
+    expect(await publish.json()).toHaveProperty('error.code', 'hackmd_verification_required');
+    const confirmPage = await (await app.request(`/@${name}/edit`, { headers: cookie })).text();
+    expect(confirmPage).toContain(`Confirm @${name} is yours`);
+    expect(confirmPage).not.toContain('name="username"');
+    const confirmed = await claim(name, writer, { hackmdToken: `token-for-${name}` });
+    expect(confirmed.status).toBe(303);
+    expect(confirmed.headers.get('location')).toBe('/editor');
+    const [verified] = await database.db.select().from(blogs).where(eq(blogs.id, blog.id));
+    expect(verified?.hackmdVerifiedAt).toBeInstanceOf(Date);
+    expect(verified?.username).toBe(previewNameKey(name));
+    // Confirming stores the name as HackMD spells it, the key of the one-verified-blog index.
+    expect(verified?.hackmdUsername).toBe(name);
+    // The HackMD account of an existing blog stays fixed.
+    await database.db
+      .update(operations)
+      .set({ status: 'failed' })
+      .where(eq(operations.id, operation.id));
+    await database.db.update(blogs).set({ state: 'failed' }).where(eq(blogs.id, blog.id));
+    await expect(
+      database.retryInitialSync(writer.userId, {
+        username: previewNameKey(name),
+        hackmdUsername: 'someone-else',
+        language: 'en',
+      }),
+    ).rejects.toMatchObject({ code: 'hackmd_locked' });
+    // The same account written with fullwidth characters is still the same account.
+    // The test names are ASCII, so each character maps to its fullwidth form.
+    const fullwidth = name.replaceAll(/[!-~]/gu, (character) =>
+      String.fromCharCode(character.charCodeAt(0) + 0xfee0),
+    );
+    await expect(
+      database.retryInitialSync(writer.userId, {
+        username: previewNameKey(name),
+        hackmdUsername: fullwidth,
+        language: 'en',
+        stateVersion: blogStateVersion((await database.getBlog(blog.id)) ?? (blog as never)),
+      }),
+    ).resolves.toMatchObject({ type: 'sync' });
+    // A variant spelling never replaces the proven one, so no second writer can verify it again.
+    expect((await database.getBlog(blog.id))?.hackmdUsername).toBe(name);
+  });
+
+  it('shows the owner of a stuck older blog how to start over once someone else proves the account', async () => {
+    const name = hackmdName();
+    const stuck = await signIn();
+    await database.createBlog(stuck.userId, previewNameKey(name), name, 'en');
+    const owner = await signIn();
+    expect(
+      (
+        await claim(name, owner, {
+          hackmdToken: `token-for-${name}`,
+          username: `${previewNameKey(name)}-2`,
+        })
+      ).status,
+    ).toBe(303);
+    const page = await (
+      await app.request(`/@${name}/edit`, { headers: { ...headers, Cookie: stuck.cookie } })
+    ).text();
+    expect(page).toContain('is already claimed');
+    expect(page).toContain('Delete that blog in the editor');
+    expect(page).toContain('href="/editor"');
   });
 });

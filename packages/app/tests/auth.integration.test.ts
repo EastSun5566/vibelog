@@ -101,7 +101,7 @@ describe.skipIf(!url)('browser authentication', () => {
     expect((await raw(address, app, '/api/auth/sign-in/magic-link/')).status).toBe(404);
     const rejected = await native(address);
     expect(rejected.status).toBe(429);
-    expect(await rejected.text()).toContain('Please wait before requesting another link.');
+    expect(await rejected.text()).toContain('Too many sign-in links. Try again later.');
     expect(await verificationCount(address)).toBe(1);
     const deliveries = send.mock.calls.filter(([input]) => input.to === address);
     expect(deliveries).toHaveLength(1);
@@ -155,7 +155,7 @@ describe.skipIf(!url)('browser authentication', () => {
       const { blog, operation } = await database.createBlog(
         info.user.id,
         `browser-${info.user.id.slice(0, 8)}`,
-        'writer',
+        `writer-${info.user.id.slice(0, 8)}`,
       );
       const lease = await database.claimOperation(operation.id);
       const design = await database.getActiveDesign(blog.id);
@@ -190,6 +190,7 @@ describe.skipIf(!url)('browser authentication', () => {
         '2099-01-01',
         design.config,
       );
+      await database.verifyBlogHackmd(info.user.id, blog.id, blog.hackmdUsername);
       if (conflict === 'draft_not_ready')
         await database.db
           .update(blogs)

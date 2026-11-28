@@ -10,12 +10,7 @@ import { analyzeDesignImpact, designContractV2 } from '@vibelog/core';
 import type { AppVariables } from '../auth.js';
 import type { AppConfig } from '../config.js';
 import { blogIdentitySchema, blogLanguageSchema } from '../blog-sync.js';
-import {
-  AppDatabase,
-  BlogAddressTakenError,
-  BlogAlreadyExistsError,
-  BlogConnectionConflictError,
-} from '../database.js';
+import { AppDatabase, BlogAddressTakenError, BlogConnectionConflictError } from '../database.js';
 import { AppError, jsonError } from '../http.js';
 import { operationMessage, operationProgress } from '../operation-status.js';
 import type { OperationDispatcher } from '../ports/operation-queue.js';
@@ -768,11 +763,16 @@ export function agentRoutes(
           202: json(MutationResult, 'Accepted; poll `GET /operations/{operationId}`.'),
           ...(action === 'design' ? { 422: json(ValidationResult, 'The design is invalid.') } : {}),
           ...(action === 'publish'
-            ? errors({ 403: 'Token lacks publishing access (`publish_permission_required`).' })
+            ? errors({
+                403: 'Token lacks publishing access (`publish_permission_required`), or the writer has not confirmed their HackMD account (`hackmd_verification_required`).',
+              })
             : {}),
           ...errors({
             400: 'Invalid body (`invalid_input`) or `Idempotency-Key` (`invalid_request_key`).',
-            409: 'The blog changed (`state_changed`) or is not ready; read the context again.',
+            409:
+              action === 'connect'
+                ? 'No blog yet: the writer must confirm their HackMD account in the browser first (`claim_required`). Otherwise the blog changed (`state_changed`) or its HackMD account is fixed (`hackmd_locked`).'
+                : 'The blog changed (`state_changed`) or is not ready; read the context again.',
             415: 'Not `application/json` (`invalid_content_type`).',
             ...AUTHENTICATED,
           }),
@@ -803,42 +803,28 @@ export function agentRoutes(
                   'The blog changed. Read the context again.',
                   409,
                 );
-              if (blog) {
-                const same =
-                  blog.username === input.username &&
-                  blog.hackmdUsername === input.hackmdUsername &&
-                  blog.language === input.language;
-                if (same && blog.draftArtifactId) return { status: 'unchanged' };
-                return operationResult(await db.retryInitialSync(blog.userId, input));
-              }
-              try {
-                return operationResult(
-                  (
-                    await db.createBlog(
-                      c.get('agentUserId'),
-                      input.username,
-                      input.hackmdUsername,
-                      input.language,
-                    )
-                  ).operation,
+              // New blogs start in the browser, where the writer proves the HackMD account;
+              // the full-access HackMD token is never handed to an agent.
+              if (!blog)
+                throw new AppError(
+                  'claim_required',
+                  `Ask the writer to open ${new URL(`/@${encodeURIComponent(input.hackmdUsername)}/edit`, origin).href} and confirm their HackMD account, then read the context again.`,
+                  409,
                 );
-              } catch (error) {
-                if (error instanceof BlogAddressTakenError)
-                  throw new AppError(
-                    'blog_address_taken',
-                    'That blog address is already taken.',
-                    409,
-                  );
-                if (error instanceof BlogAlreadyExistsError)
-                  throw new AppError(
-                    'blog_already_connected',
-                    'A blog was connected by another request. Read the context again.',
-                    409,
-                  );
-                throw error;
-              }
+              const same =
+                blog.username === input.username &&
+                blog.hackmdUsername === input.hackmdUsername &&
+                blog.language === input.language;
+              if (same && blog.draftArtifactId) return { status: 'unchanged' };
+              return operationResult(await db.retryInitialSync(blog.userId, input));
             }
             if (action === 'publish' && blog) {
+              if (!blog.hackmdVerifiedAt)
+                throw new AppError(
+                  'hackmd_verification_required',
+                  `Ask the writer to confirm their HackMD account at ${new URL(`/@${encodeURIComponent(blog.hackmdUsername)}/edit`, origin).href} before publishing.`,
+                  403,
+                );
               const operation = await db.createSavedDraftPublishOperation(blog.userId, blog.id);
               return operation ? operationResult(operation) : { status: 'unchanged' };
             }
