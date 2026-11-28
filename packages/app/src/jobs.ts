@@ -51,13 +51,12 @@ export function operationPublicError(type: OperationRecord['type'], error: unkno
     if (isHackMdSourceError(error)) {
       const messages: Partial<Record<typeof error.code, string>> = {
         profile_not_found:
-          'We could not find that public HackMD user. Check the username and try again.',
+          'HackMD has no public profile with that username. Check it and try again.',
         article_not_found:
           'A public article disappeared during sync. Refresh HackMD and try again.',
-        rate_limited: 'HackMD is temporarily limiting sync requests. Please try again later.',
-        temporarily_unavailable:
-          'HackMD is not responding reliably right now. Please try again later.',
-        request_timeout: 'HackMD is not responding reliably right now. Please try again later.',
+        rate_limited: 'HackMD is limiting requests. Try again later.',
+        temporarily_unavailable: 'HackMD isn’t responding. Try again later.',
+        request_timeout: 'HackMD isn’t responding. Try again later.',
         no_public_articles: 'This HackMD account does not have any public published articles.',
         too_many_articles:
           'Sync supports up to 1,000 public published articles per HackMD profile. No changes were saved.',
@@ -68,24 +67,24 @@ export function operationPublicError(type: OperationRecord['type'], error: unkno
         metadata_too_large:
           'HackMD profile or article-list metadata exceeds the import limit. Try a smaller public profile.',
         incomplete_overview:
-          'HackMD returned an incomplete article list. No changes were saved. Please try syncing again later.',
+          'HackMD returned an incomplete article list. Nothing changed. Sync again later.',
       };
       const publicMessage = messages[error.code];
       if (publicMessage) return publicMessage;
     }
     if (message.includes('No articles selected'))
       return 'Select at least one article before building the blog draft.';
-    return 'Sync failed. Confirm that your HackMD content is publicly readable and try again.';
+    return 'Sync failed. Check that your HackMD notes are public, then try again.';
   }
   if (type === 'generate_design')
     return error instanceof AiProviderTimeoutError
-      ? 'AI took too long to respond. Your previous design is unchanged; please try again.'
+      ? 'AI took too long. Your design is unchanged. Try again.'
       : error instanceof AiProviderRequestError
-        ? 'AI service is temporarily unavailable. Your previous design is unchanged; try again shortly.'
-        : 'AI could not produce a valid design. Your previous design is unchanged; adjust the prompt and try again.';
+        ? 'AI is unavailable. Your design is unchanged. Try again soon.'
+        : 'AI couldn’t make a valid design. Your design is unchanged. Change the description and try again.';
   if (type === 'apply_design' || type === 'activate_design')
-    return 'The design could not be built. Your previous draft is unchanged; try again.';
-  return 'Publishing failed. Your draft and current live site are unchanged; please try again.';
+    return 'The design build failed. Your draft is unchanged. Try again.';
+  return 'Publishing failed. Your draft and live site are unchanged. Try again.';
 }
 export class TerminalOperationError extends Error {
   constructor(message: string, options?: ErrorOptions) {

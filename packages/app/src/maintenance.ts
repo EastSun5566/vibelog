@@ -10,9 +10,7 @@ export function blocksRequest(
 
 export function maintenanceResponse(method: string): Response {
   return new Response(
-    method === 'HEAD'
-      ? null
-      : 'VibeLog is temporarily unavailable for maintenance. Please try again shortly.',
+    method === 'HEAD' ? null : 'VibeLog is down for maintenance. Try again soon.',
     {
       status: 503,
       headers: {

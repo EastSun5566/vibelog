@@ -688,8 +688,8 @@ describe('AI operation execution', () => {
     );
     const timeoutMessage = operationPublicError('generate_design', new AiProviderTimeoutError());
     const validationMessage = operationPublicError('generate_design', new Error('Invalid design'));
-    expect(providerMessage).toContain('temporarily unavailable');
-    expect(timeoutMessage).toContain('too long to respond');
+    expect(providerMessage).toContain('AI is unavailable');
+    expect(timeoutMessage).toContain('AI took too long');
     expect(validationMessage).toContain('valid design');
   });
 

@@ -9,8 +9,7 @@ const AUTHORIZATION_COPY: Record<
   pending: { title: 'Authorize your agent' },
   approved: {
     title: 'Draft access approved',
-    message:
-      'Return to your agent to finish connecting and continue preparing your private draft. You’ll review it before publishing.',
+    message: 'Return to your agent to continue. You review the draft before anything is published.',
   },
   consumed: {
     title: 'Agent connected',
@@ -19,8 +18,7 @@ const AUTHORIZATION_COPY: Record<
   },
   denied: {
     title: 'Access denied',
-    message:
-      'No access was granted. Return to your agent, or start a new CLI login if you want to try again.',
+    message: 'No access was granted. To try again, start a new CLI login.',
   },
   expired: {
     title: 'Request expired',
@@ -37,7 +35,7 @@ export function authorizationPage(session: AppSession, pairing: AgentAuthorizati
               ? 'Draft and publishing access approved'
               : 'Agent connected',
           message:
-            'Return to your agent to continue. Publishing access is enabled; ask it explicitly before publishing. You can revoke access at any time.',
+            'Return to your agent to continue. It publishes only when you ask. You can revoke access at any time.',
         }
       : pairing
         ? AUTHORIZATION_COPY[pairing.status]
@@ -61,8 +59,8 @@ export function authorizationPage(session: AppSession, pairing: AgentAuthorizati
             <strong class="pairing-code">{pairing.userCode}</strong>
             <p>
               {pairing.canPublish
-                ? 'Your agent can change your private draft and publish your blog for 12 hours. Ask it explicitly before publishing. It cannot restore, export or delete your blog. You can revoke access at any time.'
-                : 'Your agent can change your private draft for 12 hours. It cannot publish or delete your blog. You can revoke access at any time.'}
+                ? 'For 12 hours, your agent can change your private draft and publish your blog when you ask. It can’t restore, export or delete your blog.'
+                : 'For 12 hours, your agent can change your private draft. It can’t publish or delete your blog.'}
             </p>
             <form class="stack" method="post" action="/agent/authorize">
               <input type="hidden" name="csrfToken" value={session.csrfToken} />

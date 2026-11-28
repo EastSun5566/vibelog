@@ -76,7 +76,7 @@ export function operationMessage(operation: OperationRecord): string {
   const progressMessage =
     typeof operation.result?.progressMessage === 'string' ? operation.result.progressMessage : null;
   if (operation.status === 'failed') {
-    const error = operation.errorMessage ?? 'The operation failed. Please try again.';
+    const error = operation.errorMessage ?? 'This step failed. Try again.';
     return progressMessage ? `${progressMessage} — ${error}` : error;
   }
   if (operation.status === 'succeeded')

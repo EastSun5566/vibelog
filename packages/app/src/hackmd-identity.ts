@@ -9,7 +9,7 @@ export class HackmdTokenError extends Error {
     super(
       reason === 'invalid'
         ? 'HackMD did not accept this token. Create a new one and paste it again.'
-        : 'HackMD could not confirm the token right now. Please try again shortly.',
+        : 'HackMD couldn’t check the token. Try again soon.',
     );
     this.name = 'HackmdTokenError';
   }

@@ -260,7 +260,7 @@ describe('preview builds', () => {
     expect(await executor.execute('preview')).toEqual({ failed: true });
     expect(store.fail).toHaveBeenCalledWith(
       lease,
-      'We could not find that public HackMD user. Check the username and try again.',
+      'HackMD has no public profile with that username. Check it and try again.',
     );
     expect(store.complete).not.toHaveBeenCalled();
     expect(artifacts.deleteArtifact).toHaveBeenCalledTimes(2);

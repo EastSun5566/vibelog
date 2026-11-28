@@ -68,9 +68,7 @@ async function requestMagicLink(
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await expect(page).toHaveURL(/\/auth\/login\?sent=1(?:&returnTo=.*)?$/u);
   await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
-  await expect(page.getByRole('status')).toContainText(
-    'We sent a one-time sign-in link. It expires in 10 minutes.',
-  );
+  await expect(page.getByRole('status')).toContainText('The sign-in link expires in 10 minutes.');
   await expect(page.getByLabel('Email')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Use a different email' })).toBeVisible();
 

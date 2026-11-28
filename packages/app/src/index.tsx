@@ -507,7 +507,7 @@ export function createApp(options: CreateAppOptions) {
             returnTo: callbackURL,
             github: Boolean(config.githubClientId),
             google: Boolean(config.googleClientId),
-            message: 'Please wait before requesting another link.',
+            message: 'Wait a minute before requesting another link.',
           },
           analyticsDocument(c),
         ),
@@ -756,7 +756,7 @@ export function createApp(options: CreateAppOptions) {
         400,
       );
     if (!(await database.consumeRateLimit(`claim:${session.user.id}`, 10, 60 * 60)))
-      return fail('Too many attempts. Please wait an hour and try again.', 429);
+      return fail('Too many attempts. Try again in an hour.', 429);
     let owner: string;
     try {
       owner = await hackmdTokenOwner(input.data.hackmdToken, { apiUrl: config.hackmdApiUrl });
@@ -1018,9 +1018,14 @@ export function createApp(options: CreateAppOptions) {
       return await dispatchAndRedirect(c, operation, editorUrlWithPreviewPath(previewPath));
     } catch (error) {
       if (error instanceof AiQuotaExceededError)
-        throw new AppError('ai_quota_exceeded', 'Today’s AI design quota is exhausted.', 429, {
-          'Retry-After': String(error.retryAfter),
-        });
+        throw new AppError(
+          'ai_quota_exceeded',
+          'You’ve used today’s AI designs. Try again tomorrow.',
+          429,
+          {
+            'Retry-After': String(error.retryAfter),
+          },
+        );
       if (error instanceof BlogConnectionConflictError)
         throw new AppError(
           error.code === 'draft_not_ready' ? 'preview_not_ready' : error.code,
