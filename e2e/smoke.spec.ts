@@ -1570,6 +1570,7 @@ test('an anonymous visitor swaps hackmd.io for the app origin and sees the blog'
     );
   await expect.poll(gaCommands).toContainEqual('["event","preview_ready"]');
   expect((await gaCommands()).join()).toContain('/@name');
+  expect((await gaCommands()).join()).toContain('"page_title":"@name on VibeLog');
   expect((await gaCommands()).join()).not.toContain('alice');
   const claim = page.getByRole('link', { name: 'Make it yours' });
   await claim.evaluate((link) => {

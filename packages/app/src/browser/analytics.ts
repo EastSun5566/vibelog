@@ -99,6 +99,8 @@ if (
       allow_google_signals: false,
       page_location: `${location.origin}${redactPath(location.pathname)}`,
       page_referrer: redactedReferrer(),
+      // gtag.js would otherwise send document.title, which names the profile on previews.
+      page_title: document.title.replace(/@[^\s·]+/gu, '@name'),
     });
     // Funnel steps: a page marks what viewing it means, and links mark what clicking them means.
     const view =
