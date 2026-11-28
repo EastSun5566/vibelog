@@ -172,7 +172,8 @@ export class BlogConnectionConflictError extends Error {
       | 'state_changed'
       | 'operation_in_progress'
       | 'deletion_in_progress'
-      | 'draft_not_ready',
+      | 'draft_not_ready'
+      | 'hackmd_locked',
   ) {
     super(
       {
@@ -181,6 +182,8 @@ export class BlogConnectionConflictError extends Error {
         state_changed: 'The blog changed. Refresh its context before retrying.',
         operation_in_progress: 'Wait for the current operation before retrying.',
         deletion_in_progress: 'Finish deleting the blog first.',
+        hackmd_locked:
+          'The HackMD account cannot change. To use another one, delete this blog and claim that account at /@name/edit.',
       }[code],
     );
     this.name = 'BlogConnectionConflictError';
@@ -494,6 +497,24 @@ export class AppDatabase {
       return { blog: mapBlog(blog), operation: mapOperation(operation) };
     });
   }
+  /** Records that the writer of an existing blog proved they own its HackMD account. */
+  async verifyBlogHackmd(userId: string, blogId: string): Promise<void> {
+    try {
+      await this.db
+        .update(schema.blogs)
+        .set({ hackmdVerifiedAt: new Date(), updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.blogs.id, blogId),
+            eq(schema.blogs.userId, userId),
+            isNull(schema.blogs.hackmdVerifiedAt),
+          ),
+        );
+    } catch (error) {
+      if (violates(error, 'blogs_verified_hackmd_unique')) throw new HackmdAlreadyClaimedError();
+      throw error;
+    }
+  }
   /** The blog whose writer proved they own this HackMD account, if any. */
   async getVerifiedBlogByHackmd(hackmdUsername: string): Promise<BlogRecord | null> {
     const [row] = await this.db
@@ -557,6 +578,9 @@ export class AppDatabase {
           ),
         );
       if (active) throw new BlogConnectionConflictError('operation_in_progress');
+      // Only a proven owner may attach a HackMD account, so a retry keeps the account it has.
+      if (input.hackmdUsername.toLowerCase() !== blog.hackmdUsername.toLowerCase())
+        throw new BlogConnectionConflictError('hackmd_locked');
       const changed =
         input.username !== blog.username ||
         input.hackmdUsername !== blog.hackmdUsername ||

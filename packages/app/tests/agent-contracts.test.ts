@@ -126,7 +126,9 @@ describe('agent design contract', () => {
     expect(instructions).toContain('If an older server omits');
     expect(instructions).toContain('CLI 0.2.0 and later');
     expect(instructions).toContain('confirm the draft is ready with no active operation');
-    expect(onboardingPrompt('https://vibelog.org', '0.1.0')).toContain('only if I have no blog');
+    expect(onboardingPrompt('https://vibelog.org', '0.1.0')).toContain(
+      'if I have no blog, ask only for my public HackMD username and send me to https://vibelog.org/@<username>/edit',
+    );
   });
   it('explains the authorization handoff without changing normal email login', async () => {
     const input = { github: false, google: false, returnTo: '/agent/authorize?code=AABBCCDDEE' };
@@ -151,12 +153,19 @@ describe('agent design contract', () => {
         version !== '0.4.0' ? 'same `login --no-wait`' : 'same `login --no-wait --allow-publish`',
       );
       expect(text).toContain('nohup');
-      expect(text).toContain('Never guess profile or address');
-      expect(text).toContain('their corrected username');
+      expect(text).toContain('ask only for the public HackMD username. Never guess it');
+      expect(text).toContain('https://vibelog.org/@<profile>/edit');
+      expect(text).toContain('Never ask for or handle that token yourself');
+      expect(text).toContain('`claim_required`');
+      expect(text).toContain('the unchanged HackMD username');
       expect(text).toContain('latest stateVersion');
       expect(text).toContain('Do not create a replacement operation');
     }
     expect(onboardingPrompt('https://vibelog.org', '0.3.0')).toContain('Never guess');
+    // Publishing CLIs learn to stop at an unconfirmed HackMD account instead of retrying.
+    expect(agentInstructions('https://vibelog.org', '0.5.0')).toContain(
+      '`hackmd_verification_required`',
+    );
   });
   it('gates combined approval and immediate preview handoff by pinned version', () => {
     const text = agentInstructions('https://vibelog.org', '0.5.0');
@@ -172,7 +181,6 @@ describe('agent design contract', () => {
       'postCounts.selected / postCounts.total',
       "human's language",
       '2–3 actual changes',
-      'without an extra confirmation round',
       'contract example is bare IR',
       'Never describe pending or failed work as success',
     ]) {

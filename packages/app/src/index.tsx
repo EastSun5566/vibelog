@@ -679,13 +679,12 @@ export function createApp(options: CreateAppOptions) {
   /** Where a signed-in writer goes for /@name/edit, or the claim page state to show. */
   const claimState = async (userId: string, name: string) => {
     const blog = await database.getBlogForUser(userId);
-    if (blog)
-      return previewNameKey(blog.hackmdUsername) === previewNameKey(name)
-        ? ('editor' as const)
-        : ('other-blog' as const);
-    return (await database.getVerifiedBlogByHackmd(name))
-      ? ('claimed' as const)
-      : ('verify' as const);
+    if (blog && previewNameKey(blog.hackmdUsername) !== previewNameKey(name))
+      return { state: 'other-blog' as const, blog };
+    if (blog?.hackmdVerifiedAt) return { state: 'editor' as const, blog };
+    if (await database.getVerifiedBlogByHackmd(name)) return { state: 'claimed' as const, blog };
+    // A blog connected before verification existed confirms its account once, then publishes.
+    return { state: blog ? ('confirm' as const) : ('verify' as const), blog };
   };
   const suggestedHandle = (name: string) => {
     const handle = previewNameKey(name)
@@ -700,7 +699,7 @@ export function createApp(options: CreateAppOptions) {
     const session = await claimSession(c);
     if (!session) return c.redirect(`/auth/login?returnTo=${encodeURIComponent(c.req.path)}`);
     c.header('Cache-Control', 'private, no-store');
-    const state = await claimState(session.user.id, name);
+    const { state } = await claimState(session.user.id, name);
     if (state === 'editor') return c.redirect('/editor');
     const preview = await previews.get(previewNameKey(name));
     return c.html(
@@ -719,14 +718,16 @@ export function createApp(options: CreateAppOptions) {
     if (!session) throw new AppError('unauthorized', 'Sign in to continue.', 401);
     const body = await mutationBody(c);
     c.header('Cache-Control', 'private, no-store');
-    const state = await claimState(session.user.id, name);
+    const { state, blog } = await claimState(session.user.id, name);
     if (state === 'editor') return c.redirect('/editor', 303);
     const preview = await previews.get(previewNameKey(name));
+    const confirming = state === 'confirm';
     const input = z
       .object({
         hackmdToken: z.string().trim().min(8).max(512),
-        username: handleInput,
-        language: blogLanguageSchema,
+        // An existing blog keeps its address and language; only a new one chooses them.
+        username: confirming ? z.string().optional() : handleInput,
+        language: confirming ? z.string().optional() : blogLanguageSchema,
       })
       .safeParse({
         hackmdToken: formValue(body, 'hackmdToken'),
@@ -744,8 +745,8 @@ export function createApp(options: CreateAppOptions) {
     };
     const fail = (error: string, status: 400 | 403 | 409 | 429 | 502) =>
       c.html(claimPage(session, { ...view, error }), status);
-    if (state !== 'verify') return c.html(claimPage(session, view), 409);
-    if (!input.success || isReservedBlogHandle(input.data.username))
+    if (state !== 'verify' && state !== 'confirm') return c.html(claimPage(session, view), 409);
+    if (!input.success || (!confirming && isReservedBlogHandle(input.data.username ?? '')))
       return fail(
         'Paste the token and choose a blog address of 3 to 32 letters, digits or hyphens.',
         400,
@@ -762,12 +763,22 @@ export function createApp(options: CreateAppOptions) {
     }
     if (previewNameKey(owner) !== previewNameKey(name))
       return fail(`This token belongs to @${owner}, not @${name}. Use a token from @${name}.`, 403);
+    if (confirming && blog) {
+      try {
+        await database.verifyBlogHackmd(session.user.id, blog.id);
+      } catch (error) {
+        if (error instanceof HackmdAlreadyClaimedError)
+          return c.html(claimPage(session, { ...view, state: 'claimed' }), 409);
+        throw error;
+      }
+      return c.redirect('/editor', 303);
+    }
     try {
       const { operation } = await database.createBlog(
         session.user.id,
-        input.data.username,
+        input.data.username ?? '',
         owner,
-        input.data.language,
+        input.data.language ?? 'en',
         preview?.design
           ? {
               design: {
@@ -913,6 +924,9 @@ export function createApp(options: CreateAppOptions) {
   app.get('/onboarding', async (c) => {
     const blog = await database.getBlogForUser(c.get('session').user.id);
     if (blog?.state === 'deleting' || blog?.draftArtifactId) return c.redirect('/editor');
+    // New blogs start by proving the HackMD account at /@name/edit.
+    const claim = hackmdNameSchema.safeParse(c.req.query('hackmd')?.trim().replace(/^@/u, ''));
+    if (!blog && claim.success) return c.redirect(`/@${encodeURIComponent(claim.data)}/edit`);
     const operation = blog ? await database.getActiveOperation(blog.id, blog.userId) : null;
     return c.html(
       onboardingPage(c.get('session'), blog, operation, config.appHostname, {
@@ -1085,29 +1099,25 @@ export function createApp(options: CreateAppOptions) {
       );
     const session = c.get('session');
     const blog = await database.getBlogForUser(session.user.id);
-    if (blog?.draftArtifactId)
+    // A new blog is created only by proving the HackMD account at /@name/edit.
+    if (!blog)
+      throw new AppError(
+        'claim_required',
+        `Confirm the HackMD account at /@${input.data.hackmdUsername}/edit first.`,
+        409,
+      );
+    if (blog.draftArtifactId)
       throw new AppError(
         'source_locked',
         'The HackMD source cannot change after the first successful sync.',
         409,
       );
-    if (!blog && formValue(body, 'stateVersion'))
-      throw new AppError('state_changed', 'The blog changed. Refresh before connecting.', 409);
     let operation: OperationRecord;
     try {
-      operation = blog
-        ? await database.retryInitialSync(session.user.id, {
-            ...input.data,
-            stateVersion: formValue(body, 'stateVersion'),
-          })
-        : (
-            await database.createBlog(
-              session.user.id,
-              input.data.username,
-              input.data.hackmdUsername,
-              input.data.language,
-            )
-          ).operation;
+      operation = await database.retryInitialSync(session.user.id, {
+        ...input.data,
+        stateVersion: formValue(body, 'stateVersion'),
+      });
     } catch (error) {
       if (error instanceof BlogConnectionConflictError)
         throw new AppError(error.code, error.message, 409);
@@ -1115,12 +1125,6 @@ export function createApp(options: CreateAppOptions) {
         throw new AppError(
           'blog_address_taken',
           'That blog address is already taken. Choose another one.',
-          409,
-        );
-      if (error instanceof BlogAlreadyExistsError)
-        throw new AppError(
-          'blog_already_connected',
-          'A blog was connected by another request. Refresh to continue.',
           409,
         );
       throw error;
@@ -1263,8 +1267,18 @@ export function createApp(options: CreateAppOptions) {
       previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin),
     });
   });
+  /** Publishing, including restoring an old release, needs a proven HackMD owner. */
+  function assertVerifiedOwner(blog: BlogRecord) {
+    if (!blog.hackmdVerifiedAt)
+      throw new AppError(
+        'hackmd_verification_required',
+        `Confirm your HackMD account at /@${blog.hackmdUsername}/edit before publishing.`,
+        403,
+      );
+  }
   app.post('/actions/publish', async (c) => {
     const body = await mutationBody(c);
+    assertVerifiedOwner(await ownedBlog(c));
     return enqueue(c, 'publish', {
       previewToken: readPreviewToken(body),
       previewPath: safePreviewPath(formValue(body, 'previewPath'), config.previewOrigin),
@@ -1273,6 +1287,7 @@ export function createApp(options: CreateAppOptions) {
   app.post('/actions/releases/:id/activate', async (c) => {
     const body = await mutationBody(c);
     const blog = await ownedBlog(c);
+    assertVerifiedOwner(blog);
     const release = await database.getRelease(uuidInput.parse(c.req.param('id')), blog.id);
     if (!release || !(await database.getArtifact(release.artifactId))?.readyAt)
       throw new AppError('release_unavailable', 'This release artifact is unavailable.', 409);

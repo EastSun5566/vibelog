@@ -155,7 +155,7 @@ describe.skipIf(!url)('browser authentication', () => {
       const { blog, operation } = await database.createBlog(
         info.user.id,
         `browser-${info.user.id.slice(0, 8)}`,
-        'writer',
+        `writer-${info.user.id.slice(0, 8)}`,
       );
       const lease = await database.claimOperation(operation.id);
       const design = await database.getActiveDesign(blog.id);
@@ -190,6 +190,7 @@ describe.skipIf(!url)('browser authentication', () => {
         '2099-01-01',
         design.config,
       );
+      await database.verifyBlogHackmd(info.user.id, blog.id);
       if (conflict === 'draft_not_ready')
         await database.db
           .update(blogs)

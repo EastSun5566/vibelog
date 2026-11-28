@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 
 const responses = new Map([
-  ['/api/@alice-hackmd/overview', {
+  ['/overview', {
     type: 'application/json',
     body: JSON.stringify({ notes: [{
       id: 'hello',
@@ -21,7 +21,7 @@ const responses = new Map([
       permalink: 'second-note',
     }] }),
   }],
-  ['/info/@alice-hackmd', {
+  ['/info', {
     type: 'application/json',
     body: JSON.stringify({ user: { displayName: 'Alice Writer', biography: 'Notes about humane software.' }, team: null }),
   }],
@@ -41,13 +41,21 @@ const server = createServer((request, response) => {
     return;
   }
   if (request.url === '/v1/me') {
-    // A HackMD API token that belongs to the fixture profile, for claiming /@alice-hackmd.
-    const owned = request.headers.authorization === 'Bearer alice-hackmd-api-token';
-    response.writeHead(owned ? 200 : 401, { 'content-type': 'application/json' });
-    response.end(owned ? JSON.stringify({ id: 'alice', userPath: 'alice-hackmd', email: null }) : '{}');
+    // The HackMD API token "token-for-<name>" belongs to the profile <name>.
+    const owner = /^Bearer token-for-(.+)$/u.exec(request.headers.authorization ?? '')?.[1];
+    response.writeHead(owner ? 200 : 401, { 'content-type': 'application/json' });
+    response.end(owner ? JSON.stringify({ id: owner, userPath: owner, email: null }) : '{}');
     return;
   }
-  const fixture = responses.get(request.url ?? '');
+  // Every public profile shares the same notes, so each scenario can claim its own account.
+  // A name starting with "missing" has no public profile.
+  const profile = /^\/(api\/@[^/]+\/overview|info\/@[^/]+)$/u.exec(request.url ?? '');
+  const name = /@([^/]+)/u.exec(request.url ?? '')?.[1] ?? '';
+  const fixture = profile
+    ? name.startsWith('missing')
+      ? undefined
+      : responses.get(request.url?.startsWith('/api/') ? '/overview' : '/info')
+    : responses.get(request.url ?? '');
   if (!fixture) {
     response.writeHead(404).end('not found');
     return;

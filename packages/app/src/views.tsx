@@ -153,7 +153,7 @@ export function document(
   );
 }
 
-export function agentPromptEntry(prompt: string, placement: 'landing' | 'editor' | 'page') {
+export function agentPromptEntry(prompt: string, placement: 'guide' | 'editor' | 'page') {
   const content = (
     <>
       <div class="prompt-block">
@@ -169,7 +169,7 @@ export function agentPromptEntry(prompt: string, placement: 'landing' | 'editor'
       </div>
       <div class="agent-prompt-footer">
         <output data-agent-copy-status aria-live="polite"></output>
-        {placement === 'landing' ? (
+        {placement === 'guide' ? (
           <a class="btn" data-variant="ghost" data-size="compact" href="/auth/login">
             Use the editor
           </a>
@@ -184,7 +184,7 @@ export function agentPromptEntry(prompt: string, placement: 'landing' | 'editor'
     </details>
   ) : (
     <section
-      class={`agent-prompt ${placement === 'landing' ? 'agent-prompt-primary' : 'agent-prompt-body'}`}
+      class={`agent-prompt ${placement === 'guide' ? 'agent-prompt-primary' : 'agent-prompt-body'}`}
       data-agent-prompt
     >
       {content}
@@ -352,7 +352,7 @@ export function guidePage(
         {agentPrompt ? (
           <>
             <p>Prefer a coding agent? Give it this prompt instead.</p>
-            {agentPromptEntry(agentPrompt, 'landing')}
+            {agentPromptEntry(agentPrompt, 'guide')}
           </>
         ) : null}
       </section>
@@ -586,87 +586,105 @@ export function onboardingPage(
             <section>{failed}</section>
           </div>
         ) : null}
-        <form
-          class="stack"
-          method="post"
-          action="/actions/blog/connect"
-          data-operation
-          data-success-url="/editor"
-          aria-busy={busy ? 'true' : undefined}
-        >
-          <input type="hidden" name="csrfToken" value={session.csrfToken} />
-          {blog ? <input type="hidden" name="stateVersion" value={blogStateVersion(blog)} /> : null}
-          <div class="field">
-            <label for="username">Blog address</label>
-            <input
-              id="username"
-              name="username"
-              required
-              minlength={3}
-              maxlength={32}
-              pattern={'[a-z0-9](?:[a-z0-9\\-]{1,30}[a-z0-9])'}
-              value={blog?.username ?? ''}
-              readonly={Boolean(blog && (!canRecoverInitialSync(blog) || busy))}
-              autocomplete="off"
-              autocapitalize="none"
-              spellcheck={false}
-              data-blog-handle
-              aria-describedby="blog-address-preview"
-              aria-errormessage="blog-address-error"
+        {blog ? (
+          <form
+            class="stack"
+            method="post"
+            action="/actions/blog/connect"
+            data-operation
+            data-success-url="/editor"
+            aria-busy={busy ? 'true' : undefined}
+          >
+            <input type="hidden" name="csrfToken" value={session.csrfToken} />
+            <input type="hidden" name="stateVersion" value={blogStateVersion(blog)} />
+            <div class="field">
+              <label for="username">Blog address</label>
+              <input
+                id="username"
+                name="username"
+                required
+                minlength={3}
+                maxlength={32}
+                pattern={'[a-z0-9](?:[a-z0-9\\-]{1,30}[a-z0-9])'}
+                value={blog.username}
+                readonly={!canRecoverInitialSync(blog) || busy}
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck={false}
+                data-blog-handle
+                aria-describedby="blog-address-preview"
+                aria-errormessage="blog-address-error"
+              />
+              <span
+                id="blog-address-error"
+                class="inline-error"
+                data-blog-address-error
+                hidden
+              ></span>
+              <p class="field-preview" id="blog-address-preview">
+                <span data-blog-hostname data-host-suffix={appHostname}>
+                  {blog.username}.{appHostname}
+                </span>
+              </p>
+            </div>
+            <div class="field">
+              <label for="hackmdUsername">HackMD username</label>
+              <input
+                id="hackmdUsername"
+                name="hackmdUsername"
+                required
+                maxlength={100}
+                value={blog.hackmdUsername}
+                readonly
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck={false}
+                aria-describedby={failed ? 'hackmd-error' : undefined}
+              />
+              <p class="field-preview">
+                <a
+                  href={`https://hackmd.io/@${encodeURIComponent(blog.hackmdUsername)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  https://hackmd.io/@{blog.hackmdUsername}
+                </a>
+              </p>
+            </div>
+            <BlogLanguageField
+              id="blogLanguage"
+              listId="language-suggestions"
+              value={blog.language}
             />
-            <span
-              id="blog-address-error"
-              class="inline-error"
-              data-blog-address-error
-              hidden
-            ></span>
-            <p class="field-preview" id="blog-address-preview">
-              <span data-blog-hostname data-host-suffix={appHostname}>
-                {blog?.username ?? 'your-name'}.{appHostname}
-              </span>
-            </p>
-          </div>
-          <div class="field">
-            <label for="hackmdUsername">HackMD username</label>
-            <input
-              id="hackmdUsername"
-              name="hackmdUsername"
-              required
-              maxlength={100}
-              value={blog?.hackmdUsername ?? ''}
-              autocomplete="off"
-              autocapitalize="none"
-              spellcheck={false}
-              aria-describedby={failed ? 'hackmd-error' : undefined}
-            />
-            <p class="field-preview">
-              <a
-                data-hackmd-profile
-                href={
-                  blog?.hackmdUsername
-                    ? `https://hackmd.io/@${encodeURIComponent(blog.hackmdUsername)}`
-                    : undefined
-                }
-                aria-disabled={!blog?.hackmdUsername}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {blog?.hackmdUsername
-                  ? `https://hackmd.io/@${blog.hackmdUsername}`
-                  : 'https://hackmd.io/@username'}
-              </a>
-            </p>
-          </div>
-          <BlogLanguageField
-            id="blogLanguage"
-            listId="language-suggestions"
-            value={blog?.language ?? 'en'}
-          />
-          <button class="btn" type="submit" disabled={busy}>
-            {blog ? 'Retry sync' : 'Sync and build preview'}
-          </button>
-          <OperationOutput operation={operation ?? undefined} />
-        </form>
+            <button class="btn" type="submit" disabled={busy}>
+              Retry sync
+            </button>
+            <OperationOutput operation={operation ?? undefined} />
+          </form>
+        ) : (
+          <form class="stack" method="get" action="/onboarding">
+            <div class="field">
+              <label for="hackmd">Your HackMD username</label>
+              <input
+                id="hackmd"
+                name="hackmd"
+                required
+                maxlength={100}
+                placeholder="you"
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck={false}
+                aria-describedby="hackmd-claim-hint"
+              />
+              <p class="field-preview" id="hackmd-claim-hint">
+                hackmd.io/@you becomes {appHostname}/@you
+              </p>
+            </div>
+            <button class="btn" type="submit">
+              Continue
+            </button>
+          </form>
+        )}
         <details
           class="editor-disclosure danger-zone"
           data-disclosure-key="danger-zone"
@@ -1954,6 +1972,16 @@ export function editorPage(input: EditorPageInput) {
                   liveDesign={liveDesign}
                   hasChanges={hasChanges}
                 />
+                {blog.hackmdVerifiedAt ? null : (
+                  <div class="alert" role="status">
+                    <section>
+                      Confirm your HackMD account to publish.{' '}
+                      <a href={`/@${encodeURIComponent(blog.hackmdUsername)}/edit`}>
+                        Confirm @{blog.hackmdUsername}
+                      </a>
+                    </section>
+                  </div>
+                )}
                 <form class="stack" method="post" action="/actions/publish" data-operation>
                   <input type="hidden" name="csrfToken" value={input.session.csrfToken} />
                   <input type="hidden" name="previewToken" value={input.previewToken} />
@@ -1965,7 +1993,11 @@ export function editorPage(input: EditorPageInput) {
                     data-publish-button
                     data-focus-key="publish"
                     disabled={
-                      !blog.sourceArtifactId || !blog.draftArtifactId || !hasChanges || busy
+                      !blog.hackmdVerifiedAt ||
+                      !blog.sourceArtifactId ||
+                      !blog.draftArtifactId ||
+                      !hasChanges ||
+                      busy
                     }
                   >
                     {publishLabel}
@@ -2038,7 +2070,7 @@ export function editorPage(input: EditorPageInput) {
                                 data-variant="outline"
                                 data-size="compact"
                                 type="submit"
-                                disabled={busy}
+                                disabled={busy || !blog.hackmdVerifiedAt}
                                 data-focus-key="restore-release"
                               >
                                 Restore live
@@ -2197,7 +2229,8 @@ export function profilePreviewPage(view: ProfilePreviewView, analytics?: Analyti
 
 export interface ClaimView {
   name: string;
-  state: 'verify' | 'other-blog' | 'claimed';
+  /** verify: a new blog; confirm: an existing blog connected before verification existed. */
+  state: 'verify' | 'confirm' | 'other-blog' | 'claimed';
   appHostname: string;
   handle?: string;
   language?: string;
@@ -2215,9 +2248,11 @@ export function claimPage(session: AppSession, view: ClaimView) {
         <h1>
           {view.state === 'verify'
             ? `Make ${handle} yours`
-            : view.state === 'claimed'
-              ? `${handle} is already claimed`
-              : 'You already have a blog'}
+            : view.state === 'confirm'
+              ? `Confirm ${handle} is yours`
+              : view.state === 'claimed'
+                ? `${handle} is already claimed`
+                : 'You already have a blog'}
         </h1>
       </header>
       <section class="stack">
@@ -2264,35 +2299,39 @@ export function claimPage(session: AppSession, view: ClaimView) {
                   aria-describedby={view.error ? 'claim-error' : undefined}
                 />
               </div>
-              <div class="field">
-                <label for="username">Blog address</label>
-                <input
-                  id="username"
-                  name="username"
-                  required
-                  minlength={3}
-                  maxlength={32}
-                  pattern={'[a-z0-9](?:[a-z0-9\\-]{1,30}[a-z0-9])'}
-                  value={view.handle ?? ''}
-                  autocomplete="off"
-                  autocapitalize="none"
-                  spellcheck={false}
-                  data-blog-handle
-                  aria-describedby="blog-address-preview"
-                />
-                <p class="field-preview" id="blog-address-preview">
-                  <span data-blog-hostname data-host-suffix={view.appHostname}>
-                    {view.handle ?? 'your-name'}.{view.appHostname}
-                  </span>
-                </p>
-              </div>
-              <BlogLanguageField
-                id="blogLanguage"
-                listId="language-suggestions"
-                value={view.language ?? 'en'}
-              />
+              {view.state === 'verify' ? (
+                <>
+                  <div class="field">
+                    <label for="username">Blog address</label>
+                    <input
+                      id="username"
+                      name="username"
+                      required
+                      minlength={3}
+                      maxlength={32}
+                      pattern={'[a-z0-9](?:[a-z0-9\\-]{1,30}[a-z0-9])'}
+                      value={view.handle ?? ''}
+                      autocomplete="off"
+                      autocapitalize="none"
+                      spellcheck={false}
+                      data-blog-handle
+                      aria-describedby="blog-address-preview"
+                    />
+                    <p class="field-preview" id="blog-address-preview">
+                      <span data-blog-hostname data-host-suffix={view.appHostname}>
+                        {view.handle ?? 'your-name'}.{view.appHostname}
+                      </span>
+                    </p>
+                  </div>
+                  <BlogLanguageField
+                    id="blogLanguage"
+                    listId="language-suggestions"
+                    value={view.language ?? 'en'}
+                  />
+                </>
+              ) : null}
               <button class="btn" type="submit">
-                Verify and open the editor
+                {view.state === 'verify' ? 'Verify and open the editor' : 'Confirm and continue'}
               </button>
             </form>
           </>
