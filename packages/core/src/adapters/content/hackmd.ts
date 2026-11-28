@@ -346,11 +346,20 @@ async function mapConcurrent<T, R>(
   return results;
 }
 
+// slugify caps slugs at 80 characters, and the builder applies it again, so a suffix has to fit
+// inside that cap or two long titles would be cut back to the same slug.
+const SLUG_LENGTH = 80;
+function withSuffix(base: string, suffix: string): string {
+  if (!base) return suffix;
+  return `${base.slice(0, SLUG_LENGTH - suffix.length - 1).replace(/-+$/u, '')}-${suffix}`;
+}
+
 /**
  * One URL slug per note, from its permalink or title. Notes with the same title (or a title with no
  * letters, such as only emoji) still sync: the earliest published note keeps the plain slug and the
- * others add their HackMD short ID, so a slug never changes when notes are added later. Titles that
- * are only a number get the short ID as well.
+ * others add their HackMD short ID, so adding a note never moves an existing URL. Removing the note
+ * that holds the plain slug (or letting it age out of the newest 1,000) hands that slug to the next
+ * oldest one. Titles that are only a number get the short ID as well.
  */
 function slugsFor(notes: z.infer<typeof noteSchema>[]): Map<string, string> {
   const taken = new Set<string>();
@@ -363,9 +372,9 @@ function slugsFor(notes: z.infer<typeof noteSchema>[]): Map<string, string> {
     const base = slugify(note.permalink ?? note.title);
     // A bare number would share /blog/<n>/ with page n of the post list, so it gets the suffix too.
     const free = base && !taken.has(base) && !/^\d+$/u.test(base);
-    const stem = free ? base : [base, suffix].filter(Boolean).join('-');
+    const stem = free ? base : withSuffix(base, suffix);
     let slug = stem;
-    for (let count = 2; taken.has(slug); count += 1) slug = `${stem}-${String(count)}`;
+    for (let count = 2; taken.has(slug); count += 1) slug = withSuffix(stem, String(count));
     taken.add(slug);
     result.set(note.id, slug);
   }

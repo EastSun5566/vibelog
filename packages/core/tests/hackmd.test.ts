@@ -209,6 +209,8 @@ describe('HackMdSource', () => {
                 }),
                 note('emoji', { title: '🎉', permalink: undefined, shortId: 'Hk2' }),
                 note('number', { title: '2', permalink: undefined, shortId: 'Bq7' }),
+                note('long-a', { title: 'a'.repeat(90), permalink: undefined, shortId: 'La1' }),
+                note('long-b', { title: 'a'.repeat(90), permalink: undefined, shortId: 'Lb2' }),
               ])
             : new Response('Body'),
         );
@@ -222,6 +224,9 @@ describe('HackMdSource', () => {
       'hk2',
       // A bare number would collide with page 2 of the post list.
       '2-bq7',
+      'a'.repeat(80),
+      // The suffix fits inside the 80-character cap the builder applies again.
+      `${'a'.repeat(76)}-lb2`,
     ]);
   });
 
