@@ -507,7 +507,7 @@ export function createApp(options: CreateAppOptions) {
             returnTo: callbackURL,
             github: Boolean(config.githubClientId),
             google: Boolean(config.googleClientId),
-            message: 'Wait a minute before requesting another link.',
+            message: 'Too many sign-in links. Try again later.',
           },
           analyticsDocument(c),
         ),
@@ -769,7 +769,7 @@ export function createApp(options: CreateAppOptions) {
       return fail(`This token belongs to @${owner}, not @${name}. Use a token from @${name}.`, 403);
     if (confirming && blog) {
       try {
-        await database.verifyBlogHackmd(session.user.id, blog.id);
+        await database.verifyBlogHackmd(session.user.id, blog.id, owner);
       } catch (error) {
         if (error instanceof HackmdAlreadyClaimedError)
           return c.html(claimPage(session, { ...view, state: 'claimed' }), 409);

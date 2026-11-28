@@ -84,7 +84,7 @@ export function createAuth(
           !(await database.consumeRateLimit(`magic:hour:${key}`, 3, 3600))
         ) {
           throw new APIError('TOO_MANY_REQUESTS', {
-            message: 'Wait a minute before requesting another link.',
+            message: 'Too many sign-in links. Try again later.',
           });
         }
         return { context: { body: parsed.data } };

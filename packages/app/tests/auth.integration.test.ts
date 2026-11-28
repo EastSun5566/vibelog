@@ -101,7 +101,7 @@ describe.skipIf(!url)('browser authentication', () => {
     expect((await raw(address, app, '/api/auth/sign-in/magic-link/')).status).toBe(404);
     const rejected = await native(address);
     expect(rejected.status).toBe(429);
-    expect(await rejected.text()).toContain('Wait a minute before requesting another link.');
+    expect(await rejected.text()).toContain('Too many sign-in links. Try again later.');
     expect(await verificationCount(address)).toBe(1);
     const deliveries = send.mock.calls.filter(([input]) => input.to === address);
     expect(deliveries).toHaveLength(1);
@@ -190,7 +190,7 @@ describe.skipIf(!url)('browser authentication', () => {
         '2099-01-01',
         design.config,
       );
-      await database.verifyBlogHackmd(info.user.id, blog.id);
+      await database.verifyBlogHackmd(info.user.id, blog.id, blog.hackmdUsername);
       if (conflict === 'draft_not_ready')
         await database.db
           .update(blogs)

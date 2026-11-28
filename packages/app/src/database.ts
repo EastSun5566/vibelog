@@ -498,12 +498,15 @@ export class AppDatabase {
       return { blog: mapBlog(blog), operation: mapOperation(operation) };
     });
   }
-  /** Records that the writer of an existing blog proved they own its HackMD account. */
-  async verifyBlogHackmd(userId: string, blogId: string): Promise<void> {
+  /**
+   * Records that the writer of an existing blog proved they own its HackMD account. The name is
+   * stored as HackMD spells it, so the one-verified-blog index sees a single spelling per account.
+   */
+  async verifyBlogHackmd(userId: string, blogId: string, hackmdUsername: string): Promise<void> {
     try {
       await this.db
         .update(schema.blogs)
-        .set({ hackmdVerifiedAt: new Date(), updatedAt: new Date() })
+        .set({ hackmdUsername, hackmdVerifiedAt: new Date(), updatedAt: new Date() })
         .where(
           and(
             eq(schema.blogs.id, blogId),
@@ -582,10 +585,8 @@ export class AppDatabase {
       // Only a proven owner may attach a HackMD account, so a retry keeps the account it has.
       if (previewNameKey(input.hackmdUsername) !== previewNameKey(blog.hackmdUsername))
         throw new BlogConnectionConflictError('hackmd_locked');
-      const changed =
-        input.username !== blog.username ||
-        input.hackmdUsername !== blog.hackmdUsername ||
-        input.language !== blog.language;
+      // The account is already fixed above, so only the address and language can change.
+      const changed = input.username !== blog.username || input.language !== blog.language;
       if (
         (changed || input.stateVersion !== undefined) &&
         input.stateVersion !== blogStateVersion(blog)
@@ -597,7 +598,6 @@ export class AppDatabase {
           .update(schema.blogs)
           .set({
             username: input.username,
-            hackmdUsername: input.hackmdUsername,
             language: input.language,
             state: 'syncing',
             lastError: null,

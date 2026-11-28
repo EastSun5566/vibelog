@@ -245,10 +245,11 @@ describe.skipIf(!url)('claiming /@name with a HackMD token', () => {
     expect(await direct.json()).toHaveProperty('error.code', 'claim_required');
 
     // A blog connected before verification existed keeps working but must confirm to publish.
+    // Typed in the old form with a different case than HackMD uses.
     const { blog, operation } = await database.createBlog(
       writer.userId,
       previewNameKey(name),
-      name,
+      name.toUpperCase(),
       'en',
     );
     const publish = await app.request('/actions/publish', {
@@ -267,6 +268,8 @@ describe.skipIf(!url)('claiming /@name with a HackMD token', () => {
     const [verified] = await database.db.select().from(blogs).where(eq(blogs.id, blog.id));
     expect(verified?.hackmdVerifiedAt).toBeInstanceOf(Date);
     expect(verified?.username).toBe(previewNameKey(name));
+    // Confirming stores the name as HackMD spells it, the key of the one-verified-blog index.
+    expect(verified?.hackmdUsername).toBe(name);
     // The HackMD account of an existing blog stays fixed.
     await database.db
       .update(operations)
@@ -293,6 +296,8 @@ describe.skipIf(!url)('claiming /@name with a HackMD token', () => {
         stateVersion: blogStateVersion((await database.getBlog(blog.id)) ?? (blog as never)),
       }),
     ).resolves.toMatchObject({ type: 'sync' });
+    // A variant spelling never replaces the proven one, so no second writer can verify it again.
+    expect((await database.getBlog(blog.id))?.hackmdUsername).toBe(name);
   });
 
   it('shows the owner of a stuck older blog how to start over once someone else proves the account', async () => {
