@@ -699,13 +699,14 @@ export function createApp(options: CreateAppOptions) {
     const session = await claimSession(c);
     if (!session) return c.redirect(`/auth/login?returnTo=${encodeURIComponent(c.req.path)}`);
     c.header('Cache-Control', 'private, no-store');
-    const { state } = await claimState(session.user.id, name);
+    const { state, blog } = await claimState(session.user.id, name);
     if (state === 'editor') return c.redirect('/editor');
     const preview = await previews.get(previewNameKey(name));
     return c.html(
       claimPage(session, {
         name: preview?.hackmdUsername ?? name,
         state,
+        hasBlog: Boolean(blog),
         appHostname: config.appHostname,
         handle: suggestedHandle(name),
         language: preview?.language ?? undefined,
@@ -737,6 +738,7 @@ export function createApp(options: CreateAppOptions) {
     const view = {
       name: preview?.hackmdUsername ?? name,
       state,
+      hasBlog: Boolean(blog),
       appHostname: config.appHostname,
       handle: formValue(body, 'username')?.trim()
         ? formValue(body, 'username')
@@ -748,7 +750,9 @@ export function createApp(options: CreateAppOptions) {
     if (state !== 'verify' && state !== 'confirm') return c.html(claimPage(session, view), 409);
     if (!input.success || (!confirming && isReservedBlogHandle(input.data.username ?? '')))
       return fail(
-        'Paste the token and choose a blog address of 3 to 32 letters, digits or hyphens.',
+        confirming
+          ? 'Paste the HackMD API token.'
+          : 'Paste the token and choose a blog address of 3 to 32 letters, digits or hyphens.',
         400,
       );
     if (!(await database.consumeRateLimit(`claim:${session.user.id}`, 10, 60 * 60)))

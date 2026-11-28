@@ -6,7 +6,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { emailRateLimitKey } from '../src/auth.js';
 import { loadAppConfig } from '../src/config.js';
-import { AppDatabase } from '../src/database.js';
+import { AppDatabase, blogStateVersion } from '../src/database.js';
 import { applyDesignPreset } from '../src/design-presets.js';
 import { createApp } from '../src/index.js';
 import type { ArtifactStore } from '../src/ports/artifact-store.js';
@@ -280,5 +280,39 @@ describe.skipIf(!url)('claiming /@name with a HackMD token', () => {
         language: 'en',
       }),
     ).rejects.toMatchObject({ code: 'hackmd_locked' });
+    // The same account written with fullwidth characters is still the same account.
+    // The test names are ASCII, so each character maps to its fullwidth form.
+    const fullwidth = name.replaceAll(/[!-~]/gu, (character) =>
+      String.fromCharCode(character.charCodeAt(0) + 0xfee0),
+    );
+    await expect(
+      database.retryInitialSync(writer.userId, {
+        username: previewNameKey(name),
+        hackmdUsername: fullwidth,
+        language: 'en',
+        stateVersion: blogStateVersion((await database.getBlog(blog.id)) ?? (blog as never)),
+      }),
+    ).resolves.toMatchObject({ type: 'sync' });
+  });
+
+  it('shows the owner of a stuck older blog how to start over once someone else proves the account', async () => {
+    const name = hackmdName();
+    const stuck = await signIn();
+    await database.createBlog(stuck.userId, previewNameKey(name), name, 'en');
+    const owner = await signIn();
+    expect(
+      (
+        await claim(name, owner, {
+          hackmdToken: `token-for-${name}`,
+          username: `${previewNameKey(name)}-2`,
+        })
+      ).status,
+    ).toBe(303);
+    const page = await (
+      await app.request(`/@${name}/edit`, { headers: { ...headers, Cookie: stuck.cookie } })
+    ).text();
+    expect(page).toContain('is already claimed');
+    expect(page).toContain('Delete that blog in the editor');
+    expect(page).toContain('href="/editor"');
   });
 });

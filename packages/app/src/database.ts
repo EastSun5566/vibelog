@@ -7,6 +7,7 @@ import { DEFAULT_DESIGN_V2, contentProfileSchema, validateBlogDesignSpecV2 } fro
 import { z } from 'zod';
 import { parseSyncOperationPayload } from './blog-sync.js';
 import type { OperationMessage } from './ports/operation-queue.js';
+import { previewNameKey } from './profile-preview.js';
 import * as schema from './schema.js';
 
 export type BlogState = 'syncing' | 'ready' | 'failed' | 'deleting';
@@ -579,7 +580,7 @@ export class AppDatabase {
         );
       if (active) throw new BlogConnectionConflictError('operation_in_progress');
       // Only a proven owner may attach a HackMD account, so a retry keeps the account it has.
-      if (input.hackmdUsername.toLowerCase() !== blog.hackmdUsername.toLowerCase())
+      if (previewNameKey(input.hackmdUsername) !== previewNameKey(blog.hackmdUsername))
         throw new BlogConnectionConflictError('hackmd_locked');
       const changed =
         input.username !== blog.username ||

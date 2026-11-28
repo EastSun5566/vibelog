@@ -2231,6 +2231,8 @@ export interface ClaimView {
   name: string;
   /** verify: a new blog; confirm: an existing blog connected before verification existed. */
   state: 'verify' | 'confirm' | 'other-blog' | 'claimed';
+  /** The viewer already has a blog, for example one connected to this name before verification. */
+  hasBlog?: boolean;
   appHostname: string;
   handle?: string;
   language?: string;
@@ -2257,7 +2259,20 @@ export function claimPage(session: AppSession, view: ClaimView) {
       </header>
       <section class="stack">
         {view.state === 'claimed' ? (
-          <p>Another VibeLog writer proved they own this HackMD account.</p>
+          <>
+            <p>Another VibeLog writer proved they own this HackMD account.</p>
+            {view.hasBlog ? (
+              <>
+                <p>
+                  Your blog can no longer publish from it. Delete that blog in the editor to start
+                  over with your own HackMD account.
+                </p>
+                <a class="btn" href="/editor">
+                  Open your blog
+                </a>
+              </>
+            ) : null}
+          </>
         ) : view.state === 'other-blog' ? (
           <>
             <p>Each account has one blog. Open yours, or delete it there to start over.</p>
