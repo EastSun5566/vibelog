@@ -192,7 +192,7 @@ export function agentPromptEntry(prompt: string, placement: 'landing' | 'editor'
   );
 }
 
-export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: string) {
+export function landingPage(appHostname: string, analytics?: AnalyticsDocumentConfig) {
   return document(
     'Publish your HackMD as a blog',
     <section class="landing">
@@ -202,19 +202,14 @@ export function landingPage(analytics?: AnalyticsDocumentConfig, agentPrompt?: s
           <br />
           <em>Publish a real blog.</em>
         </h1>
-        {agentPrompt ? (
-          agentPromptEntry(agentPrompt, 'landing')
-        ) : (
-          <div class="landing-actions">
-            <a class="btn" href="/auth/login">
-              Start publishing
-            </a>
-          </div>
-        )}
+        <p class="landing-swap">
+          Go to <code>hackmd.io/@you</code>, change <code>hackmd.io</code> to{' '}
+          <code>{appHostname}</code>, and see the magic.
+        </p>
       </header>
     </section>,
     undefined,
-    Boolean(agentPrompt),
+    false,
     analytics,
   );
 }
@@ -324,7 +319,12 @@ export function loginPage(
   );
 }
 
-export function guidePage(session?: AppSession, analytics?: AnalyticsDocumentConfig) {
+export function guidePage(
+  appHostname: string,
+  session?: AppSession,
+  analytics?: AnalyticsDocumentConfig,
+  agentPrompt?: string,
+) {
   return document(
     'Guide',
     <article class="guide">
@@ -338,14 +338,23 @@ export function guidePage(session?: AppSession, analytics?: AnalyticsDocumentCon
         <h2 id="first-release">Get started</h2>
         <ol>
           <li>
-            Copy the <a href="/">agent prompt</a> or{' '}
-            <a href={session ? '/editor' : '/auth/login'}>use the editor</a>. Connect a public
-            HackMD profile and choose a blog address.
+            Open <code>{appHostname}/@you</code>, your HackMD profile address with{' '}
+            <code>hackmd.io</code> swapped for <code>{appHostname}</code>, to see your blog.
+          </li>
+          <li>
+            Choose <strong>Make it yours</strong>, sign in, and confirm the HackMD account with a
+            temporary HackMD API token.
           </li>
           <li>Choose articles, set the blog details, and review the private preview.</li>
           <li>Generate a design with AI or fine-tune it, then publish when the draft is ready.</li>
         </ol>
         <p>Only public, published HackMD notes are imported.</p>
+        {agentPrompt ? (
+          <>
+            <p>Prefer a coding agent? Give it this prompt instead.</p>
+            {agentPromptEntry(agentPrompt, 'landing')}
+          </>
+        ) : null}
       </section>
       <section aria-labelledby="updates">
         <h2 id="updates">Update and publish</h2>
@@ -365,12 +374,13 @@ export function guidePage(session?: AppSession, analytics?: AnalyticsDocumentCon
         </p>
         <p>
           Hosted AI receives blog details, a content profile, your saved design, and prompt—not
-          article bodies.
+          article bodies. The first design of a <code>/@you</code> preview also uses the titles,
+          tags and a short excerpt of your 12 newest public notes.
         </p>
       </section>
     </article>,
     session,
-    false,
+    Boolean(agentPrompt),
     analytics,
   );
 }
@@ -2182,5 +2192,114 @@ export function profilePreviewPage(view: ProfilePreviewView, analytics?: Analyti
     false,
     analytics,
     { robots: 'noindex, nofollow', refreshSeconds: pending ? 3 : undefined },
+  );
+}
+
+export interface ClaimView {
+  name: string;
+  state: 'verify' | 'other-blog' | 'claimed';
+  appHostname: string;
+  handle?: string;
+  language?: string;
+  error?: string;
+}
+
+/** vibelog.org/@name/edit: prove the HackMD account is yours, then continue in the editor. */
+export function claimPage(session: AppSession, view: ClaimView) {
+  const handle = `@${view.name}`;
+  const action = `/@${encodeURIComponent(view.name)}/edit`;
+  return document(
+    `Make ${handle} yours`,
+    <section class="auth-shell card">
+      <header>
+        <h1>
+          {view.state === 'verify'
+            ? `Make ${handle} yours`
+            : view.state === 'claimed'
+              ? `${handle} is already claimed`
+              : 'You already have a blog'}
+        </h1>
+      </header>
+      <section class="stack">
+        {view.state === 'claimed' ? (
+          <p>Another VibeLog writer proved they own this HackMD account.</p>
+        ) : view.state === 'other-blog' ? (
+          <>
+            <p>Each account has one blog. Open yours, or delete it there to start over.</p>
+            <a class="btn" href="/editor">
+              Open your blog
+            </a>
+          </>
+        ) : (
+          <>
+            {view.error ? (
+              <div id="claim-error" class="alert" data-variant="destructive" role="alert">
+                <section>{view.error}</section>
+              </div>
+            ) : null}
+            <ol class="claim-steps">
+              <li>
+                In HackMD, open{' '}
+                <a href="https://hackmd.io/settings#api" target="_blank" rel="noreferrer">
+                  Settings → API
+                </a>{' '}
+                and create a token.
+              </li>
+              <li>Paste it below. It is used once to confirm the account and never stored.</li>
+              <li>Delete the token in HackMD afterwards.</li>
+            </ol>
+            <form class="stack" method="post" action={action}>
+              <input type="hidden" name="csrfToken" value={session.csrfToken} />
+              <div class="field">
+                <label for="hackmdToken">HackMD API token for {handle}</label>
+                <input
+                  id="hackmdToken"
+                  name="hackmdToken"
+                  type="password"
+                  required
+                  minlength={8}
+                  maxlength={512}
+                  autocomplete="off"
+                  spellcheck={false}
+                  aria-describedby={view.error ? 'claim-error' : undefined}
+                />
+              </div>
+              <div class="field">
+                <label for="username">Blog address</label>
+                <input
+                  id="username"
+                  name="username"
+                  required
+                  minlength={3}
+                  maxlength={32}
+                  pattern={'[a-z0-9](?:[a-z0-9\\-]{1,30}[a-z0-9])'}
+                  value={view.handle ?? ''}
+                  autocomplete="off"
+                  autocapitalize="none"
+                  spellcheck={false}
+                  data-blog-handle
+                  aria-describedby="blog-address-preview"
+                />
+                <p class="field-preview" id="blog-address-preview">
+                  <span data-blog-hostname data-host-suffix={view.appHostname}>
+                    {view.handle ?? 'your-name'}.{view.appHostname}
+                  </span>
+                </p>
+              </div>
+              <BlogLanguageField
+                id="blogLanguage"
+                listId="language-suggestions"
+                value={view.language ?? 'en'}
+              />
+              <button class="btn" type="submit">
+                Verify and open the editor
+              </button>
+            </form>
+          </>
+        )}
+      </section>
+    </section>,
+    session,
+    true,
   );
 }

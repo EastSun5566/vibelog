@@ -6,12 +6,15 @@ import {
   DEFAULT_DESIGN_V2,
   HackMdSource,
   buildBlog,
+  createAiProviderChain,
   createDevBuilder,
+  createPostSamples,
   searchIndexIdentity,
   structuralBuildIdentity,
+  validateBlogDesignSpecV2,
   writeSourceSnapshot,
 } from '@vibelog/core';
-import type { ContentSource } from '@vibelog/core';
+import type { AiProvider, BlogDesignSpecV2, ContentSource, Post } from '@vibelog/core';
 import type { OperationRuntimeConfig } from './config.js';
 import { applyDesignPreset } from './design-presets.js';
 import { operationPublicError } from './jobs.js';
@@ -30,6 +33,10 @@ import {
   previewSiteOrigin,
 } from './profile-preview.js';
 
+/** The request an anonymous preview sends to the designer instead of a writer's words. */
+export const PREVIEW_DESIGN_PROMPT =
+  'Design this blog for its writer. Read the samples, their recent post titles, tags and excerpts, and propose a complete design whose motif, colors, typography and layout fit what they write about and how they write it.';
+
 /**
  * Builds the anonymous preview for one HackMD profile. Every failure is terminal for the job:
  * the visitor sees the message, and a later visit may try again.
@@ -38,8 +45,19 @@ export class ProfilePreviewExecutor implements OperationExecutor {
   constructor(
     private readonly previews: ProfilePreviewStore,
     private readonly artifacts: ArtifactStore,
-    private readonly config: Pick<OperationRuntimeConfig, 'appOrigin' | 'hackmdBaseUrl'>,
-    private readonly dependencies: { contentSource?: (username: string) => ContentSource } = {},
+    private readonly config: Pick<
+      OperationRuntimeConfig,
+      | 'appOrigin'
+      | 'hackmdBaseUrl'
+      | 'aiProvider'
+      | 'aiModel'
+      | 'aiFallbackModels'
+      | 'previewAiDailyLimit'
+    >,
+    private readonly dependencies: {
+      contentSource?: (username: string) => ContentSource;
+      aiProvider?: () => AiProvider;
+    } = {},
   ) {}
 
   async execute(previewId: string): Promise<OperationResult> {
@@ -98,7 +116,13 @@ export class ProfilePreviewExecutor implements OperationExecutor {
     const sourceDirectory = join(work, 'source');
     await writeSourceSnapshot(builder.vibelogDir, sourceDirectory, summary);
     await this.artifacts.uploadDirectory(sourceArtifactId, sourceDirectory);
-    const design = applyDesignPreset(DEFAULT_DESIGN_V2, pickPreset(summary.contentProfile));
+    const { design, designSource } = await this.chooseDesign(
+      lease,
+      site,
+      author.name,
+      posts,
+      summary.contentProfile,
+    );
     const siteOrigin = previewSiteOrigin(this.config.appOrigin, lease.label);
     const compileRoot = join(work, 'compile');
     const output = join(compileRoot, 'dist');
@@ -117,11 +141,54 @@ export class ProfilePreviewExecutor implements OperationExecutor {
       sourceArtifactId,
       draftArtifactId,
       design,
-      designSource: 'preset' as const,
+      designSource,
+      language: site.language,
       title: site.title,
       author: summary.author.name,
       contentProfile: summary.contentProfile,
     };
+  }
+
+  /**
+   * Asks the AI for a design that fits the posts, within the previews' daily budget. Any
+   * failure keeps the starter preset, so a preview never fails because of the designer.
+   */
+  private async chooseDesign(
+    lease: ProfilePreviewRecord,
+    site: { title: string; description: string },
+    author: string,
+    posts: Post[],
+    contentProfile: Parameters<typeof pickPreset>[0],
+  ): Promise<{ design: BlogDesignSpecV2; designSource: 'preset' | 'ai' }> {
+    const preset = applyDesignPreset(DEFAULT_DESIGN_V2, pickPreset(contentProfile));
+    if (!(await this.previews.consumeAiBudget(this.config.previewAiDailyLimit)))
+      return { design: preset, designSource: 'preset' };
+    await this.previews.setStage(lease, 'Designing to match your posts');
+    try {
+      const provider =
+        this.dependencies.aiProvider?.() ??
+        createAiProviderChain(
+          this.config.aiProvider,
+          this.config.aiModel,
+          this.config.aiFallbackModels,
+        );
+      const design = await provider.generate(
+        {
+          blog: { title: site.title, description: site.description, author },
+          contentProfile,
+          currentDesign: preset,
+          prompt: PREVIEW_DESIGN_PROMPT,
+          samples: createPostSamples(posts),
+        },
+        { sessionId: lease.id },
+      );
+      return { design: validateBlogDesignSpecV2(design), designSource: 'ai' };
+    } catch (error) {
+      console.warn(
+        `[preview:${lease.id}] AI design failed; using the starter preset: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+      return { design: preset, designSource: 'preset' };
+    }
   }
 
   /** Removes previews that expired long ago, with their stored builds. */

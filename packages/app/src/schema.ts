@@ -114,11 +114,17 @@ export const blogs = pgTable(
     contentProfile: jsonb('content_profile').$type<ContentProfile | null>(),
     contentManifest: jsonb('content_manifest').$type<unknown[] | null>(),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+    /** Set when the writer proved they own the HackMD account with one of its API tokens. */
+    hackmdVerifiedAt: timestamp('hackmd_verified_at', { withTimezone: true }),
     ...timestamps,
   },
   (table) => [
     uniqueIndex('blogs_one_per_user').on(table.userId),
     uniqueIndex('blogs_username_unique').on(table.username),
+    // A HackMD account backs at most one verified blog; older unverified blogs are unaffected.
+    uniqueIndex('blogs_verified_hackmd_unique')
+      .on(sql`lower(${table.hackmdUsername})`)
+      .where(sql`${table.hackmdVerifiedAt} is not null`),
     check('blogs_handle_check', sql`${table.username} ~ '^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$'`),
     check('blogs_state_check', sql`${table.state} in ('syncing','ready','failed','deleting')`),
   ],
@@ -291,6 +297,7 @@ export const profilePreviews = pgTable(
     draftArtifactId: uuid('draft_artifact_id'),
     design: jsonb('design').$type<BlogDesignSpecV2 | null>(),
     designSource: text('design_source', { enum: ['preset', 'ai'] }),
+    language: text('language'),
     title: text('title'),
     author: text('author'),
     contentProfile: jsonb('content_profile').$type<ContentProfile | null>(),

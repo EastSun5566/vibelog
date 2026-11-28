@@ -82,6 +82,7 @@ export interface ProfilePreviewRecord {
   draftArtifactId: string | null;
   design: BlogDesignSpecV2 | null;
   designSource: 'preset' | 'ai' | null;
+  language: string | null;
   title: string | null;
   author: string | null;
   contentProfile: ContentProfile | null;
@@ -95,6 +96,7 @@ export interface CompletedPreview {
   draftArtifactId: string;
   design: BlogDesignSpecV2;
   designSource: 'preset' | 'ai';
+  language: string;
   title: string;
   author: string;
   contentProfile: ContentProfile;
@@ -122,6 +124,7 @@ function mapPreview(row: typeof schema.profilePreviews.$inferSelect): ProfilePre
     draftArtifactId: row.draftArtifactId,
     design: row.design ? validateBlogDesignSpecV2(row.design) : null,
     designSource: row.designSource,
+    language: row.language,
     title: row.title,
     author: row.author,
     contentProfile: row.contentProfile ? contentProfileSchema.parse(row.contentProfile) : null,
@@ -337,6 +340,7 @@ export class ProfilePreviewStore {
           draftArtifactId: result.draftArtifactId,
           design: validateBlogDesignSpecV2(result.design),
           designSource: result.designSource,
+          language: result.language,
           title: result.title,
           author: result.author,
           contentProfile: result.contentProfile,
@@ -387,6 +391,28 @@ export class ProfilePreviewStore {
     return rows
       .flatMap((row) => [row.sourceArtifactId, row.draftArtifactId])
       .filter((id): id is string => typeof id === 'string');
+  }
+  /** Counts one AI design against the previews' own daily budget; false once it is spent. */
+  async consumeAiBudget(limit: number, at = new Date()): Promise<boolean> {
+    if (limit < 1) return false;
+    const [usage] = await this.db
+      .insert(schema.aiDailyUsage)
+      .values({
+        usageDate: at.toISOString().slice(0, 10),
+        scope: 'global',
+        subject: 'preview',
+        count: 1,
+      })
+      .onConflictDoUpdate({
+        target: [
+          schema.aiDailyUsage.usageDate,
+          schema.aiDailyUsage.scope,
+          schema.aiDailyUsage.subject,
+        ],
+        set: { count: sql`${schema.aiDailyUsage.count} + 1` },
+      })
+      .returning({ count: schema.aiDailyUsage.count });
+    return Boolean(usage && usage.count <= limit);
   }
   private owned(lease: ProfilePreviewRecord) {
     return and(

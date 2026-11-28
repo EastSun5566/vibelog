@@ -1,9 +1,9 @@
 import { ContentSourceName, DEFAULT_DESIGN_V2, HackMdSourceError } from '@vibelog/core';
-import type { ContentProfile, ContentSource } from '@vibelog/core';
+import type { AiProvider, ContentProfile, ContentSource } from '@vibelog/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyDesignPreset } from '../src/design-presets.js';
 import type { ArtifactStore } from '../src/ports/artifact-store.js';
-import { ProfilePreviewExecutor } from '../src/profile-preview-jobs.js';
+import { PREVIEW_DESIGN_PROMPT, ProfilePreviewExecutor } from '../src/profile-preview-jobs.js';
 import {
   PreviewLeaseLostError,
   type ProfilePreviewRecord,
@@ -49,6 +49,7 @@ const record = (overrides: Partial<ProfilePreviewRecord> = {}): ProfilePreviewRe
   draftArtifactId: null,
   design: null,
   designSource: null,
+  language: null,
   title: null,
   author: null,
   contentProfile: null,
@@ -150,6 +151,7 @@ describe('preview builds', () => {
       setStage: vi.fn(() => Promise.resolve()),
       complete: vi.fn(() => Promise.resolve(['old-source', 'old-draft'])),
       fail: vi.fn(() => Promise.resolve()),
+      consumeAiBudget: vi.fn(() => Promise.resolve(false)),
     };
     const artifacts = {
       uploadDirectory: vi.fn(() => Promise.resolve()),
@@ -157,7 +159,14 @@ describe('preview builds', () => {
     };
     return { store, artifacts };
   }
-  const config = { appOrigin: 'https://vibelog.example', hackmdBaseUrl: 'https://hackmd.io' };
+  const config = {
+    appOrigin: 'https://vibelog.example',
+    hackmdBaseUrl: 'https://hackmd.io',
+    aiProvider: 'openai',
+    aiModel: 'gpt-4o-mini',
+    aiFallbackModels: [],
+    previewAiDailyLimit: 100,
+  };
 
   it('builds with a starter design and removes the previous generation', async () => {
     const { store, artifacts } = setup(record());
@@ -183,6 +192,58 @@ describe('preview builds', () => {
       'old-source',
       'old-draft',
     ]);
+  });
+  it('asks the AI for a design that fits the posts when the budget allows', async () => {
+    const { store, artifacts } = setup(record());
+    store.consumeAiBudget.mockResolvedValue(true);
+    const aiDesign = applyDesignPreset(DEFAULT_DESIGN_V2, 'night');
+    const generate = vi.fn<AiProvider['generate']>(() => Promise.resolve(aiDesign));
+    const executor = new ProfilePreviewExecutor(
+      store as unknown as ProfilePreviewStore,
+      artifacts as unknown as ArtifactStore,
+      config,
+      {
+        contentSource: () => source(() => Promise.resolve({ posts })),
+        aiProvider: () => ({ name: 'test', modelId: 'test', generate }),
+      },
+    );
+    await executor.execute('preview');
+    const [input] = generate.mock.calls[0] ?? [];
+    expect(input).toMatchObject({
+      prompt: PREVIEW_DESIGN_PROMPT,
+      currentDesign: applyDesignPreset(DEFAULT_DESIGN_V2, 'magazine'),
+      samples: [{ title: 'Brewing notes', tags: ['tea'], excerpt: 'Brewing Green tea at 80°C.' }],
+    });
+    expect(store.setStage).toHaveBeenCalledWith(expect.anything(), 'Designing to match your posts');
+    const [, result] = store.complete.mock.calls[0] as unknown as [
+      unknown,
+      Record<string, unknown>,
+    ];
+    expect(result).toMatchObject({ design: aiDesign, designSource: 'ai' });
+  });
+  it('keeps the starter preset when the AI fails or the budget is spent', async () => {
+    for (const budget of [true, false]) {
+      const { store, artifacts } = setup(record());
+      store.consumeAiBudget.mockResolvedValue(budget);
+      const generate = vi.fn<AiProvider['generate']>(() =>
+        Promise.reject(new Error('provider down')),
+      );
+      await new ProfilePreviewExecutor(
+        store as unknown as ProfilePreviewStore,
+        artifacts as unknown as ArtifactStore,
+        config,
+        {
+          contentSource: () => source(() => Promise.resolve({ posts })),
+          aiProvider: () => ({ name: 'test', modelId: 'test', generate }),
+        },
+      ).execute('preview');
+      expect(generate).toHaveBeenCalledTimes(budget ? 1 : 0);
+      const [, result] = store.complete.mock.calls[0] as unknown as [
+        unknown,
+        Record<string, unknown>,
+      ];
+      expect(result).toMatchObject({ designSource: 'preset' });
+    }
   });
   it('records the public reason and drops partial uploads when HackMD fails', async () => {
     const lease = record();

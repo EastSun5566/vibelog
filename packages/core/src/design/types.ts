@@ -94,11 +94,20 @@ export interface BlogDesignSpecV1 {
 
 export type BlogDesignSpec = BlogDesignSpecV1;
 
+/** A short, plain-text look at one post, so a design can match what the writer writes about. */
+export interface PostSample {
+  title: string;
+  tags: string[];
+  excerpt: string;
+}
+
 export interface DesignProposalInput {
   blog: { title: string; description: string; author: string };
   contentProfile: ContentProfile;
   currentDesign: BlogDesignSpecV2;
   prompt: string;
+  /** Recent posts. Present when the design should follow the writing rather than a request. */
+  samples?: PostSample[];
 }
 
 export interface SourceSnapshotV1 {

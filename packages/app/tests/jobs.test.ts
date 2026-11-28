@@ -121,6 +121,7 @@ const config: OperationRuntimeConfig = {
   aiProvider: 'opencode-go',
   aiModel: 'qwen3.8-flash',
   aiFallbackModels: ['glm-5.3-flash'],
+  previewAiDailyLimit: 100,
 };
 
 describe('AI operation execution', () => {

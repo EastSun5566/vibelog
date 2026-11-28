@@ -72,3 +72,15 @@ describe('pinned agent CLI version', () => {
     },
   );
 });
+
+describe('anonymous preview AI budget', () => {
+  it('defaults to a daily budget, accepts 0 to turn it off and rejects nonsense', () => {
+    expect(loadWorkerConfig(baseEnv).previewAiDailyLimit).toBe(100);
+    expect(
+      loadWorkerConfig({ ...baseEnv, VIBELOG_PREVIEW_AI_DAILY_LIMIT: '0' }).previewAiDailyLimit,
+    ).toBe(0);
+    expect(() => loadWorkerConfig({ ...baseEnv, VIBELOG_PREVIEW_AI_DAILY_LIMIT: '-1' })).toThrow(
+      'VIBELOG_PREVIEW_AI_DAILY_LIMIT',
+    );
+  });
+});

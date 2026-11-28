@@ -32,6 +32,8 @@ export interface OperationRuntimeConfig {
   aiProvider: string;
   aiModel: string;
   aiFallbackModels: string[];
+  /** AI designs for anonymous /@name previews per day, separate from writers' AI budget. */
+  previewAiDailyLimit: number;
 }
 export interface AppConfig extends OperationRuntimeConfig {
   appOrigin: string;
@@ -45,6 +47,8 @@ export interface AppConfig extends OperationRuntimeConfig {
   googleClientSecret?: string;
   googleAnalyticsMeasurementId?: string;
   agentCliVersion?: string;
+  /** HackMD API v1 base, used once per claim to learn whose API token a writer pasted. */
+  hackmdApiUrl: string;
   email: EmailConfig;
   emailFrom: string;
   emailReplyTo: string;
@@ -162,6 +166,15 @@ function loadOperationRuntimeConfig(env: NodeJS.ProcessEnv): OperationRuntimeCon
     aiProvider,
     aiModel,
     aiFallbackModels,
+    // 0 turns AI off for previews; they keep the content-based starter preset.
+    previewAiDailyLimit:
+      env.VIBELOG_PREVIEW_AI_DAILY_LIMIT?.trim() === '0'
+        ? 0
+        : positiveInteger(
+            env.VIBELOG_PREVIEW_AI_DAILY_LIMIT,
+            100,
+            'VIBELOG_PREVIEW_AI_DAILY_LIMIT',
+          ),
   };
 }
 export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): OperationRuntimeConfig {
@@ -203,6 +216,10 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     googleClientSecret: optional(env, 'GOOGLE_CLIENT_SECRET'),
     googleAnalyticsMeasurementId,
     agentCliVersion,
+    hackmdApiUrl: new URL(env.HACKMD_API_URL ?? 'https://api.hackmd.io/v1').href.replace(
+      /\/$/u,
+      '',
+    ),
     email,
     emailFrom: required(env, 'EMAIL_FROM'),
     emailReplyTo: env.EMAIL_REPLY_TO ?? 'support@example.com',

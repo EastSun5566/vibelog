@@ -193,11 +193,8 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   );
   await expect(page.getByRole('heading', { name: /Keep writing in HackMD/ })).toBeVisible();
   await expect(page.locator('.app-brand img')).toHaveAttribute('src', '/assets/logo.svg');
-  await expect(page.getByRole('button', { name: 'Copy agent prompt' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Use the editor' })).toHaveAttribute(
-    'href',
-    '/auth/login',
-  );
+  await expect(page.getByText('and see the magic')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Copy agent prompt' })).toHaveCount(0);
   // Agent discovery documents are public, typed and cacheable on the app origin.
   const discovery = {
     '/llms.txt': 'text/plain',
@@ -827,7 +824,7 @@ test('agent primary entry supports copy, fallback, keyboard and no JavaScript', 
       },
     });
   });
-  await page.goto('/');
+  await page.goto('/guide');
   const prompt = page.getByLabel('Agent prompt');
   const button = page.getByRole('button', { name: 'Copy agent prompt' });
   const editorLink = page.getByRole('link', { name: 'Use the editor' });
@@ -837,7 +834,13 @@ test('agent primary entry supports copy, fallback, keyboard and no JavaScript', 
   await expect(page.locator('.agent-prompt-primary details')).toHaveCount(0);
   await expect(page.getByText('View prompt')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('agent-entry-desktop.png'), fullPage: true });
-  const layoutBefore = await editorLink.boundingBox();
+  // The prompt sits below the fold in the guide and focus may scroll it, so compare page offsets.
+  const pageBox = () =>
+    editorLink.evaluate((node) => {
+      const box = node.getBoundingClientRect();
+      return { x: box.x + scrollX, y: box.y + scrollY, width: box.width, height: box.height };
+    });
+  const layoutBefore = await pageBox();
   await button.focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('[data-agent-copy-status]')).toHaveText(
@@ -849,14 +852,14 @@ test('agent primary entry supports copy, fallback, keyboard and no JavaScript', 
     ),
   ).toBe(await prompt.inputValue());
   // Copy feedback has a reserved row, so nothing below it moves.
-  expect(await editorLink.boundingBox()).toEqual(layoutBefore);
+  expect(await pageBox()).toEqual(layoutBefore);
   await page.evaluate(() => {
     (window as typeof window & { agentCopyFails?: boolean }).agentCopyFails = true;
   });
   await button.click();
   await expect(prompt).toBeFocused();
   await expect(page.locator('[data-agent-copy-status]')).toHaveText('Select and copy the prompt.');
-  expect(await editorLink.boundingBox()).toEqual(layoutBefore);
+  expect(await pageBox()).toEqual(layoutBefore);
   expect(
     await prompt.evaluate((node: HTMLTextAreaElement) => node.selectionEnd - node.selectionStart),
   ).toBe((await prompt.inputValue()).length);
@@ -900,7 +903,7 @@ test('agent primary entry supports copy, fallback, keyboard and no JavaScript', 
   });
   try {
     const native = await noJs.newPage();
-    await native.goto('/');
+    await native.goto('/guide');
     await expect(native.getByLabel('Agent prompt')).toBeVisible();
     await expect(native.getByLabel('Agent prompt')).toContainText('@vibelog/cli@0.5.0');
     await native.getByRole('link', { name: 'Use the editor' }).click();
@@ -1516,8 +1519,9 @@ test('browser-approved agent publishes its first release through the CLI', async
   expect(errors).toEqual([]);
 });
 
-test('an anonymous visitor swaps hackmd.io for the app origin and sees the blog', async ({
+test('an anonymous visitor swaps hackmd.io for the app origin, sees the blog and claims it', async ({
   page,
+  request,
 }) => {
   test.setTimeout(240_000);
   const browserErrors: string[] = [];
@@ -1540,4 +1544,35 @@ test('an anonymous visitor swaps hackmd.io for the app origin and sees the blog'
   expect(site?.ok()).toBe(true);
   expect(site?.headers()['x-robots-tag']).toBe('noindex, nofollow');
   expect(site?.headers()['content-security-policy']).toContain('frame-ancestors');
+
+  // Make it yours: sign in, prove the HackMD account with an API token, land in the editor.
+  const mailpitUrl = process.env.E2E_MAILPIT_URL;
+  if (!mailpitUrl) throw new Error('E2E_MAILPIT_URL is required');
+  await page.goto('/@alice-hackmd');
+  await page.getByRole('link', { name: 'Make it yours' }).click();
+  await expect(page).toHaveURL(/\/auth\/login\?returnTo=%2F%40alice-hackmd%2Fedit$/u);
+  const magicLink = await requestMagicLink(
+    page,
+    request,
+    mailpitUrl,
+    'claimer@example.com',
+    '/@alice-hackmd/edit',
+  );
+  await page.goto(magicLink);
+  await expect(page.getByRole('heading', { name: 'Make @alice-hackmd yours' })).toBeVisible();
+  await expect(page.getByLabel('Blog address')).toHaveValue('alice-hackmd');
+  await page.getByLabel('HackMD API token for @alice-hackmd').fill('not-this-account');
+  await page.getByRole('button', { name: 'Verify and open the editor' }).click();
+  await expect(page.getByRole('alert')).toContainText('HackMD did not accept this token');
+  await expect(page.getByLabel('HackMD API token for @alice-hackmd')).toHaveValue('');
+  await page.getByLabel('HackMD API token for @alice-hackmd').fill('alice-hackmd-api-token');
+  await page.getByRole('button', { name: 'Verify and open the editor' }).click();
+  await expect(page).toHaveURL(/\/editor/u, { timeout: 120_000 });
+  await page.goto('/@alice-hackmd/edit');
+  await expect(page).toHaveURL(/\/editor/u);
+  // The migration rehearsal that follows uses Alice's retained blog as its only fixture.
+  await openDisclosure(page, 'danger-zone');
+  await page.getByLabel('Type claimer@example.com to confirm').fill('claimer@example.com');
+  await page.getByRole('button', { name: 'Delete account' }).click();
+  await expect(page).toHaveURL(/\/auth\/login\?deleted=1$/u);
 });
