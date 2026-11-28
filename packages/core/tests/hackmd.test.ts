@@ -10,6 +10,7 @@ interface NoteSeed {
   publishType?: string;
   publishedAt?: string;
   permalink?: string;
+  shortId?: string;
 }
 
 function note(id: string, overrides: Partial<NoteSeed> = {}): NoteSeed {
@@ -166,7 +167,7 @@ describe('HackMdSource', () => {
     expect(result.posts[1]).not.toHaveProperty('updatedAt');
   });
 
-  it('validates dates and duplicate slugs before downloading article bodies', async () => {
+  it('validates dates before downloading article bodies', async () => {
     const invalidDateFetch = vi.fn((input: string | URL | Request) =>
       Promise.resolve(
         fetchUrl(input).endsWith('/overview')
@@ -179,17 +180,37 @@ describe('HackMdSource', () => {
       code: 'invalid_modified_date',
     });
     expect(invalidDateFetch).toHaveBeenCalledOnce();
+  });
 
-    const duplicateFetch = vi.fn(() =>
-      Promise.resolve(
-        overview([note('one', { permalink: 'same' }), note('two', { permalink: 'same' })]),
-      ),
+  it('gives notes with the same or an emoji-only title their own stable slugs', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: string | URL | Request) => {
+        const url = fetchUrl(input);
+        return Promise.resolve(
+          url.endsWith('/overview')
+            ? overview([
+                note('later', {
+                  title: 'Daily memes',
+                  permalink: undefined,
+                  shortId: 'SJCMx',
+                  publishedAt: '2026-09-06T08:16:00Z',
+                }),
+                note('first', {
+                  title: 'Daily memes',
+                  permalink: undefined,
+                  shortId: 'r1XFb',
+                  publishedAt: '2026-09-06T08:11:00Z',
+                }),
+                note('emoji', { title: '🎉', permalink: undefined, shortId: 'Hk2' }),
+              ])
+            : new Response('Body'),
+        );
+      }),
     );
-    vi.stubGlobal('fetch', duplicateFetch);
-    await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({
-      code: 'duplicate_slug',
-    });
-    expect(duplicateFetch).toHaveBeenCalledOnce();
+    const { posts } = await new HackMdSource('writer').getPosts();
+    // The earliest note keeps the plain slug, so adding a duplicate never moves an existing URL.
+    expect(posts.map((post) => post.slug)).toEqual(['daily-memes-sjcmx', 'daily-memes', 'hk2']);
   });
 
   it('rejects empty publications and invalid response shapes', async () => {

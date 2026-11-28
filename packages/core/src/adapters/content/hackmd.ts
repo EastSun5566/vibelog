@@ -37,9 +37,7 @@ export type HackMdSourceErrorCode =
   | 'sync_too_large'
   | 'no_public_articles'
   | 'invalid_published_date'
-  | 'invalid_modified_date'
-  | 'invalid_slug'
-  | 'duplicate_slug';
+  | 'invalid_modified_date';
 
 export class HackMdSourceError extends Error {
   readonly [HACKMD_SOURCE_ERROR] = true;
@@ -85,6 +83,10 @@ const noteSchema = z
       .nullish()
       .transform((value) => value ?? ''),
     permalink: z
+      .string()
+      .nullish()
+      .transform((value) => value ?? undefined),
+    shortId: z
       .string()
       .nullish()
       .transform((value) => value ?? undefined),
@@ -347,6 +349,29 @@ async function mapConcurrent<T, R>(
   return results;
 }
 
+/**
+ * One URL slug per note, from its permalink or title. Notes with the same title (or a title with no
+ * letters, such as only emoji) still sync: the earliest published note keeps the plain slug and the
+ * others add their HackMD short ID, so a slug never changes when notes are added later.
+ */
+function slugsFor(notes: z.infer<typeof noteSchema>[]): Map<string, string> {
+  const taken = new Set<string>();
+  const result = new Map<string, string>();
+  const oldestFirst = [...notes].sort(
+    (a, b) => Date.parse(a.publishedAt) - Date.parse(b.publishedAt) || a.id.localeCompare(b.id),
+  );
+  for (const note of oldestFirst) {
+    const suffix = slugify(note.shortId ?? note.id) || 'note';
+    const base = slugify(note.permalink ?? note.title);
+    const stem = base && !taken.has(base) ? base : [base, suffix].filter(Boolean).join('-');
+    let slug = stem;
+    for (let count = 2; taken.has(slug); count += 1) slug = `${stem}-${String(count)}`;
+    taken.add(slug);
+    result.set(note.id, slug);
+  }
+  return result;
+}
+
 function prepareNotes(notes: z.infer<typeof noteSchema>[]): PreparedNote[] {
   const publicNotes = notes.filter((note) => note.publishType === 'view' && note.publishedAt);
   if (publicNotes.length === 0)
@@ -360,7 +385,7 @@ function prepareNotes(notes: z.infer<typeof noteSchema>[]): PreparedNote[] {
       'HackMD profile exceeds the 1,000 article limit',
     );
 
-  const slugs = new Set<string>();
+  const slugs = slugsFor(publicNotes);
   return publicNotes.map((note) => {
     const date = new Date(note.publishedAt);
     if (Number.isNaN(date.getTime()))
@@ -378,15 +403,10 @@ function prepareNotes(notes: z.infer<typeof noteSchema>[]): PreparedNote[] {
         );
       if (modifiedDate.getTime() > date.getTime()) updatedAt = modifiedDate.toISOString();
     }
-    const slug = slugify(note.permalink ?? note.title);
-    if (!slug) throw new HackMdSourceError('invalid_slug', 'A HackMD article has no usable slug');
-    if (slugs.has(slug))
-      throw new HackMdSourceError('duplicate_slug', 'Multiple HackMD articles have the same slug');
-    slugs.add(slug);
     return {
       id: note.id,
       title: note.title,
-      slug,
+      slug: slugs.get(note.id) ?? note.id,
       date: date.toISOString(),
       tags: note.tags,
       ...(note.content ? { description: note.content } : {}),
