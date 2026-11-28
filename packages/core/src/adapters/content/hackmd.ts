@@ -386,12 +386,12 @@ function slugsFor(notes: z.infer<typeof noteSchema>[]): Map<string, string> {
  * unreadable publish date is left out, and past 1,000 notes only the newest 1,000 are kept.
  */
 function prepareNotes(notes: z.infer<typeof noteSchema>[]): PreparedNote[] {
-  const dated = notes.filter(
-    (note) =>
-      note.publishType === 'view' &&
-      note.publishedAt &&
-      !Number.isNaN(Date.parse(note.publishedAt)),
-  );
+  const dated = notes.filter((note) => {
+    if (note.publishType !== 'view' || !note.publishedAt) return false;
+    if (!Number.isNaN(Date.parse(note.publishedAt))) return true;
+    logger.warn(`Skipping HackMD note ${note.id}: its publish date cannot be read`);
+    return false;
+  });
   const newest = new Set(
     [...dated]
       .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
