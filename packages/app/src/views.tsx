@@ -116,23 +116,18 @@ export function document(
               class="analytics-consent card"
               role="region"
               aria-labelledby="analytics-consent-title"
-              aria-describedby="analytics-consent-description"
               data-analytics-consent
               hidden
             >
               <section>
-                <strong id="analytics-consent-title">Allow analytics?</strong>
-                <p id="analytics-consent-description">
-                  Help us understand visits and improve VibeLog. Google Analytics stays off unless
-                  you allow it.
-                </p>
+                <strong id="analytics-consent-title">Allow Google Analytics?</strong>
               </section>
               <footer>
                 <button class="btn" data-variant="ghost" type="button" data-analytics-deny>
-                  Not now
+                  No thanks
                 </button>
                 <button class="btn" type="button" data-analytics-allow>
-                  Allow analytics
+                  Allow
                 </button>
               </footer>
             </aside>

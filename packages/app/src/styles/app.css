@@ -150,7 +150,6 @@ time { font-variant-numeric: tabular-nums; }
 }
 .analytics-consent[hidden], .analytics-settings[hidden] { display: none; }
 .analytics-consent > section { display: grid; gap: 0.2rem; padding: 0; }
-.analytics-consent p { margin: 0; color: var(--muted-foreground); font-size: 0.86rem; }
 .analytics-consent > footer { display: flex; flex: none; gap: 0.4rem; padding: 0; }
 .analytics-settings {
   position: fixed;

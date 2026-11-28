@@ -243,14 +243,14 @@ test('publishes a fixture HackMD blog through the complete local stack', async (
   await page.keyboard.press('Enter');
   await expect(page.locator('#main-content')).toBeFocused();
   await page.setViewportSize({ width: 1280, height: 720 });
-  const analyticsConsent = page.getByRole('region', { name: 'Allow analytics?' });
+  const analyticsConsent = page.getByRole('region', { name: 'Allow Google Analytics?' });
   await expect(analyticsConsent).toBeVisible();
   expect(analyticsScriptRequests).toBe(0);
-  await analyticsConsent.getByRole('button', { name: 'Not now' }).click();
+  await analyticsConsent.getByRole('button', { name: 'No thanks' }).click();
   await expect(analyticsConsent).toBeHidden();
   expect(analyticsScriptRequests).toBe(0);
   await page.getByRole('button', { name: 'Analytics settings' }).click();
-  await analyticsConsent.getByRole('button', { name: 'Allow analytics' }).click();
+  await analyticsConsent.getByRole('button', { name: 'Allow', exact: true }).click();
   await expect.poll(() => analyticsScriptRequests).toBe(1);
   // gtag.js ignores array commands, so a page view is only sent for Arguments objects.
   expect(
@@ -889,7 +889,7 @@ test('agent primary entry supports copy, fallback, keyboard and no JavaScript', 
     await prompt.evaluate((node: HTMLTextAreaElement) => node.selectionEnd - node.selectionStart),
   ).toBe((await prompt.inputValue()).length);
   await page.reload();
-  await page.getByRole('button', { name: 'Not now', exact: true }).click();
+  await page.getByRole('button', { name: 'No thanks', exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
   await expect(button).toBeVisible();
