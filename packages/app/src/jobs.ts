@@ -52,16 +52,10 @@ export function operationPublicError(type: OperationRecord['type'], error: unkno
       const messages: Partial<Record<typeof error.code, string>> = {
         profile_not_found:
           'HackMD has no public profile with that username. Check it and try again.',
-        article_not_found:
-          'A public article disappeared during sync. Refresh HackMD and try again.',
         rate_limited: 'HackMD is limiting requests. Try again later.',
         temporarily_unavailable: 'HackMD isn’t responding. Try again later.',
         request_timeout: 'HackMD isn’t responding. Try again later.',
         no_public_articles: 'This HackMD account does not have any public published articles.',
-        too_many_articles:
-          'Sync supports up to 1,000 public published articles per HackMD profile. No changes were saved.',
-        article_too_large:
-          'A HackMD article exceeds the 2 MiB Markdown limit. Shorten that article before syncing again.',
         sync_too_large:
           'This profile exceeds the 32 MiB total Markdown limit. Reduce its published content before syncing again.',
         metadata_too_large:
@@ -74,7 +68,7 @@ export function operationPublicError(type: OperationRecord['type'], error: unkno
     }
     if (message.includes('No articles selected'))
       return 'Select at least one article before building the blog draft.';
-    return 'Sync failed. Check that your HackMD notes are public, then try again.';
+    return 'Sync failed. Try again later.';
   }
   if (type === 'generate_design')
     return error instanceof AiProviderTimeoutError

@@ -10,6 +10,7 @@ interface NoteSeed {
   publishType?: string;
   publishedAt?: string;
   permalink?: string;
+  shortId?: string;
 }
 
 function note(id: string, overrides: Partial<NoteSeed> = {}): NoteSeed {
@@ -166,30 +167,67 @@ describe('HackMdSource', () => {
     expect(result.posts[1]).not.toHaveProperty('updatedAt');
   });
 
-  it('validates dates and duplicate slugs before downloading article bodies', async () => {
-    const invalidDateFetch = vi.fn((input: string | URL | Request) =>
+  it('leaves out a note with an unreadable publish date and ignores an unreadable edit date', async () => {
+    const fetchMock = vi.fn((input: string | URL | Request) =>
       Promise.resolve(
         fetchUrl(input).endsWith('/overview')
-          ? overview([note('broken', { lastchangeAt: 'not-a-date' })])
-          : new Response('secret article body'),
+          ? overview([
+              note('undated', { publishedAt: 'not-a-date' }),
+              note('edited', { lastchangeAt: 'not-a-date' }),
+            ])
+          : new Response('body'),
       ),
     );
-    vi.stubGlobal('fetch', invalidDateFetch);
-    await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({
-      code: 'invalid_modified_date',
-    });
-    expect(invalidDateFetch).toHaveBeenCalledOnce();
+    vi.stubGlobal('fetch', fetchMock);
+    const { posts } = await new HackMdSource('writer').getPosts();
+    expect(posts.map((post) => post.id)).toEqual(['edited']);
+    expect(posts[0]).not.toHaveProperty('updatedAt');
+    expect(fetchMock.mock.calls.some(([input]) => fetchUrl(input).includes('/undated/'))).toBe(
+      false,
+    );
+  });
 
-    const duplicateFetch = vi.fn(() =>
-      Promise.resolve(
-        overview([note('one', { permalink: 'same' }), note('two', { permalink: 'same' })]),
-      ),
+  it('gives notes with the same, an emoji-only or a numeric title their own stable slugs', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: string | URL | Request) => {
+        const url = fetchUrl(input);
+        return Promise.resolve(
+          url.endsWith('/overview')
+            ? overview([
+                note('later', {
+                  title: 'Daily memes',
+                  permalink: undefined,
+                  shortId: 'SJCMx',
+                  publishedAt: '2026-09-06T08:16:00Z',
+                }),
+                note('first', {
+                  title: 'Daily memes',
+                  permalink: undefined,
+                  shortId: 'r1XFb',
+                  publishedAt: '2026-09-06T08:11:00Z',
+                }),
+                note('emoji', { title: '🎉', permalink: undefined, shortId: 'Hk2' }),
+                note('number', { title: '2', permalink: undefined, shortId: 'Bq7' }),
+                note('long-a', { title: 'a'.repeat(90), permalink: undefined, shortId: 'La1' }),
+                note('long-b', { title: 'a'.repeat(90), permalink: undefined, shortId: 'Lb2' }),
+              ])
+            : new Response('Body'),
+        );
+      }),
     );
-    vi.stubGlobal('fetch', duplicateFetch);
-    await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({
-      code: 'duplicate_slug',
-    });
-    expect(duplicateFetch).toHaveBeenCalledOnce();
+    const { posts } = await new HackMdSource('writer').getPosts();
+    // The earliest note keeps the plain slug, so adding a duplicate never moves an existing URL.
+    expect(posts.map((post) => post.slug)).toEqual([
+      'daily-memes-sjcmx',
+      'daily-memes',
+      'hk2',
+      // A bare number would collide with page 2 of the post list.
+      '2-bq7',
+      'a'.repeat(80),
+      // The suffix fits inside the 80-character cap the builder applies again.
+      `${'a'.repeat(76)}-lb2`,
+    ]);
   });
 
   it('rejects empty publications and invalid response shapes', async () => {
@@ -392,14 +430,16 @@ describe('HackMdSource', () => {
       const fetchMock = vi.fn((input: string | URL | Request) =>
         Promise.resolve(
           fetchUrl(input).endsWith('/overview')
-            ? overview([note('large')])
-            : new Response(oversized, { headers }),
+            ? overview([note('large'), note('small')])
+            : fetchUrl(input).includes('/large/')
+              ? new Response(oversized, { headers })
+              : new Response('small body'),
         ),
       );
       vi.stubGlobal('fetch', fetchMock);
-      await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({
-        code: 'article_too_large',
-      });
+      // An oversized note is left out; the rest of the profile still syncs.
+      const { posts } = await new HackMdSource('writer').getPosts();
+      expect(posts.map((post) => post.id)).toEqual(['small']);
     }
   });
 
@@ -426,13 +466,19 @@ describe('HackMdSource', () => {
       code: 'metadata_too_large',
     });
 
-    const tooMany = Array.from({ length: 1001 }, (_, index) => note(String(index)));
-    const countFetch = vi.fn(() => Promise.resolve(overview(tooMany)));
+    // Past 1,000 notes, only the newest 1,000 sync: the oldest one is left out.
+    const tooMany = Array.from({ length: 1001 }, (_, index) =>
+      note(String(index), { publishedAt: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString() }),
+    );
+    const countFetch = vi.fn((input: string | URL | Request) =>
+      Promise.resolve(
+        fetchUrl(input).endsWith('/overview') ? overview(tooMany) : new Response('body'),
+      ),
+    );
     vi.stubGlobal('fetch', countFetch);
-    await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({
-      code: 'too_many_articles',
-    });
-    expect(countFetch).toHaveBeenCalledOnce();
+    const newest = await new HackMdSource('writer').getPosts();
+    expect(newest.posts).toHaveLength(1000);
+    expect(newest.posts.some((post) => post.id === '0')).toBe(false);
 
     const body = 'x'.repeat(2 * 1024 * 1024);
     vi.stubGlobal(
@@ -503,7 +549,7 @@ describe('HackMdSource', () => {
         return Promise.resolve(
           overview(Array.from({ length: 6 }, (_, index) => note(String(index)))),
         );
-      if (url.endsWith('/0/download')) return Promise.resolve(new Response(null, { status: 404 }));
+      if (url.endsWith('/0/download')) return Promise.resolve(new Response(null, { status: 403 }));
       return new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener(
           'abort',
@@ -518,7 +564,7 @@ describe('HackMdSource', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(new HackMdSource('writer').getPosts()).rejects.toMatchObject({
-      code: 'article_not_found',
+      code: 'request_rejected',
     });
     expect(aborted).toBeGreaterThan(0);
     expect(

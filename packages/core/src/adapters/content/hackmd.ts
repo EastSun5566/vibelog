@@ -32,14 +32,9 @@ export type HackMdSourceErrorCode =
   | 'invalid_response'
   | 'incomplete_overview'
   | 'metadata_too_large'
-  | 'too_many_articles'
   | 'article_too_large'
   | 'sync_too_large'
-  | 'no_public_articles'
-  | 'invalid_published_date'
-  | 'invalid_modified_date'
-  | 'invalid_slug'
-  | 'duplicate_slug';
+  | 'no_public_articles';
 
 export class HackMdSourceError extends Error {
   readonly [HACKMD_SOURCE_ERROR] = true;
@@ -85,6 +80,10 @@ const noteSchema = z
       .nullish()
       .transform((value) => value ?? ''),
     permalink: z
+      .string()
+      .nullish()
+      .transform((value) => value ?? undefined),
+    shortId: z
       .string()
       .nullish()
       .transform((value) => value ?? undefined),
@@ -347,46 +346,73 @@ async function mapConcurrent<T, R>(
   return results;
 }
 
+// slugify caps slugs at 80 characters, and the builder applies it again, so a suffix has to fit
+// inside that cap or two long titles would be cut back to the same slug.
+const SLUG_LENGTH = 80;
+function withSuffix(base: string, suffix: string): string {
+  if (!base) return suffix;
+  return `${base.slice(0, SLUG_LENGTH - suffix.length - 1).replace(/-+$/u, '')}-${suffix}`;
+}
+
+/**
+ * One URL slug per note, from its permalink or title. Notes with the same title (or a title with no
+ * letters, such as only emoji) still sync: the earliest published note keeps the plain slug and the
+ * others add their HackMD short ID, so adding a note never moves an existing URL. Removing the note
+ * that holds the plain slug (or letting it age out of the newest 1,000) hands that slug to the next
+ * oldest one. Titles that are only a number get the short ID as well.
+ */
+function slugsFor(notes: z.infer<typeof noteSchema>[]): Map<string, string> {
+  const taken = new Set<string>();
+  const result = new Map<string, string>();
+  const oldestFirst = [...notes].sort(
+    (a, b) => Date.parse(a.publishedAt) - Date.parse(b.publishedAt) || a.id.localeCompare(b.id),
+  );
+  for (const note of oldestFirst) {
+    const suffix = slugify(note.shortId ?? note.id) || 'note';
+    const base = slugify(note.permalink ?? note.title);
+    // A bare number would share /blog/<n>/ with page n of the post list, so it gets the suffix too.
+    const free = base && !taken.has(base) && !/^\d+$/u.test(base);
+    const stem = free ? base : withSuffix(base, suffix);
+    let slug = stem;
+    for (let count = 2; taken.has(slug); count += 1) slug = withSuffix(stem, String(count));
+    taken.add(slug);
+    result.set(note.id, slug);
+  }
+  return result;
+}
+
+/**
+ * The public notes a sync imports. One odd note never fails the whole profile: a note with an
+ * unreadable publish date is left out, and past 1,000 notes only the newest 1,000 are kept.
+ */
 function prepareNotes(notes: z.infer<typeof noteSchema>[]): PreparedNote[] {
-  const publicNotes = notes.filter((note) => note.publishType === 'view' && note.publishedAt);
+  const dated = notes.filter(
+    (note) =>
+      note.publishType === 'view' &&
+      note.publishedAt &&
+      !Number.isNaN(Date.parse(note.publishedAt)),
+  );
+  const newest = new Set(
+    [...dated]
+      .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
+      .slice(0, MAX_PUBLIC_POSTS),
+  );
+  const publicNotes = dated.filter((note) => newest.has(note));
   if (publicNotes.length === 0)
     throw new HackMdSourceError(
       'no_public_articles',
       'No public published HackMD articles were found',
     );
-  if (publicNotes.length > MAX_PUBLIC_POSTS)
-    throw new HackMdSourceError(
-      'too_many_articles',
-      'HackMD profile exceeds the 1,000 article limit',
-    );
 
-  const slugs = new Set<string>();
+  const slugs = slugsFor(publicNotes);
   return publicNotes.map((note) => {
     const date = new Date(note.publishedAt);
-    if (Number.isNaN(date.getTime()))
-      throw new HackMdSourceError(
-        'invalid_published_date',
-        'A HackMD article has an invalid published date',
-      );
-    let updatedAt: string | undefined;
-    if (note.lastchangeAt) {
-      const modifiedDate = new Date(note.lastchangeAt);
-      if (Number.isNaN(modifiedDate.getTime()))
-        throw new HackMdSourceError(
-          'invalid_modified_date',
-          'A HackMD article has an invalid modified date',
-        );
-      if (modifiedDate.getTime() > date.getTime()) updatedAt = modifiedDate.toISOString();
-    }
-    const slug = slugify(note.permalink ?? note.title);
-    if (!slug) throw new HackMdSourceError('invalid_slug', 'A HackMD article has no usable slug');
-    if (slugs.has(slug))
-      throw new HackMdSourceError('duplicate_slug', 'Multiple HackMD articles have the same slug');
-    slugs.add(slug);
+    const modified = Date.parse(note.lastchangeAt);
+    const updatedAt = modified > date.getTime() ? new Date(modified).toISOString() : undefined;
     return {
       id: note.id,
       title: note.title,
-      slug,
+      slug: slugs.get(note.id) ?? note.id,
       date: date.toISOString(),
       tags: note.tags,
       ...(note.content ? { description: note.content } : {}),
@@ -431,13 +457,24 @@ export class HackMdSource implements ContentSource {
     const posts = await mapConcurrent(
       notes,
       DOWNLOAD_CONCURRENCY,
-      async (note, signal): Promise<Post> => {
+      async (note, signal): Promise<Post | undefined> => {
         const result = await requestText(
           `${this.baseUrl}/${note.id}/download`,
           'article',
           MAX_ARTICLE_BYTES,
           signal,
-        );
+        ).catch((error: unknown) => {
+          // A note unpublished mid-sync, or one over the size limit, is left out; the rest still sync.
+          if (
+            error instanceof HackMdSourceError &&
+            (error.code === 'article_not_found' || error.code === 'article_too_large')
+          ) {
+            logger.warn(`Skipping HackMD note ${note.id}: ${error.message}`);
+            return undefined;
+          }
+          throw error;
+        });
+        if (!result) return undefined;
         totalBytes += result.bytes;
         if (totalBytes > MAX_SYNC_BYTES)
           throw new HackMdSourceError(
@@ -456,7 +493,13 @@ export class HackMdSource implements ContentSource {
         };
       },
     );
-    return { posts };
+    const available = posts.filter((post): post is Post => post !== undefined);
+    if (available.length === 0)
+      throw new HackMdSourceError(
+        'no_public_articles',
+        'No public published HackMD articles were found',
+      );
+    return { posts: available };
   }
 
   async getAuthor() {

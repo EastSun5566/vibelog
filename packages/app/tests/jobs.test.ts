@@ -694,8 +694,6 @@ describe('AI operation execution', () => {
   });
 
   it.each([
-    ['too_many_articles', '1,000'],
-    ['article_too_large', '2 MiB'],
     ['sync_too_large', '32 MiB'],
     ['metadata_too_large', 'metadata'],
     ['incomplete_overview', 'incomplete article list'],
